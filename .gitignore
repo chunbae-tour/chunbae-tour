@@ -46,6 +46,14 @@ logs/
 .env.local
 .env.*.local
 
+# Spring application settings
+src/main/resources/application.yml
+src/main/resources/application-*.yml
+src/main/resources/application.yaml
+src/main/resources/application-*.yaml
+src/main/resources/application.properties
+src/main/resources/application-*.properties
+
 # Personal AI agent workspace
 AGENTS.md
 CLAUDE.md
