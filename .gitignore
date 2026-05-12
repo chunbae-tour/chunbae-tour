@@ -46,5 +46,11 @@ logs/
 .env.local
 .env.*.local
 
+# Personal AI agent workspace
+AGENTS.md
+CLAUDE.md
+.claude/
+docs/agent-harness/
+
 # Spring Initializr
 HELP.md

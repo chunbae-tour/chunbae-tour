@@ -1,7 +1,9 @@
 # 로컬 개발 환경 (Docker Compose 기준)
 spring:
+  config:
+    import: optional:file:.env[.properties]
   datasource:
-    url: jdbc:mysql://localhost:3307/chunbae_tour?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3307}/${DB_NAME:chunbae_tour}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME:chunbae}
     password: ${DB_PASSWORD:1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -14,8 +16,8 @@ spring:
         format_sql: true
   data:
     redis:
-      host: localhost
-      port: 6380
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
       lettuce:
