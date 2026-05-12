@@ -8,13 +8,13 @@
 모든 작업에서 다음 문서는 반드시 읽는다.
 
 - `AGENTS.md`
-- `docs/agent-guides/01-AGENT-HARNESS.md`
+- `docs/agent-harness/01-AGENT-HARNESS.md`
 
 ## Git, PR, 브랜치 작업
 
 읽을 문서:
 
-- `docs/agent-guides/03-GIT-WORKFLOW.md`
+- `docs/agent-harness/03-GIT-WORKFLOW.md`
 
 예시:
 
@@ -28,30 +28,30 @@
 
 읽을 문서:
 
-- `docs/agent-guides/04-CODING-RULES.md`
-- `docs/agent-guides/06-TASK-CHECKLISTS.md`
+- `docs/agent-harness/04-CODING-RULES.md`
+- `docs/agent-harness/06-TASK-CHECKLISTS.md`
 
 DB, Entity, 핵심 도메인과 관련 있으면 추가로 읽는다.
 
-- `docs/agent-guides/05-DOMAIN-DESIGN.md`
+- `docs/agent-harness/05-DOMAIN-DESIGN.md`
 
 ## 신규 기능 개발
 
 읽을 문서:
 
-- `docs/agent-guides/02-PROJECT-CONTEXT.md`
-- `docs/agent-guides/04-CODING-RULES.md`
-- `docs/agent-guides/05-DOMAIN-DESIGN.md`
-- `docs/agent-guides/06-TASK-CHECKLISTS.md`
-- `docs/agent-guides/03-GIT-WORKFLOW.md`
+- `docs/agent-harness/02-PROJECT-CONTEXT.md`
+- `docs/agent-harness/04-CODING-RULES.md`
+- `docs/agent-harness/05-DOMAIN-DESIGN.md`
+- `docs/agent-harness/06-TASK-CHECKLISTS.md`
+- `docs/agent-harness/03-GIT-WORKFLOW.md`
 
 ## DB, Entity, Repository 작업
 
 읽을 문서:
 
-- `docs/agent-guides/05-DOMAIN-DESIGN.md`
-- `docs/agent-guides/04-CODING-RULES.md`
-- `docs/agent-guides/06-TASK-CHECKLISTS.md`
+- `docs/agent-harness/05-DOMAIN-DESIGN.md`
+- `docs/agent-harness/04-CODING-RULES.md`
+- `docs/agent-harness/06-TASK-CHECKLISTS.md`
 
 주의:
 
@@ -61,20 +61,20 @@ DB, Entity, 핵심 도메인과 관련 있으면 추가로 읽는다.
 
 읽을 문서:
 
-- `docs/agent-guides/02-PROJECT-CONTEXT.md`
-- `docs/agent-guides/06-TASK-CHECKLISTS.md`
+- `docs/agent-harness/02-PROJECT-CONTEXT.md`
+- `docs/agent-harness/06-TASK-CHECKLISTS.md`
 
 필요할 때만 추가로 읽는다.
 
-- `docs/agent-guides/07-OPERATIONS.md`
+- `docs/agent-harness/07-OPERATIONS.md`
 
 ## 보안 작업
 
 읽을 문서:
 
-- `docs/agent-guides/01-AGENT-HARNESS.md`
-- `docs/agent-guides/04-CODING-RULES.md`
-- `docs/agent-guides/06-TASK-CHECKLISTS.md`
+- `docs/agent-harness/01-AGENT-HARNESS.md`
+- `docs/agent-harness/04-CODING-RULES.md`
+- `docs/agent-harness/06-TASK-CHECKLISTS.md`
 
 화면, 템플릿, 요청 처리, 인증, 권한과 관련 있으면
 CSRF, XSS, 인증, 인가 체크리스트를 반드시 확인한다.
@@ -83,9 +83,9 @@ CSRF, XSS, 인증, 인가 체크리스트를 반드시 확인한다.
 
 읽을 문서:
 
-- `docs/agent-guides/03-GIT-WORKFLOW.md`
-- `docs/agent-guides/07-OPERATIONS.md`
-- `docs/agent-guides/08-TROUBLESHOOTING.md`
+- `docs/agent-harness/03-GIT-WORKFLOW.md`
+- `docs/agent-harness/07-OPERATIONS.md`
+- `docs/agent-harness/08-TROUBLESHOOTING.md`
 
 ## 단순 질문, 코드 설명
 

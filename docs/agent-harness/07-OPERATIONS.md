@@ -48,7 +48,7 @@ Docker 종료:
 ## 장애 기록 방식
 
 운영 또는 로컬 개발 환경에서 반복 가능한 문제가 생기면
-`docs/agent-guides/08-TROUBLESHOOTING.md`에 기록한다.
+`docs/agent-harness/08-TROUBLESHOOTING.md`에 기록한다.
 
 기록 형식:
 

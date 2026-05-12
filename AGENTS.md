@@ -4,13 +4,14 @@
 가장 먼저 읽는 진입점이다.
 
 긴 규칙은 이 파일에 모두 넣지 않는다. 에이전트는 작업 유형을 판단한 뒤
-`docs/agent-guides/00-READING-MAP.md`에 따라 필요한 문서만 추가로 읽는다.
+`docs/agent-harness/00-READING-MAP.md`에 따라 필요한 문서만 추가로 읽는다.
+하네스 문서 추가와 배치 규칙은 `docs/agent-harness/README.md`를 따른다.
 
 ## 시작 절차
 
 1. 사용자 요청을 작업 유형으로 분류한다.
-2. `docs/agent-guides/00-READING-MAP.md`를 읽는다.
-3. 모든 작업에서 `docs/agent-guides/01-AGENT-HARNESS.md`를 읽는다.
+2. `docs/agent-harness/00-READING-MAP.md`를 읽는다.
+3. 모든 작업에서 `docs/agent-harness/01-AGENT-HARNESS.md`를 읽는다.
 4. 작업 유형에 맞는 문서만 추가로 읽는다.
 5. 금지 작업이나 승인 필요 작업이 있으면 진행하지 않고 사용자에게 보고한다.
 
