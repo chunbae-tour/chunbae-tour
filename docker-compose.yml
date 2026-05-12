@@ -1,0 +1,36 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: chunbae-tour-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-1234}
+      MYSQL_DATABASE: chunbae_tour
+      MYSQL_USER: ${DB_USERNAME:-chunbae}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-1234}
+    ports:
+      - "3307:3306"
+    volumes:
+      - chunbae-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: chunbae-tour-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - chunbae-redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  chunbae-mysql-data:
+  chunbae-redis-data:
