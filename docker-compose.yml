@@ -4,11 +4,11 @@ services:
     container_name: chunbae-tour-mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-1234}
-      MYSQL_DATABASE: chunbae_tour
+      MYSQL_DATABASE: ${DB_NAME:-chunbae_tour}
       MYSQL_USER: ${DB_USERNAME:-chunbae}
       MYSQL_PASSWORD: ${DB_PASSWORD:-1234}
     ports:
-      - "3307:3306"
+      - "${DB_PORT:-3307}:3306"
     volumes:
       - chunbae-mysql-data:/var/lib/mysql
     healthcheck:
@@ -20,13 +20,24 @@ services:
   redis:
     image: redis:7-alpine
     container_name: chunbae-tour-redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
-      - "6380:6379"
+      - "${REDIS_PORT:-6380}:6379"
     volumes:
       - chunbae-redis-data:/data
-    command: redis-server --appendonly yes
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD";
+      else
+        redis-server --appendonly yes;
+      fi'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
