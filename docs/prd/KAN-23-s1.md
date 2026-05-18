@@ -8,13 +8,13 @@ KAN-23 (Epic: Auth foundation — 회원가입 + 로그인 + JWT 인증)
 
 ### 동작 흐름
 
-`POST /api/v1/users/auth/signup` 호출 시 이메일/비밀번호/닉네임/전화번호를 받아 검증, 중복 체크, BCrypt 해시 후 `users` 테이블에 USER 권한 ACTIVE 상태 계정을 생성하고 201 응답을 반환한다. 회원가입 성공 시 `UserRegisteredEvent`를 발행한다 (핸들러는 후속 PRD).
+`POST /api/v1/users/auth/signup` 호출 시 이메일/비밀번호/닉네임을 받아 검증, 중복 체크, BCrypt 해시 후 `users` 테이블에 USER 권한 ACTIVE 상태 계정을 생성하고 201 응답을 반환한다. 회원가입 성공 시 `UserRegisteredEvent`를 발행한다 (핸들러는 후속 PRD).
 
 ### 포함 범위
 
 - **의존성**: `spring-boot-starter-security`, `jjwt-api/impl/jackson` (S2~S5에서 활용 예정이지만 이번 슬라이스에서 한 번에 셋업)
 - **패키지 구조**: `com.chunbaetour.domain.auth` (Auth 도메인), `com.chunbaetour.domain.common` (공통 인프라)
-- **Account 엔티티** (테이블 `users`): id, email, password, nickname, phoneNumber, profileImageUrl(null), language(기본값 ko), companionScore(0), companionReviewCount(0), role(USER 고정), status(ACTIVE 고정), suspendedUntil(null), createdAt, updatedAt, deletedAt(null). Soft delete `@Where(deletedAt IS NULL)`
+- **Account 엔티티** (테이블 `users`): id, email, password, nickname, profileImageUrl(null), language(기본값 ko), companionScore(0), companionReviewCount(0), role(USER 고정), status(ACTIVE 고정), suspendedUntil(null), createdAt, updatedAt, deletedAt(null). Soft delete `@Where(deletedAt IS NULL)`
 - **Role enum**: USER, MERCHANT, ADMIN. Status enum: ACTIVE, SUSPENDED, DELETED
 - **AccountRepository** (Spring Data JPA): `existsByEmail`, `existsByNickname`, `findByEmailAndDeletedAtIsNull` (S2에서 사용, 이번 슬라이스는 정의만)
 - **PasswordHasher** (deep module): BCrypt 캡슐화. `hash(raw)`, `matches(raw, hashed)`
@@ -22,7 +22,8 @@ KAN-23 (Epic: Auth foundation — 회원가입 + 로그인 + JWT 인증)
 - **UserAuthController**: `POST /api/v1/users/auth/signup` 매핑
 - **공통 에러 인프라**: `ErrorCode` enum (이번 슬라이스에서 AUTH_008/009/010/011만 정의, 후속 슬라이스에서 추가), `BusinessException`, `GlobalExceptionHandler`, `ApiResponse<T>` (성공/에러 통일 포맷 `{ code, message, data }`)
 - **UserRegisteredEvent**: Spring `ApplicationEvent`. userId, email, nickname 포함. 발행만, 핸들러 없음
-- **Bean Validation**: 요청 DTO에 `@Email`, `@Pattern` (비밀번호 정책 정규식), `@Size` 적용 → 위반 시 `MethodArgumentNotValidException` → `GlobalExceptionHandler`가 AUTH_010/011로 변환
+- **Bean Validation**: 요청 DTO에 `@Email`, `@Pattern` (비밀번호 정책 정규식, 닉네임 형식 정규식), `@Size` 적용 → 위반 시 `MethodArgumentNotValidException` → `GlobalExceptionHandler`가 AUTH_010/011로 변환
+- **닉네임 형식 정책**: 2~20자, 한글/영문/숫자/`_`/`-`만 허용 (`^[\p{L}\p{N}_-]{2,20}$`). 공백/이모지/특수문자 차단
 
 ### 비밀번호 정책 (sa-docs/11)
 

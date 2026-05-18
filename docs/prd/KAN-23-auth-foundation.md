@@ -19,7 +19,7 @@
 
 ## User Stories
 
-1. As a 신규 사용자, I want to 이메일/비밀번호/닉네임/전화번호로 회원가입할 수 있어, so that 춘배투어 서비스에 USER 계정을 만들 수 있다
+1. As a 신규 사용자, I want to 이메일/비밀번호/닉네임으로 회원가입할 수 있어, so that 춘배투어 서비스에 USER 계정을 만들 수 있다
 2. As a 신규 사용자, I want to 회원가입 시 이메일이 이미 존재하면 명확한 에러(AUTH_008)를 받아, so that 다른 이메일로 재시도할 수 있다
 3. As a 신규 사용자, I want to 회원가입 시 닉네임이 이미 존재하면 명확한 에러(AUTH_009)를 받아, so that 다른 닉네임으로 재시도할 수 있다
 4. As a 신규 사용자, I want to 비밀번호 형식이 정책에 맞지 않을 때 AUTH_010 에러를 받아, so that 정책에 맞는 비밀번호로 수정할 수 있다
@@ -46,7 +46,7 @@
 
 ### 도메인 모델
 
-- **Account 엔티티** (테이블명 `users`): id, email, password (BCrypt 해시), nickname, phoneNumber, profileImageUrl, language, companionScore, companionReviewCount, role (enum), status (enum), suspendedUntil, createdAt, updatedAt, deletedAt
+- **Account 엔티티** (테이블명 `users`): id, email, password (BCrypt 해시), nickname, profileImageUrl, language, companionScore, companionReviewCount, role (enum), status (enum), suspendedUntil, createdAt, updatedAt, deletedAt
 - **Role enum**: `USER`, `MERCHANT`, `ADMIN`. 회원가입 시 항상 `USER`. 상인 승격은 후속 PRD (상인 신청 승인 흐름).
 - **Status enum**: `ACTIVE`, `SUSPENDED`, `DELETED`. 정지 처리는 후속 PRD에서 admin 흐름이 변경. 이번 PRD는 enum 정의 + 로그인 시 status 체크만.
 - **Soft delete**: `deletedAt` 컬럼 + JPA `@Where` 절. 회원 탈퇴는 후속 PRD.
@@ -70,7 +70,7 @@
 
 | Method | Path | 요청 | 응답 |
 |--------|------|------|------|
-| POST | `/api/v1/users/auth/signup` | email, password, nickname, phoneNumber | userId, email, nickname, role, status |
+| POST | `/api/v1/users/auth/signup` | email, password, nickname | userId, email, nickname, role, status |
 | POST | `/api/v1/users/auth/login` | loginId, password | accessToken (body), refreshToken (HttpOnly Cookie), role |
 | POST | `/api/v1/merchants/auth/login` | loginId, password | accessToken, refreshToken, role |
 | POST | `/api/v1/admin/auth/login` | loginId, password | accessToken, refreshToken, role |
