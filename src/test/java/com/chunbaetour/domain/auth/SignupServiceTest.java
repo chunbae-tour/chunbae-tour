@@ -40,8 +40,7 @@ class SignupServiceTest {
         validRequest = new SignupRequest(
                 "user@example.com",
                 "Pa$$w0rd1!",
-                "춘배유저",
-                "010-1234-5678"
+                "춘배유저"
         );
     }
 

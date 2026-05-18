@@ -49,8 +49,7 @@ class SignupIntegrationTest {
         SignupRequest request = new SignupRequest(
                 "user@example.com",
                 "Pa$$w0rd1!",
-                "춘배유저",
-                "010-1234-5678"
+                "춘배유저"
         );
 
         mockMvc.perform(post("/api/v1/users/auth/signup")
@@ -68,13 +67,14 @@ class SignupIntegrationTest {
     @Test
     void signup_with_duplicate_email_returns_409_AUTH_008() throws Exception {
         SignupRequest first = new SignupRequest(
-                "duplicate@example.com", "Pa$$w0rd1!", "첫유저", "010-1111-1111");
+                "duplicate@example.com", "Pa$$w0rd1!", "첫유저");
         mockMvc.perform(post("/api/v1/users/auth/signup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(first)));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(first)))
+                .andExpect(status().isCreated());
 
         SignupRequest second = new SignupRequest(
-                "duplicate@example.com", "Pa$$w0rd2!", "두번째유저", "010-2222-2222");
+                "duplicate@example.com", "Pa$$w0rd2!", "두번째유저");
 
         mockMvc.perform(post("/api/v1/users/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -86,13 +86,14 @@ class SignupIntegrationTest {
     @Test
     void signup_with_duplicate_nickname_returns_409_AUTH_009() throws Exception {
         SignupRequest first = new SignupRequest(
-                "first@example.com", "Pa$$w0rd1!", "같은닉네임", "010-1111-1111");
+                "first@example.com", "Pa$$w0rd1!", "같은닉네임");
         mockMvc.perform(post("/api/v1/users/auth/signup")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(first)));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(first)))
+                .andExpect(status().isCreated());
 
         SignupRequest second = new SignupRequest(
-                "second@example.com", "Pa$$w0rd2!", "같은닉네임", "010-2222-2222");
+                "second@example.com", "Pa$$w0rd2!", "같은닉네임");
 
         mockMvc.perform(post("/api/v1/users/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -104,7 +105,7 @@ class SignupIntegrationTest {
     @Test
     void signup_with_invalid_password_format_returns_400_AUTH_010() throws Exception {
         SignupRequest request = new SignupRequest(
-                "user@example.com", "weakpass", "춘배유저", "010-1234-5678");
+                "user@example.com", "weakpass", "춘배유저");
 
         mockMvc.perform(post("/api/v1/users/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -116,7 +117,7 @@ class SignupIntegrationTest {
     @Test
     void signup_with_invalid_email_format_returns_400_AUTH_011() throws Exception {
         SignupRequest request = new SignupRequest(
-                "not-an-email", "Pa$$w0rd1!", "춘배유저", "010-1234-5678");
+                "not-an-email", "Pa$$w0rd1!", "춘배유저");
 
         mockMvc.perform(post("/api/v1/users/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)

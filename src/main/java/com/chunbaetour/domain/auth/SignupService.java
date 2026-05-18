@@ -32,7 +32,7 @@ public class SignupService {
         }
 
         String hashed = passwordHasher.hash(request.password());
-        Account account = Account.registerUser(email, hashed, nickname, request.phoneNumber());
+        Account account = Account.registerUser(email, hashed, nickname);
         Account saved;
         try {
             saved = accountRepository.save(account);

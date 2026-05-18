@@ -18,10 +18,7 @@ public record SignupRequest(
 
         @NotBlank
         @Size(min = 2, max = 20)
-        String nickname,
-
-        @NotBlank
-        @Pattern(regexp = "^010-\\d{4}-\\d{4}$")
-        String phoneNumber
+        @Pattern(regexp = "^[\\p{L}\\p{N}_-]{2,20}$")
+        String nickname
 ) {
 }

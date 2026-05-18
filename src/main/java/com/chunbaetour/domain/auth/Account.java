@@ -37,11 +37,8 @@ public class Account {
     @Column(nullable = false, length = 255)
     private String password;
 
-    @Column(nullable = false, unique = true, length = 50)
+    @Column(nullable = false, unique = true, length = 20)
     private String nickname;
-
-    @Column(name = "phone_number", length = 20)
-    private String phoneNumber;
 
     @Column(name = "profile_image_url", length = 500)
     private String profileImageUrl;
@@ -78,11 +75,10 @@ public class Account {
     private LocalDateTime deletedAt;
 
     @Builder
-    private Account(String email, String password, String nickname, String phoneNumber, Role role, AccountStatus status) {
+    private Account(String email, String password, String nickname, Role role, AccountStatus status) {
         this.email = email;
         this.password = password;
         this.nickname = nickname;
-        this.phoneNumber = phoneNumber;
         this.role = role;
         this.status = status;
         this.language = "ko";
@@ -90,12 +86,11 @@ public class Account {
         this.companionReviewCount = 0;
     }
 
-    public static Account registerUser(String email, String hashedPassword, String nickname, String phoneNumber) {
+    public static Account registerUser(String email, String hashedPassword, String nickname) {
         return Account.builder()
                 .email(email)
                 .password(hashedPassword)
                 .nickname(nickname)
-                .phoneNumber(phoneNumber)
                 .role(Role.USER)
                 .status(AccountStatus.ACTIVE)
                 .build();
