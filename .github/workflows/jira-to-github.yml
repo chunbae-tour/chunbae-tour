@@ -1,0 +1,23 @@
+name: Jira to GitHub Issue Sync
+
+on:
+  repository_dispatch:
+    types: [jira-issue-created]
+
+jobs:
+  create-github-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Issue
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_TOKEN }}
+          script: |
+            const payload = context.payload.client_payload;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[${payload.issueKey}] ${payload.summary}`,
+              body: `**Jira 이슈:** ${payload.issueKey}\n**설명:** ${payload.description || '없음'}\n**담당자:** ${payload.assignee || '미배정'}\n\nJira에서 자동 생성된 이슈입니다.`,
+              labels: ['jira']
+            });
