@@ -55,3 +55,7 @@ temp/
 # Java
 hs_err_pid*
 replay_pid*
+
+# Local-only working docs (TIL, PRD drafts, slice planning)
+docs/til/
+docs/prd/
