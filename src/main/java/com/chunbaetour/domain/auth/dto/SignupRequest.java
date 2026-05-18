@@ -12,6 +12,7 @@ public record SignupRequest(
         String email,
 
         @NotBlank
+        @Size(max = 72)
         @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[\\W_]).{8,}$")
         String password,
 
