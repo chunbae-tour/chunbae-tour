@@ -2,6 +2,9 @@
 
 Spring Boot 기반 여행 서비스 프로젝트입니다.
 
+<!-- Copilot review test -->
+
+
 ## 기술 스택
 
 - Java 21
