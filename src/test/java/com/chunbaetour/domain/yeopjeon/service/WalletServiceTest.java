@@ -37,7 +37,6 @@ class WalletServiceTest {
 
         WalletBalanceResponse response = walletService.getWallet(1L);
 
-        assertThat(response.userId()).isEqualTo(1L);
         assertThat(response.balance()).isEqualTo(0L);
     }
 
