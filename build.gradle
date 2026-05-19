@@ -39,6 +39,7 @@ dependencies {
 
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'org.redisson:redisson:3.35.0'
 
 	// Security + JWT (S2~S5에서 본격 사용, S1에서는 BCryptPasswordEncoder + SecurityConfig 최소 구성)
 	implementation 'org.springframework.boot:spring-boot-starter-security'

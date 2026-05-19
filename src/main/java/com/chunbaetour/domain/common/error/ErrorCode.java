@@ -38,7 +38,42 @@ public enum ErrorCode {
     SEARCH_KEYWORD_TOO_SHORT(HttpStatus.BAD_REQUEST,        "PLACE_005", "검색어는 최소 1자 이상 입력해주세요."),
     SEARCH_KEYWORD_TOO_LONG(HttpStatus.BAD_REQUEST,         "PLACE_006", "검색어는 최대 50자까지 입력 가능합니다."),
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
-    INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)");
+    INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
+
+    // ===== PAY (담당: 신현민) =====
+    INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
+    CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 1,000원 이상이어야 합니다."),
+    INVALID_CHARGE_UNIT(HttpStatus.BAD_REQUEST,             "PAY_003", "충전 금액은 1,000원 단위로 입력해주세요."),
+    CHARGE_AMOUNT_EXCEEDED(HttpStatus.BAD_REQUEST,          "PAY_004", "1회 최대 충전 금액은 100,000원입니다."),
+    PAYMENT_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PAY_005", "결제 서비스를 일시적으로 사용할 수 없습니다."),
+    PAYMENT_CANCELLED(HttpStatus.BAD_REQUEST,               "PAY_006", "결제가 취소되었습니다."),
+    DUPLICATE_PAYMENT_REQUEST(HttpStatus.CONFLICT,          "PAY_007", "이미 처리된 결제 요청입니다."),
+    PAYMENT_PROCESSING(HttpStatus.SERVICE_UNAVAILABLE,      "PAY_008", "결제 처리 중입니다. 잠시 후 다시 시도해주세요."),
+    PAYMENT_HISTORY_NOT_FOUND(HttpStatus.NOT_FOUND,         "PAY_009", "존재하지 않는 결제 내역입니다."),
+    REFUND_PERIOD_EXPIRED(HttpStatus.BAD_REQUEST,           "PAY_010", "환불 가능한 기간이 지났습니다."),
+    PAYMENT_HISTORY_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_011", "본인의 결제 내역만 조회할 수 있습니다."),
+
+    // ===== STORE (담당: 신현민) =====
+    PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
+    PRODUCT_SOLD_OUT(HttpStatus.CONFLICT,                   "STORE_002", "품절된 상품입니다."),
+    INVALID_PURCHASE_QUANTITY(HttpStatus.BAD_REQUEST,       "STORE_003", "구매 수량은 1개 이상이어야 합니다."),
+    PURCHASE_QUANTITY_EXCEEDED(HttpStatus.BAD_REQUEST,      "STORE_004", "1회 최대 구매 수량을 초과했습니다."),
+    PURCHASE_PROCESSING(HttpStatus.SERVICE_UNAVAILABLE,     "STORE_005", "구매 처리 중입니다. 잠시 후 다시 시도해주세요."),
+    ORDER_NOT_FOUND(HttpStatus.NOT_FOUND,                   "STORE_006", "존재하지 않는 주문입니다."),
+    ORDER_ALREADY_CANCELLED(HttpStatus.BAD_REQUEST,         "STORE_007", "이미 취소된 주문입니다."),
+
+    // ===== MERCHANT (담당: 신현민) =====
+    MERCHANT_CERT_ALREADY_PENDING(HttpStatus.CONFLICT,      "MERCHANT_001", "이미 상인 인증 신청이 진행 중입니다."),
+    INVALID_BUSINESS_NUMBER(HttpStatus.BAD_REQUEST,         "MERCHANT_002", "유효하지 않은 사업자등록번호입니다."),
+    MERCHANT_NOT_CERTIFIED(HttpStatus.FORBIDDEN,            "MERCHANT_003", "상인 인증이 필요합니다."),
+
+    // ===== SHOP (담당: 신현민) =====
+    SHOP_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_001", "존재하지 않는 가게입니다."),
+    SHOP_UPDATE_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_002", "본인 가게 정보만 수정할 수 있습니다."),
+    SHOP_ALREADY_EXISTS(HttpStatus.CONFLICT,                "SHOP_003", "이미 등록된 가게가 있습니다."),
+    MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
+    INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
+    SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다.");
 
     private final HttpStatus status;
     private final String code;
