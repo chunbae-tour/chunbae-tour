@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.chat.entity;
 
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -59,12 +61,18 @@ public class JoinRequest {
         this.status = JoinRequestStatus.PENDING; // 생성 시 항상 대기 상태
     }
 
-    // 서비스에서 isPending() 확인 후 호출 — 이미 처리된 신청이면 CHAT_012 throw
+    // PENDING 상태에서만 전이 허용 — 이미 처리된 신청 재처리 차단 (CHAT_012)
     public void approve() {
+        if (!isPending()) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
+        }
         this.status = JoinRequestStatus.APPROVED;
     }
 
     public void reject() {
+        if (!isPending()) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
+        }
         this.status = JoinRequestStatus.REJECTED;
     }
 
