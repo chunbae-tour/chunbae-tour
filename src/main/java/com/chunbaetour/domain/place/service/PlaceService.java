@@ -28,7 +28,7 @@ public class PlaceService {
         String latRounded = String.format("%.3f", lat);
         String lngRounded = String.format("%.3f", lng);
         double radiusRounded = Math.round(radius);
-        String cacheKey = String.format("nearby:%s:%s:%.0f", latRounded, lngRounded, radiusRounded);
+        String cacheKey = String.format("nearby:%s:%s:%.0f:%d", latRounded, lngRounded, radiusRounded, size);
 
         // 첫 페이지일 경우에만 캐시 조회
         if (cursor == null) {

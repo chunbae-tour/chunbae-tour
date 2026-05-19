@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.place.dto.request;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
@@ -27,6 +28,11 @@ public class NearbyPlaceRequest {
     
     private Long cursor; // null이면 첫 페이지
     private Double cursorDistance; // 복합 커서를 위한 이전 페이지 마지막 아이템의 거리
+
+    @AssertTrue(message = "cursor와 cursorDistance는 함께 전달되어야 합니다.")
+    public boolean isCursorPairValid() {
+        return (cursor == null) == (cursorDistance == null);
+    }
 
     @DecimalMin(value = "1", message = "size는 1 이상이어야 합니다.")
     @DecimalMax(value = "50", message = "size는 50 이하이어야 합니다.")
