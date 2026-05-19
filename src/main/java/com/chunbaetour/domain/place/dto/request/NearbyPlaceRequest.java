@@ -1,8 +1,11 @@
 package com.chunbaetour.domain.place.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -29,13 +32,14 @@ public class NearbyPlaceRequest {
     private Long cursor; // null이면 첫 페이지
     private Double cursorDistance; // 복합 커서를 위한 이전 페이지 마지막 아이템의 거리
 
+    @JsonIgnore
     @AssertTrue(message = "cursor와 cursorDistance는 함께 전달되어야 합니다.")
     public boolean isCursorPairValid() {
         return (cursor == null) == (cursorDistance == null);
     }
 
-    @DecimalMin(value = "1", message = "size는 1 이상이어야 합니다.")
-    @DecimalMax(value = "50", message = "size는 50 이하이어야 합니다.")
+    @Min(value = 1, message = "size는 1 이상이어야 합니다.")
+    @Max(value = 50, message = "size는 50 이하이어야 합니다.")
     private int size = 10;
 }
 

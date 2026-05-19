@@ -55,7 +55,7 @@ public class PlaceQueryRepository {
             return null;
         }
         return distanceExpression.gt(cursorDistance)
-                .or(distanceExpression.eq(cursorDistance).and(place.id.gt(cursorId)));
+                .or(distanceExpression.between(cursorDistance - 0.001, cursorDistance + 0.001).and(place.id.gt(cursorId)));
     }
 }
 
