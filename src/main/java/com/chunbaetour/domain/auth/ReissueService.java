@@ -1,0 +1,115 @@
+package com.chunbaetour.domain.auth;
+
+import com.chunbaetour.domain.auth.jwt.JwtProperties;
+import com.chunbaetour.domain.auth.jwt.RefreshClaims;
+import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
+import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.auth.jwt.TokenPair;
+import com.chunbaetour.domain.auth.jwt.TokenWithId;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Refresh Token Rotation 기반 Access Token 재발급 흐름.
+ *
+ * <p>핵심 책임:
+ * <ol>
+ *   <li>입력된 Refresh JWT를 검증 (서명, 만료, 타입)</li>
+ *   <li>Redis에 저장된 "현재 유효한 tokenId"와 일치하는지 검증</li>
+ *   <li>사용자가 여전히 활성 상태인지 검증 (탈퇴/정지 차단)</li>
+ *   <li>새 Access + 새 Refresh 발급</li>
+ *   <li>Redis에서 old tokenId → new tokenId로 원자 회전 (CAS 실패 시 거부)</li>
+ * </ol>
+ *
+ * <p>실패 분기 (보안상 사유 노출 최소화):
+ * <ul>
+ *   <li>Refresh 만료(exp claim 기준) → {@link ErrorCode#REFRESH_TOKEN_EXPIRED} (AUTH_004) — 클라이언트는 재로그인 안내</li>
+ *   <li>서명 오류/변조 → {@link ErrorCode#REFRESH_TOKEN_INVALID} (AUTH_005)</li>
+ *   <li>Redis 미존재 (이미 회전됨/로그아웃됨) → AUTH_005</li>
+ *   <li>탈퇴된 사용자 (DB에 없음) → AUTH_005 (탈퇴 노출 차단)</li>
+ *   <li>정지 계정 → {@link ErrorCode#ACCOUNT_SUSPENDED} (AUTH_012) — 명시적 안내</li>
+ *   <li>동시 reissue로 인한 CAS 실패 → AUTH_005 (한쪽만 성공해야 탈취 방어)</li>
+ * </ul>
+ *
+ * <p>설계 결정: Refresh claim에 role/email 포함하지 않은 이유는 권한 변경(USER → MERCHANT 승격)
+ * 시점 이후의 reissue가 stale role을 발급하지 않도록 매번 DB에서 최신 role/email을 조회하기 위함.
+ */
+@Service
+@RequiredArgsConstructor
+public class ReissueService {
+
+    private final TokenIssuer tokenIssuer;
+    private final RefreshTokenStore refreshTokenStore;
+    private final AccountRepository accountRepository;
+    private final JwtProperties jwtProperties;
+
+    /**
+     * Refresh Token으로 새 Access + Refresh를 발급한다.
+     *
+     * <p>{@code @Transactional(readOnly = true)}: DB 작업은 Account 조회만이라 readOnly.
+     * Redis 호출(rotate)은 트랜잭션 밖이므로 영향 없음.
+     *
+     * @param refreshToken Cookie에서 추출한 Refresh JWT
+     * @return 새 토큰 쌍. Access는 Body로, Refresh는 Cookie로 전달 (컨트롤러 책임)
+     */
+    @Transactional(readOnly = true)
+    public TokenPair reissue(String refreshToken) {
+        // 1. JWT 검증 — 만료/변조 분기
+        RefreshClaims claims = verifyOrThrow(refreshToken);
+
+        long userId = claims.userId();
+        String oldTokenId = claims.tokenId();
+
+        // 2. 사용자 조회 — soft-delete 적용 (@SQLRestriction)이므로 탈퇴자는 자동 제외
+        Account account = accountRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID));
+
+        // 3. 정지 계정 차단 — Refresh가 있어도 정지 후에는 재발급 금지
+        if (account.getStatus() == AccountStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
+
+        // 4. 새 토큰 발급 — DB에서 가져온 최신 role/email 사용 (권한 변경 즉시 반영)
+        String newAccess = tokenIssuer.issueAccess(account.getId(), account.getRole(), account.getEmail());
+        TokenWithId newRefresh = tokenIssuer.issueRefresh(account.getId());
+
+        // 5. Redis CAS 회전 — 동시 reissue 중 한쪽만 성공.
+        //    실패 케이스:
+        //    - Redis 키 없음 (로그아웃되어 삭제됨)
+        //    - 다른 tokenId가 저장돼 있음 (이미 다른 reissue가 회전 완료 → 이 요청은 stale 토큰)
+        //    - 탈취된 Refresh로 거의 동시에 요청 시 한쪽만 통과
+        boolean rotated = refreshTokenStore.rotate(
+                account.getId(),
+                oldTokenId,
+                newRefresh.tokenId(),
+                jwtProperties.refreshTokenTtl()
+        );
+        if (!rotated) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        return new TokenPair(newAccess, newRefresh.token(), newRefresh.tokenId(), account.getRole());
+    }
+
+    /**
+     * Refresh JWT 검증 + 예외 변환.
+     *
+     * <p>JJWT의 raw 예외를 ErrorCode 매핑으로 통일한다.
+     * - {@link ExpiredJwtException}만 AUTH_004로 구분 (UX상 재로그인 안내가 다름)
+     * - 그 외 모든 JWT 관련 예외는 AUTH_005로 통합 (사유 노출 최소화)
+     */
+    private RefreshClaims verifyOrThrow(String refreshToken) {
+        try {
+            return tokenIssuer.verifyRefresh(refreshToken);
+        } catch (ExpiredJwtException e) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+    }
+}

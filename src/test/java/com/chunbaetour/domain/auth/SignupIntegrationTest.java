@@ -5,33 +5,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.chunbaetour.domain.auth.dto.SignupRequest;
+import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import tools.jackson.databind.ObjectMapper;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import tools.jackson.databind.ObjectMapper;
 
-@SpringBootTest(properties = {
-        "spring.autoconfigure.exclude=org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration,org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration",
-        "spring.jpa.hibernate.ddl-auto=create-drop",
-        "jwt.secret=test-only-secret-32-bytes-min-xxxxxx",
-        "jwt.access-token-ttl=PT30M",
-        "jwt.refresh-token-ttl=P7D"
-})
+/**
+ * 회원가입 endpoint 통합 테스트 (S1).
+ *
+ * <p>S3 마이그레이션: {@link AbstractIntegrationTest} 상속으로 MySQL/Redis 컨테이너 + 보안 properties를 공유.
+ * 기존에 SpringBootTest properties에 직접 박혀있던 Redis exclude + JWT props는 base 클래스로 이관.
+ *
+ * <p>본 PR(S3)의 회원가입 자체 로직은 변경 없음. 컨텍스트 구성만 base에 위임.
+ */
+@SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
-class SignupIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
+class SignupIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -42,6 +36,9 @@ class SignupIntegrationTest {
     @Autowired
     private AccountRepository accountRepository;
 
+    /**
+     * 컨테이너는 JVM 단위로 공유되므로 테스트 간 데이터 누수 방지를 위해 본 테스트 데이터만 정리한다.
+     */
     @AfterEach
     void cleanup() {
         accountRepository.deleteAll();
@@ -64,6 +61,7 @@ class SignupIntegrationTest {
                 .andExpect(jsonPath("$.data.nickname").value("춘배유저"))
                 .andExpect(jsonPath("$.data.role").value("USER"))
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                // 응답에 비밀번호 노출 금지 확인 (보안 회귀 방지)
                 .andExpect(jsonPath("$.data.password").doesNotExist());
     }
 
