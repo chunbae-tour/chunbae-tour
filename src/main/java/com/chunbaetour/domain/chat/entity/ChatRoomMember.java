@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.chat.entity;
 
 import com.chunbaetour.domain.chat.type.ChatMemberState;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -54,14 +56,23 @@ public class ChatRoomMember {
         this.memberState = memberState;
     }
 
-    // 자발적 퇴장 — leftAt 기록, 재참여 가능
+    // 자발적 퇴장 — leftAt 기록, 재참여 가능.
+    // KICKED 상태에서 leave()로 덮어쓰면 "강퇴 재참여 불가" 규칙이 깨지므로 차단.
     public void leave() {
+        if (this.memberState == ChatMemberState.MEMBER_KICKED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         this.memberState = ChatMemberState.MEMBER_LEFT;
         this.leftAt = LocalDateTime.now();
     }
 
-    // 개설자 강퇴 — leftAt 기록, 재참여 영구 차단 (CHAT_010)
+    // 개설자 강퇴 — leftAt 기록, 재참여 영구 차단 (CHAT_010).
+    // 이미 퇴장/강퇴된 멤버는 활동 상태가 아니므로 강퇴 대상 아님.
     public void kick() {
+        if (this.memberState == ChatMemberState.MEMBER_LEFT
+                || this.memberState == ChatMemberState.MEMBER_KICKED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         this.memberState = ChatMemberState.MEMBER_KICKED;
         this.leftAt = LocalDateTime.now();
     }
