@@ -37,7 +37,7 @@ public class PlaceService {
             String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
             if (cachedData != null) {
                 try {
-                    log.info("Redis Cache Hit: {}", cacheKey);
+                    log.debug("Redis Cache Hit");
                     return objectMapper.readValue(cachedData, new TypeReference<>() {});
                 } catch (Exception e) {
                     log.error("Redis Cache parsing error", e);

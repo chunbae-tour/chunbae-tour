@@ -21,12 +21,12 @@ public class PlaceController {
     @GetMapping("/nearby")
     public ApiResponse<NearbyPlacePageResponse> getNearbyPlaces(@Valid @ModelAttribute NearbyPlaceRequest request) {
         NearbyPlacePageResponse response = placeService.findNearby(
-                request.getLat(),
-                request.getLng(),
-                request.getRadius(),
-                request.getCursor(),
-                request.getCursorDistance(),
-                request.getSize()
+                request.lat(),
+                request.lng(),
+                request.radius(),
+                request.cursor(),
+                request.cursorDistance(),
+                request.size()
         );
         return ApiResponse.success(response);
     }
