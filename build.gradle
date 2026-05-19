@@ -26,6 +26,14 @@ dependencies {
 	// JPA
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
+	// QueryDSL — OpenFeign 유지보수 fork 사용
+	// - com.querydsl는 5.1.0에서 유지보수 중단, CVE-2024-49203 미패치
+	// - io.github.openfeign.querydsl 5.6.1: CVE 패치 + Jakarta EE 내장 (:jakarta 클래스파이어 불필요)
+	implementation 'io.github.openfeign.querydsl:querydsl-jpa:5.6.1'
+	annotationProcessor 'io.github.openfeign.querydsl:querydsl-apt:5.6.1:jakarta'
+	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+	annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
+
 	// MySQL
 	runtimeOnly 'com.mysql:mysql-connector-j'
 
@@ -51,6 +59,15 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+// QueryDSL Q클래스 생성 경로를 소스셋에 등록 (IDE 인식용)
+sourceSets {
+	main {
+		java {
+			srcDir "${layout.buildDirectory.get()}/generated/sources/annotationProcessor/java/main"
+		}
+	}
 }
 
 tasks.named('test') {
