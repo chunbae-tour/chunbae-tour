@@ -41,9 +41,21 @@ DB_PASSWORD=1234
 REDIS_HOST=localhost
 REDIS_PORT=6380
 REDIS_PASSWORD=
+
+JWT_SECRET=local-dev-only-secret-replace-me-min-32-bytes-xxxx
+JWT_ACCESS_TOKEN_TTL=PT30M
+JWT_REFRESH_TOKEN_TTL=P7D
 ```
 
 보통은 이 값 그대로 사용하면 됩니다.
+
+## JWT 시크릿
+
+- `JWT_SECRET`은 JWT(HS256) 서명에 사용되는 비밀 키입니다.
+- 로컬 개발에서는 `.env.example`에 포함된 dummy 값을 그대로 사용해도 됩니다. **운영 환경에서는 절대 사용하지 마세요.**
+- 최소 32 바이트(영문/숫자 32자) 이상이어야 합니다. 부족하면 애플리케이션이 부팅 시 실패합니다.
+- 운영 환경은 `application-prod.yml`이 `${JWT_SECRET}` 환경변수를 필수로 요구합니다. 환경변수 주입 방식(배포 인프라 시크릿 저장소 등)은 인프라 PRD에서 정합니다.
+- `JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL`은 ISO-8601 Duration 형식입니다. 기본값은 각각 30분(`PT30M`), 7일(`P7D`)이며, `.env`에서 비워두면 `application.yml` default 값이 사용됩니다.
 
 ## 실행 방법
 
