@@ -61,15 +61,6 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
-// QueryDSL Q클래스 생성 경로를 소스셋에 등록 (IDE 인식용)
-sourceSets {
-	main {
-		java {
-			srcDir "${layout.buildDirectory.get()}/generated/sources/annotationProcessor/java/main"
-		}
-	}
-}
-
 tasks.named('test') {
 	useJUnitPlatform()
 }
