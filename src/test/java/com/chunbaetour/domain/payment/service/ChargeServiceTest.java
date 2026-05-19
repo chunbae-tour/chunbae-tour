@@ -17,6 +17,7 @@ import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -39,6 +40,7 @@ class ChargeServiceTest {
     private ChargeService chargeService;
 
     @Test
+    @DisplayName("정상 충전 요청 시 PG 결제창 redirectUrl과 orderId를 반환한다")
     void charge_success_returns_redirectUrl() {
         given(paymentGatewayClient.createOrder(anyString(), anyLong(), anyLong()))
                 .willReturn(new PgOrderResult("pg-001", "https://stub-pg.chunbaetour.com/pay/test"));
@@ -53,6 +55,7 @@ class ChargeServiceTest {
     }
 
     @Test
+    @DisplayName("동일 멱등성 키로 재요청 시 PAY_007(중복 결제)을 던진다")
     void charge_duplicate_idempotency_throws_PAY_007() {
         willThrow(new BusinessException(ErrorCode.DUPLICATE_PAYMENT_REQUEST))
                 .given(idempotencyService).checkAndMark("dup-key");
@@ -64,6 +67,7 @@ class ChargeServiceTest {
     }
 
     @Test
+    @DisplayName("충전 금액이 1,000원 미만이면 PAY_002를 던진다")
     void charge_amount_too_low_throws_PAY_002() {
         assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(500L)))
                 .isInstanceOf(BusinessException.class)
@@ -72,6 +76,7 @@ class ChargeServiceTest {
     }
 
     @Test
+    @DisplayName("충전 금액이 1,000원 단위가 아니면 PAY_003을 던진다")
     void charge_invalid_unit_throws_PAY_003() {
         assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(1_500L)))
                 .isInstanceOf(BusinessException.class)
@@ -80,6 +85,7 @@ class ChargeServiceTest {
     }
 
     @Test
+    @DisplayName("충전 금액이 100,000원 초과이면 PAY_004를 던진다")
     void charge_amount_exceeded_throws_PAY_004() {
         assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(200_000L)))
                 .isInstanceOf(BusinessException.class)
