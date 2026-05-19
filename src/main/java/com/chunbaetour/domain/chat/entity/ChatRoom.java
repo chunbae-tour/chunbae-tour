@@ -83,7 +83,15 @@ public class ChatRoom {
     }
 
     // 서비스에서 직접 FULL 전환이 필요한 경우 사용 (e.g. 동시성 보정).
+    // CLOSED 방 전이 차단 — 종료 불변식 보호.
+    // currentMembers < maxMembers면 실제 정원 미달이므로 FULL 전환 불가.
     public void markFull() {
+        if (this.status == ChatRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        if (this.currentMembers < this.maxMembers) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         this.status = ChatRoomStatus.FULL;
     }
 
