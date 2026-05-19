@@ -8,7 +8,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = {
-		"spring.autoconfigure.exclude=org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration"
+		"spring.autoconfigure.exclude=org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration",
+		"jwt.secret=test-only-secret-32-bytes-min-xxxxxx",
+		"jwt.access-token-ttl=PT30M",
+		"jwt.refresh-token-ttl=P7D"
 })
 @Testcontainers
 class ChunbaeTourApplicationTests {
