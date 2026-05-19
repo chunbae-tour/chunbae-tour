@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.chat.entity;
 
 import com.chunbaetour.domain.chat.type.MessageType;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -61,14 +63,41 @@ public class Message {
     @Builder
     private Message(Long chatRoomId, Long senderId, MessageType messageType,
                     String content, String fileUrl, String fileName, Long fileSize) {
+        validateByType(messageType, content, fileUrl, fileName, fileSize);
         this.chatRoomId = chatRoomId;
         this.senderId = senderId;
         this.messageType = messageType;
         this.content = content;
-        this.fileUrl = fileUrl;   // IMAGE/FILE 타입일 때만 값 존재
-        this.fileName = fileName; // FILE 타입일 때만 값 존재
-        this.fileSize = fileSize; // FILE 타입일 때만 값 존재
+        this.fileUrl = fileUrl;
+        this.fileName = fileName;
+        this.fileSize = fileSize;
         this.sentAt = LocalDateTime.now();
+    }
+
+    // 타입별 필수 필드 불변식 강제 — 주석 규칙을 생성 시점에 검증으로 격상
+    private void validateByType(MessageType messageType, String content, String fileUrl, String fileName, Long fileSize) {
+        if (messageType == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        switch (messageType) {
+            case TEXT, SYSTEM -> {
+                if (content == null || content.isBlank()) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+            }
+            case IMAGE -> {
+                if (fileUrl == null || fileUrl.isBlank()) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+            }
+            case FILE -> {
+                if (fileUrl == null || fileUrl.isBlank()
+                        || fileName == null || fileName.isBlank()
+                        || fileSize == null || fileSize <= 0) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+            }
+        }
     }
     // translatedContent, translateLang — 번역 요청 시 Translation 서비스가 별도로 채움 (생성자 외부)
 }
