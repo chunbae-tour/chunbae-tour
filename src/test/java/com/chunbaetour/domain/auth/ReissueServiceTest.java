@@ -2,6 +2,7 @@ package com.chunbaetour.domain.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -103,7 +104,7 @@ class ReissueServiceTest {
 
         // 검증 실패 단계에서 토큰 발급/회전이 일어나면 안 됨
         verify(tokenIssuer, never()).issueAccess(anyLong(), eq(Role.USER), anyString());
-        verify(refreshTokenStore, never()).rotate(anyLong(), anyString(), anyString(), eq(REFRESH_TTL));
+        verifyRefreshWasNotRotated();
     }
 
     @Test
@@ -141,7 +142,7 @@ class ReissueServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
 
-        verify(refreshTokenStore, never()).rotate(anyLong(), anyString(), anyString(), eq(REFRESH_TTL));
+        verifyRefreshWasNotRotated();
     }
 
     @Test
@@ -160,6 +161,10 @@ class ReissueServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFRESH_TOKEN_INVALID);
+    }
+
+    private void verifyRefreshWasNotRotated() {
+        verify(refreshTokenStore, never()).rotate(anyLong(), anyString(), anyString(), any(Duration.class));
     }
 
     /**

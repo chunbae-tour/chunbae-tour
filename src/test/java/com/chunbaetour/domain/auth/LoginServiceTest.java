@@ -2,7 +2,9 @@ package com.chunbaetour.domain.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -112,8 +114,8 @@ class LoginServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.LOGIN_FAILED);
 
-        // 실패 시 Redis에 저장하면 안 됨 (불필요한 부작용 차단)
-        verify(refreshTokenStore, never()).save(anyLong(), eq(""), eq(REFRESH_TTL));
+        // 실패 시 어떤 tokenId/TTL 조합으로도 Redis 저장이 일어나면 안 된다.
+        verifyRefreshWasNotSaved();
     }
 
     @Test
@@ -125,6 +127,8 @@ class LoginServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.LOGIN_FAILED);
+
+        verifyRefreshWasNotSaved();
     }
 
     @Test
@@ -137,6 +141,8 @@ class LoginServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
+
+        verifyRefreshWasNotSaved();
     }
 
     @Test
@@ -149,6 +155,12 @@ class LoginServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        verifyRefreshWasNotSaved();
+    }
+
+    private void verifyRefreshWasNotSaved() {
+        verify(refreshTokenStore, never()).save(anyLong(), anyString(), any(Duration.class));
     }
 
     /**

@@ -2,18 +2,21 @@ package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.auth.dto.ReissueResponse;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
+import com.chunbaetour.domain.auth.security.CookieProperties;
 import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.WebUtils;
 
 /**
  * USER/MERCHANT/ADMIN 공통 토큰 endpoint.
@@ -34,20 +37,20 @@ public class AuthTokenController {
 
     private final ReissueService reissueService;
     private final RefreshCookieFactory refreshCookieFactory;
+    private final CookieProperties cookieProperties;
 
     /**
      * Access Token 재발급.
      *
-     * <p>입력: HttpOnly Cookie의 {@code refreshToken} (브라우저가 자동 전송)
+     * <p>입력: HttpOnly Cookie의 설정된 refresh cookie 이름 (브라우저가 자동 전송)
      * <br>출력: 새 Access (Body) + 새 Refresh Cookie (Set-Cookie 헤더)
      *
-     * <p>{@code @CookieValue(required = false)}로 받는 이유: 쿠키 누락도 의도된 흐름(직접 호출/CSRF
-     * 우회 시도)이므로 null 체크 후 AUTH_005로 통일 응답한다. {@code required=true}로 두면
-     * MissingRequestCookieException이 발생해 별도 핸들러가 필요해진다.
+     * <p>쿠키 이름은 발급과 조회가 반드시 같은 설정을 써야 한다. {@code @CookieValue}는 런타임 설정값을
+     * name에 넣을 수 없으므로 request에서 직접 꺼내고, 누락/빈 값은 AUTH_005로 통일한다.
      */
     @PostMapping("/reissue")
-    public ResponseEntity<ApiResponse<ReissueResponse>> reissue(
-            @CookieValue(name = "refreshToken", required = false) String refreshToken) {
+    public ResponseEntity<ApiResponse<ReissueResponse>> reissue(HttpServletRequest request) {
+        String refreshToken = extractRefreshToken(request);
         // Cookie 누락 또는 빈 값은 reissue 시도 자체가 비정상 → AUTH_005
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
@@ -61,5 +64,10 @@ public class AuthTokenController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, newRefreshCookie.toString())
                 .body(ApiResponse.success(ReissueResponse.from(pair)));
+    }
+
+    private String extractRefreshToken(HttpServletRequest request) {
+        Cookie cookie = WebUtils.getCookie(request, cookieProperties.name());
+        return cookie == null ? null : cookie.getValue();
     }
 }

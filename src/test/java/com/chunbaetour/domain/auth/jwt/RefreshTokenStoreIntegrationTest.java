@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.auth.jwt;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.Duration;
@@ -126,16 +127,17 @@ class RefreshTokenStoreIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void exists_after_ttl_expiration_returns_false() throws InterruptedException {
+    void exists_after_ttl_expiration_returns_false() {
         long userId = 7L;
         String tokenId = UUID.randomUUID().toString();
         // TTL 1초 — 빠른 검증
         store.save(userId, tokenId, Duration.ofSeconds(1));
 
-        // Redis TTL 만료 + 약간의 여유. Redis의 active expiration은 즉시가 아닐 수 있어 충분히 기다린다.
-        Thread.sleep(1500);
-
-        assertThat(store.exists(userId, tokenId)).isFalse();
+        // Redis active expiration은 환경 부하에 따라 늦어질 수 있어 짧게 polling한다.
+        await()
+                .atMost(Duration.ofSeconds(3))
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() -> assertThat(store.exists(userId, tokenId)).isFalse());
     }
 
     /**

@@ -65,6 +65,7 @@ class CorsPreflightIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(options("/api/v1/users/auth/login")
                         .header(HttpHeaders.ORIGIN, "http://evil.example.com")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .andExpect(status().isForbidden())
                 .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
     }
 }

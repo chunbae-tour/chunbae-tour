@@ -71,8 +71,11 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
 - 로그인/재발급 응답은 `Set-Cookie: refreshToken=...; HttpOnly; SameSite=Lax; Path=/api/v1/auth` 헤더를 포함합니다.
 - 로컬은 `Secure` 플래그가 빠집니다(HTTP). 운영은 `application-prod.yml`이 `Secure=true`로 강제합니다(HTTPS 전용).
-- 브라우저가 Cookie를 자동 전송하므로 클라이언트(프론트엔드)는 Cookie를 직접 다루지 않습니다.
-- 재발급은 `POST /api/v1/auth/reissue` 호출 (Cookie 자동 전송 + 새 Access Token 응답).
+- 클라이언트(프론트엔드)는 Cookie 값을 직접 읽거나 저장하지 않습니다.
+- 단, 백엔드와 프론트엔드 origin이 다르면 요청에 자격증명 전송 옵션을 반드시 켜야 브라우저가 Cookie를 함께 보냅니다.
+  - `fetch`: `fetch(url, { credentials: "include" })`
+  - Axios: `axios.create({ withCredentials: true })` 또는 요청별 `{ withCredentials: true }`
+- 재발급은 `POST /api/v1/auth/reissue` 호출 (위 credentials 옵션으로 Cookie 전송 + 새 Access Token 응답).
 
 ## 실행 방법
 
