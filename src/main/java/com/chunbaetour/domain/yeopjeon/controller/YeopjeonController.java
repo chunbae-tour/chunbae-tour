@@ -1,7 +1,5 @@
 package com.chunbaetour.domain.yeopjeon.controller;
 
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.yeopjeon.dto.response.WalletBalanceResponse;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
@@ -20,9 +18,6 @@ public class YeopjeonController {
 
     @GetMapping("/me")
     public ApiResponse<WalletBalanceResponse> getMyWallet(@AuthenticationPrincipal Long userId) {
-        if (userId == null) {
-            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
         return ApiResponse.success(walletService.getWallet(userId));
     }
 }
