@@ -2,40 +2,57 @@ package com.chunbaetour.domain.auth.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.BDDMockito.willThrow;
 
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
+import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.MalformedJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+/**
+ * {@link JwtAuthenticationFilter} 단위 테스트.
+ *
+ * <p>S4 보강:
+ * <ul>
+ *   <li>블랙리스트 등록된 토큰 → AUTH_013, SecurityContext 미설정, 체인 중단</li>
+ *   <li>정상 토큰 → request attribute에 AccessClaims 저장</li>
+ *   <li>{@code /api/v1/auth/logout}은 PUBLIC 매칭에서 제외되어 filter 진입</li>
+ * </ul>
+ */
 @ExtendWith(MockitoExtension.class)
 class JwtAuthenticationFilterTest {
+
+    private static final Instant FUTURE_EXP = Instant.parse("2099-01-01T00:00:00Z");
 
     @Mock
     private TokenIssuer tokenIssuer;
 
     @Mock
     private SecurityResponseWriter responseWriter;
+
+    @Mock
+    private AccessTokenBlacklist accessTokenBlacklist;
 
     @Mock
     private FilterChain filterChain;
@@ -61,20 +78,25 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    void doFilterInternal_with_valid_token_sets_authentication_and_passes_through() throws Exception {
+    void doFilterInternal_with_valid_token_sets_authentication_and_attribute_and_passes_through() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        given(tokenIssuer.verifyAccess("valid-token"))
-                .willReturn(new AccessClaims(42L, Role.USER, "user@example.com", "tid"));
+        AccessClaims claims = new AccessClaims(42L, Role.USER, "user@example.com", "tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-token")).willReturn(claims);
+        given(accessTokenBlacklist.contains("tid")).willReturn(false);
 
         filter.doFilter(request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
+
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         assertThat(authentication).isNotNull();
         assertThat(authentication.getPrincipal()).isEqualTo(42L);
         assertThat(authentication.getAuthorities()).extracting(Object::toString).containsExactly("ROLE_USER");
+
+        // S4: Controller에서 재파싱 없이 claims를 가져올 수 있도록 attribute로 노출되어야 함
+        assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isSameAs(claims);
     }
 
     @Test
@@ -88,6 +110,24 @@ class JwtAuthenticationFilterTest {
 
         verify(tokenIssuer, never()).verifyAccess("expired");
         verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    void doFilter_with_logout_path_does_NOT_skip_validation() throws Exception {
+        // S4: /api/v1/auth/logout은 인증 필요. PUBLIC 매칭에서 명시적으로 제외되어 doFilterInternal 진입.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServletPath("/api/v1/auth/logout");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(1L, Role.USER, "u@e.c", "tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-token")).willReturn(claims);
+        given(accessTokenBlacklist.contains("tid")).willReturn(false);
+
+        filter.doFilter(request, response, filterChain);
+
+        // verify가 호출되었어야 한다 (public 매칭으로 우회되지 않음)
+        verify(tokenIssuer).verifyAccess("valid-token");
         verify(filterChain).doFilter(request, response);
     }
 
@@ -119,6 +159,43 @@ class JwtAuthenticationFilterTest {
         verify(responseWriter).write(response, ErrorCode.ACCESS_TOKEN_INVALID);
         verify(filterChain, never()).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void doFilterInternal_with_blacklisted_token_writes_AUTH_013_and_stops_chain() throws Exception {
+        // S4: 로그아웃 후 블랙리스트 등록된 토큰으로 재요청 시 거부.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer logged-out-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(1L, Role.USER, "u@e.c", "blacklisted-tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("logged-out-token")).willReturn(claims);
+        given(accessTokenBlacklist.contains("blacklisted-tid")).willReturn(true);
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(responseWriter).write(response, ErrorCode.BLACKLISTED_TOKEN);
+        verify(filterChain, never()).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        // attribute도 안 채워져야 한다 (controller가 logout 흐름 외에 claims 사용 못 함)
+        assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isNull();
+    }
+
+    @Test
+    void doFilterInternal_when_blacklist_lookup_fails_writes_COMMON_001_and_stops_chain() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(1L, Role.USER, "u@e.c", "tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-token")).willReturn(claims);
+        willThrow(new DataAccessResourceFailureException("redis unavailable"))
+                .given(accessTokenBlacklist).contains("tid");
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(responseWriter).write(response, ErrorCode.INTERNAL_SERVER_ERROR);
+        verify(filterChain, never()).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isNull();
     }
 
     @Test
