@@ -79,7 +79,10 @@ public class TokenIssuer {
         try {
             long userId = Long.parseLong(claims.getSubject());
             Role role = Role.valueOf(roleValue);
-            return new AccessClaims(userId, role, email, tokenId);
+            // exp 클레임을 Instant로 변환. S4 블랙리스트가 정확한 잔여 TTL로 등록되어
+            // 만료된 토큰이 영구히 Redis에 누적되지 않도록 한다.
+            Instant expiresAt = claims.getExpiration().toInstant();
+            return new AccessClaims(userId, role, email, tokenId, expiresAt);
         } catch (RuntimeException e) {
             throw new JwtException("토큰 클레임이 유효하지 않습니다.", e);
         }

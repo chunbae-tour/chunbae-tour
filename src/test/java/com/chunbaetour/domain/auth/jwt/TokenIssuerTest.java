@@ -39,6 +39,9 @@ class TokenIssuerTest {
         assertThat(claims.role()).isEqualTo(Role.USER);
         assertThat(claims.email()).isEqualTo("user@example.com");
         assertThat(claims.tokenId()).isNotBlank();
+        // S4: 블랙리스트 TTL 계산을 위해 expiresAt이 정확히 issuedAt + access-token-ttl이어야 함.
+        // JWT exp는 초 정밀도라 millis 제거 후 비교.
+        assertThat(claims.expiresAt()).isEqualTo(FIXED_NOW.plus(ACCESS_TTL).truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
     }
 
     @Test
