@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.place;
+package com.chunbaetour.domain.place.type;
 
 public enum PlaceStatus {
     ACTIVE,   // 정상 노출

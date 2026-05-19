@@ -55,6 +55,12 @@ public class UserLike {
 
     @Builder
     private UserLike(Account user, Place place) {
+        if (user == null) {
+            throw new IllegalArgumentException("사용자 정보는 필수입니다.");
+        }
+        if (place == null) {
+            throw new IllegalArgumentException("관광지 정보는 필수입니다.");
+        }
         this.user = user;
         this.place = place;
     }

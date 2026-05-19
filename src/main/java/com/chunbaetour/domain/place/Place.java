@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.place;
 
+import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -116,6 +118,22 @@ public class Place {
                   String address, java.math.BigDecimal lat, java.math.BigDecimal lng,
                   String thumbnailUrl, String imageUrls, String operatingHours,
                   String closedDays, String phone, String admissionFee, String tags) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("이름은 필수입니다.");
+        }
+        if (category == null) {
+            throw new IllegalArgumentException("카테고리는 필수입니다.");
+        }
+        if (address == null || address.isBlank()) {
+            throw new IllegalArgumentException("주소는 필수입니다.");
+        }
+        if (lat == null || lat.compareTo(new java.math.BigDecimal("-90")) < 0 || lat.compareTo(new java.math.BigDecimal("90")) > 0) {
+            throw new IllegalArgumentException("위도는 -90에서 90 사이여야 합니다.");
+        }
+        if (lng == null || lng.compareTo(new java.math.BigDecimal("-180")) < 0 || lng.compareTo(new java.math.BigDecimal("180")) > 0) {
+            throw new IllegalArgumentException("경도는 -180에서 180 사이여야 합니다.");
+        }
+        
         this.name = name;
         this.category = category;
         this.description = description;
@@ -150,6 +168,9 @@ public class Place {
 
     /** 평균 별점 재계산 (리뷰 추가/삭제 시 호출) */
     public void recalculateRating(double newTotalScore, int newReviewCount) {
+        if (newTotalScore < 0 || newReviewCount < 0) {
+            throw new IllegalArgumentException("리뷰 점수나 개수는 음수가 될 수 없습니다.");
+        }
         this.reviewCount = newReviewCount;
         this.rating = newReviewCount == 0 ? 0f : (float) (newTotalScore / newReviewCount);
     }

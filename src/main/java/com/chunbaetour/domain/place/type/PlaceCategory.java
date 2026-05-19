@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.place;
+package com.chunbaetour.domain.place.type;
 
 public enum PlaceCategory {
     TOURIST_SPOT,       // 관광지
