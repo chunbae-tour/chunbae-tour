@@ -16,7 +16,7 @@ public class YeopjeonController {
 
     private final WalletService walletService;
 
-    @GetMapping("/me")
+    @GetMapping("/balance")
     public ApiResponse<WalletBalanceResponse> getMyWallet(@AuthenticationPrincipal Long userId) {
         return ApiResponse.success(walletService.getWallet(userId));
     }
