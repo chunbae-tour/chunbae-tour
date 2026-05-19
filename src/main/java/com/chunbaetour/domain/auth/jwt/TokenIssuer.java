@@ -73,19 +73,28 @@ public class TokenIssuer {
     public AccessClaims verifyAccess(String token) {
         Claims claims = parse(token);
         requireType(claims, TYPE_ACCESS);
-        long userId = Long.parseLong(claims.getSubject());
-        Role role = Role.valueOf(claims.get(CLAIM_ROLE, String.class));
-        String email = claims.get(CLAIM_EMAIL, String.class);
-        String tokenId = claims.get(CLAIM_TOKEN_ID, String.class);
-        return new AccessClaims(userId, role, email, tokenId);
+        String roleValue = requireStringClaim(claims, CLAIM_ROLE);
+        String email = requireStringClaim(claims, CLAIM_EMAIL);
+        String tokenId = requireStringClaim(claims, CLAIM_TOKEN_ID);
+        try {
+            long userId = Long.parseLong(claims.getSubject());
+            Role role = Role.valueOf(roleValue);
+            return new AccessClaims(userId, role, email, tokenId);
+        } catch (RuntimeException e) {
+            throw new JwtException("토큰 클레임이 유효하지 않습니다.", e);
+        }
     }
 
     public RefreshClaims verifyRefresh(String token) {
         Claims claims = parse(token);
         requireType(claims, TYPE_REFRESH);
-        long userId = Long.parseLong(claims.getSubject());
-        String tokenId = claims.get(CLAIM_TOKEN_ID, String.class);
-        return new RefreshClaims(userId, tokenId);
+        String tokenId = requireStringClaim(claims, CLAIM_TOKEN_ID);
+        try {
+            long userId = Long.parseLong(claims.getSubject());
+            return new RefreshClaims(userId, tokenId);
+        } catch (RuntimeException e) {
+            throw new JwtException("토큰 클레임이 유효하지 않습니다.", e);
+        }
     }
 
     private Claims parse(String token) {
@@ -101,6 +110,20 @@ public class TokenIssuer {
         Object actual = claims.get(CLAIM_TYPE);
         if (!expected.equals(actual)) {
             throw new JwtException("토큰 타입이 일치하지 않습니다. expected=" + expected + ", actual=" + actual);
+        }
+    }
+
+    private String requireStringClaim(Claims claims, String name) {
+        try {
+            String value = claims.get(name, String.class);
+            if (value == null || value.isBlank()) {
+                throw new JwtException("토큰 클레임이 누락되었습니다. claim=" + name);
+            }
+            return value;
+        } catch (JwtException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new JwtException("토큰 클레임이 유효하지 않습니다. claim=" + name, e);
         }
     }
 }

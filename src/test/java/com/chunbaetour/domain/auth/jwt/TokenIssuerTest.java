@@ -6,10 +6,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.chunbaetour.domain.auth.Role;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Date;
+import javax.crypto.SecretKey;
 import org.junit.jupiter.api.Test;
 
 class TokenIssuerTest {
@@ -84,10 +89,80 @@ class TokenIssuerTest {
     }
 
     @Test
+    void verifyAccess_with_missing_required_claim_throws_JwtException() {
+        String missingRole = signedAccess("1", null, "x@y.z", "tid");
+        String missingEmail = signedAccess("1", Role.USER.name(), null, "tid");
+        String missingTokenId = signedAccess("1", Role.USER.name(), "x@y.z", null);
+
+        assertThatThrownBy(() -> issuer.verifyAccess(missingRole))
+                .isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> issuer.verifyAccess(missingEmail))
+                .isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> issuer.verifyAccess(missingTokenId))
+                .isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void verifyAccess_with_malformed_signed_claim_throws_JwtException() {
+        String badSubject = signedAccess("not-a-number", Role.USER.name(), "x@y.z", "tid");
+        String badRole = signedAccess("1", "UNKNOWN", "x@y.z", "tid");
+
+        assertThatThrownBy(() -> issuer.verifyAccess(badSubject))
+                .isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> issuer.verifyAccess(badRole))
+                .isInstanceOf(JwtException.class);
+    }
+
+    @Test
     void verifyRefresh_rejects_access_token() {
         String access = issuer.issueAccess(1L, Role.USER, "x@y.z");
 
         assertThatThrownBy(() -> issuer.verifyRefresh(access))
                 .isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void verifyRefresh_with_missing_or_malformed_claim_throws_JwtException() {
+        String missingTokenId = signedRefresh("1", null);
+        String badSubject = signedRefresh("not-a-number", "tid");
+
+        assertThatThrownBy(() -> issuer.verifyRefresh(missingTokenId))
+                .isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> issuer.verifyRefresh(badSubject))
+                .isInstanceOf(JwtException.class);
+    }
+
+    private static String signedAccess(String subject, String role, String email, String tokenId) {
+        var builder = Jwts.builder()
+                .subject(subject)
+                .issuedAt(Date.from(FIXED_NOW))
+                .expiration(Date.from(FIXED_NOW.plus(ACCESS_TTL)))
+                .claim("typ", "access");
+        if (role != null) {
+            builder.claim("role", role);
+        }
+        if (email != null) {
+            builder.claim("email", email);
+        }
+        if (tokenId != null) {
+            builder.claim("tid", tokenId);
+        }
+        return builder.signWith(signingKey()).compact();
+    }
+
+    private static String signedRefresh(String subject, String tokenId) {
+        var builder = Jwts.builder()
+                .subject(subject)
+                .issuedAt(Date.from(FIXED_NOW))
+                .expiration(Date.from(FIXED_NOW.plus(REFRESH_TTL)))
+                .claim("typ", "refresh");
+        if (tokenId != null) {
+            builder.claim("tid", tokenId);
+        }
+        return builder.signWith(signingKey()).compact();
+    }
+
+    private static SecretKey signingKey() {
+        return Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
     }
 }

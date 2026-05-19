@@ -78,6 +78,20 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void doFilter_with_public_path_skips_token_validation() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setServletPath("/api/v1/users/auth/login");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer expired");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(tokenIssuer, never()).verifyAccess("expired");
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
     void doFilterInternal_with_expired_token_writes_AUTH_002_and_stops_chain() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer expired");

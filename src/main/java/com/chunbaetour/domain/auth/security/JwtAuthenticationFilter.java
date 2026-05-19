@@ -17,6 +17,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
@@ -24,9 +25,21 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+    private static final List<String> PUBLIC_PATH_PATTERNS = List.of(
+            "/api/v1/users/auth/**",
+            "/actuator/**"
+    );
 
     private final TokenIssuer tokenIssuer;
     private final SecurityResponseWriter responseWriter;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return PUBLIC_PATH_PATTERNS.stream()
+                .anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
