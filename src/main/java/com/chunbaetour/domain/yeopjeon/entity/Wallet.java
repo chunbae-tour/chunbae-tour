@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.payment;
+package com.chunbaetour.domain.yeopjeon.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

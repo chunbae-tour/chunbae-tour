@@ -1,6 +1,7 @@
-package com.chunbaetour.domain.payment;
+package com.chunbaetour.domain.yeopjeon;
 
 import com.chunbaetour.domain.auth.event.UserRegisteredEvent;
+import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;

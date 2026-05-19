@@ -1,8 +1,10 @@
-package com.chunbaetour.domain.payment;
+package com.chunbaetour.domain.yeopjeon.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.payment.dto.WalletResponse;
+import com.chunbaetour.domain.yeopjeon.dto.response.WalletBalanceResponse;
+import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,10 +16,10 @@ public class WalletService {
     private final WalletRepository walletRepository;
 
     @Transactional(readOnly = true)
-    public WalletResponse getWallet(Long userId) {
+    public WalletBalanceResponse getWallet(Long userId) {
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
-        return WalletResponse.from(wallet);
+        return WalletBalanceResponse.from(wallet);
     }
 
     @Transactional
