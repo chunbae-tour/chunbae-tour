@@ -55,7 +55,7 @@ public class AccessTokenBlacklist {
         return Boolean.TRUE.equals(hasKey);
     }
 
-    private String key(String tokenId) {
+    static String key(String tokenId) {
         return KEY_PREFIX + tokenId;
     }
 }

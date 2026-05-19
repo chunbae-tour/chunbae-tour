@@ -121,7 +121,7 @@ public class RefreshTokenStore {
         redis.delete(key(userId));
     }
 
-    private String key(long userId) {
+    static String key(long userId) {
         return KEY_PREFIX + userId;
     }
 }

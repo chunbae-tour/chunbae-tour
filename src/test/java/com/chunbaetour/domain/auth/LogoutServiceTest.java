@@ -4,11 +4,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
-import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
-import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
+import com.chunbaetour.domain.auth.jwt.LogoutTokenStore;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -23,9 +23,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
  *
  * <p>외부 동작 검증(PRD의 좋은 테스트 기준):
  * <ul>
- *   <li>blacklist.add가 정확한 tokenId + 남은 TTL로 호출되는가</li>
- *   <li>refreshTokenStore.delete가 정확한 userId로 호출되는가</li>
- *   <li>만료된 토큰(잔여 TTL ≤ 0)일 때 blacklist 등록은 어떻게 처리되는가</li>
+ *   <li>logoutTokenStore가 정확한 userId + tokenId + 남은 TTL로 호출되는가</li>
+ *   <li>만료된 토큰(잔여 TTL ≤ 0)도 저장소에 위임되는가</li>
  * </ul>
  *
  * <p>고정 시계({@code Clock.fixed})를 주입하여 잔여 TTL 계산이 결정적이게 한다.
@@ -38,16 +37,13 @@ class LogoutServiceTest {
     private static final String TOKEN_ID = "token-uuid";
 
     @Mock
-    private AccessTokenBlacklist accessTokenBlacklist;
-
-    @Mock
-    private RefreshTokenStore refreshTokenStore;
+    private LogoutTokenStore logoutTokenStore;
 
     private LogoutService logoutService;
 
     private void initService() {
         // @InjectMocks 대신 명시적으로 만든다 — Clock을 컨트롤하기 위해.
-        logoutService = new LogoutService(accessTokenBlacklist, refreshTokenStore, Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+        logoutService = new LogoutService(logoutTokenStore, Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -58,27 +54,21 @@ class LogoutServiceTest {
 
         logoutService.logout(claims);
 
-        // 정확히 잔여 TTL(10분)로 블랙리스트 등록
-        verify(accessTokenBlacklist).add(TOKEN_ID, Duration.ofMinutes(10));
-        // Refresh도 함께 삭제
-        verify(refreshTokenStore).delete(USER_ID);
+        // Access blacklist 등록과 Refresh 삭제를 하나의 저장소 호출로 위임한다.
+        verify(logoutTokenStore).invalidate(USER_ID, TOKEN_ID, Duration.ofMinutes(10));
     }
 
     @Test
     void logout_with_already_expired_token_still_deletes_refresh() {
         // 만료된 토큰이 인증 필터를 통과해 logout까지 오는 경우는 거의 없지만, 시계 오차/race로 가능.
-        // 이 경우에도 Refresh는 삭제되어야 함 (계정 안전 차원).
-        // 블랙리스트는 AccessTokenBlacklist 내부에서 음수 TTL 스킵 분기 처리.
+        // 이 경우에도 Refresh는 삭제되어야 하므로 저장소에 그대로 위임한다.
         initService();
         Instant expiresAt = FIXED_NOW.minus(Duration.ofSeconds(5));
         AccessClaims claims = new AccessClaims(USER_ID, Role.USER, "u@e.c", TOKEN_ID, expiresAt);
 
         logoutService.logout(claims);
 
-        // 음수 TTL로 호출되어도 blacklist 내부에서 스킵된다 (AccessTokenBlacklist 테스트에서 별도 검증).
-        // 여기서는 LogoutService 책임만 검증: add를 정확한 인자로 한 번은 호출.
-        verify(accessTokenBlacklist).add(eq(TOKEN_ID), any(Duration.class));
-        verify(refreshTokenStore).delete(USER_ID);
+        verify(logoutTokenStore).invalidate(eq(USER_ID), eq(TOKEN_ID), any(Duration.class));
     }
 
     @Test
@@ -90,9 +80,8 @@ class LogoutServiceTest {
 
         logoutService.logout(claims);
 
-        verify(refreshTokenStore).delete(USER_ID);
-        verify(refreshTokenStore, never()).delete(99L);
-        verify(accessTokenBlacklist, never()).add(anyString(), eq(Duration.ZERO));
+        verify(logoutTokenStore).invalidate(eq(USER_ID), eq(TOKEN_ID), any(Duration.class));
+        verify(logoutTokenStore, never()).invalidate(eq(99L), anyString(), any(Duration.class));
     }
 
     /**
@@ -107,7 +96,6 @@ class LogoutServiceTest {
         logoutService.logout(claims);
         logoutService.logout(claims);
 
-        verify(refreshTokenStore, org.mockito.Mockito.times(2)).delete(USER_ID);
-        verify(accessTokenBlacklist, org.mockito.Mockito.times(2)).add(eq(TOKEN_ID), any(Duration.class));
+        verify(logoutTokenStore, times(2)).invalidate(eq(USER_ID), eq(TOKEN_ID), any(Duration.class));
     }
 }

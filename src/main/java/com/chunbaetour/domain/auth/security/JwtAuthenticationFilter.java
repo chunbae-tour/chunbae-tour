@@ -13,6 +13,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -33,6 +35,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
@@ -103,8 +106,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        boolean blacklisted;
+        try {
+            blacklisted = accessTokenBlacklist.contains(claims.tokenId());
+        } catch (DataAccessException e) {
+            log.warn("Failed to check access token blacklist. tokenId={}", claims.tokenId(), e);
+            responseWriter.write(response, ErrorCode.INTERNAL_SERVER_ERROR);
+            return;
+        }
+
         // S4: 로그아웃된 토큰은 verify 통과해도 거부. 블랙리스트 키는 토큰 만료 시점까지만 유지됨 → Redis 부하 제한적.
-        if (accessTokenBlacklist.contains(claims.tokenId())) {
+        if (blacklisted) {
             responseWriter.write(response, ErrorCode.BLACKLISTED_TOKEN);
             return;
         }

@@ -97,6 +97,9 @@ class LogoutIntegrationTest extends AbstractIntegrationTest {
     void logout_then_same_refresh_cookie_reissue_returns_AUTH_005() throws Exception {
         signup(EMAIL, PASSWORD, NICKNAME);
         LoginResult login = login(EMAIL, PASSWORD);
+        long userId = accountRepository.findByEmail(EMAIL).orElseThrow().getId();
+        String refreshKey = "auth:refresh:" + userId;
+        assertThat(redis.hasKey(refreshKey)).isTrue();
 
         // 로그아웃 성공
         mockMvc.perform(post("/api/v1/auth/logout")
@@ -104,8 +107,8 @@ class LogoutIntegrationTest extends AbstractIntegrationTest {
                         .cookie(login.refreshCookie()))
                 .andExpect(status().isNoContent());
 
-        // Redis에서 refresh 키가 삭제됐는지 직접 검증 (Logout의 RefreshTokenStore.delete 효과)
-        assertThat(redis.keys("auth:refresh:*")).isEmpty();
+        // 이번 로그인에서 생성된 refresh 키만 삭제됐는지 직접 검증한다.
+        assertThat(redis.hasKey(refreshKey)).isFalse();
 
         // 같은 Refresh Cookie로 reissue → CAS rotate 실패 → AUTH_005
         mockMvc.perform(post("/api/v1/auth/reissue").cookie(login.refreshCookie()))
@@ -155,6 +158,7 @@ class LogoutIntegrationTest extends AbstractIntegrationTest {
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         String accessToken = body.get("data").get("accessToken").asString();
         Cookie cookie = result.getResponse().getCookie(COOKIE_NAME);
+        assertThat(cookie).as("login은 refresh cookie를 발급해야 한다").isNotNull();
         return new LoginResult(accessToken, cookie);
     }
 

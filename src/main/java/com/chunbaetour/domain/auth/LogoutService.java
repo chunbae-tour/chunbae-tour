@@ -1,8 +1,7 @@
 package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
-import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
-import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
+import com.chunbaetour.domain.auth.jwt.LogoutTokenStore;
 import java.time.Clock;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
@@ -35,8 +34,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class LogoutService {
 
-    private final AccessTokenBlacklist accessTokenBlacklist;
-    private final RefreshTokenStore refreshTokenStore;
+    private final LogoutTokenStore logoutTokenStore;
     private final Clock clock;
 
     /**
@@ -45,13 +43,10 @@ public class LogoutService {
      * @param claims 인증 필터가 검증을 마친 Access Token 클레임. tokenId/expiresAt/userId를 모두 사용.
      */
     public void logout(AccessClaims claims) {
-        // 잔여 TTL = exp - now. 시계 오차로 음수가 나오면 AccessTokenBlacklist.add가 자체적으로 스킵.
+        // 잔여 TTL = exp - now. 0 이하이면 blacklist 등록은 생략하고 Refresh 삭제만 수행한다.
         Duration remainingTtl = Duration.between(clock.instant(), claims.expiresAt());
 
-        // Access Token 즉시 무효화: 이후 같은 토큰으로 요청 시 JwtAuthenticationFilter가 AUTH_013 응답
-        accessTokenBlacklist.add(claims.tokenId(), remainingTtl);
-
-        // Refresh Token 키 제거: 이후 같은 Refresh Cookie로 reissue 시도 시 RefreshTokenStore.rotate가 false 반환 → AUTH_005
-        refreshTokenStore.delete(claims.userId());
+        // Access blacklist 등록 + Refresh 삭제를 Lua script 한 번으로 처리해 부분 로그아웃 상태를 방지한다.
+        logoutTokenStore.invalidate(claims.userId(), claims.tokenId(), remainingTtl);
     }
 }

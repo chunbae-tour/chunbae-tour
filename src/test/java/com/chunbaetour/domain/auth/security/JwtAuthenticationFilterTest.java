@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -176,6 +177,24 @@ class JwtAuthenticationFilterTest {
         verify(filterChain, never()).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         // attribute도 안 채워져야 한다 (controller가 logout 흐름 외에 claims 사용 못 함)
+        assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isNull();
+    }
+
+    @Test
+    void doFilterInternal_when_blacklist_lookup_fails_writes_COMMON_001_and_stops_chain() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(1L, Role.USER, "u@e.c", "tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-token")).willReturn(claims);
+        willThrow(new DataAccessResourceFailureException("redis unavailable"))
+                .given(accessTokenBlacklist).contains("tid");
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(responseWriter).write(response, ErrorCode.INTERNAL_SERVER_ERROR);
+        verify(filterChain, never()).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isNull();
     }
 
