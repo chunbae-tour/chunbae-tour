@@ -27,6 +27,7 @@ public class PlaceController {
                 request.getLng(),
                 request.getRadius(),
                 request.getCursor(),
+                request.getCursorDistance(),
                 request.getSize()
         );
         return ApiResponse.success(response);

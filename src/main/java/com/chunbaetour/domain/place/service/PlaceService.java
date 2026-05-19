@@ -23,11 +23,12 @@ public class PlaceService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
-    public List<NearbyPlaceResponse> findNearby(double lat, double lng, double radius, Long cursor, int size) {
-        // 캐시 키 생성: 좌표 소수점 3자리 반올림
+    public List<NearbyPlaceResponse> findNearby(double lat, double lng, double radius, Long cursor, Double cursorDistance, int size) {
+        // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
         String latRounded = String.format("%.3f", lat);
         String lngRounded = String.format("%.3f", lng);
-        String cacheKey = String.format("nearby:%s:%s:%.0f", latRounded, lngRounded, radius);
+        double radiusRounded = Math.round(radius);
+        String cacheKey = String.format("nearby:%s:%s:%.0f", latRounded, lngRounded, radiusRounded);
 
         // 첫 페이지일 경우에만 캐시 조회
         if (cursor == null) {
@@ -44,7 +45,7 @@ public class PlaceService {
 
         // DB 쿼리 (Haversine)
         log.info("Redis Cache Miss or Paging: Fetching from DB");
-        List<NearbyPlaceResponse> places = placeQueryRepository.findNearbyPlaces(lat, lng, radius, cursor, size);
+        List<NearbyPlaceResponse> places = placeQueryRepository.findNearbyPlaces(lat, lng, radiusRounded, cursor, cursorDistance, size);
 
         // 첫 페이지 결과 캐싱 (TTL 5분)
         if (cursor == null && !places.isEmpty()) {

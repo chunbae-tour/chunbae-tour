@@ -20,7 +20,7 @@ public class PlaceQueryRepository {
     
     private final JPAQueryFactory queryFactory;
 
-    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters, Long cursorId, int size) {
+    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters, Long cursorId, Double cursorDistance, int size) {
         
         // MySQL ST_Distance_Sphere (returns meters). Arguments for POINT are (longitude, latitude)
         NumberTemplate<Double> distanceExpression = Expressions.numberTemplate(Double.class,
@@ -42,7 +42,7 @@ public class PlaceQueryRepository {
                 .from(place)
                 .where(
                         distanceExpression.loe(radiusMeters),
-                        cursorCondition(cursorId),
+                        cursorCondition(cursorId, cursorDistance, distanceExpression),
                         place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
                 )
                 .orderBy(distanceExpression.asc(), place.id.asc())
@@ -50,8 +50,12 @@ public class PlaceQueryRepository {
                 .fetch();
     }
 
-    private BooleanExpression cursorCondition(Long cursorId) {
-        return cursorId != null ? place.id.gt(cursorId) : null;
+    private BooleanExpression cursorCondition(Long cursorId, Double cursorDistance, NumberTemplate<Double> distanceExpression) {
+        if (cursorId == null || cursorDistance == null) {
+            return null;
+        }
+        return distanceExpression.gt(cursorDistance)
+                .or(distanceExpression.eq(cursorDistance).and(place.id.gt(cursorId)));
     }
 }
 

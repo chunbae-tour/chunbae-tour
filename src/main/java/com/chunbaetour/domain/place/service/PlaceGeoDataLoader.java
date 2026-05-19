@@ -30,7 +30,10 @@ public class PlaceGeoDataLoader {
             Long size = stringRedisTemplate.opsForZSet().size(GEO_KEY);
             if (size == null || size == 0) {
                 log.info("Initializing Redis Geospatial Data for Places...");
-                List<Place> places = placeRepository.findAll();
+                // Fetch only active places instead of all places
+                List<Place> places = placeRepository.findAll().stream()
+                        .filter(p -> p.getStatus() == com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
+                        .toList();
                 int count = 0;
                 for (Place place : places) {
                     if (place.getLng() != null && place.getLat() != null) {
