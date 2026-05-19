@@ -20,7 +20,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = {
         "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration",
-        "spring.jpa.hibernate.ddl-auto=create-drop"
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "jwt.secret=test-only-secret-32-bytes-min-xxxxxx",
+        "jwt.access-token-ttl=PT30M",
+        "jwt.refresh-token-ttl=P7D"
 })
 @AutoConfigureMockMvc
 @Testcontainers
