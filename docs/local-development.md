@@ -45,6 +45,8 @@ REDIS_PASSWORD=
 JWT_SECRET=local-dev-only-secret-replace-me-min-32-bytes-xxxx
 JWT_ACCESS_TOKEN_TTL=PT30M
 JWT_REFRESH_TOKEN_TTL=P7D
+
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
 보통은 이 값 그대로 사용하면 됩니다.
@@ -56,6 +58,24 @@ JWT_REFRESH_TOKEN_TTL=P7D
 - 최소 32 바이트(영문/숫자 32자) 이상이어야 합니다. 부족하면 애플리케이션이 부팅 시 실패합니다.
 - 운영 환경은 `application-prod.yml`이 `${JWT_SECRET}` 환경변수를 필수로 요구합니다. 환경변수 주입 방식(배포 인프라 시크릿 저장소 등)은 인프라 PRD에서 정합니다.
 - `JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL`은 ISO-8601 Duration 형식입니다. 기본값은 각각 30분(`PT30M`), 7일(`P7D`)이며, `.env`에서 비워두면 `application.yml` default 값이 사용됩니다.
+
+## CORS 정책
+
+- `CORS_ALLOWED_ORIGINS`는 백엔드가 허용할 프론트엔드 origin(스킴+호스트+포트)을 콤마로 구분해서 나열합니다.
+- 로컬 개발 기본값은 `http://localhost:3000`(Next.js)과 `http://localhost:5173`(Vite)입니다.
+- **와일드카드(`*`) 금지**: Refresh Token이 HttpOnly Cookie로 전달되며 `allowCredentials=true`로 설정되어 있어, 브라우저가 와일드카드 origin을 거부합니다. 반드시 명시적 origin만 사용하세요.
+- 운영 환경은 `application-prod.yml`이 `${CORS_ALLOWED_ORIGINS}`를 필수로 요구합니다 (default 없음).
+- 다른 포트의 프론트엔드 서버를 띄우면 `.env`의 `CORS_ALLOWED_ORIGINS`에 해당 origin을 추가하세요.
+
+## Refresh Token Cookie
+
+- 로그인/재발급 응답은 `Set-Cookie: refreshToken=...; HttpOnly; SameSite=Lax; Path=/api/v1/auth` 헤더를 포함합니다.
+- 로컬은 `Secure` 플래그가 빠집니다(HTTP). 운영은 `application-prod.yml`이 `Secure=true`로 강제합니다(HTTPS 전용).
+- 클라이언트(프론트엔드)는 Cookie 값을 직접 읽거나 저장하지 않습니다.
+- 단, 백엔드와 프론트엔드 origin이 다르면 요청에 자격증명 전송 옵션을 반드시 켜야 브라우저가 Cookie를 함께 보냅니다.
+  - `fetch`: `fetch(url, { credentials: "include" })`
+  - Axios: `axios.create({ withCredentials: true })` 또는 요청별 `{ withCredentials: true }`
+- 재발급은 `POST /api/v1/auth/reissue` 호출 (위 credentials 옵션으로 Cookie 전송 + 새 Access Token 응답).
 
 ## 실행 방법
 
