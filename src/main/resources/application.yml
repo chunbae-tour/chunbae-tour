@@ -27,6 +27,24 @@ jwt:
   access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT30M}
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P7D}
 
+# Refresh Token 쿠키 정책 공통 기본값.
+# secure는 프로파일별로 오버라이드: local=false (HTTP 허용), prod=true (HTTPS 강제)
+cookie:
+  refresh-token:
+    name: refreshToken
+    secure: false
+    same-site: Lax
+    path: /api/v1/auth
+
+# CORS 정책.
+# allowed-origins는 프로파일별로 오버라이드 — 와일드카드(*) 금지 (allow-credentials=true와 호환 불가)
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+  allowed-headers: Authorization,Content-Type,Accept
+  allow-credentials: true
+  max-age: PT1H
+
 management:
   endpoints:
     web:

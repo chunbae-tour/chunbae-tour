@@ -26,8 +26,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+    /**
+     * 인증 검증을 건너뛸 공개 경로 패턴.
+     *
+     * <p>{@link SecurityConfig}의 permitAll URL과 정확히 일치해야 한다. 여기에 빠진 경로는 잘못된
+     * Bearer 토큰이 와도 doFilterInternal에서 401 응답이 나가 permitAll endpoint 호출이 차단된다.
+     */
     private static final List<String> PUBLIC_PATH_PATTERNS = List.of(
             "/api/v1/users/auth/**",
+            "/api/v1/auth/**",
             "/actuator/**"
     );
 
