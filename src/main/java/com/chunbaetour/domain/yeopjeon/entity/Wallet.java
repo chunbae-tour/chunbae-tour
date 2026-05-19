@@ -28,6 +28,9 @@ public class Wallet extends BaseEntity {
     private Long balance;
 
     public static Wallet create(Long userId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId must not be null");
+        }
         Wallet wallet = new Wallet();
         wallet.userId = userId;
         wallet.balance = 0L;
