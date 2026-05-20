@@ -81,7 +81,7 @@ public class RedisRateLimiter implements RateLimiter {
             );
             if (result == null) {
                 // Lua 실행 결과 누락은 비정상 상태. 정책상 fail-closed 차단으로 명시.
-                log.warn("Redis rate limit Lua 실행 결과 누락. key={}", key);
+                log.warn("Redis rate limit Lua 실행 결과 누락");
                 return RateLimitDecision.denied(policy.window());
             }
             if (result < 0) {
@@ -94,7 +94,7 @@ public class RedisRateLimiter implements RateLimiter {
             // Redis 장애 (연결 실패, 타임아웃, Lua 오류 등) 시 fail-closed 차단.
             // 보안 정책 강제 우선 — Redis 장애 동안 회원가입/로그인이 일시 차단되더라도 무차별 공격 방어가 더 중요.
             // 운영 알람 위해 WARN 레벨로 로그. 빈번하면 Redis 클러스터/장애 조사 필요.
-            log.warn("Redis rate limit 호출 실패; fail-closed로 차단. key={}", key, e);
+            log.warn("Redis rate limit 호출 실패; fail-closed로 차단", e);
             return RateLimitDecision.denied(policy.window());
         }
     }
@@ -117,7 +117,7 @@ public class RedisRateLimiter implements RateLimiter {
             return Duration.ofSeconds(ttlSeconds);
         } catch (DataAccessException e) {
             // Retry-After 정확도는 부가 정보 — 실패해도 fallback으로 안전하게 응답
-            log.warn("Redis TTL 조회 실패; window fallback 사용. key={}", key, e);
+            log.warn("Redis TTL 조회 실패; window fallback 사용", e);
             return fallback;
         }
     }
