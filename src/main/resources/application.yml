@@ -45,6 +45,16 @@ cors:
   allow-credentials: true
   max-age: PT1H
 
+portone:
+  secret: ${PORTONE_SECRET}
+  store-id: ${PORTONE_STORE_ID}
+  base-url: https://api.portone.io
+  channel:
+    card: ${PORTONE_CHANNEL_CARD}
+    kakao-pay: ${PORTONE_CHANNEL_KAKAO_PAY}
+    toss-pay: ${PORTONE_CHANNEL_TOSS_PAY}
+    foreign-card: ${PORTONE_CHANNEL_FOREIGN_CARD}
+
 management:
   endpoints:
     web:
