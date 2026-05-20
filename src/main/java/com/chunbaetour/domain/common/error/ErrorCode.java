@@ -26,6 +26,10 @@ public enum ErrorCode {
     // AUTH_013: 로그아웃 시 Access Token이 블랙리스트에 등록되며, 이후 같은 토큰으로 요청하면 거부된다.
     //           남은 만료 시간 동안만 블랙리스트에 머무르므로 자연 만료 후에는 같은 tokenId가 새로 발급될 가능성도 사라진다 (UUID).
     BLACKLISTED_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH_013", "로그아웃된 토큰입니다."),
+    // AUTH_014: IP 기반 rate limit 초과 (sa-docs/11 운영 보안 정책 §Rate Limit).
+    //           회원가입 3회/10분/IP, 로그인 5회/분/IP 등 endpoint별 정책 초과 시 응답.
+    //           응답에 Retry-After 헤더 + X-RateLimit-Limit/Remaining 헤더 첨부 (REST 표준).
+    RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_001", "서버 오류가 발생했습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "COMMON_002", "잘못된 요청입니다."),
