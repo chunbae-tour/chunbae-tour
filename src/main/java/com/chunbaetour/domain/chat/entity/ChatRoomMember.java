@@ -60,11 +60,19 @@ public class ChatRoomMember extends BaseEntity {
         this.memberState = memberState;
     }
 
-    static ChatRoomMember ofOwner(ChatRoom chatRoom, Long userId) {
+    public static ChatRoomMember ofOwner(ChatRoom chatRoom, Long userId) {
         return ChatRoomMember.builder()
                 .chatRoom(chatRoom)
                 .userId(userId)
                 .memberState(ChatMemberState.OWNER_ACTIVE)
+                .build();
+    }
+
+    public static ChatRoomMember ofMember(ChatRoom chatRoom, Long userId) {
+        return ChatRoomMember.builder()
+                .chatRoom(chatRoom)
+                .userId(userId)
+                .memberState(ChatMemberState.MEMBER_ACTIVE)
                 .build();
     }
 
