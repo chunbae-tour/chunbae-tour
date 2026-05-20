@@ -49,4 +49,9 @@ public class IdempotencyService {
                 .setIfAbsent(key, "1", TTL_HOURS, TimeUnit.HOURS);
         return Boolean.TRUE.equals(isNew);
     }
+
+    // PG 장애 등 일시적 오류 시 키 해제 → PortOne 재전송 시 재처리 가능
+    public void unmarkWebhook(String webhookId) {
+        stringRedisTemplate.delete(WEBHOOK_KEY_PREFIX + webhookId);
+    }
 }

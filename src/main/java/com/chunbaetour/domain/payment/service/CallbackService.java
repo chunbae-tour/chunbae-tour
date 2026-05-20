@@ -32,15 +32,24 @@ public class CallbackService {
             return;
         }
 
-        if (payload.data() == null) return;
+        try {
+            if (payload.data() == null) return;
 
-        WebhookEventType eventType = WebhookEventType.from(payload.type());
-        switch (eventType) {
-            case TRANSACTION_PAID ->
-                    handleSuccess(payload.data().paymentId(), payload.data().txId());
-            case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
-                    handleFail(payload.data().paymentId());
-            default -> { }
+            WebhookEventType eventType = WebhookEventType.from(payload.type());
+            switch (eventType) {
+                case TRANSACTION_PAID ->
+                        handleSuccess(payload.data().paymentId(), payload.data().txId());
+                case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
+                        handleFail(payload.data().paymentId());
+                default -> { }
+            }
+        } catch (PaymentException e) {
+            // PG 일시 장애: 키 해제 후 재전파 → PortOne 재시도 시 재처리 가능
+            // 금액 불일치 등 비즈니스 오류: 키 유지 → 동일 webhook-id 재시도 차단
+            if (e.getErrorCode() == ErrorCode.PAYMENT_SERVICE_UNAVAILABLE) {
+                idempotencyService.unmarkWebhook(webhookId);
+            }
+            throw e;
         }
     }
 

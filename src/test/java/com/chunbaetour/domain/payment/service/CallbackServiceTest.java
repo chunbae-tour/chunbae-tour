@@ -178,6 +178,44 @@ class CallbackServiceTest {
     }
 
     @Test
+    @DisplayName("handle(): PG 장애 시 webhook-id 키 해제 → PortOne 재시도 시 재처리 가능")
+    void handle_pg_unavailable_unmarks_webhook_for_retry() {
+        given(idempotencyService.markWebhookIfAbsent("wh-retry")).willReturn(true);
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(pendingOrder()));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE));
+        WebhookPayload payload = new WebhookPayload("Transaction.Paid",
+                new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
+
+        assertThatThrownBy(() -> callbackService.handle("wh-retry", payload))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        verify(idempotencyService).unmarkWebhook("wh-retry");
+    }
+
+    @Test
+    @DisplayName("handle(): 금액 불일치 시 webhook-id 키 유지 → 동일 webhook-id 재시도 차단")
+    void handle_amount_mismatch_keeps_webhook_key() {
+        given(idempotencyService.markWebhookIfAbsent("wh-mismatch")).willReturn(true);
+        PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PAID", 99_000L));
+        WebhookPayload payload = new WebhookPayload("Transaction.Paid",
+                new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
+
+        assertThatThrownBy(() -> callbackService.handle("wh-mismatch", payload))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+
+        verify(idempotencyService, never()).unmarkWebhook(anyString());
+    }
+
+    @Test
     @DisplayName("handle(): 신규 webhook-id → 정상 처리 위임")
     void handle_new_webhookId_delegates_to_handler() {
         given(idempotencyService.markWebhookIfAbsent("wh-new")).willReturn(true);
