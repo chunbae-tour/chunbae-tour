@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.community.common.CursorPage;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateRequest;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateResponse;
+import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
@@ -57,7 +58,7 @@ public class CompanionPostController {
     }
 
     @PatchMapping("/{postId}")
-    public ApiResponse<CompanionPostCreateResponse> update(
+    public ApiResponse<CompanionPostUpdateResponse> update(
             @AuthenticationPrincipal Long accountId,
             @PathVariable Long postId,
             @Valid @RequestBody CompanionPostUpdateRequest request) {

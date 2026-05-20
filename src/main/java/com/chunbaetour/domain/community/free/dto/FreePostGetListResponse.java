@@ -14,12 +14,9 @@ public record FreePostGetListResponse(
         LocalDateTime createdAt
 ) {
     public static FreePostGetListResponse of(FreePost post, Account author) {
-        WriterInfo writer = new WriterInfo(
-                author.getId(),
-                author.getNickname(),
-                author.getProfileImageUrl(),
-                null
-        );
+        WriterInfo writer = author != null
+                ? new WriterInfo(author.getId(), author.getNickname(), author.getProfileImageUrl(), null)
+                : new WriterInfo(null, "탈퇴한 사용자", null, null);
         return new FreePostGetListResponse(
                 post.getId(),
                 post.getTitle(),

@@ -16,16 +16,12 @@ public record CompanionPostGetListResponse(
         int currentMembers,
         CompanionPostStatus status,
         WriterInfo writer,
-        int commentCount,
         LocalDateTime createdAt
 ) {
     public static CompanionPostGetListResponse of(CompanionPost post, Account author) {
-        WriterInfo writer = new WriterInfo(
-                author.getId(),
-                author.getNickname(),
-                author.getProfileImageUrl(),
-                (double) author.getCompanionScore()
-        );
+        WriterInfo writer = author != null
+                ? new WriterInfo(author.getId(), author.getNickname(), author.getProfileImageUrl(), (double) author.getCompanionScore())
+                : new WriterInfo(null, "탈퇴한 사용자", null, null);
         return new CompanionPostGetListResponse(
                 post.getId(),
                 post.getTitle(),
@@ -35,7 +31,6 @@ public record CompanionPostGetListResponse(
                 post.getCurrentMembers(),
                 post.getStatus(),
                 writer,
-                0,
                 post.getCreatedAt()
         );
     }

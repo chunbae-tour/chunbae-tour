@@ -27,6 +27,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class FreePostServiceTest {
@@ -57,7 +58,7 @@ class FreePostServiceTest {
         assertThatThrownBy(() -> postService.update(999L, 1L, new FreePostUpdateRequest("제목", null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
-                .isEqualTo(ErrorCode.COMMUNITY_002);
+                .isEqualTo(ErrorCode.POST_UPDATE_FORBIDDEN);
     }
 
     @Test
@@ -67,7 +68,7 @@ class FreePostServiceTest {
         assertThatThrownBy(() -> postService.delete(999L, 1L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
-                .isEqualTo(ErrorCode.COMMUNITY_003);
+                .isEqualTo(ErrorCode.POST_DELETE_FORBIDDEN);
     }
 
     @Test
@@ -79,7 +80,7 @@ class FreePostServiceTest {
         assertThatThrownBy(() -> postService.findById(1L))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
-                .isEqualTo(ErrorCode.COMMUNITY_001);
+                .isEqualTo(ErrorCode.POST_NOT_FOUND);
     }
 
     @Test
@@ -100,7 +101,11 @@ class FreePostServiceTest {
     @Test
     void size보다_많은_결과면_hasNext_true() {
         List<FreePost> posts = java.util.stream.IntStream.rangeClosed(1, 11)
-                .mapToObj(i -> FreePost.create(1L, "글" + i, "내용", List.of()))
+                .mapToObj(i -> {
+                    FreePost p = FreePost.create(1L, "글" + i, "내용", List.of());
+                    ReflectionTestUtils.setField(p, "id", (long) i);
+                    return p;
+                })
                 .toList();
         given(postRepository.findByCursor(FreePostStatus.ACTIVE, null, Pageable.ofSize(11)))
                 .willReturn(posts);

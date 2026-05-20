@@ -11,6 +11,7 @@ import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateRespons
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
+import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateResponse;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
@@ -27,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CompanionPostService {
 
     private final CompanionPostRepository postRepository;
@@ -48,17 +50,15 @@ public class CompanionPostService {
         return CompanionPostCreateResponse.of(postRepository.save(post), author);
     }
 
-    @Transactional(readOnly = true)
     public CompanionPostGetOneResponse findById(Long postId) {
         CompanionPost post = findActivePost(postId);
         Account author = findAccount(post.getAuthorId());
         return CompanionPostGetOneResponse.of(post, author);
     }
 
-    @Transactional(readOnly = true)
     public CursorPage<CompanionPostGetListResponse> findAll(
             String region, LocalDate meetingDate, String cursor, int size) {
-        Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
+        Long cursorId = decodeCursor(cursor);
         List<CompanionPost> posts = postRepository.findByFilters(
                 CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, PageRequest.of(0, size + 1));
 
@@ -81,10 +81,10 @@ public class CompanionPostService {
     }
 
     @Transactional
-    public CompanionPostCreateResponse update(Long accountId, Long postId, CompanionPostUpdateRequest request) {
+    public CompanionPostUpdateResponse update(Long accountId, Long postId, CompanionPostUpdateRequest request) {
         CompanionPost post = findActivePost(postId);
         if (!post.isOwnedBy(accountId)) {
-            throw new BusinessException(ErrorCode.COMMUNITY_002);
+            throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
         post.update(
                 request.title(), request.content(),
@@ -92,14 +92,14 @@ public class CompanionPostService {
                 request.region(), request.meetingDate(),
                 request.maxMembers() != null ? request.maxMembers() : post.getMaxMembers()
         );
-        return CompanionPostCreateResponse.of(post, findAccount(accountId));
+        return CompanionPostUpdateResponse.of(post, findAccount(accountId));
     }
 
     @Transactional
     public void delete(Long accountId, Long postId) {
         CompanionPost post = findActivePost(postId);
         if (!post.isOwnedBy(accountId)) {
-            throw new BusinessException(ErrorCode.COMMUNITY_003);
+            throw new BusinessException(ErrorCode.POST_DELETE_FORBIDDEN);
         }
         post.delete();
     }
@@ -108,11 +108,20 @@ public class CompanionPostService {
         return postRepository.findById(postId)
                 .filter(p -> p.getStatus() != CompanionPostStatus.DELETED
                         && p.getStatus() != CompanionPostStatus.HIDDEN)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
     }
 
     private Account findAccount(Long accountId) {
         return accountRepository.findById(accountId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    private Long decodeCursor(String cursor) {
+        if (cursor == null) return null;
+        try {
+            return CursorUtils.decode(cursor);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INVALID_CURSOR);
+        }
     }
 }

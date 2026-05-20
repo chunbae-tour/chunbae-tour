@@ -7,7 +7,7 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-public record CompanionPostGetOneResponse(
+public record CompanionPostUpdateResponse(
         Long postId,
         String title,
         String content,
@@ -19,17 +19,16 @@ public record CompanionPostGetOneResponse(
         int currentMembers,
         CompanionPostStatus status,
         WriterInfo writer,
-        LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static CompanionPostGetOneResponse of(CompanionPost post, Account author) {
+    public static CompanionPostUpdateResponse of(CompanionPost post, Account author) {
         WriterInfo writer = new WriterInfo(
                 author.getId(),
                 author.getNickname(),
                 author.getProfileImageUrl(),
                 (double) author.getCompanionScore()
         );
-        return new CompanionPostGetOneResponse(
+        return new CompanionPostUpdateResponse(
                 post.getId(),
                 post.getTitle(),
                 post.getContent(),
@@ -41,7 +40,6 @@ public record CompanionPostGetOneResponse(
                 post.getCurrentMembers(),
                 post.getStatus(),
                 writer,
-                post.getCreatedAt(),
                 post.getUpdatedAt()
         );
     }

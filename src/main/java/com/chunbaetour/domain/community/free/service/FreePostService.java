@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class FreePostService {
 
     private final FreePostRepository postRepository;
@@ -37,15 +38,13 @@ public class FreePostService {
         return FreePostGetOneResponse.of(postRepository.save(post), author);
     }
 
-    @Transactional(readOnly = true)
     public FreePostGetOneResponse findById(Long postId) {
         FreePost post = findActivePost(postId);
         return FreePostGetOneResponse.of(post, findAccount(post.getAuthorId()));
     }
 
-    @Transactional(readOnly = true)
     public CursorPage<FreePostGetListResponse> findAll(String cursor, int size) {
-        Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
+        Long cursorId = decodeCursor(cursor);
         List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = posts.size() > size;
@@ -70,7 +69,7 @@ public class FreePostService {
     public FreePostGetOneResponse update(Long accountId, Long postId, FreePostUpdateRequest request) {
         FreePost post = findActivePost(postId);
         if (!post.isOwnedBy(accountId)) {
-            throw new BusinessException(ErrorCode.COMMUNITY_002);
+            throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
         post.update(request.title(), request.content(), request.imageUrls());
         return FreePostGetOneResponse.of(post, findAccount(accountId));
@@ -80,7 +79,7 @@ public class FreePostService {
     public void delete(Long accountId, Long postId) {
         FreePost post = findActivePost(postId);
         if (!post.isOwnedBy(accountId)) {
-            throw new BusinessException(ErrorCode.COMMUNITY_003);
+            throw new BusinessException(ErrorCode.POST_DELETE_FORBIDDEN);
         }
         post.delete();
     }
@@ -88,11 +87,20 @@ public class FreePostService {
     private FreePost findActivePost(Long postId) {
         return postRepository.findById(postId)
                 .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
     }
 
     private Account findAccount(Long accountId) {
         return accountRepository.findById(accountId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    private Long decodeCursor(String cursor) {
+        if (cursor == null) return null;
+        try {
+            return CursorUtils.decode(cursor);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INVALID_CURSOR);
+        }
     }
 }
