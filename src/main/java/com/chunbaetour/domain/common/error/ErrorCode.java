@@ -27,6 +27,10 @@ public enum ErrorCode {
     //           남은 만료 시간 동안만 블랙리스트에 머무르므로 자연 만료 후에는 같은 tokenId가 새로 발급될 가능성도 사라진다 (UUID).
     BLACKLISTED_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH_013", "로그아웃된 토큰입니다."),
 
+    COMMUNITY_001(HttpStatus.NOT_FOUND, "COMMUNITY_001", "게시글을 찾을 수 없습니다."),
+    COMMUNITY_002(HttpStatus.FORBIDDEN, "COMMUNITY_002", "게시글 수정 권한이 없습니다."),
+    COMMUNITY_003(HttpStatus.FORBIDDEN, "COMMUNITY_003", "게시글 삭제 권한이 없습니다."),
+
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_001", "서버 오류가 발생했습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "COMMON_002", "잘못된 요청입니다."),
 
