@@ -6,6 +6,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.yeopjeon.dto.response.YeopjeonHistoryResponse;
 import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
@@ -89,6 +93,15 @@ class YeopjeonHistoryServiceTest {
         verify(yeopjeonHistoryRepository).findByUserIdAndIdLessThanOrderByIdDesc(eq(1L), eq(5L), any(PageRequest.class));
         assertThat(response.content()).hasSize(1);
         assertThat(response.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("잘못된 커서 전달 시 COMMON_002(INVALID_REQUEST)를 던진다")
+    void getHistories_invalidCursor_throws_COMMON_002() {
+        assertThatThrownBy(() -> yeopjeonHistoryService.getHistories(1L, "invalid-cursor!!", 20))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test

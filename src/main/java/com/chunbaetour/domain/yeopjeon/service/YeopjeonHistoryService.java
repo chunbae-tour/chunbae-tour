@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.yeopjeon.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.yeopjeon.dto.response.YeopjeonHistoryResponse;
 import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
@@ -63,7 +65,7 @@ public class YeopjeonHistoryService {
             String value = json.replaceAll(".*\"id\"\\s*:\\s*(\\d+).*", "$1");
             return Long.parseLong(value);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid cursor: " + cursor);
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
     }
 }

@@ -4,24 +4,22 @@ import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
-@Table(name = "yeopjeon_histories")
+@Table(name = "yeopjeon_histories", indexes = @Index(name = "idx_yeopjeon_history_cursor", columnList = "user_id, id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
 public class YeopjeonHistory extends BaseEntity {
 
     @Id
