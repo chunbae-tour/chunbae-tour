@@ -94,7 +94,14 @@ public class DirectionService {
         CompletableFuture<String> originFuture = CompletableFuture.supplyAsync(() -> getAddressName(origin, "출발지"), virtualThreadExecutor);
         CompletableFuture<String> destFuture = CompletableFuture.supplyAsync(() -> getAddressName(dest, "도착지"), virtualThreadExecutor);
 
-        CompletableFuture.allOf(originFuture, destFuture).join();
+        try {
+            CompletableFuture.allOf(originFuture, destFuture).join();
+        } catch (java.util.concurrent.CompletionException e) {
+            if (e.getCause() instanceof BusinessException be) {
+                throw be;
+            }
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
         
         String originName = originFuture.join();
         String destName = destFuture.join();
