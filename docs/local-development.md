@@ -125,7 +125,7 @@ RATELIMIT_ENABLED=false
 
 ### 통합 테스트와의 격리
 
-`AbstractIntegrationTest`가 기본적으로 `ratelimit.enabled=false`로 설정하여 같은 IP로 반복 호출하는 다른 통합 테스트가 자기 한도에 부딪히지 않게 합니다. Rate Limit 자체 동작은 `RateLimitIntegrationTest`가 `@TestPropertySource`로 별도 활성화하여 검증.
+`AbstractIntegrationTest`가 기본적으로 `ratelimit.enabled=false`로 설정하여 같은 IP로 반복 호출하는 다른 통합 테스트가 자기 한도에 부딪히지 않게 합니다. Rate Limit 자체 동작은 `RateLimitIntegrationTest`가 `@DynamicPropertySource`로 별도 활성화하여 검증.
 
 ## 실행 방법
 

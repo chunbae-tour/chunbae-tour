@@ -48,7 +48,7 @@ public class SecurityResponseWriter {
      *
      * @param response 응답 객체
      * @param code     ErrorCode (HTTP status + body code/message)
-     * @param headers  추가 응답 헤더. 빈 Map이면 본 메서드는 표준 write와 동일
+     * @param headers  추가 응답 헤더 (non-null). 헤더가 없으면 {@code Map.of()}를 전달한다.
      */
     public void write(HttpServletResponse response, ErrorCode code, Map<String, String> headers) throws IOException {
         headers.forEach(response::setHeader);

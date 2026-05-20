@@ -29,7 +29,7 @@ import tools.jackson.databind.ObjectMapper;
  * Rate Limit end-to-end 통합 테스트.
  *
  * <p>{@link AbstractIntegrationTest}는 기본적으로 {@code ratelimit.enabled=false}로 비활성화한다 (다른 통합 테스트
- * 회귀 방지). 본 클래스는 {@link TestPropertySource}로 짧은 정책 + enabled=true 강제 활성화하여
+ * 회귀 방지). 본 클래스는 {@link DynamicPropertySource}로 짧은 정책 + enabled=true 강제 활성화하여
  * Rate Limit 자체 동작만 격리 검증.
  *
  * <p>핵심 시나리오:
@@ -48,8 +48,8 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
 
     /**
      * AbstractIntegrationTest는 {@code ratelimit.enabled=false}로 비활성화하지만, Spring 규칙상
-     * {@code @DynamicPropertySource}가 {@code @TestPropertySource}/{@code @SpringBootTest properties}를
-     * 항상 덮어쓴다. 본 테스트는 Rate Limit 자체 동작을 검증하므로 추가 {@code @DynamicPropertySource}로
+     * {@code @DynamicPropertySource}가 일반 test property source보다 우선한다.
+     * 본 테스트는 Rate Limit 자체 동작을 검증하므로 추가 {@code @DynamicPropertySource}로
      * 활성화 + 짧은 정책을 강제 주입 (서브클래스 source가 같은 키에 대해 덮어씀).
      *
      * <p>테스트 정책은 실 운영(3회/10분 등)보다 짧게 잡아 빠른 검증 + 다른 통합 테스트 격리.

@@ -34,7 +34,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   <li><b>enabled 토글</b>: 로컬 개발 시 yml 한 줄로 비활성화 가능. 운영 환경 변수로도 오버라이드 가능.</li>
  * </ul>
  *
- * <p>compact constructor에서 id/path 중복 검증을 강제해 yml 설정 오류를 부팅 시점에 차단한다.
+ * <p>compact constructor에서 endpoint 목록 null 정규화와 id 중복 검증을 강제해 yml 설정 오류를 부팅 시점에 차단한다.
  *
  * @param enabled   전역 활성화 토글. false면 RateLimitFilter가 모든 요청을 즉시 통과.
  * @param endpoints 정책 리스트. 빈 리스트도 허용 (정책 없음 = 사실상 비활성화)
@@ -63,7 +63,7 @@ public record RateLimitProperties(boolean enabled, List<EndpointPolicy> endpoint
      *
      * <p>URL 매칭 규칙:
      * <ul>
-     *   <li>{@code method}: HTTP 메서드 (대소문자 무관). 빈 값이면 모든 메서드 매칭.</li>
+     *   <li>{@code method}: HTTP 메서드 (대소문자 무관, 필수). 비어 있으면 IllegalArgumentException.</li>
      *   <li>{@code path}: 정확한 URI 매칭. 패턴 매칭 필요 시 추후 AntPathMatcher 도입.</li>
      * </ul>
      *
