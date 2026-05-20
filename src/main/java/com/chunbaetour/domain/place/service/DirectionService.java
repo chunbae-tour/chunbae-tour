@@ -14,6 +14,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 
 @Slf4j
 @Service
@@ -47,15 +48,21 @@ public class DirectionService {
         String encodedOrigin = URLEncoder.encode(originName, StandardCharsets.UTF_8).replace("+", "%20");
         String encodedDest = URLEncoder.encode(destName, StandardCharsets.UTF_8).replace("+", "%20");
 
-        return String.format("https://map.kakao.com/link/route/%s,%f,%f,%s,%f,%f",
+        return String.format(
+                Locale.ROOT,
+                "https://map.kakao.com/link/from/%s,%.8f,%.8f/to/%s,%.8f,%.8f",
                 encodedOrigin, originLat.doubleValue(), originLng.doubleValue(),
-                encodedDest, destLat.doubleValue(), destLng.doubleValue());
+                encodedDest, destLat.doubleValue(), destLng.doubleValue()
+        );
     }
 
     private String getAddressName(BigDecimal lng, BigDecimal lat, String defaultValue) {
         try {
-            String url = String.format("https://dapi.kakao.com/v2/local/geo/coord2address.json?x=%f&y=%f", 
-                    lng.doubleValue(), lat.doubleValue());
+            String url = String.format(
+                    Locale.ROOT,
+                    "https://dapi.kakao.com/v2/local/geo/coord2address.json?x=%.8f&y=%.8f", 
+                    lng.doubleValue(), lat.doubleValue()
+            );
                     
             // [시니어 수정 3] Map 대신 내부 DTO Record를 사용하여 Type Safe하게 파싱 및 NPE 방지
             KakaoLocalResponse response = restClient.get()
