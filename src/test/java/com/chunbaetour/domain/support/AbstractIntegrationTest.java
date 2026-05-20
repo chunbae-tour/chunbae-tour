@@ -121,5 +121,15 @@ public abstract class AbstractIntegrationTest {
         // Rate Limit: 기본은 yml(true) 사용. 같은 IP(127.0.0.1)로 반복 호출 시 카운터 누적 방지를 위해
         // 본 base의 @AfterEach가 ratelimit:* 키를 정리한다 (위 cleanupRateLimitKeys 메서드).
         // RateLimitIntegrationTest는 별도 @DynamicPropertySource로 짧은 정책 주입.
+
+        // 외부 API/PG 더미 값 — 다른 도메인 yml이 환경변수 필수로 두어 부팅 시점에
+        // PlaceholderResolutionException이 발생하지 않도록. 통합 테스트는 외부 호출 안 함.
+        registry.add("kakao.map.api-key", () -> "test-only-kakao-key");
+        registry.add("portone.secret", () -> "test-only-portone-secret");
+        registry.add("portone.store-id", () -> "test-only-portone-store-id");
+        registry.add("portone.channel.card", () -> "test-channel-card");
+        registry.add("portone.channel.kakao-pay", () -> "test-channel-kakao-pay");
+        registry.add("portone.channel.toss-pay", () -> "test-channel-toss-pay");
+        registry.add("portone.channel.foreign-card", () -> "test-channel-foreign-card");
     }
 }

@@ -1,0 +1,91 @@
+package com.chunbaetour.domain.chat.service;
+
+import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
+import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
+import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
+import com.chunbaetour.domain.chat.entity.ChatRoom;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
+import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
+import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
+import com.chunbaetour.domain.chat.type.ChatMemberState;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class ChatRoomService {
+
+    private static final List<ChatMemberState> ACTIVE_STATES =
+            List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+
+    private final ChatRoomRepository chatRoomRepository;
+    private final ChatRoomMemberRepository chatRoomMemberRepository;
+
+    @Transactional
+    public CreateChatRoomResponse createRoom(Long userId, CreateChatRoomRequest request) {
+        // TODO: Post 도메인 연동 후 게시글 작성자 검증 추가
+        // Post post = postRepository.findById(request.postId()).orElseThrow(() -> new BusinessException(POST_NOT_FOUND));
+        // if (!post.getUserId().equals(userId)) throw new BusinessException(ErrorCode.ACCESS_DENIED);
+
+        ChatRoom chatRoom = ChatRoom.createWithOwner(
+                request.postId(),
+                userId,
+                request.title(),
+                request.description(),
+                request.maxMembers()
+        );
+        try {
+            chatRoomRepository.save(chatRoom);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_DUPLICATE);
+        }
+
+        return new CreateChatRoomResponse(chatRoom.getId());
+    }
+
+    public CursorPageResponse<MyChatRoomResponse> getMyRooms(Long userId, String cursor, int size) {
+        Long cursorId = cursor != null ? decodeCursor(cursor) : Long.MAX_VALUE;
+        List<ChatRoomMember> members = chatRoomMemberRepository.findMyRoomsWithCursor(
+                userId, ACTIVE_STATES, cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = members.size() > size;
+        List<ChatRoomMember> page = hasNext ? members.subList(0, size) : members;
+
+        String nextCursor = hasNext
+                ? encodeCursor(page.get(page.size() - 1).getChatRoom().getId())
+                : null;
+
+        return new CursorPageResponse<>(
+                page.stream().map(MyChatRoomResponse::from).toList(),
+                nextCursor,
+                hasNext,
+                size
+        );
+    }
+
+    private Long decodeCursor(String cursor) {
+        try {
+            String json = new String(Base64.getDecoder().decode(cursor), StandardCharsets.UTF_8);
+            int colonIndex = json.indexOf(':');
+            int braceIndex = json.lastIndexOf('}');
+            return Long.parseLong(json.substring(colonIndex + 1, braceIndex).trim());
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+    }
+
+    private String encodeCursor(Long id) {
+        return Base64.getEncoder().encodeToString(
+                ("{\"id\":" + id + "}").getBytes(StandardCharsets.UTF_8));
+    }
+}

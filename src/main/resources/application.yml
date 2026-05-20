@@ -21,6 +21,7 @@ spring:
 
 server:
   port: 8080
+  forward-headers-strategy: framework
 
 jwt:
   secret: ${JWT_SECRET}
@@ -73,8 +74,24 @@ ratelimit:
       limit: 5
       window: PT1M
 
+portone:
+  secret: ${PORTONE_SECRET}
+  store-id: ${PORTONE_STORE_ID}
+  base-url: https://api.portone.io
+  channel:
+    card: ${PORTONE_CHANNEL_CARD}
+    kakao-pay: ${PORTONE_CHANNEL_KAKAO_PAY}
+    toss-pay: ${PORTONE_CHANNEL_TOSS_PAY}
+    foreign-card: ${PORTONE_CHANNEL_FOREIGN_CARD}
+
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+
+kakao:
+  map:
+    api-key: ${KAKAO_MAP_API_KEY}
+    coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
+    map-url: https://map.kakao.com/link/from
