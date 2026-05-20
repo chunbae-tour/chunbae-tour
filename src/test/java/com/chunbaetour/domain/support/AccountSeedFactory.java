@@ -5,7 +5,6 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.PasswordHasher;
 import com.chunbaetour.domain.auth.Role;
-import java.lang.reflect.Field;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -13,13 +12,15 @@ import org.springframework.stereotype.Component;
  * 통합 테스트 전용 계정 시드 헬퍼.
  *
  * <p>운영 코드의 회원가입 흐름은 {@link Role#USER}만 생성한다. S5 통합 테스트는
- * MERCHANT/ADMIN 계정도 필요하므로 본 헬퍼가 reflect로 role/status를 강제 주입한다.
+ * MERCHANT/ADMIN 계정도 필요하므로 본 헬퍼가 {@link Account#createForSeed} 정적 팩토리로
+ * role/status를 명시 지정해 계정을 생성한다.
  *
- * <p>운영 코드에 테스트 전용 factory 메서드를 추가하지 않기 위해 본 클래스는 {@code src/test}에 위치한다.
- * 따라서 운영 빌드에 포함되지 않고, {@link Account}의 불변 도메인 원칙(setter 없음)도 유지된다.
+ * <p>이전에는 {@code Field.setAccessible(true)} 기반 reflection으로 주입했지만, 필드 이름 오타나
+ * 시그니처 변경 시 컴파일 단계에서 못 잡고 런타임에 깨지는 위험이 있었다. {@code createForSeed} 정적
+ * 팩토리는 컴파일러가 인자/타입을 검증하므로 도메인 변경에 강건하다.
  *
- * <p>주의: reflect 사용은 테스트 한정 우회 수단이며 운영 코드에서 따라하면 안 된다. 본 클래스를 통과하지
- * 않는 새로운 시드 경로가 생기지 않도록 모든 통합 테스트는 본 헬퍼를 사용한다.
+ * <p>본 클래스는 {@code src/test}에 위치 → 운영 빌드에 포함되지 않음. 모든 통합 테스트는 본 헬퍼를
+ * 거쳐 새로운 시드 경로가 새로 생기지 않도록 한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -33,9 +34,8 @@ public class AccountSeedFactory {
      *
      * <p>흐름:
      * <ol>
-     *   <li>{@link Account#registerUser}로 USER/ACTIVE 기본 계정 생성</li>
+     *   <li>{@link Account#createForSeed}로 인자 그대로의 계정 생성 (필드 명시 매칭, reflection 없음)</li>
      *   <li>비밀번호는 정상 BCrypt 해시 (로그인 검증을 실제 흐름과 동일하게 통과시키기 위해)</li>
-     *   <li>reflect로 role/status를 인자값으로 덮어쓰기</li>
      *   <li>Repository.save로 영속화 → 통합 테스트가 실제 DB에서 조회 가능</li>
      * </ol>
      *
@@ -47,9 +47,7 @@ public class AccountSeedFactory {
      * @return 영속화된 Account (id 채워진 상태)
      */
     public Account seed(String email, String password, String nickname, Role role, AccountStatus status) {
-        Account account = Account.registerUser(email, passwordHasher.hash(password), nickname);
-        writeField(account, "role", role);
-        writeField(account, "status", status);
+        Account account = Account.createForSeed(email, passwordHasher.hash(password), nickname, role, status);
         return accountRepository.save(account);
     }
 
@@ -65,15 +63,5 @@ public class AccountSeedFactory {
      */
     public Account seedAdmin(String email, String password, String nickname) {
         return seed(email, password, nickname, Role.ADMIN, AccountStatus.ACTIVE);
-    }
-
-    private static void writeField(Account account, String name, Object value) {
-        try {
-            Field field = Account.class.getDeclaredField(name);
-            field.setAccessible(true);
-            field.set(account, value);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("테스트 시드용 reflect 주입 실패: " + name, e);
-        }
     }
 }

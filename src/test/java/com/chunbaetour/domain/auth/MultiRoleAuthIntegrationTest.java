@@ -210,8 +210,25 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
 
     // ===== 헬퍼 =====
 
+    /**
+     * 도메인 prefix 키를 SCAN으로 순회하며 삭제한다.
+     *
+     * <p>{@code KEYS} 명령은 O(N) blocking이라 Redis 단일 스레드 모델에서 다른 명령을 모두 지연시킨다.
+     * 테스트라도 keyspace가 누적되면 빌드 속도가 떨어지고, CI나 공유 Redis 환경에서는 영향이 크다.
+     * SCAN은 cursor 기반 non-blocking이라 안전.
+     *
+     * <p>{@code try-with-resources}로 cursor를 명시적으로 닫아 connection 누수 방지.
+     */
     private void deleteByPrefix(String pattern) {
-        var keys = redis.keys(pattern);
+        org.springframework.data.redis.core.ScanOptions options =
+                org.springframework.data.redis.core.ScanOptions.scanOptions()
+                        .match(pattern)
+                        .count(100)
+                        .build();
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        try (var cursor = redis.scan(options)) {
+            cursor.forEachRemaining(keys::add);
+        }
         if (!keys.isEmpty()) {
             redis.delete(keys);
         }

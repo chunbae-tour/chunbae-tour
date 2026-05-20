@@ -159,6 +159,29 @@ class LoginServiceTest {
         verifyRefreshWasNotSaved();
     }
 
+    /**
+     * 보안 회귀 방지: SUSPENDED 상태의 다른 role 계정으로 로그인 시도 시 SUSPENDED 사실이 노출되면 안 된다.
+     *
+     * <p>이전 순서(SUSPENDED → role)는 {@code AUTH_012}가 먼저 응답되어 "이 이메일은 다른 role의 정지 계정이다"라는
+     * 정보가 page 호출자에게 누설되는 oracle이었다. 변경 후(role → SUSPENDED)는 {@code AUTH_007}이 먼저
+     * 응답되어 정지 사실이 가려진다.
+     */
+    @Test
+    void login_with_role_mismatch_and_suspended_status_throws_AUTH_007_not_AUTH_012() {
+        // ADMIN + SUSPENDED 계정을 USER endpoint로 로그인 시도
+        Account suspendedAdmin = accountWith(4L, Role.ADMIN, AccountStatus.SUSPENDED);
+        given(accountRepository.findByEmail(EMAIL)).willReturn(Optional.of(suspendedAdmin));
+        given(passwordHasher.matches(RAW_PASSWORD, HASHED_PASSWORD)).willReturn(true);
+
+        assertThatThrownBy(() -> loginService.login(EMAIL, RAW_PASSWORD, Role.USER))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                // 정지 사실(AUTH_012) 대신 권한 부족(AUTH_007)이 먼저 노출되어야 oracle 차단
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        verifyRefreshWasNotSaved();
+    }
+
     private void verifyRefreshWasNotSaved() {
         verify(refreshTokenStore, never()).save(anyLong(), anyString(), any(Duration.class));
     }
