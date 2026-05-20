@@ -51,7 +51,8 @@ public class CallbackService {
         PaymentOrder orderForVerify = paymentOrderRepository.findByOrderUid(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        if (orderForVerify.getStatus() != PaymentOrderStatus.PENDING) {
+        // COMPLETED만 조기 리턴: FAILED는 handleFail 선점 경합일 수 있으므로 계속 진행
+        if (orderForVerify.getStatus() == PaymentOrderStatus.COMPLETED) {
             return;
         }
 
@@ -64,16 +65,20 @@ public class CallbackService {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        if (order.getStatus() != PaymentOrderStatus.PENDING) {
+        if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
             return;
         }
 
         if (!amountValid) {
-            order.fail();
-            scheduleUnmark(order.getIdempotencyKey());
+            // PENDING → FAILED 전환, 이미 FAILED면 멱등 처리 (중복 unmark 방지)
+            if (order.getStatus() == PaymentOrderStatus.PENDING) {
+                order.fail();
+                scheduleUnmark(order.getIdempotencyKey());
+            }
             throw new PaymentException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
 
+        // PG PAID 확인: handleFail 선점으로 FAILED 상태여도 PG 결과가 우선 — 결제 유실 방지
         order.complete(txId);
         walletService.charge(order.getUserId(), order.getAmount(), order.getId());
         scheduleUnmark(order.getIdempotencyKey());

@@ -195,6 +195,26 @@ class CallbackServiceTest {
     }
 
     @Test
+    @DisplayName("[경합 회귀] handleFail 선점으로 phase2=FAILED여도 PG PAID면 COMPLETED 복구")
+    void handleSuccess_recovers_payment_when_handleFail_raced_between_phases() {
+        PaymentOrder phase1Order = pendingOrder(); // phase1에서 읽힌 PENDING
+        PaymentOrder phase2Order = pendingOrder(); // handleFail이 phase1~2 사이에 커밋 → FAILED
+        phase2Order.fail();
+
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(phase1Order));
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(phase2Order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+
+        callbackService.handleSuccess("order-uid-1", "tx-1");
+
+        assertThat(phase2Order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+        assertThat(phase2Order.getPgTransactionId()).isEqualTo("tx-1");
+        verify(walletService).charge(eq(1L), eq(10_000L), any());
+        verify(idempotencyService).unmark("idem-key-1");
+    }
+
+    @Test
     @DisplayName("PortOne API 장애 → PAY_005, 주문 PENDING 유지, 멱등키 해제 없음")
     void handleSuccess_pg_unavailable_leaves_order_pending() {
         PaymentOrder order = pendingOrder();
