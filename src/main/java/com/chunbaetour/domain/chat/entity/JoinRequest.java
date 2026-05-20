@@ -55,10 +55,13 @@ public class JoinRequest {
 
     @Builder
     private JoinRequest(Long chatRoomId, Long userId, String message) {
+        if (chatRoomId == null || userId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         this.chatRoomId = chatRoomId;
         this.userId = userId;
         this.message = message;
-        this.status = JoinRequestStatus.PENDING; // 생성 시 항상 대기 상태
+        this.status = JoinRequestStatus.PENDING;
     }
 
     // PENDING 상태에서만 전이 허용 — 이미 처리된 신청 재처리 차단 (CHAT_012)

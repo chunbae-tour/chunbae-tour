@@ -11,9 +11,9 @@ public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> 
     // 개설자 승인/거부 목록 — status=PENDING 으로 호출
     List<JoinRequest> findByChatRoomIdAndStatus(Long chatRoomId, JoinRequestStatus status);
 
-    // 신청 상세 조회·처리 — 개설자가 특정 신청 승인/거부 시 사용
-    Optional<JoinRequest> findByChatRoomIdAndUserId(Long chatRoomId, Long userId);
+    // 신청 상세 조회·처리 — PENDING 상태로 한정해 NonUniqueResultException 방지
+    Optional<JoinRequest> findByChatRoomIdAndUserIdAndStatus(Long chatRoomId, Long userId, JoinRequestStatus status);
 
-    // 중복 신청 방지 — status=PENDING 으로 호출하여 CHAT_004 선행 체크용
+    // 중복 신청 방지 — CHAT_004 선행 체크용
     boolean existsByChatRoomIdAndUserIdAndStatus(Long chatRoomId, Long userId, JoinRequestStatus status);
 }

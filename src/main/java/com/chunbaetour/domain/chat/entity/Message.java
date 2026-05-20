@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -16,11 +17,14 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(name = "messages")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@EntityListeners(AuditingEntityListener.class)
 public class Message {
 
     @Id
@@ -30,7 +34,8 @@ public class Message {
     @Column(name = "chat_room_id", nullable = false)
     private Long chatRoomId;
 
-    @Column(name = "sender_id", nullable = false)
+    // SYSTEM 타입은 senderId null 허용. 그 외 타입은 빌더에서 강제.
+    @Column(name = "sender_id")
     private Long senderId;
 
     @Enumerated(EnumType.STRING)
@@ -55,14 +60,20 @@ public class Message {
     @Column(name = "translate_lang", length = 10)
     private String translateLang;
 
-    @Column(name = "sent_at", nullable = false)
+    @CreatedDate
+    @Column(name = "sent_at", nullable = false, updatable = false)
     private LocalDateTime sentAt;
 
     // senderId는 반드시 SecurityContext에서 추출 — WebSocket 클라이언트 전달값 사용 금지 (보안)
-    // sentAt은 @CreatedDate 대신 직접 세팅 — Message는 AuditingEntityListener 미사용
     @Builder
     private Message(Long chatRoomId, Long senderId, MessageType messageType,
                     String content, String fileUrl, String fileName, Long fileSize) {
+        if (chatRoomId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        if (messageType != MessageType.SYSTEM && senderId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         validateByType(messageType, content, fileUrl, fileName, fileSize);
         this.chatRoomId = chatRoomId;
         this.senderId = senderId;
@@ -71,10 +82,8 @@ public class Message {
         this.fileUrl = fileUrl;
         this.fileName = fileName;
         this.fileSize = fileSize;
-        this.sentAt = LocalDateTime.now();
     }
 
-    // 타입별 필수 필드 불변식 강제 — 주석 규칙을 생성 시점에 검증으로 격상
     private void validateByType(MessageType messageType, String content, String fileUrl, String fileName, Long fileSize) {
         if (messageType == null) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
@@ -83,6 +92,9 @@ public class Message {
             case TEXT, SYSTEM -> {
                 if (content == null || content.isBlank()) {
                     throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+                if (content.length() > 1000) {
+                    throw new BusinessException(ErrorCode.MESSAGE_TOO_LONG);
                 }
             }
             case IMAGE -> {

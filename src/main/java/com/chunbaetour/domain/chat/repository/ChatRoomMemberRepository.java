@@ -17,6 +17,9 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
     // 내가 현재 활동 중인 방 목록 조회 — OWNER_ACTIVE·MEMBER_ACTIVE 필터링하여 호출
     List<ChatRoomMember> findByUserIdAndMemberStateIn(Long userId, List<ChatMemberState> states);
 
-    // 이미 참여 이력이 있는지 확인 (KICKED 포함) — CHAT_003·CHAT_010 선행 체크용
-    boolean existsByChatRoomIdAndUserId(Long chatRoomId, Long userId);
+    // CHAT_003 중복 참여 체크 — ACTIVE 상태만 확인 (LEFT 재참여 허용)
+    boolean existsByChatRoomIdAndUserIdAndMemberStateIn(Long chatRoomId, Long userId, List<ChatMemberState> activeStates);
+
+    // CHAT_010 강퇴 재참여 차단 체크 — KICKED 상태만 확인
+    boolean existsByChatRoomIdAndUserIdAndMemberState(Long chatRoomId, Long userId, ChatMemberState memberState);
 }
