@@ -17,6 +17,7 @@ import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import com.chunbaetour.domain.payment.type.PaymentMethod;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,10 +48,10 @@ class ChargeServiceTest {
         given(paymentOrderRepository.save(any(PaymentOrder.class)))
                 .willAnswer(inv -> inv.getArgument(0));
 
-        ChargeResponse response = chargeService.charge(1L, "idem-key-1", new ChargeRequest(10_000L));
+        ChargeResponse response = chargeService.charge(1L, "idem-key-1", new ChargeRequest(10_000L, PaymentMethod.CARD));
 
         assertThat(response.redirectUrl()).contains("stub-pg.chunbaetour.com");
-        assertThat(response.orderId()).isNotNull();
+        assertThat(response.orderUid()).isNotNull();
         verify(paymentOrderRepository).save(any(PaymentOrder.class));
     }
 
@@ -60,7 +61,7 @@ class ChargeServiceTest {
         willThrow(new BusinessException(ErrorCode.DUPLICATE_PAYMENT_REQUEST))
                 .given(idempotencyService).checkAndMark("dup-key");
 
-        assertThatThrownBy(() -> chargeService.charge(1L, "dup-key", new ChargeRequest(10_000L)))
+        assertThatThrownBy(() -> chargeService.charge(1L, "dup-key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
@@ -69,7 +70,7 @@ class ChargeServiceTest {
     @Test
     @DisplayName("충전 금액이 1,000원 미만이면 PAY_002를 던진다")
     void charge_amount_too_low_throws_PAY_002() {
-        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(500L)))
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(4_000L, PaymentMethod.CARD)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHARGE_AMOUNT_TOO_LOW);
@@ -78,7 +79,7 @@ class ChargeServiceTest {
     @Test
     @DisplayName("충전 금액이 1,000원 단위가 아니면 PAY_003을 던진다")
     void charge_invalid_unit_throws_PAY_003() {
-        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(1_500L)))
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(1_500L, PaymentMethod.CARD)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_CHARGE_UNIT);
@@ -87,7 +88,7 @@ class ChargeServiceTest {
     @Test
     @DisplayName("충전 금액이 100,000원 초과이면 PAY_004를 던진다")
     void charge_amount_exceeded_throws_PAY_004() {
-        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(200_000L)))
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(200_000L, PaymentMethod.CARD)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHARGE_AMOUNT_EXCEEDED);

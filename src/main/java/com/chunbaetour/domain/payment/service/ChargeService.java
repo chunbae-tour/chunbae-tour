@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ChargeService {
 
-    private static final long MIN_AMOUNT = 1_000L;
+    private static final long MIN_AMOUNT = 5_000L;
     private static final long MAX_AMOUNT = 100_000L;
     private static final long UNIT_AMOUNT = 1_000L;
 
@@ -30,14 +30,15 @@ public class ChargeService {
         idempotencyService.checkAndMark(idempotencyKey);
         validateAmount(request.amount());
 
-        String orderId = UUID.randomUUID().toString();
-        PgOrderResult pgResult = paymentGatewayClient.createOrder(orderId, userId, request.amount());
+        String orderUid = UUID.randomUUID().toString();
+        PgOrderResult pgResult = paymentGatewayClient.createOrder(orderUid, userId, request.amount());
 
         paymentOrderRepository.save(
-                PaymentOrder.create(orderId, userId, request.amount(), pgResult.pgOrderId())
+                PaymentOrder.create(orderUid, userId, request.amount(),
+                        idempotencyKey, request.paymentMethod(), pgResult.pgOrderId())
         );
 
-        return new ChargeResponse(orderId, pgResult.redirectUrl());
+        return new ChargeResponse(orderUid, pgResult.redirectUrl());
     }
 
     private void validateAmount(Long amount) {
