@@ -1,0 +1,50 @@
+package com.chunbaetour.domain.community.comment.controller;
+
+import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.community.comment.dto.CommentCreateRequest;
+import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
+import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
+import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.comment.service.CommentService;
+import com.chunbaetour.domain.community.common.CursorPage;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/community/posts/{postType}/{postId}/comments")
+@RequiredArgsConstructor
+public class CommentController {
+
+    private final CommentService commentService;
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<CommentCreateResponse> create(
+            @AuthenticationPrincipal Long accountId,
+            @PathVariable String postType,
+            @PathVariable Long postId,
+            @Valid @RequestBody CommentCreateRequest request) {
+        return ApiResponse.success(commentService.create(accountId, postId, PostType.from(postType), request));
+    }
+
+    @GetMapping
+    public ApiResponse<CursorPage<CommentGetListResponse>> findAll(
+            @PathVariable String postType,
+            @PathVariable Long postId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
+        return ApiResponse.success(commentService.findAll(postId, PostType.from(postType), cursor, size));
+    }
+}
