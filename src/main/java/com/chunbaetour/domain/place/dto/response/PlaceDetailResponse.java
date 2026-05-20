@@ -57,4 +57,28 @@ public record PlaceDetailResponse(
                 isLiked
         );
     }
+
+    /**
+     * 캐시된 DTO와 찜 여부를 받아 응답 DTO 생성
+     */
+    public static PlaceDetailResponse of(PlaceCacheDto cacheDto, boolean isLiked) {
+        return new PlaceDetailResponse(
+                cacheDto.placeId(),
+                cacheDto.name(),
+                cacheDto.description(),
+                cacheDto.category(),
+                cacheDto.address(),
+                cacheDto.latitude(),
+                cacheDto.longitude(),
+                cacheDto.imageUrls(),
+                cacheDto.operatingHours(),
+                cacheDto.closedDays(),
+                cacheDto.admissionFee(),
+                cacheDto.phone(),
+                cacheDto.rating(),
+                cacheDto.reviewCount(),
+                cacheDto.likeCount(),
+                isLiked
+        );
+    }
 }

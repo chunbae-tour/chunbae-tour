@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
 import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
@@ -99,28 +100,35 @@ public class PlaceService {
         if (cachedData != null) {
             try {
                 log.debug("Place Detail Cache Hit: placeId={}", placeId);
-                PlaceDetailResponse cached = objectMapper.readValue(cachedData, PlaceDetailResponse.class);
+                PlaceCacheDto cached = objectMapper.readValue(cachedData, PlaceCacheDto.class);
                 incrementViewCount(placeId);
-                return cached;
+                return PlaceDetailResponse.of(cached, false); // PHASE 3에서 사용자 로그인 여부 판별 로직 추가 예정
             } catch (Exception e) {
                 log.error("Place Detail Cache parsing error: placeId={}", placeId, e);
             }
         }
 
         // 2. DB 조회
-        log.info("Place Detail Cache Miss: Fetching from DB, placeId={}", placeId);
+        log.debug("Place Detail Cache Miss: Fetching from DB, placeId={}", placeId);
         Place place = placeRepository.findById(placeId)
-                .filter(p -> p.getStatus() == PlaceStatus.ACTIVE)
+                .map(p -> {
+                    if (p.getStatus() != PlaceStatus.ACTIVE) {
+                        log.debug("Place is not ACTIVE: placeId={}, status={}", placeId, p.getStatus());
+                        throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+                    }
+                    return p;
+                })
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
 
         // 3. imageUrls JSON 파싱
         List<String> imageUrlList = parseImageUrls(place.getImageUrls());
 
-        PlaceDetailResponse response = PlaceDetailResponse.of(place, imageUrlList, false);
+        PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrlList);
+        PlaceDetailResponse response = PlaceDetailResponse.of(cacheDto, false);
 
         // 4. 캐싱 (TTL 10분)
         try {
-            String json = objectMapper.writeValueAsString(response);
+            String json = objectMapper.writeValueAsString(cacheDto);
             stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
         } catch (Exception e) {
             log.error("Place Detail Cache writing error: placeId={}", placeId, e);
