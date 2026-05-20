@@ -50,3 +50,7 @@ management:
     web:
       exposure:
         include: health,info
+
+kakao:
+  map:
+    api-key: ${KAKAO_MAP_API_KEY}
