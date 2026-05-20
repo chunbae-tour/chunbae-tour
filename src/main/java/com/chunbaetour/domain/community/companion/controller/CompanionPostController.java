@@ -9,6 +9,8 @@ import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneRespons
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
 import com.chunbaetour.domain.community.companion.service.CompanionPostService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -45,7 +47,7 @@ public class CompanionPostController {
             @RequestParam(required = false) String region,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate meetingDate,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
         return ApiResponse.success(postService.findAll(region, meetingDate, cursor, size));
     }
 

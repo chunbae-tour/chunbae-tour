@@ -14,7 +14,12 @@ import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +46,7 @@ public class FreePostService {
     @Transactional(readOnly = true)
     public CursorPage<FreePostGetListResponse> findAll(String cursor, int size) {
         Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
-        List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, size + 1);
+        List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = posts.size() > size;
         List<FreePost> content = hasNext ? posts.subList(0, size) : posts;
@@ -50,8 +55,12 @@ public class FreePostService {
                 ? CursorUtils.encode(content.get(content.size() - 1).getId())
                 : null;
 
+        Set<Long> authorIds = content.stream().map(FreePost::getAuthorId).collect(Collectors.toSet());
+        Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
         List<FreePostGetListResponse> items = content.stream()
-                .map(post -> FreePostGetListResponse.of(post, findAccount(post.getAuthorId())))
+                .map(post -> FreePostGetListResponse.of(post, authors.get(post.getAuthorId())))
                 .toList();
 
         return new CursorPage<>(items, nextCursor, hasNext, content.size());

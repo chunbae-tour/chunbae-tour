@@ -75,6 +75,9 @@ public class CompanionPost {
             Long authorId, String title, String content,
             Long placeId, String placeName, String region,
             LocalDate meetingDate, int maxMembers) {
+        if (maxMembers < 2) {
+            throw new IllegalArgumentException("maxMembers must be at least 2");
+        }
         CompanionPost post = new CompanionPost();
         post.authorId = authorId;
         post.title = title;
@@ -97,7 +100,12 @@ public class CompanionPost {
         if (placeName != null) this.placeName = placeName;
         if (region != null) this.region = region;
         if (meetingDate != null) this.meetingDate = meetingDate;
-        if (maxMembers > 0) this.maxMembers = maxMembers;
+        if (maxMembers > 0) {
+            if (maxMembers < this.currentMembers) {
+                throw new IllegalArgumentException("maxMembers must be >= currentMembers");
+            }
+            this.maxMembers = maxMembers;
+        }
     }
 
     public void delete() {

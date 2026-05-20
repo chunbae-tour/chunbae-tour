@@ -16,7 +16,12 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +60,7 @@ public class CompanionPostService {
             String region, LocalDate meetingDate, String cursor, int size) {
         Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
         List<CompanionPost> posts = postRepository.findByFilters(
-                CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, size + 1);
+                CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = posts.size() > size;
         List<CompanionPost> content = hasNext ? posts.subList(0, size) : posts;
@@ -64,11 +69,12 @@ public class CompanionPostService {
                 ? CursorUtils.encode(content.get(content.size() - 1).getId())
                 : null;
 
+        Set<Long> authorIds = content.stream().map(CompanionPost::getAuthorId).collect(Collectors.toSet());
+        Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
         List<CompanionPostGetListResponse> items = content.stream()
-                .map(post -> {
-                    Account author = findAccount(post.getAuthorId());
-                    return CompanionPostGetListResponse.of(post, author);
-                })
+                .map(post -> CompanionPostGetListResponse.of(post, authors.get(post.getAuthorId())))
                 .toList();
 
         return new CursorPage<>(items, nextCursor, hasNext, content.size());
@@ -84,7 +90,7 @@ public class CompanionPostService {
                 request.title(), request.content(),
                 request.placeId(), request.placeName(),
                 request.region(), request.meetingDate(),
-                request.maxMembers() != null ? request.maxMembers() : 0
+                request.maxMembers() != null ? request.maxMembers() : post.getMaxMembers()
         );
         return CompanionPostCreateResponse.of(post, findAccount(accountId));
     }
