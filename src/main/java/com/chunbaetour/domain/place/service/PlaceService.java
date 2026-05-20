@@ -1,8 +1,14 @@
 package com.chunbaetour.domain.place.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 
 @Slf4j
@@ -20,9 +27,14 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class PlaceService {
 
+    private final PlaceRepository placeRepository;
     private final PlaceQueryRepository placeQueryRepository;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+
+    private static final String PLACE_DETAIL_CACHE_PREFIX = "place:";
+    private static final String PLACE_VIEW_COUNT_PREFIX  = "place:view:";
+    private static final Duration PLACE_DETAIL_TTL       = Duration.ofMinutes(10);
 
     public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Long cursor, Double cursorDistance, int size) {
         // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
@@ -68,6 +80,72 @@ public class PlaceService {
         }
 
         return pageResponse;
+    }
+
+    /**
+     * 관광지 상세 조회
+     * 1. Redis 캐시 조회 (key: place:{placeId}, TTL 10분)
+     * 2. Miss → DB 조회 → 캐싱
+     * 3. 조회수 원자적 증가: INCR place:view:{placeId}
+     *
+     * @param placeId 조회할 관광지 ID
+     * @return PlaceDetailResponse (비로그인 시 isLiked = false)
+     */
+    public PlaceDetailResponse findById(Long placeId) {
+        String cacheKey = PLACE_DETAIL_CACHE_PREFIX + placeId;
+
+        // 1. Redis 캐시 조회
+        String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (cachedData != null) {
+            try {
+                log.debug("Place Detail Cache Hit: placeId={}", placeId);
+                // 조회수 원자적 증가 (캐시 히트여도 집계)
+                stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
+                return objectMapper.readValue(cachedData, PlaceDetailResponse.class);
+            } catch (Exception e) {
+                log.error("Place Detail Cache parsing error: placeId={}", placeId, e);
+            }
+        }
+
+        // 2. DB 조회
+        log.info("Place Detail Cache Miss: Fetching from DB, placeId={}", placeId);
+        Place place = placeRepository.findById(placeId)
+                .filter(p -> p.getStatus() == PlaceStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
+        // 3. imageUrls JSON 파싱
+        List<String> imageUrlList = parseImageUrls(place.getImageUrls());
+
+        PlaceDetailResponse response = PlaceDetailResponse.of(place, imageUrlList, false);
+
+        // 4. 캐싱 (TTL 10분)
+        try {
+            String json = objectMapper.writeValueAsString(response);
+            stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
+        } catch (Exception e) {
+            log.error("Place Detail Cache writing error: placeId={}", placeId, e);
+        }
+
+        // 5. 조회수 원자적 증가
+        stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
+
+        return response;
+    }
+
+    /**
+     * imageUrls JSON 문자열을 List<String>으로 파싱
+     * 파싱 실패 시 빈 리스트 반환 (null-safe)
+     */
+    private List<String> parseImageUrls(String imageUrlsJson) {
+        if (imageUrlsJson == null || imageUrlsJson.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("imageUrls JSON parsing failed: {}", imageUrlsJson, e);
+            return Collections.emptyList();
+        }
     }
 }
 
