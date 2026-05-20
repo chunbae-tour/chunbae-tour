@@ -78,15 +78,14 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        ChatRoomMember member = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
-
-        if (!ACTIVE_STATES.contains(member.getMemberState())) {
-            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
-        }
-
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
                 .findByChatRoomIdAndMemberStateIn(roomId, ACTIVE_STATES);
+
+        boolean isMember = activeMembers.stream()
+                .anyMatch(m -> m.getUserId().equals(userId));
+        if (!isMember) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
 
         return ChatRoomDetailResponse.from(chatRoom, activeMembers);
     }
