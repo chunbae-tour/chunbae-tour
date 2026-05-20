@@ -22,12 +22,9 @@ public record CompanionPostUpdateResponse(
         LocalDateTime updatedAt
 ) {
     public static CompanionPostUpdateResponse of(CompanionPost post, Account author) {
-        WriterInfo writer = new WriterInfo(
-                author.getId(),
-                author.getNickname(),
-                author.getProfileImageUrl(),
-                (double) author.getCompanionScore()
-        );
+        WriterInfo writer = author != null
+                ? new WriterInfo(author.getId(), author.getNickname(), author.getProfileImageUrl(), (double) author.getCompanionScore())
+                : new WriterInfo(null, "탈퇴한 사용자", null, null);
         return new CompanionPostUpdateResponse(
                 post.getId(),
                 post.getTitle(),
