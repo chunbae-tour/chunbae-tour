@@ -22,6 +22,22 @@ import java.time.Duration;
 public record RateLimitDecision(boolean allowed, long remaining, Duration retryAfter) {
 
     /**
+     * 인자 검증. 잘못된 도메인 값이 응답 헤더로 흘러나가지 않도록 부팅 시점에 강제 차단.
+     */
+    public RateLimitDecision {
+        if (remaining < 0) {
+            // 응답 헤더 X-RateLimit-Remaining에 음수가 노출되면 클라이언트 혼란 + 보안 신호 약화.
+            throw new IllegalArgumentException("remaining은 0 이상이어야 합니다. 현재: " + remaining);
+        }
+        if (retryAfter == null) {
+            throw new IllegalArgumentException("retryAfter는 null일 수 없습니다.");
+        }
+        if (retryAfter.isNegative()) {
+            throw new IllegalArgumentException("retryAfter는 음수일 수 없습니다. 현재: " + retryAfter);
+        }
+    }
+
+    /**
      * 허용 결과 단축 생성자. retryAfter는 자동으로 ZERO.
      */
     public static RateLimitDecision allowed(long remaining) {

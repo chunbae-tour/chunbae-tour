@@ -17,8 +17,9 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li><b>Fixed Window</b>: 첫 요청에서 키 생성 + TTL 부여. 같은 window 안의 후속 요청은 INCR만.
  *       TTL 만료 시 키 자동 삭제 → 다음 요청이 새 window 시작.</li>
- *   <li><b>Lua atomic</b>: INCR + EXPIRE를 한 스크립트로 묶어 race condition 차단.
- *       Redis 단일 스레드 모델 + Lua 실행 중 다른 명령 차단으로 원자성 보장.</li>
+ *   <li><b>Lua atomic + TTL 동시 반환</b>: INCR + EXPIRE + PTTL을 한 스크립트로 묶어 race condition 차단.
+ *       Lua가 결과와 TTL을 한 번에 반환하므로 별도 getExpire 호출이 불필요 → "결과 -1 받고 getExpire 사이에
+ *       키가 만료" 경합 제거.</li>
  *   <li><b>의존성 최소화</b>: Bucket4j 라이브러리 도입 없이 Redis만 사용. RefreshTokenStore Lua 패턴과 일관.</li>
  * </ul>
  *
@@ -36,36 +37,49 @@ import org.springframework.stereotype.Component;
 public class RedisRateLimiter implements RateLimiter {
 
     /**
+     * Redis 장애로 정책 강제가 불가능할 때 클라이언트에 안내할 Retry-After 값.
+     *
+     * <p>policy.window()를 그대로 쓰면 최대 10분(signup window) 같은 큰 값이 안내되어 UX가 깨진다.
+     * 짧은 고정값(30초)으로 안내해 클라이언트의 부드러운 재시도 + 운영 알람 시간 확보를 동시에 달성.
+     */
+    private static final Duration FAIL_CLOSED_RETRY = Duration.ofSeconds(30);
+
+    /**
      * Fixed Window 카운터 Lua 스크립트.
      *
      * <p>의도:
      * <ul>
      *   <li>키를 INCR (없으면 1로 시작)</li>
      *   <li>카운터가 1이면 (첫 요청) TTL 부여</li>
-     *   <li>limit 초과 시 -1 반환 (denied), 그렇지 않으면 remaining 반환</li>
+     *   <li>PTTL로 남은 TTL(밀리초) 조회</li>
+     *   <li>{remaining, ttlMillis} 튜플 반환 — denied 시 ttlMillis가 정확한 Retry-After가 되도록</li>
      * </ul>
      *
      * <p>반환:
      * <ul>
-     *   <li>{@code -1}: 거부 (한도 초과)</li>
-     *   <li>{@code >= 0}: 허용. 값은 본 요청 처리 후 남은 허용 횟수</li>
+     *   <li>{@code [-1, ttlMillis]}: 거부 (한도 초과). ttlMillis는 window 잔여 ms (PTTL 결과: -1=TTL 없음, -2=키 없음).</li>
+     *   <li>{@code [remaining, ttlMillis]}: 허용. remaining은 본 요청 처리 후 남은 허용 횟수 (>=0).</li>
      * </ul>
      *
-     * <p>Redis는 Lua 스크립트 실행 중 다른 명령을 받지 않아 INCR+EXPIRE가 원자적으로 처리된다.
+     * <p>Redis는 Lua 스크립트 실행 중 다른 명령을 받지 않아 INCR + EXPIRE + PTTL이 원자적으로 처리된다.
+     * 별도 getExpire 호출(이전 구현)은 Lua와의 사이에 키가 만료되는 race가 있었으나, 본 Lua는 한 번에 묶어
+     * 해당 race를 제거한다.
      */
-    private static final RedisScript<Long> CONSUME_SCRIPT = new DefaultRedisScript<>(
+    @SuppressWarnings("rawtypes")
+    private static final RedisScript<List> CONSUME_SCRIPT = new DefaultRedisScript<>(
             """
             local current = redis.call('INCR', KEYS[1])
             if current == 1 then
               redis.call('EXPIRE', KEYS[1], ARGV[1])
             end
+            local ttlMillis = redis.call('PTTL', KEYS[1])
             local limit = tonumber(ARGV[2])
             if current > limit then
-              return -1
+              return {-1, ttlMillis}
             end
-            return limit - current
+            return {limit - current, ttlMillis}
             """,
-            Long.class
+            List.class
     );
 
     private final StringRedisTemplate redis;
@@ -73,52 +87,59 @@ public class RedisRateLimiter implements RateLimiter {
     @Override
     public RateLimitDecision tryConsume(String key, RateLimitPolicy policy) {
         try {
-            Long result = redis.execute(
+            @SuppressWarnings("unchecked")
+            List<Long> result = redis.execute(
                     CONSUME_SCRIPT,
                     List.of(key),
                     String.valueOf(policy.window().toSeconds()),
                     String.valueOf(policy.limit())
             );
-            if (result == null) {
-                // Lua 실행 결과 누락은 비정상 상태. 정책상 fail-closed 차단으로 명시.
-                log.warn("Redis rate limit Lua 실행 결과 누락");
-                return RateLimitDecision.denied(policy.window());
+
+            if (result == null || result.size() != 2) {
+                // Lua 실행 결과 누락은 비정상 상태 — 정책상 fail-closed 차단 + 짧은 retry 안내.
+                log.warn("Redis rate limit Lua 실행 결과 누락 또는 형식 불일치");
+                return RateLimitDecision.denied(FAIL_CLOSED_RETRY);
             }
-            if (result < 0) {
-                // 거부: Retry-After = window 잔여 TTL. 키 조회 실패 시 정책 window로 fallback.
-                Duration retryAfter = redisTtlOrFallback(key, policy.window());
+
+            long remaining = result.get(0);
+            long ttlMillis = result.get(1);
+
+            if (remaining < 0) {
+                // 거부 분기: ttlMillis가 정확한 Retry-After.
+                Duration retryAfter = retryAfterFromTtl(ttlMillis, policy.window());
                 return RateLimitDecision.denied(retryAfter);
             }
-            return RateLimitDecision.allowed(result);
+            return RateLimitDecision.allowed(remaining);
         } catch (DataAccessException e) {
             // Redis 장애 (연결 실패, 타임아웃, Lua 오류 등) 시 fail-closed 차단.
             // 보안 정책 강제 우선 — Redis 장애 동안 회원가입/로그인이 일시 차단되더라도 무차별 공격 방어가 더 중요.
-            // 운영 알람 위해 WARN 레벨로 로그. 빈번하면 Redis 클러스터/장애 조사 필요.
-            log.warn("Redis rate limit 호출 실패; fail-closed로 차단", e);
-            return RateLimitDecision.denied(policy.window());
+            // ERROR 레벨로 로그 — 운영 알람 트리거(WARN보다 강한 시급도). 빈번하면 Redis 클러스터/장애 조사 필요.
+            log.error("Redis rate limit 호출 실패; fail-closed로 차단", e);
+            return RateLimitDecision.denied(FAIL_CLOSED_RETRY);
         }
     }
 
     /**
-     * Redis 키의 남은 TTL을 조회. 키가 만료되어 사라졌거나 TTL 정보가 없으면 정책 window로 fallback.
+     * Lua가 반환한 PTTL을 기반으로 Retry-After Duration을 결정한다.
      *
-     * <p>Retry-After 정확도는 운영상 클라이언트 UX에 직접 영향 — 너무 길면 의미 없는 대기 발생.
-     * TTL 조회는 INCR과 별개 라운드트립이지만 거부 시점에만 발생하므로 비용 미미.
-     *
-     * <p>TTL 조회 자체가 Redis 장애로 실패하면 fail-closed 정책 유지 — fallback window 반환 + WARN 로그.
-     * 호출자(tryConsume)는 이미 denied 분기로 결정한 상태이므로 본 메서드 실패가 정책 강제에 영향 없음.
+     * <p>PTTL 반환 규약 (Redis 공식):
+     * <ul>
+     *   <li>{@code > 0}: 정상 남은 TTL (밀리초) — 그대로 사용</li>
+     *   <li>{@code -1}: 키는 있지만 TTL 미설정 — 비정상 (Lua가 EXPIRE 호출하므로 발생하면 안 됨).
+     *       ERROR 로그 + policy window fallback (안전한 최댓값)</li>
+     *   <li>{@code -2}: 키 없음 — Lua 실행 중 만료된 매우 드문 경합. ZERO 반환 (즉시 재시도 가능)</li>
+     * </ul>
      */
-    private Duration redisTtlOrFallback(String key, Duration fallback) {
-        try {
-            Long ttlSeconds = redis.getExpire(key);
-            if (ttlSeconds == null || ttlSeconds < 0) {
-                return fallback;
-            }
-            return Duration.ofSeconds(ttlSeconds);
-        } catch (DataAccessException e) {
-            // Retry-After 정확도는 부가 정보 — 실패해도 fallback으로 안전하게 응답
-            log.warn("Redis TTL 조회 실패; window fallback 사용", e);
-            return fallback;
+    private Duration retryAfterFromTtl(long ttlMillis, Duration fallback) {
+        if (ttlMillis > 0) {
+            return Duration.ofMillis(ttlMillis);
         }
+        if (ttlMillis == -2) {
+            // 키가 Lua 실행 중 만료된 경합 — 다음 요청은 새 window. 즉시 재시도 가능.
+            return Duration.ZERO;
+        }
+        // -1 = 키는 있지만 TTL 미설정. Lua가 첫 요청에 EXPIRE를 걸므로 발생하면 안 됨 → 운영 이상 신호.
+        log.error("Redis rate limit 키에 TTL이 없음 — 정책 위반 의심 (Lua 외부에서 키 조작 가능성)");
+        return fallback;
     }
 }
