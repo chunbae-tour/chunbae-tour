@@ -99,9 +99,9 @@ public class PlaceService {
         if (cachedData != null) {
             try {
                 log.debug("Place Detail Cache Hit: placeId={}", placeId);
-                // 조회수 원자적 증가 (캐시 히트여도 집계)
-                stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
-                return objectMapper.readValue(cachedData, PlaceDetailResponse.class);
+                PlaceDetailResponse cached = objectMapper.readValue(cachedData, PlaceDetailResponse.class);
+                incrementViewCount(placeId);
+                return cached;
             } catch (Exception e) {
                 log.error("Place Detail Cache parsing error: placeId={}", placeId, e);
             }
@@ -126,10 +126,18 @@ public class PlaceService {
             log.error("Place Detail Cache writing error: placeId={}", placeId, e);
         }
 
-        // 5. 조회수 원자적 증가
-        stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
+        // 5. 조회수 증가 (best-effort)
+        incrementViewCount(placeId);
 
         return response;
+    }
+
+    private void incrementViewCount(Long placeId) {
+        try {
+            stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
+        } catch (Exception e) {
+            log.warn("Place view count increment failed: placeId={}", placeId, e);
+        }
     }
 
     /**
