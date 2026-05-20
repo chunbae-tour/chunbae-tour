@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimitPolicy;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.place.dto.Coord;
 import com.chunbaetour.domain.place.dto.request.DirectionRequest;
 import com.chunbaetour.domain.place.dto.response.DirectionResponse;
 import com.chunbaetour.domain.place.service.DirectionService;
@@ -49,8 +50,8 @@ public class DirectionController {
         }
 
         // [MEDIUM] 파라미터 순서 뒤바뀜 실수 원천 차단을 위해 명확한 타입(Coord)으로 객체화 후 전달
-        DirectionService.Coord origin = new DirectionService.Coord(request.originLat(), request.originLng());
-        DirectionService.Coord dest = new DirectionService.Coord(request.destLat(), request.destLng());
+        Coord origin = new Coord(request.originLat(), request.originLng());
+        Coord dest = new Coord(request.destLat(), request.destLng());
 
         String redirectUrl = directionService.buildKakaoMapUrl(origin, dest);
         

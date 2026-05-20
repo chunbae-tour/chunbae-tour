@@ -64,3 +64,5 @@ management:
 kakao:
   map:
     api-key: ${KAKAO_MAP_API_KEY}
+    coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
+    map-url: https://map.kakao.com/link/from
