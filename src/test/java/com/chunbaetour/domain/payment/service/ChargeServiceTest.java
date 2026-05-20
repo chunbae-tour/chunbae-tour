@@ -6,13 +6,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
-import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PgOrderResult;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
@@ -41,18 +41,18 @@ class ChargeServiceTest {
     private ChargeService chargeService;
 
     @Test
-    @DisplayName("정상 충전 요청 시 PG 결제창 redirectUrl과 orderId를 반환한다")
-    void charge_success_returns_redirectUrl() {
-        given(paymentGatewayClient.createOrder(anyString(), anyLong(), anyLong()))
-                .willReturn(new PgOrderResult("pg-001", "https://stub-pg.chunbaetour.com/pay/test"));
+    @DisplayName("정상 충전 요청 시 orderUid를 반환한다")
+    void charge_success_returns_orderUid() {
+        willDoNothing().given(paymentGatewayClient).preRegister(anyString(), anyLong());
+        willDoNothing().given(idempotencyService).checkAndMark(anyString());
         given(paymentOrderRepository.save(any(PaymentOrder.class)))
                 .willAnswer(inv -> inv.getArgument(0));
 
         ChargeResponse response = chargeService.charge(1L, "idem-key-1", new ChargeRequest(10_000L, PaymentMethod.CARD));
 
-        assertThat(response.redirectUrl()).contains("stub-pg.chunbaetour.com");
         assertThat(response.orderUid()).isNotNull();
         verify(paymentOrderRepository).save(any(PaymentOrder.class));
+        verify(paymentGatewayClient).preRegister(anyString(), anyLong());
     }
 
     @Test
@@ -68,7 +68,7 @@ class ChargeServiceTest {
     }
 
     @Test
-    @DisplayName("충전 금액이 1,000원 미만이면 PAY_002를 던진다")
+    @DisplayName("충전 금액이 5,000원 미만이면 PAY_002를 던진다")
     void charge_amount_too_low_throws_PAY_002() {
         assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(4_000L, PaymentMethod.CARD)))
                 .isInstanceOf(BusinessException.class)
@@ -79,7 +79,7 @@ class ChargeServiceTest {
     @Test
     @DisplayName("충전 금액이 1,000원 단위가 아니면 PAY_003을 던진다")
     void charge_invalid_unit_throws_PAY_003() {
-        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(1_500L, PaymentMethod.CARD)))
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(6_500L, PaymentMethod.CARD)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_CHARGE_UNIT);

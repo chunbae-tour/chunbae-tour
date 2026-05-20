@@ -3,7 +3,6 @@ package com.chunbaetour.domain.payment.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
-import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PgOrderResult;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
@@ -31,14 +30,14 @@ public class ChargeService {
         validateAmount(request.amount());
 
         String orderUid = UUID.randomUUID().toString();
-        PgOrderResult pgResult = paymentGatewayClient.createOrder(orderUid, userId, request.amount());
+        paymentGatewayClient.preRegister(orderUid, request.amount());
 
         paymentOrderRepository.save(
                 PaymentOrder.create(orderUid, userId, request.amount(),
-                        idempotencyKey, request.paymentMethod(), pgResult.pgOrderId())
+                        idempotencyKey, request.paymentMethod(), orderUid)
         );
 
-        return new ChargeResponse(orderUid, pgResult.redirectUrl());
+        return new ChargeResponse(orderUid);
     }
 
     private void validateAmount(Long amount) {
