@@ -53,6 +53,7 @@ class CallbackServiceTest {
     @DisplayName("정상 성공 콜백: 주문 COMPLETED 전환 + 엽전 충전 호출")
     void handleSuccess_normal_completes_order_and_charges_wallet() {
         PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
@@ -70,18 +71,19 @@ class CallbackServiceTest {
     void handleSuccess_already_processed_returns_silently() {
         PaymentOrder order = pendingOrder();
         order.complete("tx-prev");
-        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
 
         callbackService.handleSuccess("order-uid-1", "tx-1");
 
         verify(paymentGatewayClient, never()).verifyPayment(anyString());
+        verify(paymentOrderRepository, never()).findByOrderUidWithLock(anyString());
         verify(walletService, never()).charge(anyLong(), anyLong(), any());
     }
 
     @Test
     @DisplayName("존재하지 않는 주문 ID → PAY_009")
     void handleSuccess_order_not_found_throws_PAY_009() {
-        given(paymentOrderRepository.findByOrderUidWithLock("unknown")).willReturn(Optional.empty());
+        given(paymentOrderRepository.findByOrderUid("unknown")).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> callbackService.handleSuccess("unknown", "tx-1"))
                 .isInstanceOf(PaymentException.class)
@@ -93,6 +95,7 @@ class CallbackServiceTest {
     @DisplayName("PortOne 검증 금액 불일치 → PAY_013, 주문 FAILED, 멱등성 키 해제")
     void handleSuccess_amount_mismatch_fails_order_and_throws_PAY_013() {
         PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("PAID", 99_000L));
@@ -111,6 +114,7 @@ class CallbackServiceTest {
     @DisplayName("PortOne 결제 상태 PAID 아님 → PAY_013, 주문 FAILED, 멱등성 키 해제")
     void handleSuccess_not_paid_status_fails_order_and_throws_PAY_013() {
         PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("FAILED", 10_000L));
@@ -163,7 +167,7 @@ class CallbackServiceTest {
     @DisplayName("PortOne API 장애 → PAY_005, 주문 PENDING 유지, 멱등키 해제 없음")
     void handleSuccess_pg_unavailable_leaves_order_pending() {
         PaymentOrder order = pendingOrder();
-        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE));
 

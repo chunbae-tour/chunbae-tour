@@ -42,6 +42,20 @@ public class CallbackService {
     // noRollbackFor: 금액 불일치 시 order.fail() DB 커밋 보장 (throw해도 롤백 안 됨)
     @Transactional(noRollbackFor = PaymentException.class)
     public void handleSuccess(String paymentId, String txId) {
+        // 1단계: 락 없이 조회 + PG 검증 (외부 네트워크 호출, 락 미점유)
+        PaymentOrder orderForVerify = paymentOrderRepository.findByOrderUid(paymentId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+
+        if (orderForVerify.getStatus() != PaymentOrderStatus.PENDING) {
+            return;
+        }
+
+        PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(paymentId);
+        boolean amountValid = info.isPaid()
+                && info.totalAmount() != null
+                && info.totalAmount().equals(orderForVerify.getAmount());
+
+        // 2단계: 락 획득 후 상태 변경 (락 점유 시간 최소화)
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
@@ -49,9 +63,7 @@ public class CallbackService {
             return;
         }
 
-        PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(paymentId);
-
-        if (!info.isPaid() || info.totalAmount() == null || !info.totalAmount().equals(order.getAmount())) {
+        if (!amountValid) {
             order.fail();
             scheduleUnmark(order.getIdempotencyKey());
             throw new PaymentException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);

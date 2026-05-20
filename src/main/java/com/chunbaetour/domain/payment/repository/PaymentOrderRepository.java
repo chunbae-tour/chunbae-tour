@@ -10,6 +10,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long> {
 
+    @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
+    Optional<PaymentOrder> findByOrderUid(@Param("orderUid") String orderUid);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
     Optional<PaymentOrder> findByOrderUidWithLock(@Param("orderUid") String orderUid);
