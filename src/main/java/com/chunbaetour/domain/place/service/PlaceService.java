@@ -25,7 +25,6 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class PlaceService {
 
     private final PlaceRepository placeRepository;
@@ -37,6 +36,7 @@ public class PlaceService {
     private static final String PLACE_VIEW_COUNT_PREFIX  = "place:view:";
     private static final Duration PLACE_DETAIL_TTL       = Duration.ofMinutes(10);
 
+    @Transactional(readOnly = true)
     public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Long cursor, Double cursorDistance, int size) {
         // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
         String latRounded = String.format("%.3f", lat);
@@ -93,6 +93,13 @@ public class PlaceService {
      * @return PlaceDetailResponse (비로그인 시 isLiked = false)
      */
     public PlaceDetailResponse findById(Long placeId) {
+        PlaceDetailResponse response = resolveFromCacheOrDb(placeId);
+        // 조회수 증가 (단일 책임 원칙, 항상 마지막에 1회 호출)
+        incrementViewCount(placeId);
+        return response;
+    }
+
+    private PlaceDetailResponse resolveFromCacheOrDb(Long placeId) {
         String cacheKey = PLACE_DETAIL_CACHE_PREFIX + placeId;
 
         // 1. Redis 캐시 조회
@@ -101,24 +108,54 @@ public class PlaceService {
             try {
                 log.debug("Place Detail Cache Hit: placeId={}", placeId);
                 PlaceCacheDto cached = objectMapper.readValue(cachedData, PlaceCacheDto.class);
-                incrementViewCount(placeId);
                 return PlaceDetailResponse.of(cached, false); // PHASE 3에서 사용자 로그인 여부 판별 로직 추가 예정
             } catch (Exception e) {
                 log.error("Place Detail Cache parsing error: placeId={}", placeId, e);
+                stringRedisTemplate.delete(cacheKey); // 깨진 캐시 즉시 제거
             }
         }
 
-        // 2. DB 조회
+        // Cache Stampede 방어용 Lock
+        String lockKey = "lock:place:" + placeId;
+        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, "1", Duration.ofSeconds(3));
+
+        if (Boolean.TRUE.equals(locked)) {
+            try {
+                return fetchFromDbAndCache(placeId, cacheKey);
+            } finally {
+                stringRedisTemplate.delete(lockKey);
+            }
+        } else {
+            // 락 획득 실패 시 짧은 대기 후 캐시 재조회 시도
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            String retryCached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (retryCached != null) {
+                try {
+                    PlaceCacheDto cached = objectMapper.readValue(retryCached, PlaceCacheDto.class);
+                    return PlaceDetailResponse.of(cached, false);
+                } catch (Exception e) {
+                    log.error("Place Detail Cache parsing error on retry: placeId={}", placeId, e);
+                }
+            }
+            // 재조회도 실패하면 그냥 DB 쿼리 진행
+            return fetchFromDbAndCache(placeId, cacheKey);
+        }
+    }
+
+    private PlaceDetailResponse fetchFromDbAndCache(Long placeId, String cacheKey) {
+        // 2. DB 조회 (Optional.map 예외 throw 지양)
         log.debug("Place Detail Cache Miss: Fetching from DB, placeId={}", placeId);
         Place place = placeRepository.findById(placeId)
-                .map(p -> {
-                    if (p.getStatus() != PlaceStatus.ACTIVE) {
-                        log.debug("Place is not ACTIVE: placeId={}, status={}", placeId, p.getStatus());
-                        throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
-                    }
-                    return p;
-                })
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
+        if (place.getStatus() != PlaceStatus.ACTIVE) {
+            log.debug("Place is not ACTIVE: placeId={}, status={}", placeId, place.getStatus());
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
 
         // 3. imageUrls JSON 파싱
         List<String> imageUrlList = parseImageUrls(place.getImageUrls());
@@ -133,9 +170,6 @@ public class PlaceService {
         } catch (Exception e) {
             log.error("Place Detail Cache writing error: placeId={}", placeId, e);
         }
-
-        // 5. 조회수 증가 (best-effort)
-        incrementViewCount(placeId);
 
         return response;
     }
