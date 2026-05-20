@@ -1,8 +1,15 @@
 package com.chunbaetour.domain.place.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
+import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -12,18 +19,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class PlaceService {
 
+    private final PlaceRepository placeRepository;
     private final PlaceQueryRepository placeQueryRepository;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
+    private static final String PLACE_DETAIL_CACHE_PREFIX = "place:";
+    private static final String PLACE_VIEW_COUNT_PREFIX  = "place:view:";
+    private static final Duration PLACE_DETAIL_TTL       = Duration.ofMinutes(10);
+
+    @Transactional(readOnly = true)
     public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Long cursor, Double cursorDistance, int size) {
         // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
         String latRounded = String.format("%.3f", lat);
@@ -68,6 +81,145 @@ public class PlaceService {
         }
 
         return pageResponse;
+    }
+
+    /**
+     * 관광지 상세 조회
+     * 1. Redis 캐시 조회 (key: place:{placeId}, TTL 10분)
+     * 2. Miss → DB 조회 → 캐싱
+     * 3. 조회수 원자적 증가: INCR place:view:{placeId}
+     *
+     * @param placeId 조회할 관광지 ID
+     * @return PlaceDetailResponse (비로그인 시 isLiked = false)
+     */
+    public PlaceDetailResponse findById(Long placeId) {
+        PlaceDetailResponse response = resolveFromCacheOrDb(placeId);
+        // 조회수 증가 (단일 책임 원칙, 항상 마지막에 1회 호출)
+        incrementViewCount(placeId);
+        return response;
+    }
+
+    private static final String UNLOCK_LUA_SCRIPT = 
+            "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+            "return redis.call('del', KEYS[1]) else return 0 end";
+
+    private PlaceDetailResponse resolveFromCacheOrDb(Long placeId) {
+        String cacheKey = PLACE_DETAIL_CACHE_PREFIX + placeId;
+
+        // 1. Redis 캐시 1차 조회
+        PlaceDetailResponse cachedResponse = getFromCache(cacheKey, placeId);
+        if (cachedResponse != null) {
+            return cachedResponse;
+        }
+
+        // Cache Stampede 방어용 Lock
+        String lockKey = "lock:place:" + placeId;
+        String lockValue = java.util.UUID.randomUUID().toString();
+        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, Duration.ofSeconds(3));
+
+        if (Boolean.TRUE.equals(locked)) {
+            try {
+                return fetchFromDbAndCache(placeId, cacheKey);
+            } finally {
+                releaseLockIfOwner(lockKey, lockValue);
+            }
+        } else {
+            // 락 획득 실패 시 Bounded Polling (최대 20회 * 50ms = 1초 대기)
+            for (int i = 0; i < 20; i++) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                
+                PlaceDetailResponse retryCached = getFromCache(cacheKey, placeId);
+                if (retryCached != null) {
+                    return retryCached;
+                }
+            }
+            // 폴링 타임아웃 이후에도 캐시가 없으면 최후의 수단으로 DB 쿼리 진행
+            return fetchFromDbAndCache(placeId, cacheKey);
+        }
+    }
+
+    private PlaceDetailResponse getFromCache(String cacheKey, Long placeId) {
+        String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (cachedData != null) {
+            try {
+                log.debug("Place Detail Cache Hit: placeId={}", placeId);
+                PlaceCacheDto cached = objectMapper.readValue(cachedData, PlaceCacheDto.class);
+                return PlaceDetailResponse.of(cached, false); // PHASE 3에서 사용자 로그인 여부 판별 로직 추가 예정
+            } catch (Exception e) {
+                log.error("Place Detail Cache parsing error: placeId={}", placeId, e);
+                stringRedisTemplate.delete(cacheKey); // 깨진 캐시 즉시 제거 (재시도 시에도 동일하게 적용)
+            }
+        }
+        return null;
+    }
+
+    private void releaseLockIfOwner(String lockKey, String lockValue) {
+        try {
+            stringRedisTemplate.execute(
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(UNLOCK_LUA_SCRIPT, Long.class),
+                    Collections.singletonList(lockKey),
+                    lockValue
+            );
+        } catch (Exception e) {
+            log.error("Failed to release lock: lockKey={}", lockKey, e);
+        }
+    }
+
+    private PlaceDetailResponse fetchFromDbAndCache(Long placeId, String cacheKey) {
+        // 2. DB 조회 (Optional.map 예외 throw 지양)
+        log.debug("Place Detail Cache Miss: Fetching from DB, placeId={}", placeId);
+        Place place = placeRepository.findById(placeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
+        if (place.getStatus() != PlaceStatus.ACTIVE) {
+            log.debug("Place is not ACTIVE: placeId={}, status={}", placeId, place.getStatus());
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
+
+        // 3. imageUrls JSON 파싱
+        List<String> imageUrlList = parseImageUrls(place.getImageUrls());
+
+        PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrlList);
+        PlaceDetailResponse response = PlaceDetailResponse.of(cacheDto, false);
+
+        // 4. 캐싱 (TTL 10분)
+        try {
+            String json = objectMapper.writeValueAsString(cacheDto);
+            stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
+        } catch (Exception e) {
+            log.error("Place Detail Cache writing error: placeId={}", placeId, e);
+        }
+
+        return response;
+    }
+
+    private void incrementViewCount(Long placeId) {
+        try {
+            stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
+        } catch (Exception e) {
+            log.warn("Place view count increment failed: placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * imageUrls JSON 문자열을 List<String>으로 파싱
+     * 파싱 실패 시 빈 리스트 반환 (null-safe)
+     */
+    private List<String> parseImageUrls(String imageUrlsJson) {
+        if (imageUrlsJson == null || imageUrlsJson.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("imageUrls JSON parsing failed: {}", imageUrlsJson, e);
+            return Collections.emptyList();
+        }
     }
 }
 

@@ -7,7 +7,16 @@ import org.springframework.http.HttpStatus;
 @Getter
 @RequiredArgsConstructor
 public enum ErrorCode {
+    // ===== COMMON =====
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_001", "서버 오류가 발생했습니다."),
+    INVALID_REQUEST(HttpStatus.BAD_REQUEST, "COMMON_002", "잘못된 요청입니다."),
+    MISSING_REQUIRED_FIELD(HttpStatus.BAD_REQUEST,           "COMMON_003", "필수 입력값이 누락되었습니다."),
+    INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST,              "COMMON_004", "입력값이 유효하지 않습니다."),
+    RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND,                 "COMMON_005", "요청한 리소스를 찾을 수 없습니다."),
+    TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS,          "COMMON_006", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
+    EXTERNAL_SERVICE_ERROR(HttpStatus.SERVICE_UNAVAILABLE,   "COMMON_007", "외부 서비스 연동 중 오류가 발생했습니다."),
 
+    // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
     ACCESS_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "AUTH_002", "Access 토큰이 만료되었습니다."),
     ACCESS_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_003", "Access 토큰이 유효하지 않습니다."),
@@ -26,13 +35,15 @@ public enum ErrorCode {
     // AUTH_013: 로그아웃 시 Access Token이 블랙리스트에 등록되며, 이후 같은 토큰으로 요청하면 거부된다.
     //           남은 만료 시간 동안만 블랙리스트에 머무르므로 자연 만료 후에는 같은 tokenId가 새로 발급될 가능성도 사라진다 (UUID).
     BLACKLISTED_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH_013", "로그아웃된 토큰입니다."),
+    // AUTH_014: IP 기반 rate limit 초과 (sa-docs/11 운영 보안 정책 §Rate Limit).
+    //           회원가입 3회/10분/IP, 로그인 5회/분/IP 등 endpoint별 정책 초과 시 응답.
+    //           응답에 Retry-After 헤더 + X-RateLimit-Limit/Remaining 헤더 첨부 (REST 표준).
+    RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 
+    // ===== COMMUNITY (담당: 박경화) =====
     COMMUNITY_001(HttpStatus.NOT_FOUND, "COMMUNITY_001", "게시글을 찾을 수 없습니다."),
     COMMUNITY_002(HttpStatus.FORBIDDEN, "COMMUNITY_002", "게시글 수정 권한이 없습니다."),
     COMMUNITY_003(HttpStatus.FORBIDDEN, "COMMUNITY_003", "게시글 삭제 권한이 없습니다."),
-
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_001", "서버 오류가 발생했습니다."),
-    INVALID_REQUEST(HttpStatus.BAD_REQUEST, "COMMON_002", "잘못된 요청입니다."),
 
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
@@ -46,7 +57,7 @@ public enum ErrorCode {
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
-    CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 1,000원 이상이어야 합니다."),
+    CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 5,000원 이상이어야 합니다."),
     INVALID_CHARGE_UNIT(HttpStatus.BAD_REQUEST,             "PAY_003", "충전 금액은 1,000원 단위로 입력해주세요."),
     CHARGE_AMOUNT_EXCEEDED(HttpStatus.BAD_REQUEST,          "PAY_004", "1회 최대 충전 금액은 100,000원입니다."),
     PAYMENT_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PAY_005", "결제 서비스를 일시적으로 사용할 수 없습니다."),
@@ -93,7 +104,11 @@ public enum ErrorCode {
     CHAT_MEMBER_KICKED_REJOIN(HttpStatus.FORBIDDEN,         "CHAT_010", "강퇴된 채팅방에는 재참여할 수 없습니다."),
     CHAT_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND,        "CHAT_011", "존재하지 않는 참여 신청입니다."),
     CHAT_APPLICATION_ALREADY_PROCESSED(HttpStatus.CONFLICT, "CHAT_012", "이미 처리된 참여 신청입니다."),
-    CHAT_ROOM_CLOSED(HttpStatus.CONFLICT,                   "CHAT_013", "이미 종료된 채팅방입니다.");
+    CHAT_ROOM_CLOSED(HttpStatus.CONFLICT,                   "CHAT_013", "이미 종료된 채팅방입니다."),
+    CHAT_ROOM_DUPLICATE(HttpStatus.CONFLICT,                "CHAT_014", "해당 게시글에 이미 개설된 채팅방이 있습니다."),
+    CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 직접 퇴장할 수 없습니다."),
+    CHAT_MEMBER_ALREADY_INACTIVE(HttpStatus.CONFLICT,       "CHAT_016", "이미 퇴장하거나 강퇴된 멤버입니다."),
+    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;

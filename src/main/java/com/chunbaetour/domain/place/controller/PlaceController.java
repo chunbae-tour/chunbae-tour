@@ -3,11 +3,13 @@ package com.chunbaetour.domain.place.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.service.PlaceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,6 +30,17 @@ public class PlaceController {
                 request.cursorDistance(),
                 request.size()
         );
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 관광지 상세 조회
+     * GET /api/v1/places/{placeId}
+     * 인증 불필요, isLiked는 비로그인 시 false 고정
+     */
+    @GetMapping("/{placeId}")
+    public ApiResponse<PlaceDetailResponse> getPlaceDetail(@PathVariable Long placeId) {
+        PlaceDetailResponse response = placeService.findById(placeId);
         return ApiResponse.success(response);
     }
 }
