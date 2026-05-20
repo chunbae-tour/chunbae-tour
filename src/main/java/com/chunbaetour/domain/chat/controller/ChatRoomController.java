@@ -2,21 +2,29 @@ package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
+import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.service.ChatRoomService;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/chat/rooms")
 @RequiredArgsConstructor
+@Validated
 public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
@@ -27,5 +35,13 @@ public class ChatRoomController {
             @AuthenticationPrincipal Long userId,
             @Valid @RequestBody CreateChatRoomRequest request) {
         return ApiResponse.success(chatRoomService.createRoom(userId, request));
+    }
+
+    @GetMapping
+    public ApiResponse<CursorPageResponse<MyChatRoomResponse>> getMyRooms(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) String cursor,
+            @Min(1) @Max(100) @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.success(chatRoomService.getMyRooms(userId, cursor, size));
     }
 }
