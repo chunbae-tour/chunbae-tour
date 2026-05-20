@@ -63,15 +63,17 @@ public class LoginService {
             throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
 
-        // 정지 계정은 비밀번호와 무관하게 차단. 메시지는 명시 (사용자에게 정지 사실 안내 필요)
-        if (account.getStatus() == AccountStatus.SUSPENDED) {
-            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
-        }
-
         // 요청한 endpoint가 USER용인데 ADMIN 계정으로 로그인 시도 → 거부.
         // role mismatch 자체로 정보 노출되지만, 엔드포인트 분리가 곧 보안 모델이라 허용.
+        // SUSPENDED 체크보다 먼저 두는 이유: 다른 role 계정의 정지 상태가 page 호출자에게 누설되는 oracle 차단.
         if (account.getRole() != requiredRole) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+
+        // 정지 계정은 비밀번호와 무관하게 차단. 메시지는 명시 (사용자에게 정지 사실 안내 필요).
+        // role 체크를 먼저 통과한 후 검사 — 다른 page 호출자에게 정지 상태가 노출되는 oracle 차단.
+        if (account.getStatus() == AccountStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
         // 토큰 발급. Refresh는 매번 새로운 tokenId(UUID)를 가진다.

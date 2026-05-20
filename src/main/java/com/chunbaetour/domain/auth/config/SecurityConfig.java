@@ -21,18 +21,22 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 /**
  * Spring Security 필터 체인 구성.
  *
- * <p>S3 변경 사항:
+ * <p>S5 변경 사항:
  * <ul>
- *   <li>{@code /api/v1/auth/**} 패턴을 permitAll에 추가 (reissue endpoint 등 공통 토큰 API)</li>
- *   <li>{@link CorsConfigurationSource} bean + {@code http.cors()} 활성화 — Cookie credential 흐름 동작 위해 필수</li>
+ *   <li>상인/관리자 페이지의 인증/보호 endpoint 매핑을 추가 — 페이지별 endpoint 분리 정책 (Auth foundation PRD §Further Notes 참조)</li>
  * </ul>
  *
- * <p>URL 권한 모델:
+ * <p>URL 권한 모델 (S5 기준):
  * <ul>
- *   <li>{@code /api/v1/users/auth/**} — 회원가입/로그인 (permitAll)</li>
- *   <li>{@code /api/v1/auth/**} — 공통 토큰 API: reissue (logout S4 예정) (permitAll: 인증 전 호출 가능해야 함)</li>
+ *   <li>{@code /api/v1/users/auth/**} — USER 회원가입/로그인 (permitAll)</li>
+ *   <li>{@code /api/v1/merchants/auth/**} — MERCHANT 로그인 (permitAll)</li>
+ *   <li>{@code /api/v1/admin/auth/**} — ADMIN 로그인 (permitAll)</li>
+ *   <li>{@code POST /api/v1/auth/logout} — 인증 필요 (S4)</li>
+ *   <li>{@code /api/v1/auth/**} — 공통 토큰 API (reissue 등, permitAll)</li>
  *   <li>{@code /actuator/**} — 헬스체크/info (permitAll)</li>
- *   <li>{@code /api/v1/users/**} — USER 권한 필요 (마이페이지 등)</li>
+ *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
+ *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
+ *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
  *   <li>그 외 — 인증 필요</li>
  * </ul>
  *
@@ -60,14 +64,18 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 인증 전에도 호출 가능해야 하는 endpoint
+                        // 인증 전에도 호출 가능해야 하는 endpoint (회원가입/로그인)
                         .requestMatchers("/api/v1/users/auth/**").permitAll()
+                        .requestMatchers("/api/v1/merchants/auth/**").permitAll()
+                        .requestMatchers("/api/v1/admin/auth/**").permitAll()
                         // S4: logout만 인증 필요. permitAll(/api/v1/auth/**)보다 먼저 매칭되어야 우선순위가 적용됨.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
-                        // USER 권한 필요 (마이페이지 등)
+                        // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
+                        .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
