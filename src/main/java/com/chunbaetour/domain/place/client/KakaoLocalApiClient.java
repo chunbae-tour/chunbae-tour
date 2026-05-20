@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Locale;
@@ -56,10 +57,15 @@ public class KakaoLocalApiClient {
             return defaultValue;
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
-                log.error("Kakao API Client Error (4xx): lng={}, lat={}, status={}, body={}", coord.lng(), coord.lat(), e.getStatusCode(), e.getResponseBodyAsString());
+                // 보안: 위/경도 및 응답 Body(개인정보/키) 로깅 제거, 상태 코드만 기록
+                log.error("Kakao API Client Error (4xx): status={}", e.getStatusCode());
             } else {
-                log.warn("Kakao coord2address API failed for lng={}, lat={}", coord.lng(), coord.lat(), e);
+                log.warn("Kakao coord2address API Server Error (5xx): status={}", e.getStatusCode(), e);
             }
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE); // PLACE_007 명세 준수
+        } catch (RestClientException e) {
+            // [CRITICAL] 네트워크 에러(Connection Timeout, Read Timeout, DNS 등) 누수 방어
+            log.error("Kakao coord2address API Network/Timeout Error", e);
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE); // PLACE_007 명세 준수
         }
     }

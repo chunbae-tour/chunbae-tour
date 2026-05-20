@@ -55,8 +55,12 @@ public class DirectionService {
         String originName = originFuture.join();
         String destName = destFuture.join();
 
-        String encodedOrigin = URLEncoder.encode(originName, StandardCharsets.UTF_8).replace("+", "%20");
-        String encodedDest = URLEncoder.encode(destName, StandardCharsets.UTF_8).replace("+", "%20");
+        // [CRITICAL] 카카오맵 URL은 쉼표(,)를 구분자로 사용하므로, 이름에 쉼표가 있으면 파싱 에러 발생 -> 공백 치환
+        String safeOriginName = originName.replace(",", " ");
+        String safeDestName = destName.replace(",", " ");
+
+        String encodedOrigin = URLEncoder.encode(safeOriginName, StandardCharsets.UTF_8).replace("+", "%20");
+        String encodedDest = URLEncoder.encode(safeDestName, StandardCharsets.UTF_8).replace("+", "%20");
 
         return String.format(
                 Locale.ROOT,

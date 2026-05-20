@@ -21,7 +21,7 @@ public class KakaoApiConfig {
     public CloseableHttpClient kakaoHttpClient() {
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
         connectionManager.setMaxTotal(100);
-        connectionManager.setDefaultMaxPerRoute(20);
+        connectionManager.setDefaultMaxPerRoute(100); // [CRITICAL] 카카오 단일 호스트 전용이므로 MaxTotal과 동일해야 100개 풀을 온전히 씀
 
         ConnectionConfig connectionConfig = ConnectionConfig.custom()
                 .setConnectTimeout(Timeout.ofSeconds(2))
@@ -29,6 +29,7 @@ public class KakaoApiConfig {
         connectionManager.setDefaultConnectionConfig(connectionConfig);
 
         RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectionRequestTimeout(Timeout.ofSeconds(2)) // [CRITICAL] 풀에서 커넥션을 빌려올 때 무한 대기 방지
                 .setResponseTimeout(Timeout.ofSeconds(3))
                 .build();
 
