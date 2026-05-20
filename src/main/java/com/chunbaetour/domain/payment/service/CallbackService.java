@@ -46,14 +46,16 @@ public class CallbackService {
                 default -> { }
             }
         } catch (PaymentException e) {
-            // PG 일시 장애: 키 해제 후 재전파 → PortOne 재시도 시 재처리 가능
-            // 금액 불일치 등 비즈니스 오류: 키 유지 → 동일 webhook-id 재시도 차단
+            // PAYMENT_SERVICE_UNAVAILABLE(503): 키 해제 후 재전파
+            //   → PortOne은 5xx를 서버 일시 장애로 판단해 자동 재시도
+            // PAYMENT_AMOUNT_MISMATCH(400) 등 비즈니스 오류: 키 유지
+            //   → PortOne은 4xx를 최종 실패로 판단해 재시도 안 함 → 관리자가 직접 확인 필요
             if (e.getErrorCode() == ErrorCode.PAYMENT_SERVICE_UNAVAILABLE) {
                 idempotencyService.unmarkWebhook(webhookId);
             }
             throw e;
         } catch (RuntimeException e) {
-            // DataAccessException 등 예상 외 예외: 키 해제 → PortOne 재시도 허용
+            // DataAccessException 등 예상 외 예외 → 500 반환 → PortOne 자동 재시도
             idempotencyService.unmarkWebhook(webhookId);
             throw e;
         }
