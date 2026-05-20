@@ -4,7 +4,10 @@ import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, Long> {
 
@@ -14,8 +17,18 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
     // 방 전체 멤버 목록 (상태 무관) — 강퇴·목록 조회 시 사용
     List<ChatRoomMember> findByChatRoomId(Long chatRoomId);
 
-    // 내가 현재 활동 중인 방 목록 조회 — OWNER_ACTIVE·MEMBER_ACTIVE 필터링하여 호출
+    // 내가 현재 활동 중인 방 단순 조회 — chatRoom fetch join 없음, 목록 조회엔 findMyRoomsWithCursor 사용
     List<ChatRoomMember> findByUserIdAndMemberStateIn(Long userId, List<ChatMemberState> states);
+
+    // 내 채팅방 목록 cursor 페이징 — chatRoom fetch join N+1 방지, chatRoomId DESC
+    @Query("SELECT m FROM ChatRoomMember m JOIN FETCH m.chatRoom c " +
+           "WHERE m.userId = :userId AND m.memberState IN :states AND c.id < :cursorId " +
+           "ORDER BY c.id DESC")
+    List<ChatRoomMember> findMyRoomsWithCursor(
+            @Param("userId") Long userId,
+            @Param("states") List<ChatMemberState> states,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable);
 
     // CHAT_003 중복 참여 체크 — ACTIVE 상태만 확인 (LEFT 재참여 허용)
     boolean existsByChatRoomIdAndUserIdAndMemberStateIn(Long chatRoomId, Long userId, List<ChatMemberState> activeStates);
