@@ -1,31 +1,27 @@
 package com.chunbaetour.domain.chat.entity;
 
 import com.chunbaetour.domain.chat.type.MessageType;
+import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(name = "messages")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
-public class Message {
+public class Message extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,10 +55,6 @@ public class Message {
 
     @Column(name = "translate_lang", length = 10)
     private String translateLang;
-
-    @CreatedDate
-    @Column(name = "sent_at", nullable = false, updatable = false)
-    private LocalDateTime sentAt;
 
     // senderId는 반드시 SecurityContext에서 추출 — WebSocket 클라이언트 전달값 사용 금지 (보안)
     @Builder
