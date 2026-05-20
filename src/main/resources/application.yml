@@ -45,6 +45,34 @@ cors:
   allow-credentials: true
   max-age: PT1H
 
+# Rate Limit 정책 (sa-docs/11 운영 보안 정책 §Rate Limit).
+# enabled=false면 RateLimitFilter가 모든 요청을 즉시 통과 — 로컬 개발/장애 대응 토글.
+# window는 1초 이상 ISO-8601 Duration (RateLimitPolicy compact constructor가 강제).
+# 정책 순서가 매칭 우선순위 — 구체적인 패턴 위, 일반 패턴 아래.
+ratelimit:
+  enabled: ${RATELIMIT_ENABLED:true}
+  endpoints:
+    - id: signup
+      method: POST
+      path: /api/v1/users/auth/signup
+      limit: 3
+      window: PT10M
+    - id: user-login
+      method: POST
+      path: /api/v1/users/auth/login
+      limit: 5
+      window: PT1M
+    - id: merchant-login
+      method: POST
+      path: /api/v1/merchants/auth/login
+      limit: 5
+      window: PT1M
+    - id: admin-login
+      method: POST
+      path: /api/v1/admin/auth/login
+      limit: 5
+      window: PT1M
+
 management:
   endpoints:
     web:
