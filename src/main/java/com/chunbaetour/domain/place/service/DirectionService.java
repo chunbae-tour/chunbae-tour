@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 
@@ -125,29 +126,30 @@ public class DirectionService {
             
             if (response != null && response.documents() != null && !response.documents().isEmpty()) {
                 KakaoLocalResponse.Document doc = response.documents().get(0);
-                if (doc.road_address() != null && doc.road_address().address_name() != null) {
-                    return doc.road_address().address_name();
+                if (doc.roadAddress() != null && doc.roadAddress().addressName() != null) {
+                    return doc.roadAddress().addressName();
                 }
-                if (doc.address() != null && doc.address().address_name() != null) {
-                    return doc.address().address_name();
+                if (doc.address() != null && doc.address().addressName() != null) {
+                    return doc.address().addressName();
                 }
             }
             return defaultValue;
         } catch (HttpClientErrorException e) {
             // [HIGH] 4xx 클라이언트 에러 (예: 키 설정 오류 등) 분리 및 명확한 로그 남김
             log.error("Kakao API Client Error (4xx): lng={}, lat={}, status={}, body={}", coord.lng(), coord.lat(), e.getStatusCode(), e.getResponseBodyAsString());
-            // [CRITICAL] 예외를 던져 앱을 터뜨리는 대신, 기본값 반환 (우아한 기능 저하 - Graceful Degradation)
-            return defaultValue;
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE); // PLACE_007 명세 준수
         } catch (RestClientException e) {
             log.warn("Kakao coord2address API failed for lng={}, lat={}", coord.lng(), coord.lat(), e);
-            // [CRITICAL] 타임아웃/서버장애 시에도 기본값 반환 (좌표 기반 라우팅은 여전히 동작함)
-            return defaultValue;
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE); // PLACE_007 명세 준수
         }
     }
 
     private record KakaoLocalResponse(List<Document> documents) {
-        public record Document(RoadAddress road_address, Address address) {}
-        public record RoadAddress(String address_name) {}
-        public record Address(String address_name) {}
+        public record Document(
+                @JsonProperty("road_address") RoadAddress roadAddress,
+                Address address
+        ) {}
+        public record RoadAddress(@JsonProperty("address_name") String addressName) {}
+        public record Address(@JsonProperty("address_name") String addressName) {}
     }
 }
