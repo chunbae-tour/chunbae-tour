@@ -1,23 +1,26 @@
-package com.chunbaetour.domain.support;
+package com.chunbaetour.domain.auth;
 
-import com.chunbaetour.domain.auth.Account;
-import com.chunbaetour.domain.auth.AccountRepository;
-import com.chunbaetour.domain.auth.AccountStatus;
-import com.chunbaetour.domain.auth.PasswordHasher;
-import com.chunbaetour.domain.auth.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
  * 통합 테스트 전용 계정 시드 헬퍼.
  *
- * <p>운영 코드의 회원가입 흐름은 {@link Role#USER}만 생성한다. S5 통합 테스트는
- * MERCHANT/ADMIN 계정도 필요하므로 본 헬퍼가 {@link Account#createForSeed} 정적 팩토리로
- * role/status를 명시 지정해 계정을 생성한다.
+ * <p>운영 코드의 회원가입 흐름은 {@link Role#USER}만 생성한다. S5 통합 테스트는 MERCHANT/ADMIN 계정도
+ * 필요하므로 본 헬퍼가 {@link Account#createForSeed} 정적 팩토리로 role/status를 명시 지정해 계정을
+ * 생성한다.
  *
- * <p>이전에는 {@code Field.setAccessible(true)} 기반 reflection으로 주입했지만, 필드 이름 오타나
- * 시그니처 변경 시 컴파일 단계에서 못 잡고 런타임에 깨지는 위험이 있었다. {@code createForSeed} 정적
- * 팩토리는 컴파일러가 인자/타입을 검증하므로 도메인 변경에 강건하다.
+ * <p><b>패키지 위치 결정 (중요)</b>:
+ * <ul>
+ *   <li>{@link Account#createForSeed}는 {@code package-private}이라 동일 패키지
+ *       ({@code com.chunbaetour.domain.auth})에서만 호출 가능하다.</li>
+ *   <li>본 헬퍼를 {@code src/test/java/com/chunbaetour/domain/auth/}에 두어 컴파일 단계에서 호출 권한을 강제.</li>
+ *   <li>다른 도메인(place, yeopjeon 등)의 운영 코드가 {@code createForSeed}를 호출하려 하면 컴파일 에러.</li>
+ * </ul>
+ *
+ * <p>이전 구현은 {@code Field.setAccessible(true)} 기반 reflection으로 주입했지만, 필드 이름 오타나
+ * 시그니처 변경 시 컴파일 단계에서 못 잡고 런타임에 깨지는 위험이 있었다. 정적 팩토리는 컴파일러가
+ * 인자/타입을 검증하므로 도메인 변경에 강건하다.
  *
  * <p>본 클래스는 {@code src/test}에 위치 → 운영 빌드에 포함되지 않음. 모든 통합 테스트는 본 헬퍼를
  * 거쳐 새로운 시드 경로가 새로 생기지 않도록 한다.

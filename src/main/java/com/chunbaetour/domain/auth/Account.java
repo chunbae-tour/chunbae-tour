@@ -104,9 +104,9 @@ public class Account {
      * reflection으로 role/status를 강제 주입했다. reflection은 필드 이름 오타나 시그니처 변경에 깨지기
      * 쉬워 도메인 변경 시 위험하다.
      *
-     * <p>본 팩토리는 {@code com.chunbaetour.domain.support.AccountSeedFactory}만 사용한다. 그 외 어떤
-     * 운영 코드에서도 호출하면 안 된다 (회원가입 정책 우회 위험). public인 이유는 테스트 헬퍼가 다른
-     * 패키지에 있어 가시성이 필요해서이며, 명시적 JavaDoc 경고로 의도를 박제한다.
+     * <p><b>가시성 강제</b>: {@code package-private}로 두어 동일 패키지({@code com.chunbaetour.domain.auth})
+     * 안에서만 호출 가능. 본 패키지의 유일한 정식 호출자는 {@code src/test}의 {@code AccountSeedFactory}이며,
+     * 다른 도메인 운영 코드(place, yeopjeon 등)는 컴파일 단계에서 호출 차단된다.
      *
      * @param email          이메일 (회원가입 흐름의 정규화 거치지 않음 — 호출자가 lowercase 책임)
      * @param hashedPassword 해시된 비밀번호 (BCrypt — 호출자가 PasswordHasher로 해싱)
@@ -114,7 +114,7 @@ public class Account {
      * @param role           원하는 role (USER/MERCHANT/ADMIN)
      * @param status         원하는 status (ACTIVE/SUSPENDED/DELETED)
      */
-    public static Account createForSeed(
+    static Account createForSeed(
             String email, String hashedPassword, String nickname, Role role, AccountStatus status) {
         return Account.builder()
                 .email(email)
