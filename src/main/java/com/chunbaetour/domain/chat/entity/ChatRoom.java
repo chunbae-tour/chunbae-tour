@@ -4,6 +4,7 @@ import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,8 +12,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -52,6 +56,21 @@ public class ChatRoom extends BaseEntity {
 
     @Version
     private Long version;
+
+    @OneToMany(mappedBy = "chatRoom", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ChatRoomMember> members = new ArrayList<>();
+
+    public static ChatRoom createWithOwner(Long postId, Long ownerId, String title, String description, int maxMembers) {
+        ChatRoom chatRoom = ChatRoom.builder()
+                .postId(postId)
+                .ownerId(ownerId)
+                .title(title)
+                .description(description)
+                .maxMembers(maxMembers)
+                .build();
+        chatRoom.members.add(ChatRoomMember.ofOwner(chatRoom, ownerId));
+        return chatRoom;
+    }
 
     @Builder
     private ChatRoom(Long postId, Long ownerId, String title, String description, int maxMembers) {

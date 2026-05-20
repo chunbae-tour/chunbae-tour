@@ -8,9 +8,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
@@ -32,8 +35,9 @@ public class ChatRoomMember extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "chat_room_id", nullable = false)
-    private Long chatRoomId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chat_room_id", nullable = false)
+    private ChatRoom chatRoom;
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
@@ -47,13 +51,21 @@ public class ChatRoomMember extends BaseEntity {
 
     // memberState는 호출부에서 OWNER_ACTIVE / MEMBER_ACTIVE 명시적으로 지정
     @Builder
-    private ChatRoomMember(Long chatRoomId, Long userId, ChatMemberState memberState) {
-        if (chatRoomId == null || userId == null || memberState == null) {
+    private ChatRoomMember(ChatRoom chatRoom, Long userId, ChatMemberState memberState) {
+        if (chatRoom == null || userId == null || memberState == null) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-        this.chatRoomId = chatRoomId;
+        this.chatRoom = chatRoom;
         this.userId = userId;
         this.memberState = memberState;
+    }
+
+    static ChatRoomMember ofOwner(ChatRoom chatRoom, Long userId) {
+        return ChatRoomMember.builder()
+                .chatRoom(chatRoom)
+                .userId(userId)
+                .memberState(ChatMemberState.OWNER_ACTIVE)
+                .build();
     }
 
     // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
