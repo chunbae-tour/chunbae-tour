@@ -71,13 +71,11 @@ public class ChatRoomMember extends BaseEntity {
     // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
         if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.CHAT_OWNER_CANNOT_LEAVE);
         }
-        if (this.memberState == ChatMemberState.MEMBER_KICKED) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (this.memberState == ChatMemberState.MEMBER_LEFT) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        if (this.memberState == ChatMemberState.MEMBER_KICKED
+                || this.memberState == ChatMemberState.MEMBER_LEFT) {
+            throw new BusinessException(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
         }
         this.memberState = ChatMemberState.MEMBER_LEFT;
         this.leftAt = LocalDateTime.now();
@@ -87,11 +85,11 @@ public class ChatRoomMember extends BaseEntity {
     // 이미 퇴장/강퇴된 멤버는 강퇴 대상 아님
     public void kick() {
         if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.CHAT_OWNER_CANNOT_BE_KICKED);
         }
         if (this.memberState == ChatMemberState.MEMBER_LEFT
                 || this.memberState == ChatMemberState.MEMBER_KICKED) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
         }
         this.memberState = ChatMemberState.MEMBER_KICKED;
         this.leftAt = LocalDateTime.now();

@@ -13,11 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
+@Transactional(readOnly = true)
 public class ChatRoomService {
 
     private final ChatRoomRepository chatRoomRepository;
 
+    @Transactional
     public CreateChatRoomResponse createRoom(Long userId, CreateChatRoomRequest request) {
         // TODO: Post 도메인 연동 후 게시글 작성자 검증 추가
         // Post post = postRepository.findById(request.postId()).orElseThrow(() -> new BusinessException(POST_NOT_FOUND));
