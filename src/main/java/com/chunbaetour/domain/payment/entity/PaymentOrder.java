@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.payment.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import jakarta.persistence.Column;
@@ -79,6 +81,9 @@ public class PaymentOrder extends BaseEntity {
     }
 
     public void complete(String pgTransactionId) {
+        if (pgTransactionId == null || pgTransactionId.isBlank()) {
+                    throw new PaymentException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
         this.status = PaymentOrderStatus.COMPLETED;
         this.pgTransactionId = pgTransactionId;
     }

@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.payment.service;
 
-import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -29,7 +29,11 @@ public class IdempotencyService {
         Boolean isNew = stringRedisTemplate.opsForValue()
                 .setIfAbsent(key, "1", TTL_HOURS, TimeUnit.HOURS);
         if (Boolean.FALSE.equals(isNew)) {
-            throw new BusinessException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+            throw new PaymentException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
         }
+    }
+
+    public void unmark(String idempotencyKey) {
+        stringRedisTemplate.delete(KEY_PREFIX + idempotencyKey);
     }
 }

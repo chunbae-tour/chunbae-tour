@@ -7,7 +7,16 @@ import org.springframework.http.HttpStatus;
 @Getter
 @RequiredArgsConstructor
 public enum ErrorCode {
+    // ===== COMMON =====
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_001", "서버 오류가 발생했습니다."),
+    INVALID_REQUEST(HttpStatus.BAD_REQUEST, "COMMON_002", "잘못된 요청입니다."),
+    MISSING_REQUIRED_FIELD(HttpStatus.BAD_REQUEST,           "COMMON_003", "필수 입력값이 누락되었습니다."),
+    INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST,              "COMMON_004", "입력값이 유효하지 않습니다."),
+    RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND,                 "COMMON_005", "요청한 리소스를 찾을 수 없습니다."),
+    TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS,          "COMMON_006", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
+    EXTERNAL_SERVICE_ERROR(HttpStatus.SERVICE_UNAVAILABLE,   "COMMON_007", "외부 서비스 연동 중 오류가 발생했습니다."),
 
+    // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
     ACCESS_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "AUTH_002", "Access 토큰이 만료되었습니다."),
     ACCESS_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_003", "Access 토큰이 유효하지 않습니다."),
@@ -30,9 +39,6 @@ public enum ErrorCode {
     //           회원가입 3회/10분/IP, 로그인 5회/분/IP 등 endpoint별 정책 초과 시 응답.
     //           응답에 Retry-After 헤더 + X-RateLimit-Limit/Remaining 헤더 첨부 (REST 표준).
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
-
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_001", "서버 오류가 발생했습니다."),
-    INVALID_REQUEST(HttpStatus.BAD_REQUEST, "COMMON_002", "잘못된 요청입니다."),
 
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),

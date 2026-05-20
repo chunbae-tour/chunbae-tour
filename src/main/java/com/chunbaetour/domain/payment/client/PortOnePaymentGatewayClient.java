@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.payment.client;
 
-import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.config.PortOneProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
@@ -36,7 +36,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException e) {
-            throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
     }
 
