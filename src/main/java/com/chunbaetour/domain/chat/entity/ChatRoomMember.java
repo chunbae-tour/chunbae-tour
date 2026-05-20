@@ -56,8 +56,11 @@ public class ChatRoomMember extends BaseEntity {
         this.memberState = memberState;
     }
 
-    // KICKED 또는 LEFT 상태에서 leave() 차단 — leftAt 덮어쓰기 방지
+    // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
+        if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         if (this.memberState == ChatMemberState.MEMBER_KICKED) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }

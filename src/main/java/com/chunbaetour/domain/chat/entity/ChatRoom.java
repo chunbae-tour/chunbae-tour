@@ -97,6 +97,9 @@ public class ChatRoom extends BaseEntity {
         if (this.status == ChatRoomStatus.CLOSED) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
         }
+        if (this.currentMembers >= this.maxMembers) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         this.status = ChatRoomStatus.OPEN;
     }
 
