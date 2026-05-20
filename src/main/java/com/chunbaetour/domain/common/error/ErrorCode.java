@@ -93,6 +93,7 @@ public enum ErrorCode {
     COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COMMUNITY_004", "존재하지 않는 댓글입니다."),
     COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN, "COMMUNITY_005", "댓글 작성자만 수정·삭제할 수 있습니다."),
     COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "COMMUNITY_006", "이미 삭제된 댓글입니다."),
+    COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "COMMUNITY_007", "대댓글에는 답글을 달 수 없습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

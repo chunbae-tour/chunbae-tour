@@ -57,10 +57,42 @@ class CommentServiceTest {
         given(commentRepository.save(any())).willReturn(comment);
 
         CommentCreateResponse response = commentService.create(1L, 1L, PostType.FREE,
-                new CommentCreateRequest("좋은 글이에요!"));
+                new CommentCreateRequest("좋은 글이에요!", null));
 
         assertThat(response.content()).isEqualTo("좋은 글이에요!");
         assertThat(response.writer().nickname()).isEqualTo("춘배여행자");
+    }
+
+    @Test
+    void 대댓글_작성_성공() {
+        Comment parent = Comment.create(1L, PostType.FREE, 1L, "부모 댓글");
+        ReflectionTestUtils.setField(parent, "id", 10L);
+        Comment reply = Comment.create(1L, PostType.FREE, 1L, "대댓글이에요!", 10L);
+        given(accountRepository.findById(1L)).willReturn(Optional.of(author));
+        given(commentRepository.findById(10L)).willReturn(Optional.of(parent));
+        given(commentRepository.save(any())).willReturn(reply);
+
+        CommentCreateResponse response = commentService.create(1L, 1L, PostType.FREE,
+                new CommentCreateRequest("대댓글이에요!", 10L));
+
+        assertThat(response.content()).isEqualTo("대댓글이에요!");
+        assertThat(response.parentCommentId()).isEqualTo(10L);
+    }
+
+    @Test
+    void 대댓글에_대댓글_작성_400() {
+        Comment parent = Comment.create(1L, PostType.FREE, 1L, "부모 댓글");
+        ReflectionTestUtils.setField(parent, "id", 10L);
+        Comment reply = Comment.create(1L, PostType.FREE, 1L, "대댓글", 10L);
+        ReflectionTestUtils.setField(reply, "id", 20L);
+        given(accountRepository.findById(1L)).willReturn(Optional.of(author));
+        given(commentRepository.findById(20L)).willReturn(Optional.of(reply));
+
+        assertThatThrownBy(() -> commentService.create(1L, 1L, PostType.FREE,
+                new CommentCreateRequest("2depth 대댓글", 20L)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED));
     }
 
     @Test
@@ -102,7 +134,7 @@ class CommentServiceTest {
         given(commentRepository.save(any())).willReturn(comment);
 
         CommentCreateResponse response = commentService.create(1L, 2L, PostType.COMPANION,
-                new CommentCreateRequest("같이 가요!"));
+                new CommentCreateRequest("같이 가요!", null));
 
         assertThat(response.content()).isEqualTo("같이 가요!");
     }

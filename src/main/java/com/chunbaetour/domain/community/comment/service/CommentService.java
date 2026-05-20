@@ -34,7 +34,13 @@ public class CommentService {
     @Transactional
     public CommentCreateResponse create(Long authorId, Long postId, PostType postType, CommentCreateRequest request) {
         Account author = findAccount(authorId);
-        Comment comment = Comment.create(postId, postType, authorId, request.content());
+        if (request.parentCommentId() != null) {
+            Comment parent = findComment(request.parentCommentId());
+            if (parent.getParentCommentId() != null) {
+                throw new BusinessException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
+            }
+        }
+        Comment comment = Comment.create(postId, postType, authorId, request.content(), request.parentCommentId());
         return CommentCreateResponse.of(commentRepository.save(comment), author);
     }
 

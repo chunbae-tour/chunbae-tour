@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 public record CommentGetListResponse(
         Long commentId,
+        Long parentCommentId,
         String content,
         WriterInfo writer,
         LocalDateTime createdAt,
@@ -21,6 +22,7 @@ public record CommentGetListResponse(
         );
         return new CommentGetListResponse(
                 comment.getId(),
+                comment.getParentCommentId(),
                 comment.getContent(),
                 writer,
                 comment.getCreatedAt(),

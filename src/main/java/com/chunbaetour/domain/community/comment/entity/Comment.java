@@ -38,6 +38,9 @@ public class Comment {
     @Column(name = "author_id", nullable = false)
     private Long authorId;
 
+    @Column(name = "parent_comment_id")
+    private Long parentCommentId;
+
     @Column(nullable = false, length = 1000)
     private String content;
 
@@ -57,11 +60,16 @@ public class Comment {
     private LocalDateTime deletedAt;
 
     public static Comment create(Long postId, PostType postType, Long authorId, String content) {
+        return create(postId, postType, authorId, content, null);
+    }
+
+    public static Comment create(Long postId, PostType postType, Long authorId, String content, Long parentCommentId) {
         Comment comment = new Comment();
         comment.postId = postId;
         comment.postType = postType;
         comment.authorId = authorId;
         comment.content = content;
+        comment.parentCommentId = parentCommentId;
         comment.status = CommentStatus.ACTIVE;
         return comment;
     }
