@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.community.comment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
@@ -9,12 +10,15 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateRequest;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
+import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class CommentServiceTest {
@@ -42,6 +47,7 @@ class CommentServiceTest {
     @BeforeEach
     void setUp() {
         author = Account.registerUser("test@example.com", "hashed", "춘배여행자");
+        ReflectionTestUtils.setField(author, "id", 1L);
     }
 
     @Test
@@ -73,7 +79,11 @@ class CommentServiceTest {
     @Test
     void 댓글_목록_hasNext_true() {
         List<Comment> comments = java.util.stream.IntStream.rangeClosed(1, 11)
-                .mapToObj(i -> Comment.create(1L, PostType.FREE, 1L, "댓글" + i))
+                .mapToObj(i -> {
+                    Comment c = Comment.create(1L, PostType.FREE, 1L, "댓글" + i);
+                    ReflectionTestUtils.setField(c, "id", (long) i);
+                    return c;
+                })
                 .toList();
         given(commentRepository.findByPost(1L, PostType.FREE, CommentStatus.ACTIVE, null, Pageable.ofSize(11)))
                 .willReturn(comments);
@@ -95,5 +105,69 @@ class CommentServiceTest {
                 new CommentCreateRequest("같이 가요!"));
 
         assertThat(response.content()).isEqualTo("같이 가요!");
+    }
+
+    @Test
+    void 댓글_수정_성공() {
+        Comment comment = Comment.create(1L, PostType.FREE, 1L, "원본 내용");
+        given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
+
+        commentService.update(1L, 1L, new CommentUpdateRequest("수정된 내용"));
+
+        assertThat(comment.getContent()).isEqualTo("수정된 내용");
+    }
+
+    @Test
+    void 댓글_수정_타인_403() {
+        Comment comment = Comment.create(1L, PostType.FREE, 1L, "원본 내용");
+        given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
+
+        assertThatThrownBy(() -> commentService.update(2L, 1L, new CommentUpdateRequest("수정 시도")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_FORBIDDEN));
+    }
+
+    @Test
+    void 댓글_삭제_성공() {
+        Comment comment = Comment.create(1L, PostType.FREE, 1L, "삭제될 댓글");
+        given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
+
+        commentService.delete(1L, 1L);
+
+        assertThat(comment.getStatus()).isEqualTo(CommentStatus.DELETED);
+    }
+
+    @Test
+    void 댓글_삭제_타인_403() {
+        Comment comment = Comment.create(1L, PostType.FREE, 1L, "삭제될 댓글");
+        given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
+
+        assertThatThrownBy(() -> commentService.delete(2L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_FORBIDDEN));
+    }
+
+    @Test
+    void 이미_삭제된_댓글_삭제_400() {
+        Comment comment = Comment.create(1L, PostType.FREE, 1L, "이미 삭제됨");
+        comment.delete();
+        given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
+
+        assertThatThrownBy(() -> commentService.delete(1L, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));
+    }
+
+    @Test
+    void 존재하지_않는_댓글_수정_404() {
+        given(commentRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.update(1L, 99L, new CommentUpdateRequest("내용")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
     }
 }

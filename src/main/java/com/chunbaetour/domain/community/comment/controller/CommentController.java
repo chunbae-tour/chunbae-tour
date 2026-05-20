@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateRequest;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
+import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.community.common.CursorPage;
@@ -13,7 +14,9 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -46,5 +49,26 @@ public class CommentController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
         return ApiResponse.success(commentService.findAll(postId, PostType.from(postType), cursor, size));
+    }
+
+    @PatchMapping("/{commentId}")
+    public ApiResponse<Void> update(
+            @AuthenticationPrincipal Long accountId,
+            @PathVariable String postType,
+            @PathVariable Long postId,
+            @PathVariable Long commentId,
+            @Valid @RequestBody CommentUpdateRequest request) {
+        commentService.update(accountId, commentId, request);
+        return ApiResponse.success();
+    }
+
+    @DeleteMapping("/{commentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
+            @AuthenticationPrincipal Long accountId,
+            @PathVariable String postType,
+            @PathVariable Long postId,
+            @PathVariable Long commentId) {
+        commentService.delete(accountId, commentId);
     }
 }

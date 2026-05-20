@@ -66,6 +66,10 @@ public class Comment {
         return comment;
     }
 
+    public void update(String content) {
+        this.content = content;
+    }
+
     public void delete() {
         this.status = CommentStatus.DELETED;
         this.deletedAt = LocalDateTime.now();

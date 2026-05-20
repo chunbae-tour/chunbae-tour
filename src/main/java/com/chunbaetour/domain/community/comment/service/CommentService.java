@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateRequest;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
+import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
@@ -61,8 +62,34 @@ public class CommentService {
         return new CursorPage<>(items, nextCursor, hasNext, content.size());
     }
 
+    @Transactional
+    public void update(Long accountId, Long commentId, CommentUpdateRequest request) {
+        Comment comment = findComment(commentId);
+        if (!comment.isOwnedBy(accountId)) {
+            throw new BusinessException(ErrorCode.COMMENT_FORBIDDEN);
+        }
+        comment.update(request.content());
+    }
+
+    @Transactional
+    public void delete(Long accountId, Long commentId) {
+        Comment comment = findComment(commentId);
+        if (!comment.isOwnedBy(accountId)) {
+            throw new BusinessException(ErrorCode.COMMENT_FORBIDDEN);
+        }
+        if (comment.getStatus() == CommentStatus.DELETED) {
+            throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
+        }
+        comment.delete();
+    }
+
     private Account findAccount(Long accountId) {
         return accountRepository.findById(accountId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+    }
+
+    private Comment findComment(Long commentId) {
+        return commentRepository.findById(commentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMMENT_NOT_FOUND));
     }
 }

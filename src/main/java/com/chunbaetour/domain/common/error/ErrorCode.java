@@ -90,6 +90,9 @@ public enum ErrorCode {
     COMMUNITY_001(HttpStatus.NOT_FOUND,  "COMMUNITY_001", "게시글을 찾을 수 없습니다."),
     COMMUNITY_002(HttpStatus.FORBIDDEN,  "COMMUNITY_002", "게시글 수정 권한이 없습니다."),
     COMMUNITY_003(HttpStatus.FORBIDDEN,  "COMMUNITY_003", "게시글 삭제 권한이 없습니다."),
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COMMUNITY_004", "존재하지 않는 댓글입니다."),
+    COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN, "COMMUNITY_005", "댓글 작성자만 수정·삭제할 수 있습니다."),
+    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "COMMUNITY_006", "이미 삭제된 댓글입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
