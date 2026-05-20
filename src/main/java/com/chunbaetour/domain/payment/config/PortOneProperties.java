@@ -16,6 +16,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class PortOneProperties {
 
     private String secret;
+    private String webhookSecret;
     private String storeId;
     private String baseUrl;
     private Map<String, String> channel; // 결제수단별 포트원 채널키 (card, kakao-pay, toss-pay, naver-pay, foreign-card)

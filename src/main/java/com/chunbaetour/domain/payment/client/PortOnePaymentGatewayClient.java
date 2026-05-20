@@ -40,5 +40,26 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
         }
     }
 
+    @Override
+    public PortOnePaymentInfo verifyPayment(String paymentId) {
+        try {
+            PortOnePaymentResponse response = portOneRestClient.get()
+                    .uri("/payments/{paymentId}", paymentId)
+                    .header("Authorization", "PortOne " + properties.getSecret())
+                    .retrieve()
+                    .body(PortOnePaymentResponse.class);
+            if (response == null || response.amount() == null) {
+                throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+            }
+            return new PortOnePaymentInfo(response.status(), response.amount().total());
+        } catch (RestClientException e) {
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+    }
+
     private record PreRegisterRequest(String storeId, Long totalAmount, String currency) {}
+
+    private record PortOnePaymentResponse(String status, AmountDetail amount) {
+        record AmountDetail(Long total) {}
+    }
 }
