@@ -58,6 +58,7 @@ public class GlobalExceptionHandler {
                 .map(fieldError -> switch (fieldError.getField()) {
                     case "email" -> ErrorCode.INVALID_EMAIL_FORMAT;
                     case "password" -> ErrorCode.INVALID_PASSWORD_FORMAT;
+                    case "originLat", "originLng", "destLat", "destLng" -> ErrorCode.INVALID_LOCATION;
                     default -> ErrorCode.INVALID_REQUEST;
                 })
                 .orElse(ErrorCode.INVALID_REQUEST);
