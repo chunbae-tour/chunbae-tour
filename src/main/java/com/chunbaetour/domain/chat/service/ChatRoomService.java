@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.chat.service;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
+import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
@@ -71,6 +72,23 @@ public class ChatRoomService {
                 hasNext,
                 size
         );
+    }
+
+    public ChatRoomDetailResponse getRoomDetail(Long userId, Long roomId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        ChatRoomMember member = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+
+        if (!ACTIVE_STATES.contains(member.getMemberState())) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
+
+        List<ChatRoomMember> activeMembers = chatRoomMemberRepository
+                .findByChatRoomIdAndMemberStateIn(roomId, ACTIVE_STATES);
+
+        return ChatRoomDetailResponse.from(chatRoom, activeMembers);
     }
 
     private Long decodeCursor(String cursor) {

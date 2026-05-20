@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
+import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.service.ChatRoomService;
@@ -14,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,5 +45,12 @@ public class ChatRoomController {
             @RequestParam(required = false) String cursor,
             @Min(1) @Max(100) @RequestParam(defaultValue = "10") int size) {
         return ApiResponse.success(chatRoomService.getMyRooms(userId, cursor, size));
+    }
+
+    @GetMapping("/{roomId}")
+    public ApiResponse<ChatRoomDetailResponse> getRoomDetail(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long roomId) {
+        return ApiResponse.success(chatRoomService.getRoomDetail(userId, roomId));
     }
 }
