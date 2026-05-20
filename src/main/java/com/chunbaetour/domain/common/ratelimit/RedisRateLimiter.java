@@ -3,6 +3,8 @@ package com.chunbaetour.domain.common.ratelimit;
 import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -30,6 +32,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class RedisRateLimiter implements RateLimiter {
 
     /**
@@ -69,24 +72,31 @@ public class RedisRateLimiter implements RateLimiter {
 
     @Override
     public RateLimitDecision tryConsume(String key, RateLimitPolicy policy) {
-        Long result = redis.execute(
-                CONSUME_SCRIPT,
-                List.of(key),
-                String.valueOf(policy.window().toSeconds()),
-                String.valueOf(policy.limit())
-        );
-        if (result == null) {
-            // Redis 응답 누락은 운영상 정책 결정 — 실패 시 차단 (fail-closed) vs 허용 (fail-open).
-            // 본 구현은 차단을 택해 보안 정책 강제 (Redis 장애 시 회원가입/로그인 일시 차단되더라도 무차별 공격 방어 우선).
+        try {
+            Long result = redis.execute(
+                    CONSUME_SCRIPT,
+                    List.of(key),
+                    String.valueOf(policy.window().toSeconds()),
+                    String.valueOf(policy.limit())
+            );
+            if (result == null) {
+                // Lua 실행 결과 누락은 비정상 상태. 정책상 fail-closed 차단으로 명시.
+                log.warn("Redis rate limit Lua 실행 결과 누락. key={}", key);
+                return RateLimitDecision.denied(policy.window());
+            }
+            if (result < 0) {
+                // 거부: Retry-After = window 잔여 TTL. 키 조회 실패 시 정책 window로 fallback.
+                Duration retryAfter = redisTtlOrFallback(key, policy.window());
+                return RateLimitDecision.denied(retryAfter);
+            }
+            return RateLimitDecision.allowed(result);
+        } catch (DataAccessException e) {
+            // Redis 장애 (연결 실패, 타임아웃, Lua 오류 등) 시 fail-closed 차단.
+            // 보안 정책 강제 우선 — Redis 장애 동안 회원가입/로그인이 일시 차단되더라도 무차별 공격 방어가 더 중요.
+            // 운영 알람 위해 WARN 레벨로 로그. 빈번하면 Redis 클러스터/장애 조사 필요.
+            log.warn("Redis rate limit 호출 실패; fail-closed로 차단. key={}", key, e);
             return RateLimitDecision.denied(policy.window());
         }
-        if (result < 0) {
-            // 거부: Retry-After = window 잔여 TTL. 정확한 TTL 조회는 추가 라운드트립이 비싸므로
-            // window 전체 길이로 근사 (Fixed Window 정책상 최악 시나리오 안내)
-            Duration retryAfter = redisTtlOrFallback(key, policy.window());
-            return RateLimitDecision.denied(retryAfter);
-        }
-        return RateLimitDecision.allowed(result);
     }
 
     /**
@@ -94,12 +104,21 @@ public class RedisRateLimiter implements RateLimiter {
      *
      * <p>Retry-After 정확도는 운영상 클라이언트 UX에 직접 영향 — 너무 길면 의미 없는 대기 발생.
      * TTL 조회는 INCR과 별개 라운드트립이지만 거부 시점에만 발생하므로 비용 미미.
+     *
+     * <p>TTL 조회 자체가 Redis 장애로 실패하면 fail-closed 정책 유지 — fallback window 반환 + WARN 로그.
+     * 호출자(tryConsume)는 이미 denied 분기로 결정한 상태이므로 본 메서드 실패가 정책 강제에 영향 없음.
      */
     private Duration redisTtlOrFallback(String key, Duration fallback) {
-        Long ttlSeconds = redis.getExpire(key);
-        if (ttlSeconds == null || ttlSeconds < 0) {
+        try {
+            Long ttlSeconds = redis.getExpire(key);
+            if (ttlSeconds == null || ttlSeconds < 0) {
+                return fallback;
+            }
+            return Duration.ofSeconds(ttlSeconds);
+        } catch (DataAccessException e) {
+            // Retry-After 정확도는 부가 정보 — 실패해도 fallback으로 안전하게 응답
+            log.warn("Redis TTL 조회 실패; window fallback 사용. key={}", key, e);
             return fallback;
         }
-        return Duration.ofSeconds(ttlSeconds);
     }
 }
