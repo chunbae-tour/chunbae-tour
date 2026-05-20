@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.config.PortOneProperties;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
@@ -46,7 +47,9 @@ public class WebhookVerifier {
         boolean matched = Arrays.stream(signatureHeader.split(" "))
                 .filter(s -> s.startsWith("v1,"))
                 .map(s -> s.substring(3))
-                .anyMatch(s -> s.equals(computed));
+                .anyMatch(s -> MessageDigest.isEqual(
+                        s.getBytes(StandardCharsets.UTF_8),
+                        computed.getBytes(StandardCharsets.UTF_8)));
 
         if (!matched) {
             throw new PaymentException(ErrorCode.WEBHOOK_SIGNATURE_INVALID);

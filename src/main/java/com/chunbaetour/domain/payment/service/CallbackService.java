@@ -3,10 +3,12 @@ package com.chunbaetour.domain.payment.service;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
+import com.chunbaetour.domain.payment.dto.request.WebhookPayload;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
+import com.chunbaetour.domain.payment.type.WebhookEventType;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,19 @@ public class CallbackService {
     private final PaymentGatewayClient paymentGatewayClient;
     private final IdempotencyService idempotencyService;
     private final WalletService walletService;
+
+    public void handle(WebhookPayload payload) {
+        if (payload.data() == null) return;
+
+        WebhookEventType eventType = WebhookEventType.from(payload.type());
+        switch (eventType) {
+            case TRANSACTION_PAID ->
+                    handleSuccess(payload.data().paymentId(), payload.data().txId());
+            case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
+                    handleFail(payload.data().paymentId());
+            default -> { }
+        }
+    }
 
     // noRollbackFor: 금액 불일치 시 order.fail() DB 커밋 보장 (throw해도 롤백 안 됨)
     @Transactional(noRollbackFor = PaymentException.class)
@@ -44,6 +59,7 @@ public class CallbackService {
 
         order.complete(txId);
         walletService.charge(order.getUserId(), order.getAmount(), order.getId());
+        scheduleUnmark(order.getIdempotencyKey());
     }
 
     @Transactional

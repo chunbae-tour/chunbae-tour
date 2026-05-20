@@ -62,7 +62,7 @@ class CallbackServiceTest {
         assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
         assertThat(order.getPgTransactionId()).isEqualTo("tx-1");
         verify(walletService).charge(eq(1L), eq(10_000L), any());
-        verify(idempotencyService, never()).unmark(anyString());
+        verify(idempotencyService).unmark("idem-key-1");
     }
 
     @Test

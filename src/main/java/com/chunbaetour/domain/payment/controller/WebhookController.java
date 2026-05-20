@@ -1,11 +1,14 @@
 package com.chunbaetour.domain.payment.controller;
 
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.payment.dto.request.WebhookPayload;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.service.CallbackService;
 import com.chunbaetour.domain.payment.service.WebhookVerifier;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import tools.jackson.databind.ObjectMapper;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -30,16 +33,14 @@ public class WebhookController {
     ) {
         webhookVerifier.verify(webhookId, signature, timestamp, rawBody);
 
-        WebhookPayload payload = objectMapper.readValue(rawBody, WebhookPayload.class);
-        if (payload.data() == null) {
-            return ApiResponse.success();
+        // 서명 검증 + 파싱 + 위임만
+        WebhookPayload payload;
+        try {
+            payload = objectMapper.readValue(rawBody, WebhookPayload.class);
+        } catch (JsonProcessingException e) {
+            throw new PaymentException(ErrorCode.INVALID_REQUEST);
         }
-        if ("Transaction.Paid".equals(payload.type())) {
-            callbackService.handleSuccess(payload.data().paymentId(), payload.data().txId());
-        } else if ("Transaction.Failed".equals(payload.type())
-                || "Transaction.Cancelled".equals(payload.type())) {
-            callbackService.handleFail(payload.data().paymentId());
-        }
+        callbackService.handle(payload);
 
         return ApiResponse.success();
     }
