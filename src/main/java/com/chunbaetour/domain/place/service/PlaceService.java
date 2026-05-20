@@ -99,10 +99,51 @@ public class PlaceService {
         return response;
     }
 
+    private static final String UNLOCK_LUA_SCRIPT = 
+            "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+            "return redis.call('del', KEYS[1]) else return 0 end";
+
     private PlaceDetailResponse resolveFromCacheOrDb(Long placeId) {
         String cacheKey = PLACE_DETAIL_CACHE_PREFIX + placeId;
 
-        // 1. Redis 캐시 조회
+        // 1. Redis 캐시 1차 조회
+        PlaceDetailResponse cachedResponse = getFromCache(cacheKey, placeId);
+        if (cachedResponse != null) {
+            return cachedResponse;
+        }
+
+        // Cache Stampede 방어용 Lock
+        String lockKey = "lock:place:" + placeId;
+        String lockValue = java.util.UUID.randomUUID().toString();
+        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, Duration.ofSeconds(3));
+
+        if (Boolean.TRUE.equals(locked)) {
+            try {
+                return fetchFromDbAndCache(placeId, cacheKey);
+            } finally {
+                releaseLockIfOwner(lockKey, lockValue);
+            }
+        } else {
+            // 락 획득 실패 시 Bounded Polling (최대 20회 * 50ms = 1초 대기)
+            for (int i = 0; i < 20; i++) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                
+                PlaceDetailResponse retryCached = getFromCache(cacheKey, placeId);
+                if (retryCached != null) {
+                    return retryCached;
+                }
+            }
+            // 폴링 타임아웃 이후에도 캐시가 없으면 최후의 수단으로 DB 쿼리 진행
+            return fetchFromDbAndCache(placeId, cacheKey);
+        }
+    }
+
+    private PlaceDetailResponse getFromCache(String cacheKey, Long placeId) {
         String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
         if (cachedData != null) {
             try {
@@ -111,38 +152,21 @@ public class PlaceService {
                 return PlaceDetailResponse.of(cached, false); // PHASE 3에서 사용자 로그인 여부 판별 로직 추가 예정
             } catch (Exception e) {
                 log.error("Place Detail Cache parsing error: placeId={}", placeId, e);
-                stringRedisTemplate.delete(cacheKey); // 깨진 캐시 즉시 제거
+                stringRedisTemplate.delete(cacheKey); // 깨진 캐시 즉시 제거 (재시도 시에도 동일하게 적용)
             }
         }
+        return null;
+    }
 
-        // Cache Stampede 방어용 Lock
-        String lockKey = "lock:place:" + placeId;
-        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, "1", Duration.ofSeconds(3));
-
-        if (Boolean.TRUE.equals(locked)) {
-            try {
-                return fetchFromDbAndCache(placeId, cacheKey);
-            } finally {
-                stringRedisTemplate.delete(lockKey);
-            }
-        } else {
-            // 락 획득 실패 시 짧은 대기 후 캐시 재조회 시도
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-            }
-            String retryCached = stringRedisTemplate.opsForValue().get(cacheKey);
-            if (retryCached != null) {
-                try {
-                    PlaceCacheDto cached = objectMapper.readValue(retryCached, PlaceCacheDto.class);
-                    return PlaceDetailResponse.of(cached, false);
-                } catch (Exception e) {
-                    log.error("Place Detail Cache parsing error on retry: placeId={}", placeId, e);
-                }
-            }
-            // 재조회도 실패하면 그냥 DB 쿼리 진행
-            return fetchFromDbAndCache(placeId, cacheKey);
+    private void releaseLockIfOwner(String lockKey, String lockValue) {
+        try {
+            stringRedisTemplate.execute(
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(UNLOCK_LUA_SCRIPT, Long.class),
+                    Collections.singletonList(lockKey),
+                    lockValue
+            );
+        } catch (Exception e) {
+            log.error("Failed to release lock: lockKey={}", lockKey, e);
         }
     }
 
