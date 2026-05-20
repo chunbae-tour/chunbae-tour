@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,10 @@ public class UserMeController {
      */
     @GetMapping
     public ApiResponse<UserMeResponse> getMe(@AuthenticationPrincipal Long userId) {
+        // SecurityConfig hasRole(USER)로 보호되므로 정상 흐름에서는 null이 도달할 수 없지만,
+        // 필터 우회/설정 누락 등 비정상 상태 방어 차원에서 명시적으로 확인.
+        // long unboxing 시 NPE 대신 표준 AUTH_006 응답으로 통일.
+        requireAuthenticated(userId);
         return ApiResponse.success(userMeService.getMe(userId));
     }
 
@@ -54,6 +60,20 @@ public class UserMeController {
      */
     @GetMapping("/ping")
     public ApiResponse<Map<String, Long>> ping(@AuthenticationPrincipal Long userId) {
+        // getMe와 동일한 방어 정책 적용 (일관성 + Map.of null key NPE 차단)
+        requireAuthenticated(userId);
         return ApiResponse.success(Map.of("userId", userId));
+    }
+
+    /**
+     * SecurityContext에 userId가 채워지지 않은 비정상 상태를 표준 AUTH_006 에러로 변환.
+     *
+     * <p>본 컨트롤러의 모든 endpoint는 인증 필수이므로 userId null = 인증 실패와 동일하게 응답.
+     * NPE를 던지지 않고 도메인 에러로 통일하여 클라이언트 응답 형식 일관성 유지.
+     */
+    private static void requireAuthenticated(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
     }
 }
