@@ -61,6 +61,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private static final List<String> PUBLIC_PATH_PATTERNS = List.of(
             "/api/v1/users/auth/**",
+            // S5: 상인/관리자 로그인도 인증 없이 접근 가능
+            "/api/v1/merchants/auth/**",
+            "/api/v1/admin/auth/**",
             "/api/v1/auth/**",
             "/actuator/**"
     );
