@@ -52,6 +52,7 @@ public enum ErrorCode {
     PAYMENT_HISTORY_NOT_FOUND(HttpStatus.NOT_FOUND,         "PAY_009", "존재하지 않는 결제 내역입니다."),
     REFUND_PERIOD_EXPIRED(HttpStatus.BAD_REQUEST,           "PAY_010", "환불 가능한 기간이 지났습니다."),
     PAYMENT_HISTORY_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_011", "본인의 결제 내역만 조회할 수 있습니다."),
+    WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_012", "엽전 지갑을 찾을 수 없습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
@@ -73,7 +74,22 @@ public enum ErrorCode {
     SHOP_ALREADY_EXISTS(HttpStatus.CONFLICT,                "SHOP_003", "이미 등록된 가게가 있습니다."),
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
     INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
-    SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다.");
+    SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다."),
+
+    // ===== CHAT (담당: 임하은) =====
+    CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
+    CHAT_ROOM_FULL(HttpStatus.CONFLICT,                     "CHAT_002", "채팅방 정원이 가득 찼습니다."),
+    ALREADY_JOINED_CHAT(HttpStatus.CONFLICT,                "CHAT_003", "이미 참여 중인 채팅방입니다."),
+    ALREADY_APPLIED_CHAT(HttpStatus.CONFLICT,               "CHAT_004", "이미 참여 신청한 채팅방입니다."),
+    CHAT_NOT_JOINED(HttpStatus.FORBIDDEN,                   "CHAT_005", "채팅방에 참여하지 않은 사용자입니다."),
+    CHAT_SETTING_FORBIDDEN(HttpStatus.FORBIDDEN,            "CHAT_006", "채팅방 개설자만 설정을 변경할 수 있습니다."),
+    MESSAGE_TOO_LONG(HttpStatus.BAD_REQUEST,                "CHAT_007", "메시지는 최대 1000자까지 입력 가능합니다."),
+    CHAT_TITLE_TOO_LONG(HttpStatus.BAD_REQUEST,             "CHAT_008", "채팅방 제목은 최대 50자까지 입력 가능합니다."),
+    INVALID_CHAT_CAPACITY(HttpStatus.BAD_REQUEST,           "CHAT_009", "최대 인원은 2명 이상 50명 이하여야 합니다."),
+    CHAT_MEMBER_KICKED_REJOIN(HttpStatus.FORBIDDEN,         "CHAT_010", "강퇴된 채팅방에는 재참여할 수 없습니다."),
+    CHAT_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND,        "CHAT_011", "존재하지 않는 참여 신청입니다."),
+    CHAT_APPLICATION_ALREADY_PROCESSED(HttpStatus.CONFLICT, "CHAT_012", "이미 처리된 참여 신청입니다."),
+    CHAT_ROOM_CLOSED(HttpStatus.CONFLICT,                   "CHAT_013", "이미 종료된 채팅방입니다.");
 
     private final HttpStatus status;
     private final String code;
