@@ -52,7 +52,7 @@ public enum ErrorCode {
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
-    CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 1,000원 이상이어야 합니다."),
+    CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 5,000원 이상이어야 합니다."),
     INVALID_CHARGE_UNIT(HttpStatus.BAD_REQUEST,             "PAY_003", "충전 금액은 1,000원 단위로 입력해주세요."),
     CHARGE_AMOUNT_EXCEEDED(HttpStatus.BAD_REQUEST,          "PAY_004", "1회 최대 충전 금액은 100,000원입니다."),
     PAYMENT_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PAY_005", "결제 서비스를 일시적으로 사용할 수 없습니다."),
