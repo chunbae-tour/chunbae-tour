@@ -26,7 +26,12 @@ public class CallbackService {
     private final IdempotencyService idempotencyService;
     private final WalletService walletService;
 
-    public void handle(WebhookPayload payload) {
+    public void handle(String webhookId, WebhookPayload payload) {
+        // Standard Webhooks: 동일 webhook-id 재전송 시 즉시 200 리턴 (중복 처리 방지)
+        if (!idempotencyService.markWebhookIfAbsent(webhookId)) {
+            return;
+        }
+
         if (payload.data() == null) return;
 
         WebhookEventType eventType = WebhookEventType.from(payload.type());

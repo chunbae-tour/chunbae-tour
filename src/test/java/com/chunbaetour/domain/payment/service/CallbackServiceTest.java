@@ -9,10 +9,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
+import com.chunbaetour.domain.payment.dto.request.WebhookPayload;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
@@ -161,6 +163,35 @@ class CallbackServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("handle(): 중복 webhook-id → 조용히 리턴 (결제 처리 없음)")
+    void handle_duplicate_webhookId_returns_silently() {
+        given(idempotencyService.markWebhookIfAbsent("wh-dup")).willReturn(false);
+        WebhookPayload payload = new WebhookPayload("Transaction.Paid",
+                new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
+
+        callbackService.handle("wh-dup", payload);
+
+        verifyNoInteractions(paymentOrderRepository, paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("handle(): 신규 webhook-id → 정상 처리 위임")
+    void handle_new_webhookId_delegates_to_handler() {
+        given(idempotencyService.markWebhookIfAbsent("wh-new")).willReturn(true);
+        PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+        WebhookPayload payload = new WebhookPayload("Transaction.Paid",
+                new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
+
+        callbackService.handle("wh-new", payload);
+
+        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
     }
 
     @Test

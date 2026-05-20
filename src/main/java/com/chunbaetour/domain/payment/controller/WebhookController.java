@@ -40,7 +40,7 @@ public class WebhookController {
         } catch (JsonProcessingException e) {
             throw new PaymentException(ErrorCode.INVALID_REQUEST);
         }
-        callbackService.handle(payload);
+        callbackService.handle(webhookId, payload);
 
         return ApiResponse.success();
     }
