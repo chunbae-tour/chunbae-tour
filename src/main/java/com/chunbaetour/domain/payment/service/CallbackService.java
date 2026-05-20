@@ -18,7 +18,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class CallbackService {
 
     private final PaymentOrderRepository paymentOrderRepository;
@@ -26,6 +25,9 @@ public class CallbackService {
     private final IdempotencyService idempotencyService;
     private final WalletService walletService;
 
+    // handle()에서 handleSuccess/handleFail을 self-invocation으로 호출하므로
+    // 각 메서드의 @Transactional이 프록시를 거치지 않음 → handle()에 통합
+    @Transactional(noRollbackFor = PaymentException.class)
     public void handle(String webhookId, WebhookPayload payload) {
         // Standard Webhooks: 동일 webhook-id 재전송 시 즉시 200 리턴 (중복 처리 방지)
         if (!idempotencyService.markWebhookIfAbsent(webhookId)) {
@@ -49,6 +51,10 @@ public class CallbackService {
             if (e.getErrorCode() == ErrorCode.PAYMENT_SERVICE_UNAVAILABLE) {
                 idempotencyService.unmarkWebhook(webhookId);
             }
+            throw e;
+        } catch (RuntimeException e) {
+            // DataAccessException 등 예상 외 예외: 키 해제 → PortOne 재시도 허용
+            idempotencyService.unmarkWebhook(webhookId);
             throw e;
         }
     }

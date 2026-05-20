@@ -216,6 +216,22 @@ class CallbackServiceTest {
     }
 
     @Test
+    @DisplayName("handle(): DataAccessException 등 예상 외 예외 시 webhook-id 키 해제 → 재시도 허용")
+    void handle_unexpected_runtime_exception_unmarks_webhook_for_retry() {
+        given(idempotencyService.markWebhookIfAbsent("wh-err")).willReturn(true);
+        given(paymentOrderRepository.findByOrderUid("order-uid-1"))
+                .willThrow(new RuntimeException("DB connection lost"));
+        WebhookPayload payload = new WebhookPayload("Transaction.Paid",
+                new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
+
+        assertThatThrownBy(() -> callbackService.handle("wh-err", payload))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("DB connection lost");
+
+        verify(idempotencyService).unmarkWebhook("wh-err");
+    }
+
+    @Test
     @DisplayName("handle(): 신규 webhook-id → 정상 처리 위임")
     void handle_new_webhookId_delegates_to_handler() {
         given(idempotencyService.markWebhookIfAbsent("wh-new")).willReturn(true);
