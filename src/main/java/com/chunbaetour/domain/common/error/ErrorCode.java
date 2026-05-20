@@ -93,7 +93,11 @@ public enum ErrorCode {
     CHAT_MEMBER_KICKED_REJOIN(HttpStatus.FORBIDDEN,         "CHAT_010", "강퇴된 채팅방에는 재참여할 수 없습니다."),
     CHAT_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND,        "CHAT_011", "존재하지 않는 참여 신청입니다."),
     CHAT_APPLICATION_ALREADY_PROCESSED(HttpStatus.CONFLICT, "CHAT_012", "이미 처리된 참여 신청입니다."),
-    CHAT_ROOM_CLOSED(HttpStatus.CONFLICT,                   "CHAT_013", "이미 종료된 채팅방입니다.");
+    CHAT_ROOM_CLOSED(HttpStatus.CONFLICT,                   "CHAT_013", "이미 종료된 채팅방입니다."),
+    CHAT_ROOM_DUPLICATE(HttpStatus.CONFLICT,                "CHAT_014", "해당 게시글에 이미 개설된 채팅방이 있습니다."),
+    CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 직접 퇴장할 수 없습니다."),
+    CHAT_MEMBER_ALREADY_INACTIVE(HttpStatus.CONFLICT,       "CHAT_016", "이미 퇴장하거나 강퇴된 멤버입니다."),
+    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
