@@ -16,6 +16,12 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * 엽전(포인트) 입출금 이력 엔티티.
+ * type 필드로 CHARGE(충전) / PAYMENT(결제) / RECEIVED_PAYMENT(받은 결제) / REFUND(환불) 구분.
+ * balanceSnapshot: 이 이력 발생 직후 잔액 — 이력만으로 잔액 추적 가능하게 보존.
+ * cursor 페이징을 위해 (user_id, id) 복합 인덱스 사용.
+ */
 @Entity
 @Table(name = "yeopjeon_histories", indexes = @Index(name = "idx_yeopjeon_history_cursor", columnList = "user_id, id"))
 @Getter
@@ -73,6 +79,7 @@ public class YeopjeonHistory extends BaseEntity {
                 .build();
     }
 
+    // 엽전 충전 이력 전용 팩토리. shopId·description은 충전 시 해당 없으므로 null 고정
     public static YeopjeonHistory ofCharge(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
         return YeopjeonHistory.builder()
                 .userId(userId)
