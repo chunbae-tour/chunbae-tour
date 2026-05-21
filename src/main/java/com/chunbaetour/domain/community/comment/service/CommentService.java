@@ -91,7 +91,7 @@ public class CommentService {
 
     private Account findAccount(Long accountId) {
         return accountRepository.findById(accountId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
     private Comment findComment(Long commentId) {

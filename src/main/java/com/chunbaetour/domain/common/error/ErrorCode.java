@@ -15,6 +15,9 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND,                 "COMMON_005", "요청한 리소스를 찾을 수 없습니다."),
     TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS,          "COMMON_006", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
     EXTERNAL_SERVICE_ERROR(HttpStatus.SERVICE_UNAVAILABLE,   "COMMON_007", "외부 서비스 연동 중 오류가 발생했습니다."),
+    // cursor 값이 Base64 디코딩 실패 또는 1 미만(IDENTITY id 범위 위반)일 때 사용
+    INVALID_CURSOR(HttpStatus.BAD_REQUEST,                   "COMMON_008", "유효하지 않은 커서 값입니다."),
+    CONCURRENT_UPDATE(HttpStatus.CONFLICT,                   "COMMON_009", "동시 수정 충돌이 발생했습니다. 다시 시도해주세요."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
@@ -40,6 +43,18 @@ public enum ErrorCode {
     //           응답에 Retry-After 헤더 + X-RateLimit-Limit/Remaining 헤더 첨부 (REST 표준).
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_015", "존재하지 않는 사용자입니다."),
+
+    // ===== COMMUNITY (담당: 박경화) =====
+    POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),
+    // COMMUNITY_002: 예약
+    POST_UPDATE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_003", "해당 게시글을 수정할 권한이 없습니다."),
+    POST_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_004", "해당 게시글을 삭제할 권한이 없습니다."),
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND,             "COMMUNITY_005", "존재하지 않는 댓글입니다."),
+    COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN,             "COMMUNITY_006", "댓글 작성자만 수정·삭제할 수 있습니다."),
+    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,     "COMMUNITY_007", "이미 삭제된 댓글입니다."),
+    COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
+
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
     MARKET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_002", "존재하지 않는 전통시장입니다."),
@@ -63,6 +78,8 @@ public enum ErrorCode {
     REFUND_PERIOD_EXPIRED(HttpStatus.BAD_REQUEST,           "PAY_010", "환불 가능한 기간이 지났습니다."),
     PAYMENT_HISTORY_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_011", "본인의 결제 내역만 조회할 수 있습니다."),
     WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_012", "엽전 지갑을 찾을 수 없습니다."),
+    PAYMENT_AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST,         "PAY_013", "결제 금액이 일치하지 않습니다."),
+    WEBHOOK_SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED,      "PAY_014", "웹훅 서명이 유효하지 않습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
@@ -85,15 +102,6 @@ public enum ErrorCode {
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
     INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
     SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다."),
-
-    // ===== COMMUNITY (담당: 박경화) =====
-    COMMUNITY_001(HttpStatus.NOT_FOUND,  "COMMUNITY_001", "게시글을 찾을 수 없습니다."),
-    COMMUNITY_002(HttpStatus.FORBIDDEN,  "COMMUNITY_002", "게시글 수정 권한이 없습니다."),
-    COMMUNITY_003(HttpStatus.FORBIDDEN,  "COMMUNITY_003", "게시글 삭제 권한이 없습니다."),
-    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COMMUNITY_004", "존재하지 않는 댓글입니다."),
-    COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN, "COMMUNITY_005", "댓글 작성자만 수정·삭제할 수 있습니다."),
-    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "COMMUNITY_006", "이미 삭제된 댓글입니다."),
-    COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "COMMUNITY_007", "대댓글에는 답글을 달 수 없습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
