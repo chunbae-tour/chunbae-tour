@@ -4,6 +4,7 @@ import com.chunbaetour.domain.auth.security.CorsProperties;
 import com.chunbaetour.domain.auth.security.JwtAuthenticationFilter;
 import com.chunbaetour.domain.auth.security.RestAccessDeniedHandler;
 import com.chunbaetour.domain.auth.security.RestAuthenticationEntryPoint;
+import com.chunbaetour.domain.common.ratelimit.RateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,6 +53,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitFilter rateLimitFilter;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
     private final RestAccessDeniedHandler accessDeniedHandler;
     private final CorsProperties corsProperties;
@@ -81,10 +83,14 @@ public class SecurityConfig {
                         // 커뮤니티 GET 비인증 허용: 목록·단건·댓글 목록 포함 (/companions/**, /free/** 하위 전체)
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/companions/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/free/**").permitAll()
+                        // PortOne 웹훅: 서버→서버 호출이라 JWT 없음 — permitAll 필수
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // 검색 기능(2-1 인기 검색어)은 인증 불필요
+                        .requestMatchers(HttpMethod.GET, "/api/v1/search/popular").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
@@ -92,7 +98,9 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler)
                 )
                 // JWT 필터를 UsernamePassword 앞에 등록 → Bearer 토큰을 먼저 검증해 SecurityContext 채움
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // Rate Limit 필터를 JWT 앞에 두어 인증 실패 시도도 카운트 대상에 포함 (무차별 공격 방어 우선)
+                .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 

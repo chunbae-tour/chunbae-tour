@@ -19,8 +19,13 @@ spring:
         format_sql: true
     show-sql: true
 
+# Tomcat RemoteIpValve 활성화 — trusted internal proxy에서 전달된 X-Forwarded-For를 반영.
+# 본 설정은 최소 조치이며 완전한 Trusted Proxy allowlist 해결이 아님.
+# 운영 LB가 기본 internal-proxies 정규식(RFC 1918 사설 IP regex)에 포함되지 않으면
+# server.tomcat.remoteip.internal-proxies regex를 별도 설정해야 함.
 server:
   port: 8080
+  forward-headers-strategy: NATIVE
 
 jwt:
   secret: ${JWT_SECRET}
@@ -45,8 +50,37 @@ cors:
   allow-credentials: true
   max-age: PT1H
 
+# Rate Limit 정책 (sa-docs/11 운영 보안 정책 §Rate Limit).
+# enabled=false면 RateLimitFilter가 모든 요청을 즉시 통과 — 로컬 개발/장애 대응 토글.
+# window는 1초 이상 ISO-8601 Duration (RateLimitPolicy compact constructor가 강제).
+# 정책 순서가 매칭 우선순위 — 구체적인 패턴 위, 일반 패턴 아래.
+ratelimit:
+  enabled: ${RATELIMIT_ENABLED:true}
+  endpoints:
+    - id: signup
+      method: POST
+      path: /api/v1/users/auth/signup
+      limit: 3
+      window: PT10M
+    - id: user-login
+      method: POST
+      path: /api/v1/users/auth/login
+      limit: 5
+      window: PT1M
+    - id: merchant-login
+      method: POST
+      path: /api/v1/merchants/auth/login
+      limit: 5
+      window: PT1M
+    - id: admin-login
+      method: POST
+      path: /api/v1/admin/auth/login
+      limit: 5
+      window: PT1M
+
 portone:
   secret: ${PORTONE_SECRET}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
   store-id: ${PORTONE_STORE_ID}
   base-url: https://api.portone.io
   channel:
@@ -60,3 +94,17 @@ management:
     web:
       exposure:
         include: health,info
+
+kakao:
+  map:
+    api-key: ${KAKAO_MAP_API_KEY}
+    coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
+    map-url: https://map.kakao.com/link/from
+
+# 검색 도메인 설정
+search:
+  ranking:
+    # 인기 검색어 일간 초기화 스케줄 (cron 표현식)
+    # 기본값: 매일 자정 (0 0 0 * * *)
+    # 재배포 없이 변경 가능하도록 yml로 외부화
+    reset-cron: "0 0 0 * * *"
