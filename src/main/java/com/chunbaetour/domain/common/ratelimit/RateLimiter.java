@@ -27,6 +27,13 @@ public interface RateLimiter {
      * @param key    rate limit 카운터 키 (호출자가 endpoint:ip 등으로 조합)
      * @param policy 적용할 정책 (limit + window)
      * @return 판정 결과 (allowed/remaining/retryAfter)
+     *
+     * <p><b>예외 처리 계약</b>:
+     * 본 메서드의 구현체는 인프라 예외(Redis 연결 실패, 타임아웃 등)를 외부로 전파하지 않는다.
+     * 모든 인프라 장애는 {@link RateLimitDecision#denied} 응답으로 변환한다 (fail-closed).
+     * 호출자({@link RateLimitFilter})가 try/catch 없이 호출할 수 있도록 보장하기 위함이며,
+     * 이 contract를 깨뜨리면 rate limit 필터가 500으로 응답해 서비스 가용성에 영향이 간다.
+     * {@code RedisRateLimiter}는 본 계약을 {@code DataAccessException} catch로 구현한다.
      */
     RateLimitDecision tryConsume(String key, RateLimitPolicy policy);
 }

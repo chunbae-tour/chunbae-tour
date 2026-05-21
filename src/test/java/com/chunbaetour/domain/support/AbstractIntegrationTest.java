@@ -1,5 +1,11 @@
 package com.chunbaetour.domain.support;
 
+import java.util.HashSet;
+import java.util.Set;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -25,6 +31,35 @@ import org.testcontainers.utility.DockerImageName;
  * <p>{@link DynamicPropertySource}로 Spring 컨텍스트가 시작되기 전에 동적 호스트/포트를 주입한다.
  */
 public abstract class AbstractIntegrationTest {
+
+    @Autowired(required = false)
+    private StringRedisTemplate redisForBaseCleanup;
+
+    /**
+     * 모든 통합 테스트 끝에 Rate Limit Redis 키({@code ratelimit:*})를 정리한다.
+     *
+     * <p>같은 JVM에서 127.0.0.1로 반복 호출하면 카운터가 누적되어 다른 테스트가 자기 한도에 부딪힐 수 있다.
+     * 본 base @AfterEach가 prefix 단위로 비워 클래스 간 격리를 보장한다 (auth:refresh:* / auth:blacklist:* /
+     * accountRepository.deleteAll() 같은 도메인별 cleanup은 각 테스트가 자기 @AfterEach에서 책임).
+     *
+     * <p>JUnit 5의 @AfterEach는 subclass → superclass 순으로 실행되므로 본 메서드는 항상 마지막에 동작 — 다른
+     * cleanup이 끝난 후 ratelimit 키를 마지막에 비운다.
+     */
+    @AfterEach
+    void cleanupRateLimitKeys() {
+        if (redisForBaseCleanup == null) {
+            return;
+        }
+        ScanOptions options = ScanOptions.scanOptions().match("ratelimit:*").count(100).build();
+        Set<String> keys = new HashSet<>();
+        try (var cursor = redisForBaseCleanup.scan(options)) {
+            cursor.forEachRemaining(keys::add);
+        }
+        if (!keys.isEmpty()) {
+            redisForBaseCleanup.delete(keys);
+        }
+    }
+
 
     /** MySQL 8.4 컨테이너. 운영 DB 버전과 일치시켜 SQL 호환성 보장. */
     private static final MySQLContainer<?> MYSQL;
@@ -82,5 +117,19 @@ public abstract class AbstractIntegrationTest {
         registry.add("cors.allowed-headers", () -> "Authorization,Content-Type,Accept");
         registry.add("cors.allow-credentials", () -> "true");
         registry.add("cors.max-age", () -> "PT1H");
+
+        // Rate Limit: 기본은 yml(true) 사용. 같은 IP(127.0.0.1)로 반복 호출 시 카운터 누적 방지를 위해
+        // 본 base의 @AfterEach가 ratelimit:* 키를 정리한다 (위 cleanupRateLimitKeys 메서드).
+        // RateLimitIntegrationTest는 별도 @DynamicPropertySource로 짧은 정책 주입.
+
+        // 외부 API/PG 더미 값 — 다른 도메인 yml이 환경변수 필수로 두어 부팅 시점에
+        // PlaceholderResolutionException이 발생하지 않도록. 통합 테스트는 외부 호출 안 함.
+        registry.add("kakao.map.api-key", () -> "test-only-kakao-key");
+        registry.add("portone.secret", () -> "test-only-portone-secret");
+        registry.add("portone.store-id", () -> "test-only-portone-store-id");
+        registry.add("portone.channel.card", () -> "test-channel-card");
+        registry.add("portone.channel.kakao-pay", () -> "test-channel-kakao-pay");
+        registry.add("portone.channel.toss-pay", () -> "test-channel-toss-pay");
+        registry.add("portone.channel.foreign-card", () -> "test-channel-foreign-card");
     }
 }

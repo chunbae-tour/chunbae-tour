@@ -40,9 +40,11 @@ public class KakaoApiConfig {
     }
 
     @Bean
-    public RestClient kakaoRestClient(RestClient.Builder builder, CloseableHttpClient kakaoHttpClient) {
+    public RestClient kakaoRestClient(CloseableHttpClient kakaoHttpClient) {
+        // Spring Boot 4에서 RestClient.Builder 자동 구성이 일부 환경(통합 테스트 등)에서 누락됨.
+        // RestClient.builder()를 직접 호출하여 컨텍스트 부팅 실패 회피 (KAN-65 Part 2/2 머지 시 develop broken 복구).
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(kakaoHttpClient);
-        return builder.requestFactory(factory).build();
+        return RestClient.builder().requestFactory(factory).build();
     }
 
     @Bean(destroyMethod = "close")
