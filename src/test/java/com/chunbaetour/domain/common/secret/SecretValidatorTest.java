@@ -322,6 +322,27 @@ class SecretValidatorTest {
             env.setProperty("spring.datasource.username", "chunbae_prod");
             assertThatCode(() -> validator.validate(env)).doesNotThrowAnyException();
         }
+
+        @Test
+        @DisplayName("DB_USERNAME이 placeholder 값(your-db-user)이면 부팅 실패")
+        void prodFails_whenDbUsernameContainsPlaceholder() {
+            MockEnvironment env = validProdEnv();
+            env.setProperty("DB_USERNAME", "your-db-user");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("DB_USERNAME")
+                    .hasMessageContaining("placeholder");
+        }
+
+        @Test
+        @DisplayName("DB_USERNAME이 replace-me placeholder면 부팅 실패")
+        void prodFails_whenDbUsernameIsReplaceMe() {
+            MockEnvironment env = validProdEnv();
+            env.setProperty("DB_USERNAME", "replace-me");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("DB_USERNAME");
+        }
     }
 
     @Nested

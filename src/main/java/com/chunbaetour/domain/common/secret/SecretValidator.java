@@ -203,11 +203,14 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
     }
 
     /**
-     * DB_USERNAME 검증: 비어있지 않음 + 디폴트 계정명(root, admin 등) 차단.
+     * DB_USERNAME 검증: 비어있지 않음 + 디폴트 계정명(root, admin 등) 차단 + placeholder 패턴 차단.
      *
      * <p>WEAK_PASSWORDS 차단 목록을 재사용해 root/admin/administrator/test 같은
      * 디폴트 계정명이 그대로 운영에 올라가는 것을 부팅 시점에 차단한다.
      * DB_PASSWORD와 일관된 정책.
+     *
+     * <p>{@code your-db-user}, {@code replace-me} 같은 .env.example 더미 값이 prod로 흘러가는
+     * 사고도 placeholder 패턴 차단으로 막는다 (DB_PASSWORD/외부 키 검증과 일관).
      */
     private void validateDbUsername(Environment env, List<String> violations) {
         String username = env.getProperty("DB_USERNAME");
@@ -218,8 +221,12 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
             violations.add("DB_USERNAME: 비어있음");
             return;
         }
-        if (WEAK_PASSWORDS.contains(username.toLowerCase(Locale.ROOT))) {
+        String lower = username.toLowerCase(Locale.ROOT);
+        if (WEAK_PASSWORDS.contains(lower)) {
             violations.add("DB_USERNAME: 디폴트 계정명 차단 목록과 일치 (root/admin 등)");
+        }
+        if (containsPlaceholder(lower)) {
+            violations.add("DB_USERNAME: placeholder 패턴 포함 (.env.example 더미 값으로 추정)");
         }
     }
 
