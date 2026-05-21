@@ -3,7 +3,7 @@ package com.chunbaetour.domain.yeopjeon.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.community.common.CursorUtils;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.yeopjeon.dto.response.YeopjeonHistoryResponse;
 import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
 import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
