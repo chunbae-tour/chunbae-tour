@@ -21,6 +21,7 @@ import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
 import org.mockito.Mockito;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -128,6 +129,26 @@ class RefundServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_PERIOD_EXPIRED);
+    }
+
+    @Test
+    @DisplayName("동시 환불 요청으로 DB 제약 위반 시 PAY_016(DUPLICATE_REFUND_REQUEST)를 던진다")
+    void requestRefund_concurrent_request_throws_PAY_016() {
+        PaymentOrder order = makeCompletedOrder(USER_ID);
+        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT)));
+        given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(false);
+
+        // ConstraintViolationException cause 세팅 — 서비스가 constraintName으로 분기하므로 필수
+        ConstraintViolationException cve = Mockito.mock(ConstraintViolationException.class);
+        Mockito.when(cve.getConstraintName()).thenReturn("uk_refunds_payment_order_id");
+        given(refundRepository.saveAndFlush(any(Refund.class)))
+                .willThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate", cve));
+
+        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("단순 변심")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
     }
 
     @Test
