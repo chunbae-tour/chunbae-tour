@@ -111,6 +111,11 @@ public class SearchService {
         log.info("[SearchService] 축제 검색 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}",
                 keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size);
 
+        // 검색 시작일/종료일 유효성 선검증
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.SEARCH_INVALID_DATE_RANGE);
+        }
+
         // 검색어 길이 제한 (최대 50자) (PLACE_006)
         if (StringUtils.hasText(keyword)) {
             keyword = keyword.trim();

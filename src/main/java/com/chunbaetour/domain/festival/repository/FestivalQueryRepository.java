@@ -32,6 +32,9 @@ public class FestivalQueryRepository {
      * @return 커서 페이지네이션이 적용된 축제 검색 결과
      */
     public List<Festival> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size) {
+        if (size <= 0) {
+            throw new IllegalArgumentException("size는 1 이상이어야 합니다.");
+        }
         return queryFactory
                 .selectFrom(festival)
                 .where(
@@ -57,6 +60,9 @@ public class FestivalQueryRepository {
     private BooleanExpression dateBetween(LocalDate startDate, LocalDate endDate) {
         if (startDate == null && endDate == null) {
             return null;
+        }
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("startDate는 endDate보다 이후일 수 없습니다.");
         }
         if (startDate != null && endDate != null) {
             // startDate <= festival.endDate AND endDate >= festival.startDate
