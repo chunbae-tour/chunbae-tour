@@ -72,4 +72,16 @@ public class YeopjeonHistory extends BaseEntity {
                 .description(description)
                 .build();
     }
+
+    public static YeopjeonHistory ofCharge(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .paymentOrderId(paymentOrderId)
+                .shopId(null)
+                .type(YeopjeonHistoryType.CHARGE)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .description(null)
+                .build();
+    }
 }
