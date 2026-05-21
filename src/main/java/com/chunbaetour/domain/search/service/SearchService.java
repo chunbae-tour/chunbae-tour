@@ -3,8 +3,12 @@ package com.chunbaetour.domain.search.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.festival.entity.Festival;
+import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
+import com.chunbaetour.domain.festival.type.FestivalProgressStatus;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -29,6 +34,7 @@ import java.util.List;
 public class SearchService {
 
     private final PlaceQueryRepository placeQueryRepository;
+    private final FestivalQueryRepository festivalQueryRepository;
     private final PopularSearchService popularSearchService;
 
     /**
@@ -53,10 +59,12 @@ public class SearchService {
                 keyword != null ? keyword.length() : 0, category, region, cursorId, size);
 
         // 검색어 필수 검증 (PLACE_005)
-        // 검색어가 없으면 전체 테이블을 풀스캔하여 부하를 일으키므로 원천 차단해야 함.
         if (!StringUtils.hasText(keyword)) {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_SHORT);
         }
+        
+        // 검색어 양끝 공백 제거 (정규화) - 이후 로직 전체에 적용
+        keyword = keyword.trim();
 
         // 정책적 예외 처리: 검색어 길이 제한 (최대 50자) (PLACE_006)
         if (keyword.length() > 50) {
@@ -80,5 +88,71 @@ public class SearchService {
         }
 
         return new CursorPageResponse<>(resultItems, nextCursorStr, hasNext, resultItems.size());
+    }
+
+    /**
+     * 축제 검색 (Phase 2-3).
+     * <p>
+     * SA 명세서: {@code GET /api/v1/search/festivals}
+     * QueryDSL을 통해 조건 기반 축제 정보를 커서 기반으로 조회한다.
+     * 유효한 검색어가 입력된 경우 인기 검색어 점수를 증가시킨다.
+     * </p>
+     *
+     * @param keyword   검색어 (옵션)
+     * @param startDate 시작일 필터 (옵션)
+     * @param endDate   종료일 필터 (옵션)
+     * @param region    지역 필터 (옵션)
+     * @param cursorId  커서용 마지막 festivalId
+     * @param size      페이지 사이즈
+     * @param clientIp  클라이언트 IP 주소
+     * @return 커서 페이지네이션이 적용된 축제 검색 결과
+     */
+    public CursorPageResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp) {
+        log.info("[SearchService] 축제 검색 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}",
+                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size);
+
+        // 검색어 길이 제한 (최대 50자) (PLACE_006)
+        if (StringUtils.hasText(keyword)) {
+            keyword = keyword.trim();
+            if (keyword.length() > 50) {
+                throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
+            }
+        }
+
+        // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
+        List<Festival> items = festivalQueryRepository.searchFestivals(keyword, startDate, endDate, region, cursorId, size);
+
+        // 2. hasNext 및 nextCursor 계산
+        boolean hasNext = items.size() > size;
+        List<Festival> resultItems = hasNext ? items.subList(0, size) : items;
+
+        Long nextCursor = resultItems.isEmpty() ? null : resultItems.get(resultItems.size() - 1).getId();
+        String nextCursorStr = nextCursor != null ? String.valueOf(nextCursor) : null;
+
+        // 3. 엔티티 -> DTO 변환 및 progressStatus 동적 계산
+        LocalDate today = LocalDate.now();
+        List<SearchFestivalResponse> updatedItems = resultItems.stream()
+                .map(item -> new SearchFestivalResponse(
+                        item.getId(), item.getName(), item.getDescription(), item.getRegion(), item.getLocation(),
+                        item.getStartDate(), item.getEndDate(), item.getThumbnailUrl(), item.getStatus(),
+                        calculateProgress(item.getStartDate(), item.getEndDate(), today)
+                )).toList();
+
+        // 3. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
+        if (StringUtils.hasText(keyword) && !updatedItems.isEmpty() && cursorId == null) {
+            popularSearchService.incrementSearchCount(keyword, clientIp);
+        }
+
+        return new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
+    }
+
+    private FestivalProgressStatus calculateProgress(LocalDate startDate, LocalDate endDate, LocalDate today) {
+        if (today.isBefore(startDate)) {
+            return FestivalProgressStatus.UPCOMING;
+        } else if (today.isAfter(endDate)) {
+            return FestivalProgressStatus.ENDED;
+        } else {
+            return FestivalProgressStatus.IN_PROGRESS;
+        }
     }
 }

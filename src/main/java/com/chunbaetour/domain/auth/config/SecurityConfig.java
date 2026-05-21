@@ -92,7 +92,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // 검색 조회 API는 와일드카드 대신 화이트리스트 방식으로 명시하여 권한 누수 방지
-                        .requestMatchers(HttpMethod.GET, "/api/v1/search/popular", "/api/v1/search/places").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/search/popular", "/api/v1/search/places", "/api/v1/search/festivals").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답

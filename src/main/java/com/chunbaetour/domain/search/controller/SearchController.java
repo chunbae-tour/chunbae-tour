@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
+import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -93,6 +95,37 @@ public class SearchController {
     ) {
         String clientIp = request.getRemoteAddr();
         CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp);
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 축제 검색.
+     * <p>
+     * SA: {@code GET /api/v1/search/festivals}<br>
+     * 인증: 불필요(❌)<br>
+     * 설명: 날짜(시작/종료일)와 지역 필터를 지원하며, 유효한 검색어가 입력된 경우 인기 검색어 점수를 집계한다.
+     * </p>
+     *
+     * @param q         검색어 (옵션)
+     * @param startDate 시작일 필터 (옵션)
+     * @param endDate   종료일 필터 (옵션)
+     * @param region    지역 (옵션)
+     * @param cursor    커서 아이디 (옵션, 이전 페이지의 마지막 festivalId)
+     * @param size      페이지 사이즈 (기본값 10)
+     * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록
+     */
+    @GetMapping("/festivals")
+    public ApiResponse<CursorPageResponse<SearchFestivalResponse>> searchFestivals(
+            @RequestParam(name = "q", required = false) String q,
+            @RequestParam(name = "startDate", required = false) LocalDate startDate,
+            @RequestParam(name = "endDate", required = false) LocalDate endDate,
+            @RequestParam(name = "region", required = false) String region,
+            @RequestParam(name = "cursor", required = false) Long cursor,
+            @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            HttpServletRequest request
+    ) {
+        String clientIp = request.getRemoteAddr();
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(q, startDate, endDate, region, cursor, size, clientIp);
         return ApiResponse.success(response);
     }
 }

@@ -3,8 +3,13 @@ package com.chunbaetour.domain.search.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.festival.entity.Festival;
+import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
+import com.chunbaetour.domain.festival.type.FestivalProgressStatus;
+import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +18,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,6 +37,9 @@ class SearchServiceTest {
 
     @Mock
     private PlaceQueryRepository placeQueryRepository;
+
+    @Mock
+    private FestivalQueryRepository festivalQueryRepository;
 
     @Mock
     private PopularSearchService popularSearchService;
@@ -122,5 +131,73 @@ class SearchServiceTest {
         assertThat(response.content()).hasSize(2); // 3개 중 마지막 1개는 잘려나감
         assertThat(response.nextCursor()).isEqualTo("9"); // index 1 (마지막 아이템)의 ID
         assertThat(response.size()).isEqualTo(2); // 잘려나간 후 리스트 사이즈
+    }
+
+    @Test
+    @DisplayName("축제 검색 시 keyword가 null이어도 정상 동작하며 인기검색어는 증가하지 않는다")
+    void searchFestivals_WorksWithoutKeyword_AndDoesNotIncrementPopularSearch() {
+        // given
+        int size = 10;
+        List<Festival> mockResult = new ArrayList<>();
+        Festival festival = Festival.builder()
+                .name("축제1").description("설명").region("서울").location("주소")
+                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
+                .startDate(LocalDate.now().minusDays(1)).endDate(LocalDate.now().plusDays(1))
+                .thumbnailUrl("url")
+                .build();
+        // 리플렉션으로 ID 세팅
+        org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 1L);
+        mockResult.add(festival);
+        
+        when(festivalQueryRepository.searchFestivals(null, null, null, null, null, size)).thenReturn(mockResult);
+
+        // when
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1");
+
+        // then
+        assertThat(response.content()).hasSize(1);
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("축제 검색 시 progressStatus가 오늘 날짜 기준으로 재계산된다")
+    void searchFestivals_RecalculatesProgressStatusCorrectly() {
+        // given
+        String keyword = "축제";
+        int size = 10;
+        List<Festival> mockResult = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        
+        Festival pastFestival = Festival.builder()
+                .name("지난 축제").description("설명").region("서울").location("주소")
+                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
+                .startDate(today.minusDays(10)).endDate(today.minusDays(5)).thumbnailUrl("url").build();
+        org.springframework.test.util.ReflectionTestUtils.setField(pastFestival, "id", 3L);
+        
+        Festival ongoingFestival = Festival.builder()
+                .name("진행중 축제").description("설명").region("서울").location("주소")
+                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
+                .startDate(today.minusDays(1)).endDate(today.plusDays(5)).thumbnailUrl("url").build();
+        org.springframework.test.util.ReflectionTestUtils.setField(ongoingFestival, "id", 2L);
+        
+        Festival futureFestival = Festival.builder()
+                .name("예정 축제").description("설명").region("서울").location("주소")
+                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
+                .startDate(today.plusDays(5)).endDate(today.plusDays(10)).thumbnailUrl("url").build();
+        org.springframework.test.util.ReflectionTestUtils.setField(futureFestival, "id", 1L);
+
+        mockResult.add(pastFestival);
+        mockResult.add(ongoingFestival);
+        mockResult.add(futureFestival);
+        
+        when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size)).thenReturn(mockResult);
+
+        // when
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1");
+
+        // then
+        assertThat(response.content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
+        assertThat(response.content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
+        assertThat(response.content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
     }
 }
