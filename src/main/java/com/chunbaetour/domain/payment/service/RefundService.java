@@ -10,6 +10,8 @@ import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.repository.RefundRepository;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
+import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -32,6 +34,7 @@ public class RefundService {
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
+    private final WalletRepository walletRepository;
 
     /**
      * 환불 요청 생성.
@@ -40,9 +43,10 @@ public class RefundService {
      * <p>검증 순서:
      * 1. 주문 존재 확인 → PAY_009
      * 2. 본인 주문 확인 → PAY_011
-     * 3. COMPLETED 상태 확인 → PAY_006
+     * 3. COMPLETED 상태 확인 → PAY_015
      * 4. 환불 기간(7일) 확인 → PAY_010
-     * 5. 중복 환불 요청 확인 → PAY_007
+     * 5. 잔액 전액 보유 확인 → PAY_017 (부분 사용 후 환불 불가)
+     * 6. 중복 환불 요청 확인 → PAY_016
      */
     @Transactional
     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
@@ -63,6 +67,13 @@ public class RefundService {
         // 환불 기간(7일) 초과 확인
         if (order.getCreatedAt().isBefore(LocalDateTime.now().minusDays(REFUND_PERIOD_DAYS))) {
             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
+        }
+
+        // 미사용 엽전 전액 보유 확인 (부분 사용 후 환불 불가)
+        Wallet wallet = walletRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        if (wallet.getBalance() < order.getAmount()) {
+            throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
         }
 
         // 동일 주문에 대한 중복 환불 요청 방지

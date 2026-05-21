@@ -17,6 +17,8 @@ import com.chunbaetour.domain.payment.repository.RefundRepository;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
+import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -36,12 +38,21 @@ class RefundServiceTest {
     @Mock
     private RefundRepository refundRepository;
 
+    @Mock
+    private WalletRepository walletRepository;
+
     @InjectMocks
     private RefundService refundService;
 
     private static final Long USER_ID = 1L;
     private static final String ORDER_UID = "test-order-uid";
     private static final Long AMOUNT = 10_000L;
+
+    private Wallet makeWallet(long balance) {
+        Wallet wallet = Wallet.create(USER_ID);
+        ReflectionTestUtils.setField(wallet, "balance", balance);
+        return wallet;
+    }
 
     private PaymentOrder makeCompletedOrder(Long userId) {
         PaymentOrder order = PaymentOrder.create(ORDER_UID, userId, AMOUNT, "idem-key", PaymentMethod.CARD, "pg-order-id");
@@ -57,6 +68,7 @@ class RefundServiceTest {
     void requestRefund_success_creates_pending_refund() {
         PaymentOrder order = makeCompletedOrder(USER_ID);
         given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT)));
         given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(false);
         given(refundRepository.saveAndFlush(any(Refund.class))).willAnswer(inv -> inv.getArgument(0));
 
@@ -118,10 +130,24 @@ class RefundServiceTest {
     }
 
     @Test
+    @DisplayName("엽전을 일부 사용한 경우 PAY_017(REFUND_BALANCE_INSUFFICIENT)를 던진다")
+    void requestRefund_partial_use_throws_PAY_017() {
+        PaymentOrder order = makeCompletedOrder(USER_ID);
+        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT - 1)));
+
+        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("단순 변심")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+    }
+
+    @Test
     @DisplayName("이미 PENDING 환불 요청이 있으면 PAY_016(DUPLICATE_REFUND_REQUEST)를 던진다")
     void requestRefund_duplicate_pending_throws_PAY_016() {
         PaymentOrder order = makeCompletedOrder(USER_ID);
         given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT)));
         given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(true);
 
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))

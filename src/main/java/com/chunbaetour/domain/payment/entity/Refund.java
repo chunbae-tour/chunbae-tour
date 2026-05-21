@@ -48,8 +48,7 @@ public class Refund extends BaseEntity {
     @Column(nullable = false, length = 20)
     private RefundStatus status;
 
-    // 환불 사유 (선택 입력, 최대 500자)
-    @Column(length = 500)
+    @Column(length = 500, nullable = false)
     private String reason;
 
     @Builder
