@@ -13,6 +13,6 @@ public record CompanionPostUpdateRequest(
         @Size(min = 1, max = 100) String placeName,
         @Size(max = 50) String region,
         @FutureOrPresent LocalDate meetingDate,
-        @Min(2) @Max(50) Integer maxMembers
+        @Min(1) @Max(50) Integer maxMembers
 ) {
 }
