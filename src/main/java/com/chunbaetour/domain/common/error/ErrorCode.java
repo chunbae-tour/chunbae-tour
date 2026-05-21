@@ -43,6 +43,18 @@ public enum ErrorCode {
     //           응답에 Retry-After 헤더 + X-RateLimit-Limit/Remaining 헤더 첨부 (REST 표준).
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_015", "존재하지 않는 사용자입니다."),
+
+    // ===== COMMUNITY (담당: 박경화) =====
+    POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),
+    // COMMUNITY_002: 예약
+    POST_UPDATE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_003", "해당 게시글을 수정할 권한이 없습니다."),
+    POST_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_004", "해당 게시글을 삭제할 권한이 없습니다."),
+    COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND,             "COMMUNITY_005", "존재하지 않는 댓글입니다."),
+    COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN,             "COMMUNITY_006", "댓글 작성자만 수정·삭제할 수 있습니다."),
+    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,     "COMMUNITY_007", "이미 삭제된 댓글입니다."),
+    COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
+
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
     MARKET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_002", "존재하지 않는 전통시장입니다."),

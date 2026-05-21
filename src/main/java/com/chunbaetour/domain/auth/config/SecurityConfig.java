@@ -38,6 +38,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
+ *   <li>{@code POST/PATCH/DELETE /api/v1/community/**} — USER·ADMIN 권한 필요 (ADMIN은 중재 역할)</li>
+ *   <li>{@code GET /api/v1/community/**} — 비인증 허용</li>
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
  *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
  *   <li>그 외 — 인증 필요</li>
@@ -76,6 +78,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
+                        // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
+                        // 커뮤니티 GET 비인증 허용: 목록·단건·댓글 목록 포함 (/companions/**, /free/** 하위 전체)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/companions/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/free/**").permitAll()
                         // PortOne 웹훅: 서버→서버 호출이라 JWT 없음 — permitAll 필수
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
