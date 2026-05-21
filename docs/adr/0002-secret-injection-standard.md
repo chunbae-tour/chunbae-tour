@@ -101,6 +101,7 @@
 | `JWT_SECRET` | 32바이트 이상 (기존 `JwtProperties` compact ctor가 검증, 재검증 안 함) |
 | `CORS_ALLOWED_ORIGINS` | 비어있지 않음 + 콤마 구분 URL 형식 + 와일드카드(`*`) 차단 |
 | `DB_PASSWORD` | 비어있지 않음 + 최소 길이 12자 + 평문 디폴트(`1234`, `password`, `root`) 차단 |
+| `DB_USERNAME` | 비어있지 않음 + 디폴트 계정명(root, admin, administrator, test, qwerty, password 등) 차단 |
 | `KAKAO_MAP_API_KEY` | 비어있지 않음 + placeholder 패턴(`your-`, `xxx`, `replace-me`) 차단 |
 | `PORTONE_SECRET` | 비어있지 않음 + placeholder 패턴 차단 |
 | `PORTONE_STORE_ID` | 비어있지 않음 + placeholder 패턴 차단 |

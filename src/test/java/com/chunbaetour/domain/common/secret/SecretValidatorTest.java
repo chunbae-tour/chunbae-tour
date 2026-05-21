@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
@@ -35,14 +36,14 @@ class SecretValidatorTest {
                 .withProperty("CORS_ALLOWED_ORIGINS", "https://chunbae.tour,https://api.chunbae.tour")
                 .withProperty("DB_PASSWORD", "ProdPass2026!@#")
                 .withProperty("DB_USERNAME", "chunbae_prod")
-                .withProperty("KAKAO_MAP_API_KEY", "1a2b3c4d5e6f7g8h9i0j")
-                .withProperty("PORTONE_SECRET", "po-secret-real-value-2026")
-                .withProperty("PORTONE_STORE_ID", "store-abcd1234-5678-90ef-1234-567890abcdef")
-                .withProperty("PORTONE_WEBHOOK_SECRET", "whsec_realvalue123")
-                .withProperty("PORTONE_CHANNEL_CARD", "channel-key-card-real")
-                .withProperty("PORTONE_CHANNEL_KAKAO_PAY", "channel-key-kakao-real")
-                .withProperty("PORTONE_CHANNEL_TOSS_PAY", "channel-key-toss-real")
-                .withProperty("PORTONE_CHANNEL_FOREIGN_CARD", "channel-key-foreign-real");
+                .withProperty("KAKAO_MAP_API_KEY", "DUMMY_KAKAO_VALUE_000000000000000000")
+                .withProperty("PORTONE_SECRET", "DUMMY_PORTONE_SECRET_000000")
+                .withProperty("PORTONE_STORE_ID", "DUMMY_PORTONE_STORE_000000")
+                .withProperty("PORTONE_WEBHOOK_SECRET", "DUMMY_PORTONE_WEBHOOK_000000")
+                .withProperty("PORTONE_CHANNEL_CARD", "DUMMY_PORTONE_CHANNEL_CARD_000000")
+                .withProperty("PORTONE_CHANNEL_KAKAO_PAY", "DUMMY_PORTONE_CHANNEL_KAKAO_000000")
+                .withProperty("PORTONE_CHANNEL_TOSS_PAY", "DUMMY_PORTONE_CHANNEL_TOSS_000000")
+                .withProperty("PORTONE_CHANNEL_FOREIGN_CARD", "DUMMY_PORTONE_CHANNEL_FOREIGN_000000");
     }
 
     private MockEnvironment prodEnv() {
@@ -290,6 +291,49 @@ class SecretValidatorTest {
             assertThatThrownBy(() -> validator.validate(env))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("DB_USERNAME");
+        }
+
+        @Test
+        @DisplayName("DB_USERNAME이 'root'면 부팅 실패")
+        void prodFails_whenDbUsernameIsRoot() {
+            MockEnvironment env = validProdEnv();
+            env.setProperty("DB_USERNAME", "root");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("DB_USERNAME")
+                    .hasMessageContaining("디폴트 계정명");
+        }
+
+        @Test
+        @DisplayName("DB_USERNAME이 'admin'이면 부팅 실패")
+        void prodFails_whenDbUsernameIsAdmin() {
+            MockEnvironment env = validProdEnv();
+            env.setProperty("DB_USERNAME", "admin");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("DB_USERNAME");
+        }
+
+        @Test
+        @DisplayName("DB_USERNAME이 spring.datasource.username으로만 채워져도 정상 통과")
+        void prodPasses_whenDbUsernameOnlyInSpringKey() {
+            MockEnvironment env = validProdEnv();
+            env.setProperty("DB_USERNAME", "");
+            env.setProperty("spring.datasource.username", "chunbae_prod");
+            assertThatCode(() -> validator.validate(env)).doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    class CORS_SPRING_KEY_FALLBACK {
+
+        @Test
+        @DisplayName("CORS_ALLOWED_ORIGINS 비어있어도 cors.allowed-origins로 채워지면 통과")
+        void prodPasses_whenCorsOnlyInSpringKey() {
+            MockEnvironment env = validProdEnv();
+            env.setProperty("CORS_ALLOWED_ORIGINS", "");
+            env.setProperty("cors.allowed-origins", "https://chunbae.tour,https://api.chunbae.tour");
+            assertThatCode(() -> validator.validate(env)).doesNotThrowAnyException();
         }
     }
 }

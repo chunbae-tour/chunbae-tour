@@ -39,6 +39,10 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
     /**
      * 평문 디폴트/예제 비밀번호 차단 목록. 누구나 추측 가능한 값은 부팅 거부.
      * 소문자 비교.
+     *
+     * <p><b>한계</b>: 완전 일치만 차단. {@code password123}, {@code admin2026}처럼
+     * 약한 패턴에 숫자/특수문자를 붙인 변형은 탐지 안 됨. 운영 정책상 허용 수준으로 판단.
+     * 강한 검증 필요 시 zxcvbn 같은 패턴 기반 라이브러리 도입 별도 검토.
      */
     private static final List<String> WEAK_PASSWORDS = List.of(
             "1234", "12345", "123456", "1234567", "12345678",
@@ -75,7 +79,7 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
 
         // DB — username/password. host/name은 누락 시 spring boot가 알아서 fail이라 별도 검증 생략.
         validateDbPassword(env, violations);
-        validateNonEmpty(env, "DB_USERNAME", "spring.datasource.username", violations);
+        validateDbUsername(env, violations);
 
         // 외부 API 키 — placeholder 차단 + 비어있지 않음.
         validateExternalKey(env, "KAKAO_MAP_API_KEY", "kakao.api.key", violations);
@@ -117,6 +121,9 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
      */
     private void validateCorsOrigins(Environment env, List<String> violations) {
         String raw = env.getProperty("CORS_ALLOWED_ORIGINS");
+        if (raw == null || raw.isBlank()) {
+            raw = env.getProperty("cors.allowed-origins");
+        }
         if (raw == null || raw.isBlank()) {
             violations.add("CORS_ALLOWED_ORIGINS: 비어있음 (prod는 명시적 origin 필수)");
             return;
@@ -196,18 +203,23 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
     }
 
     /**
-     * 환경변수가 비어있지 않은지만 검증. 운영 인프라상 누락 시 영향이 큰 변수에 사용.
+     * DB_USERNAME 검증: 비어있지 않음 + 디폴트 계정명(root, admin 등) 차단.
      *
-     * @param envVarName    환경변수명 (메시지용)
-     * @param springKeyName Spring Environment 키 (yml 바인딩 대상)
+     * <p>WEAK_PASSWORDS 차단 목록을 재사용해 root/admin/administrator/test 같은
+     * 디폴트 계정명이 그대로 운영에 올라가는 것을 부팅 시점에 차단한다.
+     * DB_PASSWORD와 일관된 정책.
      */
-    private void validateNonEmpty(Environment env, String envVarName, String springKeyName, List<String> violations) {
-        String v = env.getProperty(envVarName);
-        if (v == null || v.isBlank()) {
-            v = env.getProperty(springKeyName);
+    private void validateDbUsername(Environment env, List<String> violations) {
+        String username = env.getProperty("DB_USERNAME");
+        if (username == null || username.isBlank()) {
+            username = env.getProperty("spring.datasource.username");
         }
-        if (v == null || v.isBlank()) {
-            violations.add(envVarName + ": 비어있음");
+        if (username == null || username.isBlank()) {
+            violations.add("DB_USERNAME: 비어있음");
+            return;
+        }
+        if (WEAK_PASSWORDS.contains(username.toLowerCase(Locale.ROOT))) {
+            violations.add("DB_USERNAME: 디폴트 계정명 차단 목록과 일치 (root/admin 등)");
         }
     }
 

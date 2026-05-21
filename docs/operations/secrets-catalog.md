@@ -34,6 +34,12 @@
 | `REDIS_HOST` | Redis 호스트 (설정) | hostname | 인프라 변경 시 | 부팅 실패 | GH Actions Variable | Task Definition env |
 | `REDIS_PASSWORD` | Redis 비밀번호 | string (비어있을 수 있음 — Redis 인증 미사용 시) | 90일 | 인증 실패 | GH Actions Secret | Secrets Manager |
 
+> **운영 Redis 인증 정책 (가정 — 인프라 확정 시 갱신 필요)**:
+> 운영 Redis는 외부 직접 접근이 차단된 사설 네트워크(VPC private subnet 등)에 위치한다고 가정한다.
+> 이 가정 하에 비밀번호 인증을 사용하지 않으며, `REDIS_PASSWORD`는 `SecretValidator`의 prod 검증 대상에서 제외된다.
+>
+> 향후 멀티 리전 / VPC peering / 매니지드 캐시(ElastiCache 등) 도입으로 Redis가 외부 노출 또는 IAM-only 접근 모델로 바뀌면 본 가정을 재검토하고 `SecretValidator`에 검증 항목을 추가해야 한다.
+
 ### CORS / 보안 정책
 
 | 환경변수 | 용도 | 형식 / 길이 | 권장 회전 주기 | 누락 시 영향 | Phase 1 위치 | Phase 2 위치 |
