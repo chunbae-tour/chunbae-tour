@@ -37,4 +37,14 @@ public class Wallet extends BaseEntity {
         wallet.balance = 0L;
         return wallet;
     }
+
+    public void credit(long amount) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("amount must be positive");
+        }
+        if (Long.MAX_VALUE - this.balance < amount) {
+            throw new IllegalArgumentException("balance overflow");
+        }
+        this.balance += amount;
+    }
 }
