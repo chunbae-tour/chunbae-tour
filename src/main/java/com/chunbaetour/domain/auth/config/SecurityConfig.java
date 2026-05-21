@@ -79,6 +79,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
+                        // 상인 신청은 USER 권한 — /merchants/** 보다 먼저 선언해야 우선순위 적용됨
+                        .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasRole("USER")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // 검색 기능(2-1 인기 검색어)은 인증 불필요
