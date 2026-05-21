@@ -10,6 +10,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import java.util.concurrent.TimeUnit;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -21,7 +25,7 @@ import java.util.Set;
  * 인기 검색어 서비스.
  * <p>
  * Redis ZSet({@code search:ranking})을 1차 데이터 저장소로 사용한다.
- * 검색이 발생할 때마다 {@code ZINCRBY search:ranking 1 {keyword}}로 score를 증가시키고,
+ * 검색이 발생할 때마다 {@link #incrementSearchCount(String)}를 호출해 score를 증가시키고,
  * 이 서비스에서는 상위 10개를 조회하여 이전 순위({@code search:ranking:prev})와 비교해 응답을 반환한다.
  * </p>
  *
@@ -39,10 +43,10 @@ import java.util.Set;
  * </p>
  *
  * <p>
- * <b>TODO (Scale-out 대응)</b>: 현재 {@code @Scheduled}는 단일 인스턴스 환경을 가정한다.
- * 다중 인스턴스 배포 시 모든 인스턴스에서 스케줄러가 동시 실행된다.
- * Redis RENAME 자체는 원자적이므로 기능 결과는 동일하지만, 의도치 않은 중복 실행을 막으려면
- * 프로젝트에 이미 존재하는 Redisson 분산 락({@code RLock})을 스케줄러 진입 시점에 적용해야 한다.
+ * <b>다중 인스턴스 대응 (분산 락)</b>: 여러 인스턴스에서 스케줄러가 동시 실행되면
+ * 하나가 RENAME한 직후 다른 하나가 키 없음을 보고 DELETE를 수행해 스냅샷이 유실될 수 있다.
+ * 이를 방지하기 위해 Redisson 분산 락({@code RLock})을 스케줄러 진입 시점에 적용하여 
+ * 단일 인스턴스만 초기화를 수행하도록 보장한다.
  * </p>
  */
 @Slf4j
@@ -51,12 +55,13 @@ import java.util.Set;
 public class PopularSearchService {
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final RedissonClient redissonClient;
 
     // ──────────────────────────────────────────────────────────────────────────
     // Redis Key 상수
     // ──────────────────────────────────────────────────────────────────────────
 
-    // [STYLE-3 수정] 외부 접근을 차단하기 위해 private으로 캡슐화.
+    // 외부 접근을 차단하기 위해 private으로 캡슐화.
     // 단위 테스트에서는 상수 문자열("search:ranking")을 직접 사용하거나 @TestPropertySource로 주입할 것.
 
     /** 오늘 누적 검색 횟수 ZSet 키 (score 높을수록 인기) */
@@ -71,6 +76,40 @@ public class PopularSearchService {
     // ──────────────────────────────────────────────────────────────────────────
     // Public API
     // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 검색어 카운트 증가.
+     * <p>
+     * Phase 2-2(관광지 검색) / 2-3(축제 검색)의 {@code SearchService}에서 검색 실행 시 호출한다.
+     * Redis ZSet {@code ZINCRBY search:ranking 1 {keyword}} 로 score를 원자적으로 1 증가시킨다.
+     * </p>
+     *
+     * <p>
+     * <b>정규화 정책</b>: 저장 전 {@code strip()}을 적용하여 앞뒤 공백을 제거한다.
+     * " 제주도", "제주도 ", "제주도" 가 모두 동일한 키로 집계되어 왜곡을 방지한다.
+     * 빈 문자열이거나 null이면 카운트하지 않는다.
+     * </p>
+     *
+     * <p>
+     * <b>키워드 유효성</b>: 호출 측(SearchService)에서 {@code PLACE_005}(최소 1자),
+     * {@code PLACE_006}(최대 50자) 검증을 통과한 키워드만 전달해야 한다.
+     * </p>
+     *
+     * @param keyword 검색어 (null·blank 허용 — 내부에서 무시됨)
+     */
+    public void incrementSearchCount(String keyword) {
+        // null·blank 키워드는 카운팅하지 않는다.
+        if (!StringUtils.hasText(keyword)) {
+            return;
+        }
+
+        // 정규화: 앞뒤 공백 제거 (같은 의미의 다른 입력이 별개의 키로 집계되는 왜곡 방지)
+        String normalized = keyword.strip();
+
+        // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
+        stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
+        log.debug("[PopularSearch] 검색어 카운트 증가: '{}'", normalized);
+    }
 
     /**
      * 인기 검색어 TOP 10 조회.
@@ -100,7 +139,7 @@ public class PopularSearchService {
         // 랭킹 데이터가 아직 없는 경우 (초기 상태) 빈 리스트 반환
         if (currentRanking == null || currentRanking.isEmpty()) {
             log.debug("[PopularSearch] 현재 랭킹 데이터 없음. 빈 목록 반환");
-            return Collections.emptyList(); // [STYLE-4 수정] List.of()와 일관성 통일 — 항상 불변 리스트 반환
+            return Collections.emptyList();
         }
 
         // 2. 이전 순위 맵 구성 (keyword → prev 순위, 1-based)
@@ -118,7 +157,7 @@ public class PopularSearchService {
             // null keyword가 응답에 포함되면 클라이언트 파싱 오류로 이어진다.
             if (!StringUtils.hasText(keyword)) {
                 log.warn("[PopularSearch] null 또는 빈 keyword tuple 발견. 건너뜀. rank={}", currentRank);
-                // [BUG-3 수정] null을 skip하더라도 currentRank는 반드시 소진해야 한다.
+                // null을 skip하더라도 currentRank는 반드시 소진해야 한다.
                 // skip 후 미증가 시 다음 유효 keyword가 동일한 순위 번호를 받아 중복 순위가 발생한다.
                 currentRank++;
                 continue;
@@ -136,7 +175,7 @@ public class PopularSearchService {
         }
 
         log.debug("[PopularSearch] 인기 검색어 조회 완료: {}건", result.size());
-        // [STYLE-4 수정] 호출자가 반환된 리스트를 수정할 수 없도록 불변 래퍼로 감싸 반환한다.
+        // 호출자가 반환된 리스트를 수정할 수 없도록 불변 래퍼로 감싸 반환한다.
         // 서비스 레이어는 항상 불변 컬렉션을 반환하는 것이 방어적 설계의 기본이다.
         return Collections.unmodifiableList(result);
     }
@@ -160,54 +199,76 @@ public class PopularSearchService {
      * </p>
      *
      * <p>
+     * <b>검색 0건 처리</b>: 오늘 검색이 없어 {@code search:ranking}이 존재하지 않으면
+     * {@code search:ranking:prev}를 명시적으로 삭제하여 stale 데이터 잔류를 방지한다.
+     * (prev가 없으면 다음 날 전 키워드가 {@code NEW}로 표시 — 이것이 올바른 동작)
+     * </p>
+     *
+     * <p>
      * <b>cron 설정</b>: {@code application.yml}의 {@code search.ranking.reset-cron}으로 외부화.
      * 재배포 없이 초기화 주기를 변경할 수 있다.
      * </p>
      */
     @Scheduled(cron = "${search.ranking.reset-cron:0 0 0 * * *}")
     public void resetDailyRanking() {
-        log.info("[PopularSearch] 일간 랭킹 초기화 시작");
+        log.info("[PopularSearch] 일간 랭킹 초기화 시작 (분산 락 획득 시도)");
 
-        // 성공 여부 플래그: 예외 발생 여부에 따라 완료/실패 로그를 분리한다.
-        // 예외가 발생해도 "완료" 로그가 찍히면 운영 추적 시 성공으로 오인할 수 있다.
-        boolean success = false;
+        // 분산 락: 다중 인스턴스 환경에서 동시 실행 방지
+        RLock lock = redissonClient.getLock("lock:search:ranking:reset");
+        boolean isLocked = false;
+        long startTime = System.currentTimeMillis();
 
         try {
-            // search:ranking 키 존재 여부 확인
-            // RENAME은 소스 키가 없으면 ERR를 던지므로 선행 체크가 필요하다.
-            // [주의] hasKey → rename 사이에 극히 드문 TOCTOU가 존재하지만,
-            // 스케줄러가 자정 1회만 실행되는 환경에서는 실질적 위험이 없다.
-            Boolean rankingExists = stringRedisTemplate.hasKey(RANKING_KEY);
-
-            if (Boolean.TRUE.equals(rankingExists)) {
-                // RENAME: search:ranking → search:ranking:prev
-                // - 원자적 연산: prev가 이미 존재하면 자동 교체 (별도 delete 불필요)
-                // - 실행 후 search:ranking 키는 소멸 → 당일 집계 초기화 완료
-                stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
-                log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
-            } else {
-                // 오늘 검색이 한 건도 없었던 경우.
-                // 단순히 건너뛰면 search:ranking:prev 에 이전 영업일 데이터가 잔류한다.
-                // 예) Day1=검색있음, Day2=검색없음(skip), Day3=검색있음
-                //     → Day3에서 getPopularKeywords()가 Day1 스냅샷과 비교 → changeType 오계산
-                // 따라서 오늘 검색이 없으면 이전 스냅샷도 명시적으로 제거해야 한다.
-                // (prev가 없으면 다음 날 조회 시 전 키워드가 NEW로 표시 — 이것이 올바른 동작)
-                stringRedisTemplate.delete(RANKING_PREV_KEY);
-                log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
+            // 0초 대기(즉시 실패), 10초 후 자동 만료. 
+            // 0초 대기는 다른 인스턴스가 이미 진행 중이면 바로 포기함을 의미한다.
+            isLocked = lock.tryLock(0, 10, TimeUnit.SECONDS);
+            
+            if (!isLocked) {
+                log.info("[PopularSearch] 이미 다른 인스턴스에서 랭킹 초기화를 진행 중입니다. 스케줄러를 건너뜁니다.");
+                return;
             }
 
-            success = true; // try 블록이 정상 종료된 경우에만 성공으로 마킹
+            // --- 기존 로직 수행 ---
+            boolean success = false;
+            try {
+                // search:ranking 키 존재 여부 확인
+                // [주의] 다중 인스턴스 동시 실행 시, A가 rename한 뒤 B가 hasKey=false로 판단하여 delete해버리는 
+                // 심각한 데이터 유실(스냅샷 증발) 문제가 발생할 수 있다. 분산 락이 이를 방지한다.
+                Boolean rankingExists = stringRedisTemplate.hasKey(RANKING_KEY);
 
-        } catch (Exception e) {
-            // 초기화 실패는 운영에 중대한 영향(변동 타입 오작동)을 미치므로 ERROR 레벨 로깅
-            log.error("[PopularSearch] 일간 랭킹 초기화 중 오류 발생", e);
-        }
+                if (Boolean.TRUE.equals(rankingExists)) {
+                    stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
+                    log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
+                } else {
+                    stringRedisTemplate.delete(RANKING_PREV_KEY);
+                    log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
+                }
 
-        // 성공/실패 여부에 따라 완료 로그를 분리하여 운영 추적 정확성 확보
-        if (success) {
-            log.info("[PopularSearch] 일간 랭킹 초기화 완료");
-        } else {
-            log.warn("[PopularSearch] 일간 랭킹 초기화 실패 — 다음 자정에 재시도됩니다.");
+                success = true;
+
+            } catch (Exception e) {
+                log.error("[PopularSearch] 일간 랭킹 초기화 중 오류 발생", e);
+            }
+
+            long elapsedMs = System.currentTimeMillis() - startTime;
+
+            if (success) {
+                log.info("[PopularSearch] 일간 랭킹 초기화 완료. 소요시간={}ms", elapsedMs);
+            } else {
+                log.warn("[PopularSearch] 일간 랭킹 초기화 실패. 소요시간={}ms — 다음 자정에 재시도됩니다.", elapsedMs);
+            }
+
+        } catch (InterruptedException e) {
+            log.error("[PopularSearch] 랭킹 초기화 분산 락 획득 중 인터럽트 발생", e);
+            Thread.currentThread().interrupt();
+        } finally {
+            if (isLocked) {
+                try {
+                    lock.unlock();
+                } catch (Exception e) {
+                    log.warn("[PopularSearch] 랭킹 초기화 분산 락 해제 실패", e);
+                }
+            }
         }
     }
 
@@ -230,16 +291,16 @@ public class PopularSearchService {
      * @return keyword를 키, 1-based 이전 순위를 값으로 하는 맵. 스냅샷 없으면 빈 맵.
      */
     private Map<String, Integer> buildPrevRankMap() {
-        // [DESIGN-1 수정] 전체(0, -1) 대신 TOP_N 범위만 조회하여 메모리 낭비 방지
         Set<String> prevKeywords = stringRedisTemplate.opsForZSet()
                 .reverseRange(RANKING_PREV_KEY, 0, TOP_N - 1);
 
         if (prevKeywords == null || prevKeywords.isEmpty()) {
-            // [STYLE-1 수정] Map.of()와 new HashMap<>() 혼용 대신 Collections.emptyMap()으로 통일
             return Collections.emptyMap(); // 이전 랭킹 없음 → 전부 NEW 처리
         }
 
-        Map<String, Integer> prevRankMap = new HashMap<>(prevKeywords.size());
+        // Java 19+ HashMap.newHashMap: load factor(0.75)를 고려한 초기 용량 자동 계산
+        // new HashMap<>(size)는 size개 삽입 시 rehash 발생 가능
+        Map<String, Integer> prevRankMap = HashMap.newHashMap(prevKeywords.size());
         int rank = 1;
         for (String keyword : prevKeywords) {
             prevRankMap.put(keyword, rank++);
