@@ -72,6 +72,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
+                        // PortOne 웹훅: 서버→서버 호출이라 JWT 없음 — permitAll 필수
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
