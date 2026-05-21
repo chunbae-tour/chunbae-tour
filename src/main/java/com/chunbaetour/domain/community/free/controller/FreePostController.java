@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.community.free.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostCreateRequest;
 import com.chunbaetour.domain.community.free.dto.FreePostGetOneResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostGetListResponse;
@@ -40,7 +40,7 @@ public class FreePostController {
     }
 
     @GetMapping
-    public ApiResponse<CursorPage<FreePostGetListResponse>> findAll(
+    public ApiResponse<CursorPageResponse<FreePostGetListResponse>> findAll(
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
         return ApiResponse.success(postService.findAll(cursor, size));
