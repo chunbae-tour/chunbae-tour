@@ -106,32 +106,30 @@ public class PopularSearchService {
      *
      * @param keyword 검색어 (null·blank 허용 — 내부에서 무시됨)
      */
-    public void incrementSearchCount(String keyword) {
+    public void incrementSearchCount(String keyword, String clientIp) {
         // null·blank 키워드는 카운팅하지 않는다.
         if (!StringUtils.hasText(keyword)) {
             return;
         }
 
-        // 정규화: 앞뒤 공백 제거 및 XSS 방어를 위한 위험 문자(<, >) 제거
+        // 정규화: 앞뒤 공백 제거
         String normalized = normalize(keyword);
-        if (!StringUtils.hasText(normalized)) {
-            return; // [15년차 리뷰 반영] <script> 등 특수문자 제거 후 빈 문자열이 된 경우 집계 차단
-        }
 
         try {
-            // [15년차 극강 리뷰 반영] 매크로 어뷰징 방어 (IP 기반 Deduplication)
+            // 매크로 어뷰징 방어 (IP 기반 Deduplication)
             // 10분 내에 동일 IP에서 동일 검색어를 검색한 이력이 있다면 집계하지 않는다.
-            String ip = getClientIp();
-            String deduplicationKey = "search:log:" + ip + ":" + normalized;
+            // 개인정보 보호를 위해 IP는 단방향 해싱하여 저장한다.
+            String hashedIp = org.springframework.util.DigestUtils.md5DigestAsHex(clientIp.getBytes());
+            String deduplicationKey = "search:log:" + hashedIp + ":" + normalized;
 
             Boolean isFirstSearch = stringRedisTemplate.opsForValue().setIfAbsent(deduplicationKey, "1", 10, TimeUnit.MINUTES);
             
             if (Boolean.TRUE.equals(isFirstSearch)) {
                 // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
                 stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
-                log.debug("[PopularSearch] 검색어 카운트 증가: '{}' (IP: {})", normalized, ip);
+                log.debug("[PopularSearch] 검색어 카운트 증가: '{}'", normalized);
             } else {
-                log.debug("[PopularSearch] 중복 검색(어뷰징) 차단: '{}' (IP: {})", normalized, ip);
+                log.debug("[PopularSearch] 중복 검색(어뷰징) 차단: '{}'", normalized);
             }
         } catch (Exception e) {
             // 집계 실패는 검색 서비스 전체를 중단시키지 않는다
@@ -185,8 +183,8 @@ public class PopularSearchService {
                 // null keyword가 응답에 포함되면 클라이언트 파싱 오류로 이어진다.
                 if (!StringUtils.hasText(keyword)) {
                     log.warn("[PopularSearch] null 또는 빈 keyword tuple 발견. 건너뜀. rank={}", currentRank);
-                    // [HIGH 피드백 반영] null keyword를 skip할 때 currentRank를 올리면 순위 번호에 공백(1, 3, 4)이 발생.
-                    // 따라서 유효한 항목을 결과 리스트에 추가한 직후에만 currentRank를 증가시킨다.
+                    // 유효하지 않은 데이터를 skip하고 유효한 항목만으로 TOP N을 채우기 위해 currentRank를 증가시키지 않는다.
+                    // 이 경우 Redis에서 가져온 N+1번째 데이터가 N위로 올라오게 되지만, 유효한 검색어만 보여주는 것이 더 중요하다.
                     continue;
                 }
 
@@ -303,9 +301,10 @@ public class PopularSearchService {
             stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
             log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
         } else {
-            // 오늘 검색이 한 건도 없었던 경우, 전날 스냅샷(search:ranking:prev)을 그대로 유지한다.
-            // (만약 지워버리면 다음 날 조회 시 이전 랭킹 기준이 없어 전부 NEW로 표시됨)
-            log.info("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({}) 유지.", RANKING_PREV_KEY);
+            // 오늘 검색이 한 건도 없었던 경우, 이전 랭킹 기준이 무의미하므로 스냅샷을 제거한다.
+            // (다음 날 조회 시 이전 랭킹이 없어져 모두 NEW로 표시되도록 하는 올바른 설계 동작)
+            stringRedisTemplate.delete(RANKING_PREV_KEY);
+            log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
         }
     }
 
@@ -375,30 +374,10 @@ public class PopularSearchService {
     }
 
     /**
-     * 향후 정규화 정책 변경(예: 소문자 통일, 특수문자 제거 등) 시 
-     * 확장을 용이하게 하기 위한 키워드 정규화 메서드
+     * 향후 정규화 정책 변경(예: 소문자 통일 등) 시 확장을 용이하게 하기 위한 키워드 정규화 메서드.
+     * XSS 방어(태그 이스케이프)는 출력(렌더링) 시점에 수행하는 것이 표준이므로 여기서는 제외한다.
      */
     private String normalize(String keyword) {
-        String normalized = keyword.strip(); 
-        // [CodeRabbit 리뷰 반영] 데이터 무결성을 위해 HTML 인코딩 대신 위험 문자(<, >) 제거 (Sanitize)
-        normalized = normalized.replaceAll("[<>]", "");
-        return normalized;
-    }
-
-    /**
-     * 현재 HTTP 요청을 보낸 클라이언트의 IP 주소를 추출한다.
-     * application.yml에 설정된 server.forward-headers-strategy: NATIVE 설정에 의해,
-     * Tomcat의 RemoteIpValve가 안전하게 X-Forwarded-For를 파싱하여 getRemoteAddr()에 주입해준다.
-     */
-    private String getClientIp() {
-        try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-            if (attributes != null) {
-                return attributes.getRequest().getRemoteAddr();
-            }
-        } catch (Exception e) {
-            // 스케줄러 등 웹 컨텍스트가 없는 경우 무시
-        }
-        return "unknown";
+        return keyword.strip();
     }
 }

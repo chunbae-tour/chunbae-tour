@@ -45,7 +45,7 @@ class SearchServiceTest {
         String emptyKeyword = "   ";
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10))
+        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -57,7 +57,7 @@ class SearchServiceTest {
         String longKeyword = "a".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10))
+        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -74,10 +74,10 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
 
         // when (cursor == null)
-        searchService.searchPlaces(keyword, null, null, null, size);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1");
 
         // then
-        verify(popularSearchService).incrementSearchCount(keyword);
+        verify(popularSearchService).incrementSearchCount(keyword, "127.0.0.1");
     }
 
     @Test
@@ -93,10 +93,10 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
 
         // when (cursor != null)
-        searchService.searchPlaces(keyword, null, null, cursorId, size);
+        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1");
 
         // then
-        verify(popularSearchService, never()).incrementSearchCount(anyString());
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
     }
 
     @Test
@@ -115,7 +115,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1");
 
         // then
         assertThat(response.hasNext()).isTrue();

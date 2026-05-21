@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
@@ -87,9 +88,11 @@ public class SearchController {
             @RequestParam(name = "category", required = false) PlaceCategory category,
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
-            @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size
+            @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            HttpServletRequest request
     ) {
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size);
+        String clientIp = request.getRemoteAddr();
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp);
         return ApiResponse.success(response);
     }
 }
