@@ -9,7 +9,7 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostCreateRequest;
 import com.chunbaetour.domain.community.free.dto.FreePostGetListResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostGetOneResponse;
@@ -102,7 +102,7 @@ class FreePostServiceTest {
                 .willReturn(List.of(post1, post2));
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        CursorPage<FreePostGetListResponse> result = postService.findAll(null, 10);
+        CursorPageResponse<FreePostGetListResponse> result = postService.findAll(null, 10);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isFalse();
@@ -122,7 +122,7 @@ class FreePostServiceTest {
                 .willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        CursorPage<FreePostGetListResponse> result = postService.findAll(null, 10);
+        CursorPageResponse<FreePostGetListResponse> result = postService.findAll(null, 10);
 
         assertThat(result.content()).hasSize(10);
         assertThat(result.hasNext()).isTrue();
