@@ -80,6 +80,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // 검색 기능(2-1 인기 검색어)은 인증 불필요
+                        .requestMatchers(HttpMethod.GET, "/api/v1/search/popular").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
