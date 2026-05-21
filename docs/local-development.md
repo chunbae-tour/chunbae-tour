@@ -77,6 +77,56 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
   - Axios: `axios.create({ withCredentials: true })` 또는 요청별 `{ withCredentials: true }`
 - 재발급은 `POST /api/v1/auth/reissue` 호출 (위 credentials 옵션으로 Cookie 전송 + 새 Access Token 응답).
 
+## Rate Limit
+
+회원가입/로그인 endpoint에 IP 기반 rate limit이 적용되어 있습니다 (sa-docs/11 운영 보안 정책 §Rate Limit).
+
+### 기본 정책
+
+| Endpoint | 제한 | window |
+|---|---|---|
+| `POST /api/v1/users/auth/signup` | 3회 | 10분 |
+| `POST /api/v1/users/auth/login` | 5회 | 1분 |
+| `POST /api/v1/merchants/auth/login` | 5회 | 1분 |
+| `POST /api/v1/admin/auth/login` | 5회 | 1분 |
+
+한도 초과 시 응답:
+
+- HTTP `429 Too Many Requests`
+- Body: `{ "code": "AUTH_014", "message": "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }`
+- 응답 헤더: `Retry-After`(초), `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+### 응답 헤더 (허용된 요청도 포함)
+
+- `X-RateLimit-Limit`: 정책 한도
+- `X-RateLimit-Remaining`: 본 요청 처리 후 남은 허용 횟수
+
+클라이언트가 한도에 가까워졌을 때 미리 적응적 호출이 가능합니다.
+
+### 로컬 개발에서 비활성화
+
+같은 endpoint를 빠르게 반복 호출하는 통합 테스트나 시연 시 rate limit이 거슬릴 수 있습니다.
+
+`.env`에 다음 한 줄 추가:
+
+```dotenv
+RATELIMIT_ENABLED=false
+```
+
+또는 IDE 실행 설정에 환경변수 `RATELIMIT_ENABLED=false` 추가. 재시작 시 `RateLimitFilter`가 모든 요청을 즉시 통과시킵니다.
+
+**운영(`application-prod.yml`)에서는 항상 활성화**되어 있으며, env로 비활성화 불가합니다.
+
+### 키 구조 (Redis)
+
+- 형식: `ratelimit:{endpoint-id}:{client-ip}`
+- 예: `ratelimit:signup:127.0.0.1`
+- TTL = 정책 window. 만료 후 자동 삭제 → 다음 요청이 새 window 시작.
+
+### 통합 테스트와의 격리
+
+`AbstractIntegrationTest`가 기본적으로 `ratelimit.enabled=false`로 설정하여 같은 IP로 반복 호출하는 다른 통합 테스트가 자기 한도에 부딪히지 않게 합니다. Rate Limit 자체 동작은 `RateLimitIntegrationTest`가 `@DynamicPropertySource`로 별도 활성화하여 검증.
+
 ## 실행 방법
 
 ### 방법 1. 스크립트로 실행
@@ -231,3 +281,25 @@ docker compose up -d
 | `scripts/dev-up.ps1` | Windows PowerShell 컨테이너 실행 스크립트 |
 | `scripts/dev-down.sh` | macOS/Linux 컨테이너 종료 스크립트 |
 | `scripts/dev-down.ps1` | Windows PowerShell 컨테이너 종료 스크립트 |
+
+## 운영 배포 전 후속 작업
+
+### Trusted Proxy / X-Forwarded-For allowlist 검증 (KAN-65 후속)
+
+RateLimitFilter는 클라이언트 IP를 `request.getRemoteAddr()`로 추출한다. 로드밸런서/리버스 프록시 뒤에 배포되면 모든 요청이 LB IP 1개로 보이게 되어 rate limit bucket이 전 클라이언트 공유 상태가 된다.
+
+**현재 적용된 최소 조치** (`application.yml`):
+
+- `server.forward-headers-strategy: NATIVE` — Tomcat RemoteIpValve 활성화. `X-Forwarded-For` 헤더를 `getRemoteAddr()` 결과에 반영.
+- Spring Boot 기본 `internal-proxies` 정규식은 RFC 1918 사설 IP 대역만 신뢰.
+
+**운영 배포 전 반드시 확인할 항목**:
+
+1. **LB IP 대역이 RFC 1918 사설 대역에 포함되는지 확인.** 사설 대역 밖이면 `server.tomcat.remoteip.internal-proxies` regex를 LB IP에 맞게 명시 설정 필요.
+2. **Trusted proxy allowlist 정책 확정.** raw `X-Forwarded-For`를 allowlist 없이 신뢰하면 spoofing 위험 (클라이언트가 임의 IP 위장 → rate limit 우회).
+3. **Spring `ForwardedHeaderFilter` 또는 동등 처리 검토.** scheme/host도 함께 신뢰해야 하면 별도 설정.
+4. **배포 환경별 검증.** AWS ALB / K8s Ingress / 직접 Nginx 등 환경에 따라 헤더 흐름이 다름. 실제 환경에서 `X-RateLimit-*` 응답 헤더를 확인하며 클라이언트 IP가 정확히 분리되는지 검증.
+
+**분리 사유**: 배포 환경(AWS ALB / K8s / 기타) 의존 결정 + ops 협의 필요. KAN-65 본 PR 범위 밖.
+
+**참조**: `src/main/java/com/chunbaetour/domain/common/ratelimit/RateLimitFilter.java`의 `extractClientIp` Javadoc.
