@@ -4,6 +4,7 @@ import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
 import com.chunbaetour.domain.search.type.RankingChangeType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,13 +27,13 @@ import java.util.Set;
  * <p>
  * Redis ZSet({@code search:ranking})을 1차 데이터 저장소로 사용한다.
  * 검색이 발생할 때마다 {@link #incrementSearchCount(String)}를 호출해 score를 증가시키고,
- * 이 서비스에서는 상위 10개를 조회하여 이전 순위({@code search:ranking:prev})와 비교해 응답을 반환한다.
+ * 이 서비스에서는 상위 N개를 조회하여 이전 순위({@code search:ranking:prev})와 비교해 응답을 반환한다.
  * </p>
  *
  * <p>
  * <b>SA 기능 명세서 F-SEARCH-002 동작 방식</b>:
  * <ol>
- *   <li>Redis ZSet {@code ZREVRANGE search:ranking 0 9 WITHSCORES}</li>
+ *   <li>Redis ZSet {@code ZREVRANGE search:ranking 0 N WITHSCORES}</li>
  *   <li>이전 순위 {@code search:ranking:prev}와 비교하여 changeType 계산</li>
  * </ol>
  * </p>
@@ -57,6 +58,9 @@ public class PopularSearchService {
     private final StringRedisTemplate stringRedisTemplate;
     private final RedissonClient redissonClient;
 
+    @Value("${search.ranking.top-n:10}")
+    private int topN;
+
     // ──────────────────────────────────────────────────────────────────────────
     // Redis Key 상수
     // ──────────────────────────────────────────────────────────────────────────
@@ -70,8 +74,8 @@ public class PopularSearchService {
     /** 전일 인기 검색어 스냅샷 ZSet 키 (자정 초기화 직전 백업) */
     private static final String RANKING_PREV_KEY = "search:ranking:prev";
 
-    /** 인기 검색어 상위 노출 개수 */
-    private static final int TOP_N = 10;
+    /** 스케줄러 분산 락 만료 시간 */
+    private static final long RESET_LOCK_LEASE_SECONDS = 10L;
 
     // ──────────────────────────────────────────────────────────────────────────
     // Public API
@@ -85,7 +89,7 @@ public class PopularSearchService {
      * </p>
      *
      * <p>
-     * <b>정규화 정책</b>: 저장 전 {@code strip()}을 적용하여 앞뒤 공백을 제거한다.
+     * <b>정규화 정책</b>: 저장 전 {@link #normalize(String)}을 적용하여 앞뒤 공백을 제거한다.
      * " 제주도", "제주도 ", "제주도" 가 모두 동일한 키로 집계되어 왜곡을 방지한다.
      * 빈 문자열이거나 null이면 카운트하지 않는다.
      * </p>
@@ -104,18 +108,23 @@ public class PopularSearchService {
         }
 
         // 정규화: 앞뒤 공백 제거 (같은 의미의 다른 입력이 별개의 키로 집계되는 왜곡 방지)
-        String normalized = keyword.strip();
+        String normalized = normalize(keyword);
 
-        // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
-        stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
-        log.debug("[PopularSearch] 검색어 카운트 증가: '{}'", normalized);
+        try {
+            // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
+            stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
+            log.debug("[PopularSearch] 검색어 카운트 증가: '{}'", normalized);
+        } catch (Exception e) {
+            // 집계 실패는 검색 서비스 전체를 중단시키지 않는다
+            log.warn("[PopularSearch] 검색어 카운트 증가 실패. keyword='{}', error={}", normalized, e.getMessage());
+        }
     }
 
     /**
-     * 인기 검색어 TOP 10 조회.
+     * 인기 검색어 상위 N 조회.
      * <p>
-     * 1. {@code ZREVRANGE search:ranking 0 9 WITHSCORES}로 현재 순위 조회<br>
-     * 2. {@code ZREVRANGE search:ranking:prev 0 9}로 이전 순위 조회 (TOP_N 범위로 제한)<br>
+     * 1. {@code ZREVRANGE search:ranking 0 N WITHSCORES}로 현재 순위 조회<br>
+     * 2. {@code ZREVRANGE search:ranking:prev 0 N}로 이전 순위 조회 (topN 범위로 제한)<br>
      * 3. 각 키워드별 {@link RankingChangeType} 계산 후 응답 목록 반환
      * </p>
      *
@@ -127,57 +136,63 @@ public class PopularSearchService {
      * 원자적으로 묶으면 해소되나 현재 구현 복잡도를 고려해 수용 가능 수준으로 판단한다.
      * </p>
      *
-     * @return 인기 검색어 목록 (최대 10건, 순위·검색수·변동타입 포함, 불변 리스트)
+     * @return 인기 검색어 목록 (최대 topN건, 순위·검색수·변동타입 포함, 불변 리스트)
      */
     public List<PopularSearchResponse> getPopularKeywords() {
+        try {
+            // 1. 현재 인기 검색어 TOP N 조회 (score 내림차순)
+            Set<ZSetOperations.TypedTuple<String>> currentRanking =
+                    stringRedisTemplate.opsForZSet()
+                            .reverseRangeWithScores(RANKING_KEY, 0, topN - 1);
 
-        // 1. 현재 인기 검색어 TOP N 조회 (score 내림차순)
-        Set<ZSetOperations.TypedTuple<String>> currentRanking =
-                stringRedisTemplate.opsForZSet()
-                        .reverseRangeWithScores(RANKING_KEY, 0, TOP_N - 1);
-
-        // 랭킹 데이터가 아직 없는 경우 (초기 상태) 빈 리스트 반환
-        if (currentRanking == null || currentRanking.isEmpty()) {
-            log.debug("[PopularSearch] 현재 랭킹 데이터 없음. 빈 목록 반환");
-            return Collections.emptyList();
-        }
-
-        // 2. 이전 순위 맵 구성 (keyword → prev 순위, 1-based)
-        //    비교 대상은 전날 TOP_N 이내에 있던 키워드만으로 충분하다.
-        Map<String, Integer> prevRankMap = buildPrevRankMap();
-
-        // 3. 응답 목록 조립
-        List<PopularSearchResponse> result = new ArrayList<>(TOP_N);
-        int currentRank = 1;
-
-        for (ZSetOperations.TypedTuple<String> tuple : currentRanking) {
-            String keyword = tuple.getValue();
-
-            // Redis 역직렬화 실패 등으로 keyword가 null인 tuple은 건너뜀.
-            // null keyword가 응답에 포함되면 클라이언트 파싱 오류로 이어진다.
-            if (!StringUtils.hasText(keyword)) {
-                log.warn("[PopularSearch] null 또는 빈 keyword tuple 발견. 건너뜀. rank={}", currentRank);
-                // null을 skip하더라도 currentRank는 반드시 소진해야 한다.
-                // skip 후 미증가 시 다음 유효 keyword가 동일한 순위 번호를 받아 중복 순위가 발생한다.
-                currentRank++;
-                continue;
+            // 랭킹 데이터가 아직 없는 경우 (초기 상태) 빈 리스트 반환
+            if (currentRanking == null || currentRanking.isEmpty()) {
+                log.debug("[PopularSearch] 현재 랭킹 데이터 없음. 빈 목록 반환");
+                return Collections.emptyList();
             }
 
-            // ZSet score는 double; 실제 검색 횟수이므로 long으로 변환
-            long searchCount = (tuple.getScore() != null)
-                    ? tuple.getScore().longValue()
-                    : 0L;
+            // 2. 이전 순위 맵 구성 (keyword → prev 순위, 1-based)
+            //    비교 대상은 전날 topN 이내에 있던 키워드만으로 충분하다.
+            Map<String, Integer> prevRankMap = buildPrevRankMap();
 
-            RankingChangeType changeType = determineChangeType(keyword, currentRank, prevRankMap);
+            // 3. 응답 목록 조립
+            List<PopularSearchResponse> result = new ArrayList<>(topN);
+            int currentRank = 1;
 
-            result.add(PopularSearchResponse.of(currentRank, keyword, searchCount, changeType));
-            currentRank++;
+            for (ZSetOperations.TypedTuple<String> tuple : currentRanking) {
+                String keyword = tuple.getValue();
+
+                // Redis 역직렬화 실패 등으로 keyword가 null인 tuple은 건너뜀.
+                // null keyword가 응답에 포함되면 클라이언트 파싱 오류로 이어진다.
+                if (!StringUtils.hasText(keyword)) {
+                    log.warn("[PopularSearch] null 또는 빈 keyword tuple 발견. 건너뜀. rank={}", currentRank);
+                    // null을 skip하더라도 currentRank는 반드시 소진해야 한다.
+                    // skip 후 미증가 시 다음 유효 keyword가 동일한 순위 번호를 받아 중복 순위가 발생한다.
+                    currentRank++;
+                    continue;
+                }
+
+                // ZSet score는 double; 실제 검색 횟수이므로 long으로 변환
+                long searchCount = (tuple.getScore() != null)
+                        ? tuple.getScore().longValue()
+                        : 0L;
+
+                RankingChangeType changeType = determineChangeType(keyword, currentRank, prevRankMap);
+
+                result.add(PopularSearchResponse.of(currentRank, keyword, searchCount, changeType));
+                currentRank++;
+            }
+
+            log.debug("[PopularSearch] 인기 검색어 조회 완료: {}건", result.size());
+            // 호출자가 반환된 리스트를 수정할 수 없도록 불변 래퍼로 감싸 반환한다.
+            // 서비스 레이어는 항상 불변 컬렉션을 반환하는 것이 방어적 설계의 기본이다.
+            return Collections.unmodifiableList(result);
+            
+        } catch (Exception e) {
+            log.error("[PopularSearch] 인기 검색어 조회 실패", e);
+            // 조회 실패 시 500 에러를 뱉기보다는 빈 리스트를 반환하여 사용자 경험을 보호한다.
+            return Collections.emptyList();
         }
-
-        log.debug("[PopularSearch] 인기 검색어 조회 완료: {}건", result.size());
-        // 호출자가 반환된 리스트를 수정할 수 없도록 불변 래퍼로 감싸 반환한다.
-        // 서비스 레이어는 항상 불변 컬렉션을 반환하는 것이 방어적 설계의 기본이다.
-        return Collections.unmodifiableList(result);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -219,43 +234,25 @@ public class PopularSearchService {
         long startTime = System.currentTimeMillis();
 
         try {
-            // 0초 대기(즉시 실패), 10초 후 자동 만료. 
+            // 0초 대기(즉시 실패), 자동 만료는 상수로 분리.
             // 0초 대기는 다른 인스턴스가 이미 진행 중이면 바로 포기함을 의미한다.
-            isLocked = lock.tryLock(0, 10, TimeUnit.SECONDS);
+            isLocked = lock.tryLock(0, RESET_LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
             
             if (!isLocked) {
                 log.info("[PopularSearch] 이미 다른 인스턴스에서 랭킹 초기화를 진행 중입니다. 스케줄러를 건너뜁니다.");
                 return;
             }
 
-            // --- 기존 로직 수행 ---
-            boolean success = false;
             try {
-                // search:ranking 키 존재 여부 확인
-                // [주의] 다중 인스턴스 동시 실행 시, A가 rename한 뒤 B가 hasKey=false로 판단하여 delete해버리는 
-                // 심각한 데이터 유실(스냅샷 증발) 문제가 발생할 수 있다. 분산 락이 이를 방지한다.
-                Boolean rankingExists = stringRedisTemplate.hasKey(RANKING_KEY);
-
-                if (Boolean.TRUE.equals(rankingExists)) {
-                    stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
-                    log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
-                } else {
-                    stringRedisTemplate.delete(RANKING_PREV_KEY);
-                    log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
-                }
-
-                success = true;
-
-            } catch (Exception e) {
-                log.error("[PopularSearch] 일간 랭킹 초기화 중 오류 발생", e);
-            }
-
-            long elapsedMs = System.currentTimeMillis() - startTime;
-
-            if (success) {
+                // 실제 초기화 로직 수행
+                doResetDailyRanking();
+                
+                long elapsedMs = System.currentTimeMillis() - startTime;
                 log.info("[PopularSearch] 일간 랭킹 초기화 완료. 소요시간={}ms", elapsedMs);
-            } else {
-                log.warn("[PopularSearch] 일간 랭킹 초기화 실패. 소요시간={}ms — 다음 자정에 재시도됩니다.", elapsedMs);
+            } catch (Exception e) {
+                long elapsedMs = System.currentTimeMillis() - startTime;
+                // 초기화 실패는 운영에 중대한 영향(변동 타입 오작동)을 미치므로 ERROR 레벨 로깅
+                log.error("[PopularSearch] 일간 랭킹 초기화 실패. 소요시간={}ms — 다음 자정에 재시도됩니다.", elapsedMs, e);
             }
 
         } catch (InterruptedException e) {
@@ -272,6 +269,30 @@ public class PopularSearchService {
         }
     }
 
+    /**
+     * 성공/실패 여부를 분리하여 실제 내부 로직의 흐름을 명확하게 처리한다.
+     */
+    private void doResetDailyRanking() {
+        // search:ranking 키 존재 여부 확인
+        // [주의] 다중 인스턴스 동시 실행 시, A가 rename한 뒤 B가 hasKey=false로 판단하여 delete해버리는 
+        // 심각한 데이터 유실(스냅샷 증발) 문제가 발생할 수 있다. 분산 락이 이를 방지한다.
+        Boolean rankingExists = stringRedisTemplate.hasKey(RANKING_KEY);
+
+        if (Boolean.TRUE.equals(rankingExists)) {
+            // RENAME: search:ranking → search:ranking:prev
+            // - 원자적 연산: prev가 이미 존재하면 자동 교체 (별도 delete 불필요)
+            // - 실행 후 search:ranking 키는 소멸 → 당일 집계 초기화 완료
+            stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
+            log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
+        } else {
+            // 오늘 검색이 한 건도 없었던 경우.
+            // 단순히 건너뛰면 search:ranking:prev 에 이전 영업일 데이터가 잔류한다.
+            // 따라서 오늘 검색이 없으면 이전 스냅샷도 명시적으로 제거해야 한다.
+            stringRedisTemplate.delete(RANKING_PREV_KEY);
+            log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Private 헬퍼
     // ──────────────────────────────────────────────────────────────────────────
@@ -279,28 +300,27 @@ public class PopularSearchService {
     /**
      * 이전 순위 ZSet에서 keyword → 이전 순위(1-based) 맵을 구성한다.
      * <p>
-     * <b>조회 범위</b>: {@code TOP_N}으로 제한한다.
-     * 비교에 필요한 것은 전날 TOP 10 이내에 있던 키워드뿐이며,
+     * <b>조회 범위</b>: {@code topN}으로 제한한다.
+     * 비교에 필요한 것은 전날 TOP N 이내에 있던 키워드뿐이며,
      * 전체({@code 0, -1}) 조회는 수십만 개 누적 시 메모리 낭비 및 지연 원인이 된다.
      * </p>
      * <p>
-     * <b>Trade-off</b>: 전날 11위~N위 키워드가 오늘 TOP 10에 진입하면 {@code NEW}로 표시된다.
-     * SA 명세서의 의도(전날 TOP 10 기준 비교)와 일치하는 동작이다.
+     * <b>Trade-off</b>: 전날 N위권 밖이었던 키워드가 오늘 TOP N에 진입하면 {@code NEW}로 표시된다.
+     * SA 명세서의 의도(전날 TOP N 기준 비교)와 일치하는 동작이다.
      * </p>
      *
      * @return keyword를 키, 1-based 이전 순위를 값으로 하는 맵. 스냅샷 없으면 빈 맵.
      */
     private Map<String, Integer> buildPrevRankMap() {
         Set<String> prevKeywords = stringRedisTemplate.opsForZSet()
-                .reverseRange(RANKING_PREV_KEY, 0, TOP_N - 1);
+                .reverseRange(RANKING_PREV_KEY, 0, topN - 1);
 
         if (prevKeywords == null || prevKeywords.isEmpty()) {
             return Collections.emptyMap(); // 이전 랭킹 없음 → 전부 NEW 처리
         }
 
-        // Java 19+ HashMap.newHashMap: load factor(0.75)를 고려한 초기 용량 자동 계산
-        // new HashMap<>(size)는 size개 삽입 시 rehash 발생 가능
-        Map<String, Integer> prevRankMap = HashMap.newHashMap(prevKeywords.size());
+        // load factor(0.75)를 고려한 초기 용량 계산: (size / 0.75) + 1
+        Map<String, Integer> prevRankMap = new HashMap<>((int) (prevKeywords.size() / 0.75) + 1);
         int rank = 1;
         for (String keyword : prevKeywords) {
             prevRankMap.put(keyword, rank++);
@@ -323,7 +343,7 @@ public class PopularSearchService {
     ) {
         Integer prevRank = prevRankMap.get(keyword);
 
-        // 이전 순위에 없던 신규 키워드 (또는 전날 TOP_N 밖이었던 키워드)
+        // 이전 순위에 없던 신규 키워드 (또는 전날 topN 밖이었던 키워드)
         if (prevRank == null) {
             return RankingChangeType.NEW;
         }
@@ -336,5 +356,13 @@ public class PopularSearchService {
         } else {
             return RankingChangeType.SAME;
         }
+    }
+
+    /**
+     * 향후 정규화 정책 변경(예: 소문자 통일, 특수문자 제거 등) 시 
+     * 확장을 용이하게 하기 위한 키워드 정규화 메서드
+     */
+    private String normalize(String keyword) {
+        return keyword.strip(); // 향후 확장 지점
     }
 }
