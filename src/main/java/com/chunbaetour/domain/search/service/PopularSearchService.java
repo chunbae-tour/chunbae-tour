@@ -21,6 +21,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * 인기 검색어 서비스.
@@ -107,13 +112,24 @@ public class PopularSearchService {
             return;
         }
 
-        // 정규화: 앞뒤 공백 제거 (같은 의미의 다른 입력이 별개의 키로 집계되는 왜곡 방지)
+        // 정규화: 앞뒤 공백 제거 (같은 의미의 다른 입력이 별개의 키로 집계되는 왜곡 방지) 및 XSS 방어
         String normalized = normalize(keyword);
 
         try {
-            // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
-            stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
-            log.debug("[PopularSearch] 검색어 카운트 증가: '{}'", normalized);
+            // [15년차 극강 리뷰 반영] 매크로 어뷰징 방어 (IP 기반 Deduplication)
+            // 10분 내에 동일 IP에서 동일 검색어를 검색한 이력이 있다면 집계하지 않는다.
+            String ip = getClientIp();
+            String deduplicationKey = "search:log:" + ip + ":" + normalized;
+
+            Boolean isFirstSearch = stringRedisTemplate.opsForValue().setIfAbsent(deduplicationKey, "1", 10, TimeUnit.MINUTES);
+            
+            if (Boolean.TRUE.equals(isFirstSearch)) {
+                // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
+                stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
+                log.debug("[PopularSearch] 검색어 카운트 증가: '{}' (IP: {})", normalized, ip);
+            } else {
+                log.debug("[PopularSearch] 중복 검색(어뷰징) 차단: '{}' (IP: {})", normalized, ip);
+            }
         } catch (Exception e) {
             // 집계 실패는 검색 서비스 전체를 중단시키지 않는다
             log.warn("[PopularSearch] 검색어 카운트 증가 실패. keyword='{}', error={}", normalized, e.getMessage());
@@ -360,6 +376,30 @@ public class PopularSearchService {
      * 확장을 용이하게 하기 위한 키워드 정규화 메서드
      */
     private String normalize(String keyword) {
-        return keyword.strip(); // 향후 확장 지점
+        String normalized = keyword.strip(); 
+        // [15년차 극강 리뷰 반영] Stored XSS 방어: 꺾쇠 치환
+        normalized = normalized.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        return normalized;
+    }
+
+    /**
+     * 현재 HTTP 요청을 보낸 클라이언트의 IP 주소를 추출한다.
+     * 프록시, 로드밸런서(L7) 환경을 고려하여 X-Forwarded-For 헤더를 우선 확인한다.
+     */
+    private String getClientIp() {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                String ip = request.getHeader("X-Forwarded-For");
+                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+                    ip = request.getRemoteAddr();
+                }
+                return ip != null ? ip : "unknown";
+            }
+        } catch (Exception e) {
+            // 스케줄러 등 웹 컨텍스트가 없는 경우 무시
+        }
+        return "unknown";
     }
 }
