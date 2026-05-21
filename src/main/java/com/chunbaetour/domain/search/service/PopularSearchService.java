@@ -186,8 +186,14 @@ public class PopularSearchService {
                 stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
                 log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
             } else {
-                // 오늘 검색이 한 건도 없었던 경우 (초기 상태 또는 장애)
-                log.warn("[PopularSearch] 오늘 랭킹 키가 존재하지 않습니다. 스냅샷 건너뜀.");
+                // 오늘 검색이 한 건도 없었던 경우.
+                // 단순히 건너뛰면 search:ranking:prev 에 이전 영업일 데이터가 잔류한다.
+                // 예) Day1=검색있음, Day2=검색없음(skip), Day3=검색있음
+                //     → Day3에서 getPopularKeywords()가 Day1 스냅샷과 비교 → changeType 오계산
+                // 따라서 오늘 검색이 없으면 이전 스냅샷도 명시적으로 제거해야 한다.
+                // (prev가 없으면 다음 날 조회 시 전 키워드가 NEW로 표시 — 이것이 올바른 동작)
+                stringRedisTemplate.delete(RANKING_PREV_KEY);
+                log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
             }
 
             success = true; // try 블록이 정상 종료된 경우에만 성공으로 마킹
