@@ -12,7 +12,7 @@ import com.chunbaetour.domain.place.type.PlaceCategory;
  * @param name     관광지 이름
  * @param category 카테고리 (예: TOURIST_SPOT)
  * @param address  주소
- * @param imageUrl 썸네일/이미지 URL
+ * @param thumbnailUrl 썸네일/이미지 URL
  * @param rating   평균 별점
  * @param reviewCount 리뷰 수
  */
@@ -21,7 +21,7 @@ public record SearchPlaceResponse(
         String name,
         PlaceCategory category,
         String address,
-        String imageUrl,
+        String thumbnailUrl,
         float rating,
         int reviewCount
 ) {

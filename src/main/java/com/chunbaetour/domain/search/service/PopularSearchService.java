@@ -118,8 +118,14 @@ public class PopularSearchService {
         try {
             // 매크로 어뷰징 방어 (IP 기반 Deduplication)
             // 10분 내에 동일 IP에서 동일 검색어를 검색한 이력이 있다면 집계하지 않는다.
-            // 개인정보 보호를 위해 IP는 단방향 해싱하여 저장한다.
-            String hashedIp = org.springframework.util.DigestUtils.md5DigestAsHex(clientIp.getBytes());
+            // 개인정보 보호를 위해 IP는 강력한 단방향 해싱(SHA-256)하여 저장한다.
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = md.digest((clientIp + "chunbae-salt").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes) {
+                sb.append(String.format("%02x", b));
+            }
+            String hashedIp = sb.toString();
             String deduplicationKey = "search:log:" + hashedIp + ":" + normalized;
 
             Boolean isFirstSearch = stringRedisTemplate.opsForValue().setIfAbsent(deduplicationKey, "1", 10, TimeUnit.MINUTES);
