@@ -108,6 +108,22 @@ public class ChatRoomService {
         }
     }
 
+    @Transactional
+    public void leaveRoom(Long userId, Long roomId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        // 해당 방에서 요청자의 멤버 레코드 조회 — ACTIVE/INACTIVE 관계없이 레코드 존재 여부 먼저 확인
+        // 상태별 검증(OWNER_ACTIVE → CHAT_015, LEFT/KICKED → CHAT_016)은 leave() 내부에서 수행됨
+        ChatRoomMember member = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+
+        member.leave();
+
+        // 퇴장으로 현재 인원 감소 — FULL 상태였으면 자동으로 OPEN 전환
+        chatRoom.decrementMembers();
+    }
+
     public ChatRoomDetailResponse getRoomDetail(Long userId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
