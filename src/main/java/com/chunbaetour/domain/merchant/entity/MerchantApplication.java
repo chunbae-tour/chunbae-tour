@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import lombok.AccessLevel;
@@ -23,7 +24,10 @@ import lombok.NoArgsConstructor;
  * APPROVED 시 user.role이 MERCHANT로 변경되고 Shop이 생성됨 (STORY-09).
  */
 @Entity
-@Table(name = "merchant_applications")
+@Table(
+        name = "merchant_applications",
+        indexes = @Index(name = "idx_merchant_applications_user_id", columnList = "user_id")
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MerchantApplication extends BaseEntity {
