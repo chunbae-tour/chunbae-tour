@@ -387,21 +387,14 @@ public class PopularSearchService {
 
     /**
      * 현재 HTTP 요청을 보낸 클라이언트의 IP 주소를 추출한다.
-     * 프록시, 로드밸런서(L7) 환경을 고려하여 X-Forwarded-For 헤더를 우선 확인한다.
+     * application.yml에 설정된 server.forward-headers-strategy: NATIVE 설정에 의해,
+     * Tomcat의 RemoteIpValve가 안전하게 X-Forwarded-For를 파싱하여 getRemoteAddr()에 주입해준다.
      */
     private String getClientIp() {
         try {
             ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes != null) {
-                HttpServletRequest request = attributes.getRequest();
-                String ip = request.getHeader("X-Forwarded-For");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getRemoteAddr();
-                } else {
-                    // [CodeRabbit 리뷰 반영] 프록시 체인(client, proxy1, proxy2) 환경 고려하여 최초 클라이언트 IP 추출
-                    ip = ip.split(",")[0].trim();
-                }
-                return ip != null ? ip : "unknown";
+                return attributes.getRequest().getRemoteAddr();
             }
         } catch (Exception e) {
             // 스케줄러 등 웹 컨텍스트가 없는 경우 무시
