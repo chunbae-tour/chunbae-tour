@@ -59,3 +59,4 @@ replay_pid*
 # Local-only working docs (TIL, PRD drafts, slice planning)
 docs/til/
 docs/prd/
+docs-main/
