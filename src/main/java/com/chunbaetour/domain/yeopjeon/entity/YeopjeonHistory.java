@@ -38,11 +38,12 @@ public class YeopjeonHistory extends BaseEntity {
     @Column(name = "payment_order_id")
     private Long paymentOrderId;
 
+    // shopId: PAYMENT/RECEIVED_PAYMENT 타입에서 거래 상점 식별. CHARGE/REFUND에선 null.
     @Column(name = "shop_id")
     private Long shopId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private YeopjeonHistoryType type;
 
     @Column(nullable = false)
@@ -51,7 +52,8 @@ public class YeopjeonHistory extends BaseEntity {
     @Column(name = "balance_snapshot", nullable = false)
     private Long balanceSnapshot; // 잔액 스냅샷
 
-    @Column
+    // 거래 메모 (예: "우리떡볶이로 1000엽전 발행"). 입력 선택, 최대 100자.
+    @Column(length = 100)
     private String description;
 
     @Builder

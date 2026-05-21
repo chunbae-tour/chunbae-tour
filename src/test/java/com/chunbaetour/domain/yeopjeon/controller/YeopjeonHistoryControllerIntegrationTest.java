@@ -11,12 +11,15 @@ import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -68,10 +71,9 @@ class YeopjeonHistoryControllerIntegrationTest extends AbstractIntegrationTest {
         yeopjeonHistoryRepository.deleteAll();
         walletRepository.deleteAll();
         accountRepository.deleteAll();
-        var refreshKeys = redis.keys("auth:refresh:*");
-        if (refreshKeys != null && !refreshKeys.isEmpty()) redis.delete(refreshKeys);
-        var blacklistKeys = redis.keys("auth:blacklist:*");
-        if (blacklistKeys != null && !blacklistKeys.isEmpty()) redis.delete(blacklistKeys);
+        // redis.keys()는 O(N) blocking — SCAN으로 교체 (리뷰 #6)
+        deleteKeysByScan("auth:refresh:*");
+        deleteKeysByScan("auth:blacklist:*");
     }
 
     @Test
@@ -106,6 +108,15 @@ class YeopjeonHistoryControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.content").isEmpty())
                 .andExpect(jsonPath("$.data.hasNext").value(false))
                 .andExpect(jsonPath("$.data.nextCursor").doesNotExist());
+    }
+
+    private void deleteKeysByScan(String pattern) {
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+        Set<String> keys = new HashSet<>();
+        try (var cursor = redis.scan(options)) {
+            cursor.forEachRemaining(keys::add);
+        }
+        if (!keys.isEmpty()) redis.delete(keys);
     }
 
     private void signup(String email, String password, String nickname) throws Exception {

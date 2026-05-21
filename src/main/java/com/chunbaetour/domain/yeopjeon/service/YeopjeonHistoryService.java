@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 엽전 사용 내역 cursor 페이징 서비스.
- * cursor 형식: {"id":N} → Base64URL 인코딩 (padding 없음).
+ * cursor 형식: id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음).
  * CursorUtils PR 머지 후 encode/decode를 공통 유틸로 교체 예정.
  */
 @Service
@@ -66,26 +66,22 @@ public class YeopjeonHistoryService {
     }
 
     // TODO: CursorUtils PR 머지 후 아래 두 메서드를 제거하고 CursorUtils.encode/decode로 교체
-    // private String encodeCursor(Long id) {
-    //     return CursorUtils.encode(id);
-    // }
-    // private Long decodeCursor(String cursor) {
-    //     return CursorUtils.decode(cursor);
-    // }
+    // private String encodeCursor(Long id) { return CursorUtils.encode(id); }
+    // private Long decodeCursor(String cursor) { return CursorUtils.decode(cursor); }
 
-    // cursor 형식: {"id":N} → Base64URL 인코딩 (padding 없음, URL-safe)
+    // id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음, URL-safe)
     private String encodeCursor(Long id) {
-        String json = "{\"id\":" + id + "}";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(Long.toString(id).getBytes(StandardCharsets.UTF_8));
     }
 
-    // 잘못된 cursor 전달 시 COMMON_002(INVALID_REQUEST) 반환
+    // 잘못된 cursor 또는 음수 id 전달 시 COMMON_002(INVALID_REQUEST) 반환
     private Long decodeCursor(String cursor) {
         try {
-            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
-            String json = new String(decoded, StandardCharsets.UTF_8);
-            String value = json.replaceAll(".*\"id\"\\s*:\\s*(\\d+).*", "$1");
-            return Long.parseLong(value);
+            long id = Long.parseLong(
+                    new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
+            if (id <= 0) throw new IllegalArgumentException("cursor id must be positive");
+            return id;
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }

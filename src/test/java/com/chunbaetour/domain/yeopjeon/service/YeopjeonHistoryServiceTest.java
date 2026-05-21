@@ -44,8 +44,8 @@ class YeopjeonHistoryServiceTest {
     }
 
     private String encode(long id) {
-        String json = "{\"id\":" + id + "}";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(Long.toString(id).getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
@@ -99,6 +99,25 @@ class YeopjeonHistoryServiceTest {
     @DisplayName("잘못된 커서 전달 시 COMMON_002(INVALID_REQUEST)를 던진다")
     void getHistories_invalidCursor_throws_COMMON_002() {
         assertThatThrownBy(() -> yeopjeonHistoryService.getHistories(1L, "invalid-cursor!!", 20))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("음수 id를 인코딩한 cursor 전달 시 INVALID_REQUEST를 던진다")
+    void getHistories_negativeCursor_throws_INVALID_REQUEST() {
+        String negativeCursor = encode(-1L);
+        assertThatThrownBy(() -> yeopjeonHistoryService.getHistories(1L, negativeCursor, 20))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("빈 문자열 cursor 전달 시 INVALID_REQUEST를 던진다")
+    void getHistories_emptyCursor_throws_INVALID_REQUEST() {
+        assertThatThrownBy(() -> yeopjeonHistoryService.getHistories(1L, "", 20))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
