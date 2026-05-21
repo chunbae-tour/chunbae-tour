@@ -15,7 +15,8 @@ public record ChatRoomDetailResponse(
         Long ownerId,
         int maxMembers,
         ChatRoomStatus status,
-        // 현재 인원은 members.size()로 클라이언트가 계산 — 엔티티 카운트 필드와 이중 관리 방지
+        // 요청자 본인의 상태 — 클라이언트가 방장 여부 및 UI 권한 분기에 사용
+        ChatMemberState myMemberState,
         List<MemberInfo> members
 ) {
     public record MemberInfo(
@@ -34,7 +35,14 @@ public record ChatRoomDetailResponse(
         }
     }
 
-    public static ChatRoomDetailResponse from(ChatRoom room, List<ChatRoomMember> activeMembers) {
+    public static ChatRoomDetailResponse from(ChatRoom room, List<ChatRoomMember> activeMembers, Long userId) {
+        // 요청자의 memberState — isMember 검증 이후 호출되므로 반드시 존재
+        ChatMemberState myMemberState = activeMembers.stream()
+                .filter(m -> m.getUserId().equals(userId))
+                .map(ChatRoomMember::getMemberState)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("member not found after isMember check"));
+
         return new ChatRoomDetailResponse(
                 room.getId(),
                 room.getPostId(),
@@ -43,6 +51,7 @@ public record ChatRoomDetailResponse(
                 room.getOwnerId(),
                 room.getMaxMembers(),
                 room.getStatus(),
+                myMemberState,
                 activeMembers.stream().map(MemberInfo::from).toList()
         );
     }
