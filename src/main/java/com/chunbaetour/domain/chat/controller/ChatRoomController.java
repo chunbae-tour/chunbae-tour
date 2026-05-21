@@ -50,7 +50,7 @@ public class ChatRoomController {
     @GetMapping("/{roomId}")
     public ApiResponse<ChatRoomDetailResponse> getRoomDetail(
             @AuthenticationPrincipal Long userId,
-            @PathVariable Long roomId) {
+            @Min(1) @PathVariable Long roomId) {
         return ApiResponse.success(chatRoomService.getRoomDetail(userId, roomId));
     }
 }
