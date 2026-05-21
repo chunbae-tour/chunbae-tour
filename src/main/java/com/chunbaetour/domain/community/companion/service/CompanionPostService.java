@@ -90,7 +90,7 @@ public class CompanionPostService {
                 request.title(), request.content(),
                 request.placeId(), request.placeName(),
                 request.region(), request.meetingDate(),
-                request.maxMembers() != null ? request.maxMembers() : post.getMaxMembers()
+                request.maxMembers()
         );
         return CompanionPostUpdateResponse.of(post, findAccount(accountId));
     }
@@ -105,6 +105,7 @@ public class CompanionPostService {
     }
 
     private CompanionPost findActivePost(Long postId) {
+        // CLOSED 게시글은 목록(findAll)에서 제외되지만, 직접 링크로 단건 조회·수정·삭제는 허용
         return postRepository.findById(postId)
                 .filter(p -> p.getStatus() != CompanionPostStatus.DELETED
                         && p.getStatus() != CompanionPostStatus.HIDDEN)

@@ -4,8 +4,8 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record FreePostUpdateRequest(
-        @Size(max = 200) String title,
-        @Size(max = 5000) String content,
+        @Size(min = 1, max = 200) String title,
+        @Size(min = 1, max = 5000) String content,
         @Size(max = 10) List<String> imageUrls
 ) {
 }

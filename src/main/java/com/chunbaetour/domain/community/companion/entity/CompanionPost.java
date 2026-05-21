@@ -81,14 +81,14 @@ public class CompanionPost extends BaseEntity {
     }
 
     public void update(String title, String content, Long placeId, String placeName,
-                       String region, LocalDate meetingDate, int maxMembers) {
+                       String region, LocalDate meetingDate, Integer maxMembers) {
         if (title != null) this.title = title;
         if (content != null) this.content = content;
         if (placeId != null) this.placeId = placeId;
         if (placeName != null) this.placeName = placeName;
         if (region != null) this.region = region;
         if (meetingDate != null) this.meetingDate = meetingDate;
-        if (maxMembers > 0) {
+        if (maxMembers != null) {
             if (maxMembers < this.currentMembers) {
                 throw new IllegalArgumentException("maxMembers must be >= currentMembers");
             }
