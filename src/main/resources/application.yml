@@ -80,6 +80,7 @@ ratelimit:
 
 portone:
   secret: ${PORTONE_SECRET}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
   store-id: ${PORTONE_STORE_ID}
   base-url: https://api.portone.io
   channel:

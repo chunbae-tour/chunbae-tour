@@ -4,7 +4,9 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.yeopjeon.dto.response.WalletBalanceResponse;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -17,11 +19,23 @@ import org.springframework.transaction.annotation.Transactional;
 public class WalletService {
 
     private final WalletRepository walletRepository;
+    private final YeopjeonHistoryRepository yeopjeonHistoryRepository;
 
     public WalletBalanceResponse getWallet(Long userId) {
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
         return WalletBalanceResponse.from(wallet);
+    }
+
+    @Transactional
+    public void charge(Long userId, Long amount, Long paymentOrderId) {
+        // 락 획득 순서: PaymentOrder → Wallet (호출자가 반드시 이 순서를 지켜야 데드락 방지)
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        wallet.credit(amount);
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofCharge(userId, amount, wallet.getBalance(), paymentOrderId)
+        );
     }
 
     @Transactional
