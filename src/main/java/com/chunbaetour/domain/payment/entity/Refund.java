@@ -68,18 +68,18 @@ public class Refund extends BaseEntity {
                 .build();
     }
 
-    /** 관리자 승인 시 상태 전이. PENDING이 아니면 PAY_019. */
+    /** 관리자 승인 시 상태 전이. PENDING이 아니면 PAY_020. */
     public void approve() {
         if (this.status != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.APPROVED;
     }
 
-    /** 관리자 거절 시 상태 전이. PENDING이 아니면 PAY_019. */
+    /** 관리자 거절 시 상태 전이. PENDING이 아니면 PAY_020. */
     public void reject() {
         if (this.status != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.REJECTED;
     }
