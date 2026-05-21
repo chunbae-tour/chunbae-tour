@@ -70,3 +70,11 @@ kakao:
     api-key: ${KAKAO_MAP_API_KEY}
     coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
     map-url: https://map.kakao.com/link/from
+
+# 검색 도메인 설정
+search:
+  ranking:
+    # 인기 검색어 일간 초기화 스케줄 (cron 표현식)
+    # 기본값: 매일 자정 (0 0 0 * * *)
+    # 재배포 없이 변경 가능하도록 yml로 외부화
+    reset-cron: "0 0 0 * * *"
