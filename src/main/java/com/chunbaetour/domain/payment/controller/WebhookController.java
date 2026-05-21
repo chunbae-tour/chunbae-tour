@@ -6,8 +6,8 @@ import com.chunbaetour.domain.payment.dto.request.WebhookPayload;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.service.CallbackService;
 import com.chunbaetour.domain.payment.service.WebhookVerifier;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,7 +37,7 @@ public class WebhookController {
         WebhookPayload payload;
         try {
             payload = objectMapper.readValue(rawBody, WebhookPayload.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new PaymentException(ErrorCode.INVALID_REQUEST);
         }
         callbackService.handle(webhookId, payload);
