@@ -16,8 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 엽전 사용 내역 cursor 페이징 서비스.
- * cursor 형식: id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음).
- * CursorUtils PR 머지 후 encode/decode를 공통 유틸로 교체 예정.
+ * cursor 형식: id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음, URL-safe).
  */
 @Service
 @RequiredArgsConstructor
@@ -64,10 +63,6 @@ public class YeopjeonHistoryService {
         Long cursorId = decodeCursor(cursor);
         return yeopjeonHistoryRepository.findByUserIdAndIdLessThanOrderByIdDesc(userId, cursorId, pageable);
     }
-
-    // TODO: CursorUtils PR 머지 후 아래 두 메서드를 제거하고 CursorUtils.encode/decode로 교체
-    // private String encodeCursor(Long id) { return CursorUtils.encode(id); }
-    // private Long decodeCursor(String cursor) { return CursorUtils.decode(cursor); }
 
     // id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음, URL-safe)
     private String encodeCursor(Long id) {
