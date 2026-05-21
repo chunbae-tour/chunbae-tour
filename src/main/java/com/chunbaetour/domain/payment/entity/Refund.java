@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.payment.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -66,18 +68,27 @@ public class Refund extends BaseEntity {
                 .build();
     }
 
-    /** 관리자 승인 시 상태 전이 */
+    /** 관리자 승인 시 상태 전이. PENDING이 아니면 PAY_019. */
     public void approve() {
+        if (this.status != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+        }
         this.status = RefundStatus.APPROVED;
     }
 
-    /** 관리자 거절 시 상태 전이 */
+    /** 관리자 거절 시 상태 전이. PENDING이 아니면 PAY_019. */
     public void reject() {
+        if (this.status != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+        }
         this.status = RefundStatus.REJECTED;
     }
 
-    /** 사용자 취소 시 상태 전이 */
+    /** 사용자 취소 시 상태 전이. PENDING이 아니면 PAY_019. */
     public void cancel() {
+        if (this.status != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+        }
         this.status = RefundStatus.CANCELLED;
     }
 }
