@@ -15,6 +15,8 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND,                 "COMMON_005", "요청한 리소스를 찾을 수 없습니다."),
     TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS,          "COMMON_006", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
     EXTERNAL_SERVICE_ERROR(HttpStatus.SERVICE_UNAVAILABLE,   "COMMON_007", "외부 서비스 연동 중 오류가 발생했습니다."),
+    // cursor 값이 Base64 디코딩 실패 또는 1 미만(IDENTITY id 범위 위반)일 때 사용
+    INVALID_CURSOR(HttpStatus.BAD_REQUEST,                   "COMMON_008", "유효하지 않은 커서 값입니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),

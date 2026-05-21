@@ -9,6 +9,7 @@ import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
+import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -78,31 +79,41 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
+        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 조회 — KICKED/LEFT 멤버는 목록에서 제외되어
+        // isMember 검사에서 자동으로 접근 거부 처리됨
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
                 .findByChatRoomIdAndMemberStateIn(roomId, ACTIVE_STATES);
 
         boolean isMember = activeMembers.stream()
                 .anyMatch(m -> m.getUserId().equals(userId));
         if (!isMember) {
+            // CLOSED 방은 비멤버에게 존재 자체를 숨김 — 멤버였던 사람만 이력 조회 가능
+            // OPEN/FULL 방은 CHAT_NOT_JOINED로 방 존재는 노출하되 접근만 차단
+            if (chatRoom.getStatus() == ChatRoomStatus.CLOSED) {
+                throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+            }
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
         return ChatRoomDetailResponse.from(chatRoom, activeMembers);
     }
 
+    // cursor는 "채팅방 ID를 URL-safe Base64로 인코딩한 문자열"
+    // URL-safe 디코더 사용 — padding 없는 형태(withoutPadding)로 인코딩하므로 표준 디코더와 호환
     private Long decodeCursor(String cursor) {
         try {
-            String json = new String(Base64.getDecoder().decode(cursor), StandardCharsets.UTF_8);
-            int colonIndex = json.indexOf(':');
-            int braceIndex = json.lastIndexOf('}');
-            return Long.parseLong(json.substring(colonIndex + 1, braceIndex).trim());
+            long id = Long.parseLong(
+                    new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
+            // IDENTITY PK는 1 이상 — 0이나 음수는 조작된 커서로 판단
+            if (id <= 0) throw new IllegalArgumentException();
+            return id;
         } catch (Exception e) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.INVALID_CURSOR);
         }
     }
 
     private String encodeCursor(Long id) {
-        return Base64.getEncoder().encodeToString(
-                ("{\"id\":" + id + "}").getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(Long.toString(id).getBytes(StandardCharsets.UTF_8));
     }
 }
