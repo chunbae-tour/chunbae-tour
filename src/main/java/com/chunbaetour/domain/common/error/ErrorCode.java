@@ -83,6 +83,8 @@ public enum ErrorCode {
     REFUND_NOT_ELIGIBLE(HttpStatus.BAD_REQUEST,             "PAY_015", "완료된 결제만 환불 요청할 수 있습니다."),
     DUPLICATE_REFUND_REQUEST(HttpStatus.CONFLICT,           "PAY_016", "이미 환불 요청이 진행 중인 주문입니다."),
     REFUND_BALANCE_INSUFFICIENT(HttpStatus.BAD_REQUEST,     "PAY_017", "엽전을 사용한 경우 환불이 불가합니다."),
+    REFUND_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_018", "존재하지 않는 환불 요청입니다."),
+    REFUND_CANCEL_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_019", "대기 중인 환불 요청만 취소할 수 있습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),

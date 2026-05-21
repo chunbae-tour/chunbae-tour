@@ -29,8 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class RefundService {
 
-    // 충전 후 환불 가능한 최대 기간
     private static final int REFUND_PERIOD_DAYS = 7;
+    private static final String UK_REFUNDS_PAYMENT_ORDER_ID = "uk_refunds_payment_order_id";
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
@@ -89,10 +89,31 @@ public class RefundService {
             return RefundResponse.from(refund);
         } catch (DataIntegrityViolationException e) {
             if (e.getCause() instanceof ConstraintViolationException cve
-                    && "uk_refunds_payment_order_id".equalsIgnoreCase(cve.getConstraintName())) {
+                    && UK_REFUNDS_PAYMENT_ORDER_ID.equalsIgnoreCase(cve.getConstraintName())) {
                 throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
             }
             throw e;
         }
+    }
+
+    /** 환불 요청 취소. PENDING 상태만 취소 가능 → PAY_019. 타인 요청 취소 시 → PAY_011. */
+    @Transactional
+    public void cancelRefund(Long userId, Long refundId) {
+        // 환불 요청 조회 (없으면 PAY_018)
+        Refund refund = refundRepository.findById(refundId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+
+        // 본인 환불 요청인지 확인
+        if (!refund.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+        }
+
+        // PENDING 상태만 취소 가능 (APPROVED/REJECTED/CANCELLED 불가)
+        if (refund.getStatus() != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+        }
+
+        // 상태를 CANCELLED로 전이
+        refund.cancel();
     }
 }
