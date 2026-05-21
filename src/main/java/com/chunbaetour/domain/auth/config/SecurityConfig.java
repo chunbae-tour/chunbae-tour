@@ -34,7 +34,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/admin/auth/**} — ADMIN 로그인 (permitAll)</li>
  *   <li>{@code POST /api/v1/auth/logout} — 인증 필요 (S4)</li>
  *   <li>{@code /api/v1/auth/**} — 공통 토큰 API (reissue 등, permitAll)</li>
- *   <li>{@code /actuator/**} — 헬스체크/info (permitAll)</li>
+ *   <li>{@code /actuator/health}, {@code /actuator/info}, {@code /actuator/prometheus} — permitAll (LB health check + Prometheus scrape).
+ *       그 외 {@code /actuator/**}는 denyAll로 차단 (env/beans/mappings 등 정보 노출 방지).
+ *       {@code /actuator/prometheus}는 운영 배포 전 IP allowlist 추가 필수 (KAN-104 후속 — Trusted Proxy / 별도 management port 검토)</li>
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
@@ -77,7 +79,12 @@ public class SecurityConfig {
                         // S4: logout만 인증 필요. permitAll(/api/v1/auth/**)보다 먼저 매칭되어야 우선순위가 적용됨.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        // Actuator endpoint 권한 — KAN-104.
+                        // exposure include = health, info, prometheus (application.yml). 그 외 endpoint는 yml exposure로도 차단되지만,
+                        // 방어적으로 SecurityConfig에서도 명시 거부해 향후 exposure가 잘못 확장돼도 노출 방지 (이중 안전).
+                        // prometheus는 본 PR에서 permitAll. 운영 배포 전 IP allowlist 또는 별도 management port 분리 필수.
+                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/prometheus").permitAll()
+                        .requestMatchers("/actuator/**").denyAll()
                         // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
                         .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")

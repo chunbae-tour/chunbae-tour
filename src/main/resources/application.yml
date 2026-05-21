@@ -89,11 +89,23 @@ portone:
     toss-pay: ${PORTONE_CHANNEL_TOSS_PAY}
     foreign-card: ${PORTONE_CHANNEL_FOREIGN_CARD}
 
+# Actuator + Micrometer Prometheus (KAN-104 인증 필터 성능 모니터링).
+# - health/info: 외부 LB health check 허용 (SecurityConfig가 permitAll 매핑)
+# - prometheus: Grafana/Datadog 등이 메트릭 수집. 운영에서는 internal-only (SecurityConfig + IP allowlist 후속 작업)
+# - 그 외 env/beans/mappings 등은 노출 금지 (보안: 정보 노출 차단)
+# metrics.tags는 모든 메트릭에 application/env 라벨 자동 추가 → Prometheus query 시 필터링/그룹핑 일관
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: chunbae-tour
+      env: ${SPRING_PROFILES_ACTIVE:local}
 
 kakao:
   map:
