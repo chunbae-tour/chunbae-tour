@@ -4,8 +4,8 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.community.common.CursorPage;
-import com.chunbaetour.domain.community.common.CursorUtils;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.community.free.dto.FreePostCreateRequest;
 import com.chunbaetour.domain.community.free.dto.FreePostGetOneResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostGetListResponse;
@@ -44,7 +44,7 @@ public class FreePostService {
         return FreePostGetOneResponse.of(post, author);
     }
 
-    public CursorPage<FreePostGetListResponse> findAll(String cursor, int size) {
+    public CursorPageResponse<FreePostGetListResponse> findAll(String cursor, int size) {
         Long cursorId = decodeCursor(cursor);
         List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
@@ -63,7 +63,7 @@ public class FreePostService {
                 .map(post -> FreePostGetListResponse.of(post, authors.get(post.getAuthorId())))
                 .toList();
 
-        return new CursorPage<>(items, nextCursor, hasNext, content.size());
+        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
     }
 
     @Transactional

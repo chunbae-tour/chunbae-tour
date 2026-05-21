@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.community.common;
+package com.chunbaetour.domain.common.util;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;

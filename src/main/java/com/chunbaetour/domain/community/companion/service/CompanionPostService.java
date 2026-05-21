@@ -4,8 +4,8 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.community.common.CursorPage;
-import com.chunbaetour.domain.community.common.CursorUtils;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateRequest;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListResponse;
@@ -56,7 +56,7 @@ public class CompanionPostService {
         return CompanionPostGetOneResponse.of(post, author);
     }
 
-    public CursorPage<CompanionPostGetListResponse> findAll(
+    public CursorPageResponse<CompanionPostGetListResponse> findAll(
             String region, LocalDate meetingDate, String cursor, int size) {
         Long cursorId = decodeCursor(cursor);
         List<CompanionPost> posts = postRepository.findByFilters(
@@ -77,7 +77,7 @@ public class CompanionPostService {
                 .map(post -> CompanionPostGetListResponse.of(post, authors.get(post.getAuthorId())))
                 .toList();
 
-        return new CursorPage<>(items, nextCursor, hasNext, content.size());
+        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
     }
 
     @Transactional
