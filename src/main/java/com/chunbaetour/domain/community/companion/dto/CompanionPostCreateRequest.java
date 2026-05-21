@@ -15,6 +15,6 @@ public record CompanionPostCreateRequest(
         @NotBlank @Size(max = 100) String placeName,
         @Size(max = 50) String region,
         @NotNull @FutureOrPresent LocalDate meetingDate,
-        @NotNull @Min(1) @Max(50) int maxMembers
+        @NotNull @Min(2) @Max(50) int maxMembers
 ) {
 }

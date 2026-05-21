@@ -63,8 +63,8 @@ public class CompanionPost extends BaseEntity {
             Long authorId, String title, String content,
             Long placeId, String placeName, String region,
             LocalDate meetingDate, int maxMembers) {
-        if (maxMembers < 1) {
-            throw new IllegalArgumentException("maxMembers must be at least 1");
+        if (maxMembers < 2) {
+            throw new IllegalArgumentException("maxMembers must be at least 2");
         }
         CompanionPost post = new CompanionPost();
         post.authorId = authorId;
