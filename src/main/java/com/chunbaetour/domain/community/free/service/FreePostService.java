@@ -40,7 +40,8 @@ public class FreePostService {
 
     public FreePostGetOneResponse findById(Long postId) {
         FreePost post = findActivePost(postId);
-        return FreePostGetOneResponse.of(post, findAccount(post.getAuthorId()));
+        Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
+        return FreePostGetOneResponse.of(post, author);
     }
 
     public CursorPage<FreePostGetListResponse> findAll(String cursor, int size) {

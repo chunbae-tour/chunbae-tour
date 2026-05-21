@@ -75,6 +75,17 @@ class CompanionPostServiceTest {
     }
 
     @Test
+    void 탈퇴한_작성자의_게시글_단건조회시_탈퇴한사용자로_반환() {
+        given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
+        given(accountRepository.findById(1L)).willReturn(Optional.empty());
+
+        var result = postService.findById(1L);
+
+        assertThat(result.writer().nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(result.writer().userId()).isNull();
+    }
+
+    @Test
     void 삭제된_게시글_조회하면_404() {
         CompanionPost deleted = CompanionPost.create(
                 1L, "삭제글", "내용", 100L, "장소", "서울",

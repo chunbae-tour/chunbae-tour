@@ -52,7 +52,7 @@ public class CompanionPostService {
 
     public CompanionPostGetOneResponse findById(Long postId) {
         CompanionPost post = findActivePost(postId);
-        Account author = findAccount(post.getAuthorId());
+        Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
         return CompanionPostGetOneResponse.of(post, author);
     }
 
