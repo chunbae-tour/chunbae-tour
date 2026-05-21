@@ -168,6 +168,10 @@ public class PopularSearchService {
     public void resetDailyRanking() {
         log.info("[PopularSearch] 일간 랭킹 초기화 시작");
 
+        // 성공 여부 플래그: 예외 발생 여부에 따라 완료/실패 로그를 분리한다.
+        // 예외가 발생해도 "완료" 로그가 찍히면 운영 추적 시 성공으로 오인할 수 있다.
+        boolean success = false;
+
         try {
             // search:ranking 키 존재 여부 확인
             // RENAME은 소스 키가 없으면 ERR를 던지므로 선행 체크가 필요하다.
@@ -186,12 +190,19 @@ public class PopularSearchService {
                 log.warn("[PopularSearch] 오늘 랭킹 키가 존재하지 않습니다. 스냅샷 건너뜀.");
             }
 
+            success = true; // try 블록이 정상 종료된 경우에만 성공으로 마킹
+
         } catch (Exception e) {
             // 초기화 실패는 운영에 중대한 영향(변동 타입 오작동)을 미치므로 ERROR 레벨 로깅
             log.error("[PopularSearch] 일간 랭킹 초기화 중 오류 발생", e);
         }
 
-        log.info("[PopularSearch] 일간 랭킹 초기화 완료");
+        // 성공/실패 여부에 따라 완료 로그를 분리하여 운영 추적 정확성 확보
+        if (success) {
+            log.info("[PopularSearch] 일간 랭킹 초기화 완료");
+        } else {
+            log.warn("[PopularSearch] 일간 랭킹 초기화 실패 — 다음 자정에 재시도됩니다.");
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
