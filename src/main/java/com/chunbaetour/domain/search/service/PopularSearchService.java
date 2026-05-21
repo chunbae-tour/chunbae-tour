@@ -377,8 +377,8 @@ public class PopularSearchService {
      */
     private String normalize(String keyword) {
         String normalized = keyword.strip(); 
-        // [15년차 극강 리뷰 반영] Stored XSS 방어: 꺾쇠 치환
-        normalized = normalized.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        // [CodeRabbit 리뷰 반영] 데이터 무결성을 위해 HTML 인코딩 대신 위험 문자(<, >) 제거 (Sanitize)
+        normalized = normalized.replaceAll("[<>]", "");
         return normalized;
     }
 

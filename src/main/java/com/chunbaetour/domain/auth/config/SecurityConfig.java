@@ -81,8 +81,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        // 검색 조회 API(인기, 관광지, 축제 등)는 모두 인증 불필요 (POST /search는 제외)
-                        .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
+                        // [CodeRabbit 리뷰 반영] 검색 조회 API는 와일드카드 대신 화이트리스트 방식으로 명시하여 권한 누수 방지
+                        .requestMatchers(HttpMethod.GET, "/api/v1/search/popular", "/api/v1/search/places").permitAll()
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/chat/**").hasRole("USER")
                         .anyRequest().authenticated()

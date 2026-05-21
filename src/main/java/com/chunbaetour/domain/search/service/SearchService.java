@@ -45,8 +45,9 @@ public class SearchService {
      * @return 커서 페이지네이션이 적용된 관광지 검색 결과
      */
     public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size) {
-        log.info("[SearchService] 관광지 검색 요청 - keyword: {}, category: {}, region: {}, cursorId: {}, size: {}",
-                keyword, category, region, cursorId, size);
+        // [CodeRabbit 리뷰 반영] 검색어 원문을 INFO 로그에 남기지 않고 존재/길이만 기록하여 운영 로그 보안 강화
+        log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}",
+                keyword != null ? keyword.length() : 0, category, region, cursorId, size);
 
         // [실무 수준 리뷰 반영] 검색어 필수 검증 (PLACE_005)
         // 검색어가 없으면 전체 테이블을 풀스캔하여 부하를 일으키므로 원천 차단해야 함.
