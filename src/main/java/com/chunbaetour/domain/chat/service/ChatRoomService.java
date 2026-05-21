@@ -9,7 +9,6 @@ import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
-import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -84,14 +83,10 @@ public class ChatRoomService {
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
                 .findByChatRoomIdAndMemberStateIn(roomId, ACTIVE_STATES);
 
+        // 비멤버, KICKED, LEFT 모두 CHAT_NOT_JOINED로 통일 — API 계약 일관성 유지
         boolean isMember = activeMembers.stream()
                 .anyMatch(m -> m.getUserId().equals(userId));
         if (!isMember) {
-            // CLOSED 방은 비멤버에게 존재 자체를 숨김 — 멤버였던 사람만 이력 조회 가능
-            // OPEN/FULL 방은 CHAT_NOT_JOINED로 방 존재는 노출하되 접근만 차단
-            if (chatRoom.getStatus() == ChatRoomStatus.CLOSED) {
-                throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
-            }
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 

@@ -123,21 +123,6 @@ class ChatRoomServiceTest {
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
-    @Test
-    void getRoomDetail_closed_room_non_member_throws_CHAT_ROOM_NOT_FOUND() {
-        // CLOSED 방은 비멤버에게 존재 자체를 숨김 — CHAT_NOT_JOINED 대신 CHAT_ROOM_NOT_FOUND 응답
-        ChatRoom closedRoom = mock(ChatRoom.class);
-        given(closedRoom.getStatus()).willReturn(ChatRoomStatus.CLOSED);
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(closedRoom));
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateIn(eq(ROOM_ID), any()))
-                .willReturn(List.of());
-
-        assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
-    }
-
     // ===== decodeCursor — getMyRooms를 통해 간접 검증 =====
     // cursor가 유효하지 않으면 repository 호출 전에 예외가 발생함
 
