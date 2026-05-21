@@ -112,8 +112,11 @@ public class PopularSearchService {
             return;
         }
 
-        // 정규화: 앞뒤 공백 제거 (같은 의미의 다른 입력이 별개의 키로 집계되는 왜곡 방지) 및 XSS 방어
+        // 정규화: 앞뒤 공백 제거 및 XSS 방어를 위한 위험 문자(<, >) 제거
         String normalized = normalize(keyword);
+        if (!StringUtils.hasText(normalized)) {
+            return; // [15년차 리뷰 반영] <script> 등 특수문자 제거 후 빈 문자열이 된 경우 집계 차단
+        }
 
         try {
             // [15년차 극강 리뷰 반영] 매크로 어뷰징 방어 (IP 기반 Deduplication)
