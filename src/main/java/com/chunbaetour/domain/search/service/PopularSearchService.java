@@ -166,9 +166,8 @@ public class PopularSearchService {
                 // null keyword가 응답에 포함되면 클라이언트 파싱 오류로 이어진다.
                 if (!StringUtils.hasText(keyword)) {
                     log.warn("[PopularSearch] null 또는 빈 keyword tuple 발견. 건너뜀. rank={}", currentRank);
-                    // null을 skip하더라도 currentRank는 반드시 소진해야 한다.
-                    // skip 후 미증가 시 다음 유효 keyword가 동일한 순위 번호를 받아 중복 순위가 발생한다.
-                    currentRank++;
+                    // [HIGH 피드백 반영] null keyword를 skip할 때 currentRank를 올리면 순위 번호에 공백(1, 3, 4)이 발생.
+                    // 따라서 유효한 항목을 결과 리스트에 추가한 직후에만 currentRank를 증가시킨다.
                     continue;
                 }
 
@@ -179,7 +178,7 @@ public class PopularSearchService {
 
                 RankingChangeType changeType = determineChangeType(keyword, currentRank, prevRankMap);
 
-                result.add(PopularSearchResponse.of(currentRank, keyword, searchCount, changeType));
+                result.add(new PopularSearchResponse(currentRank, keyword, searchCount, changeType));
                 currentRank++;
             }
 
@@ -285,11 +284,9 @@ public class PopularSearchService {
             stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
             log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
         } else {
-            // 오늘 검색이 한 건도 없었던 경우.
-            // 단순히 건너뛰면 search:ranking:prev 에 이전 영업일 데이터가 잔류한다.
-            // 따라서 오늘 검색이 없으면 이전 스냅샷도 명시적으로 제거해야 한다.
-            stringRedisTemplate.delete(RANKING_PREV_KEY);
-            log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
+            // 오늘 검색이 한 건도 없었던 경우, 전날 스냅샷(search:ranking:prev)을 그대로 유지한다.
+            // (만약 지워버리면 다음 날 조회 시 이전 랭킹 기준이 없어 전부 NEW로 표시됨)
+            log.info("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({}) 유지.", RANKING_PREV_KEY);
         }
     }
 

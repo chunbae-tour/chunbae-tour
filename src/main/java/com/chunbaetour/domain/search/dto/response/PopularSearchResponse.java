@@ -22,17 +22,4 @@ public record PopularSearchResponse(
         long searchCount,
         RankingChangeType changeType
 ) {
-
-    /**
-     * PopularSearchResponse 생성을 위한 정적 팩토리 메서드.
-     *
-     * @param rank        현재 순위
-     * @param keyword     인기 검색어
-     * @param searchCount Redis ZSet score (검색 횟수)
-     * @param changeType  순위 변동 타입
-     * @return PopularSearchResponse 인스턴스
-     */
-    public static PopularSearchResponse of(int rank, String keyword, long searchCount, RankingChangeType changeType) {
-        return new PopularSearchResponse(rank, keyword, searchCount, changeType);
-    }
 }

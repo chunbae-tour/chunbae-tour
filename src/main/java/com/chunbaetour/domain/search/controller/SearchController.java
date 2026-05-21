@@ -4,7 +4,6 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -52,8 +51,8 @@ public class SearchController {
      * @return 200 OK + 인기 검색어 목록 (0건 이상)
      */
     @GetMapping("/popular")
-    public ResponseEntity<ApiResponse<List<PopularSearchResponse>>> getPopularKeywords() {
+    public ApiResponse<List<PopularSearchResponse>> getPopularKeywords() {
         List<PopularSearchResponse> result = popularSearchService.getPopularKeywords();
-        return ResponseEntity.ok(ApiResponse.success(result));
+        return ApiResponse.success(result);
     }
 }
