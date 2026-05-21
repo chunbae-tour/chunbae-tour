@@ -18,5 +18,19 @@ public record SearchFestivalResponse(
         FestivalStatus status,
         FestivalProgressStatus progressStatus
 ) {
+    public static SearchFestivalResponse from(com.chunbaetour.domain.festival.entity.Festival festival, FestivalProgressStatus progressStatus) {
+        return new SearchFestivalResponse(
+                festival.getId(),
+                festival.getName(),
+                festival.getDescription(),
+                festival.getRegion(),
+                festival.getLocation(),
+                festival.getStartDate(),
+                festival.getEndDate(),
+                festival.getThumbnailUrl(),
+                festival.getStatus(),
+                progressStatus
+        );
+    }
 }
 

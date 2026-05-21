@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -36,6 +37,7 @@ public class SearchService {
     private final PlaceQueryRepository placeQueryRepository;
     private final FestivalQueryRepository festivalQueryRepository;
     private final PopularSearchService popularSearchService;
+    private final Clock clock;
 
     /**
      * 관광지 키워드 검색 (Phase 2-2).
@@ -58,18 +60,19 @@ public class SearchService {
         log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}",
                 keyword != null ? keyword.length() : 0, category, region, cursorId, size);
 
+        // 검색어 양끝 공백 제거 (정규화) - 이후 로직 전체에 적용
+        String normalized = keyword != null ? keyword.strip() : null;
+
         // 검색어 필수 검증 (PLACE_005)
-        if (!StringUtils.hasText(keyword)) {
+        if (!StringUtils.hasText(normalized)) {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_SHORT);
         }
-        
-        // 검색어 양끝 공백 제거 (정규화) - 이후 로직 전체에 적용
-        keyword = keyword.trim();
 
         // 정책적 예외 처리: 검색어 길이 제한 (최대 50자) (PLACE_006)
-        if (keyword.length() > 50) {
+        if (normalized.length() > 50) {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
         }
+        keyword = normalized;
 
         // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
         List<SearchPlaceResponse> items = placeQueryRepository.searchByKeyword(keyword, category, region, cursorId, size);
@@ -117,11 +120,12 @@ public class SearchService {
         }
 
         // 검색어 길이 제한 (최대 50자) (PLACE_006)
-        if (StringUtils.hasText(keyword)) {
-            keyword = keyword.trim();
-            if (keyword.length() > 50) {
+        if (keyword != null) {
+            String normalized = keyword.strip();
+            if (StringUtils.hasText(normalized) && normalized.length() > 50) {
                 throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
             }
+            keyword = StringUtils.hasText(normalized) ? normalized : keyword;
         }
 
         // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
@@ -135,29 +139,16 @@ public class SearchService {
         String nextCursorStr = nextCursor != null ? String.valueOf(nextCursor) : null;
 
         // 3. 엔티티 -> DTO 변환 및 progressStatus 동적 계산
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         List<SearchFestivalResponse> updatedItems = resultItems.stream()
-                .map(item -> new SearchFestivalResponse(
-                        item.getId(), item.getName(), item.getDescription(), item.getRegion(), item.getLocation(),
-                        item.getStartDate(), item.getEndDate(), item.getThumbnailUrl(), item.getStatus(),
-                        calculateProgress(item.getStartDate(), item.getEndDate(), today)
-                )).toList();
+                .map(item -> SearchFestivalResponse.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
+                .toList();
 
-        // 3. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
+        // 4. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
         if (StringUtils.hasText(keyword) && !updatedItems.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(keyword, clientIp);
         }
 
         return new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
-    }
-
-    private FestivalProgressStatus calculateProgress(LocalDate startDate, LocalDate endDate, LocalDate today) {
-        if (today.isBefore(startDate)) {
-            return FestivalProgressStatus.UPCOMING;
-        } else if (today.isAfter(endDate)) {
-            return FestivalProgressStatus.ENDED;
-        } else {
-            return FestivalProgressStatus.IN_PROGRESS;
-        }
     }
 }

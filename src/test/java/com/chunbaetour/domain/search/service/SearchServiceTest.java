@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
@@ -44,6 +45,9 @@ class SearchServiceTest {
 
     @Mock
     private PopularSearchService popularSearchService;
+
+    @Spy
+    private java.time.Clock clock = java.time.Clock.systemDefaultZone();
 
     @InjectMocks
     private SearchService searchService;

@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.common.converter;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,7 +24,7 @@ public class StringListConverter implements AttributeConverter<List<String>, Str
         try {
             return mapper.writeValueAsString(attribute);
         } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("JSON 직렬화 중 에러가 발생했습니다.", e);
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 
@@ -34,7 +36,7 @@ public class StringListConverter implements AttributeConverter<List<String>, Str
         try {
             return mapper.readValue(dbData, new TypeReference<List<String>>() {});
         } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("JSON 역직렬화 중 에러가 발생했습니다.", e);
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 }

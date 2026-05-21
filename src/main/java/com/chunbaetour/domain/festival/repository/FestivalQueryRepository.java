@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.festival.repository;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.entity.QFestival;
 import com.querydsl.core.types.dsl.BooleanExpression;
@@ -33,7 +35,7 @@ public class FestivalQueryRepository {
      */
     public List<Festival> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size) {
         if (size <= 0) {
-            throw new IllegalArgumentException("size는 1 이상이어야 합니다.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         return queryFactory
                 .selectFrom(festival)
@@ -62,7 +64,7 @@ public class FestivalQueryRepository {
             return null;
         }
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("startDate는 endDate보다 이후일 수 없습니다.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         if (startDate != null && endDate != null) {
             // startDate <= festival.endDate AND endDate >= festival.startDate
