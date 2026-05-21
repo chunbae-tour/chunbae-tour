@@ -58,11 +58,11 @@ class RefundServiceTest {
         PaymentOrder order = makeCompletedOrder(USER_ID);
         given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
         given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(false);
-        given(refundRepository.save(any(Refund.class))).willAnswer(inv -> inv.getArgument(0));
+        given(refundRepository.saveAndFlush(any(Refund.class))).willAnswer(inv -> inv.getArgument(0));
 
         RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("단순 변심"));
 
-        verify(refundRepository).save(any(Refund.class));
+        verify(refundRepository).saveAndFlush(any(Refund.class));
         assertThat(response.amount()).isEqualTo(AMOUNT);
         assertThat(response.status()).isEqualTo(RefundStatus.PENDING);
     }
@@ -91,8 +91,8 @@ class RefundServiceTest {
     }
 
     @Test
-    @DisplayName("COMPLETED가 아닌 주문 환불 요청 시 PAY_006(PAYMENT_CANCELLED)를 던진다")
-    void requestRefund_non_completed_order_throws_PAY_006() {
+    @DisplayName("COMPLETED가 아닌 주문 환불 요청 시 PAY_015(REFUND_NOT_ELIGIBLE)를 던진다")
+    void requestRefund_non_completed_order_throws_PAY_015() {
         PaymentOrder order = makeCompletedOrder(USER_ID);
         ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.PENDING);
         given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
@@ -100,7 +100,7 @@ class RefundServiceTest {
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.PAYMENT_CANCELLED);
+                .isEqualTo(ErrorCode.REFUND_NOT_ELIGIBLE);
     }
 
     @Test
@@ -118,8 +118,8 @@ class RefundServiceTest {
     }
 
     @Test
-    @DisplayName("이미 PENDING 환불 요청이 있으면 PAY_007(DUPLICATE_PAYMENT_REQUEST)를 던진다")
-    void requestRefund_duplicate_pending_throws_PAY_007() {
+    @DisplayName("이미 PENDING 환불 요청이 있으면 PAY_016(DUPLICATE_REFUND_REQUEST)를 던진다")
+    void requestRefund_duplicate_pending_throws_PAY_016() {
         PaymentOrder order = makeCompletedOrder(USER_ID);
         given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
         given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(true);
@@ -127,6 +127,6 @@ class RefundServiceTest {
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+                .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
     }
 }

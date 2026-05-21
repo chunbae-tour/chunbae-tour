@@ -80,6 +80,8 @@ public enum ErrorCode {
     WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_012", "엽전 지갑을 찾을 수 없습니다."),
     PAYMENT_AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST,         "PAY_013", "결제 금액이 일치하지 않습니다."),
     WEBHOOK_SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED,      "PAY_014", "웹훅 서명이 유효하지 않습니다."),
+    REFUND_NOT_ELIGIBLE(HttpStatus.BAD_REQUEST,             "PAY_015", "완료된 결제만 환불 요청할 수 있습니다."),
+    DUPLICATE_REFUND_REQUEST(HttpStatus.CONFLICT,           "PAY_016", "이미 환불 요청이 진행 중인 주문입니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),

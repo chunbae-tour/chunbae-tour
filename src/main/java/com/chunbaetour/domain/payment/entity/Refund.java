@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -21,7 +22,9 @@ import lombok.NoArgsConstructor;
  * 실제 PG 환불은 STORY-07(관리자 승인) 시점에 발생.
  */
 @Entity
-@Table(name = "refunds")
+@Table(name = "refunds", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_refunds_payment_order_id", columnNames = "payment_order_id")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Refund extends BaseEntity {
@@ -45,8 +48,8 @@ public class Refund extends BaseEntity {
     @Column(nullable = false, length = 20)
     private RefundStatus status;
 
-    // 환불 사유 (선택 입력)
-    @Column
+    // 환불 사유 (선택 입력, 최대 500자)
+    @Column(length = 500)
     private String reason;
 
     @Builder

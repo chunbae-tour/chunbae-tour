@@ -1,4 +1,8 @@
 package com.chunbaetour.domain.payment.dto.request;
 
-public record RefundRequest(String reason) {
+import jakarta.validation.constraints.Size;
+
+public record RefundRequest(
+        @Size(max = 500) String reason
+) {
 }

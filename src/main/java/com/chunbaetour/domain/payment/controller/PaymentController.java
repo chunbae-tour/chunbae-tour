@@ -45,7 +45,7 @@ public class PaymentController {
     public ApiResponse<RefundResponse> requestRefund(
             @AuthenticationPrincipal Long userId,
             @PathVariable String orderId,
-            @RequestBody RefundRequest request
+            @Valid @RequestBody RefundRequest request
     ) {
         return ApiResponse.success(refundService.requestRefund(userId, orderId, request));
     }

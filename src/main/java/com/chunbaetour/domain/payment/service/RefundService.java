@@ -12,6 +12,8 @@ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +57,7 @@ public class RefundService {
 
         // COMPLETED 상태만 환불 가능 (PENDING/FAILED/CANCELLED 불가)
         if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.PAYMENT_CANCELLED);
+            throw new BusinessException(ErrorCode.REFUND_NOT_ELIGIBLE);
         }
 
         // 환불 기간(7일) 초과 확인
@@ -65,13 +67,21 @@ public class RefundService {
 
         // 동일 주문에 대한 중복 환불 요청 방지
         if (refundRepository.existsByPaymentOrderIdAndStatus(order.getId(), RefundStatus.PENDING)) {
-            throw new BusinessException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+            throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
         }
 
         // 환불 요청 생성 (전액 환불, PENDING 상태)
-        Refund refund = Refund.create(order.getId(), userId, order.getAmount(), request.reason());
-        refundRepository.save(refund);
-
-        return RefundResponse.from(refund);
+        // uk_refunds_payment_order_id 위반 시 동시 중복 요청 방어
+        try {
+            Refund refund = Refund.create(order.getId(), userId, order.getAmount(), request.reason());
+            refundRepository.saveAndFlush(refund);
+            return RefundResponse.from(refund);
+        } catch (DataIntegrityViolationException e) {
+            if (e.getCause() instanceof ConstraintViolationException cve
+                    && "uk_refunds_payment_order_id".equalsIgnoreCase(cve.getConstraintName())) {
+                throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+            }
+            throw e;
+        }
     }
 }
