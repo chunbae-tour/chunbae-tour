@@ -54,7 +54,7 @@ public class PaymentOrder extends BaseEntity {
     @Column(name = "pg_transaction_id", length = 100)
     private String pgTransactionId; // 결제 완료 후 포트원 웹훅으로 수신한 트랜잭션 ID
 
-    @Builder
+    @Builder(access = AccessLevel.PRIVATE)
     private PaymentOrder(String orderUid, Long userId, Long amount,
                         String idempotencyKey, PaymentMethod paymentMethod,
                         PaymentOrderStatus status, String pgOrderId) {
