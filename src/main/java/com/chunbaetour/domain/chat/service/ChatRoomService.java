@@ -13,6 +13,8 @@ import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -33,12 +35,16 @@ public class ChatRoomService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final CompanionPostRepository companionPostRepository;
 
     @Transactional
     public CreateChatRoomResponse createRoom(Long userId, CreateChatRoomRequest request) {
-        // TODO: Post 도메인 연동 후 게시글 작성자 검증 추가
-        // Post post = postRepository.findById(request.postId()).orElseThrow(() -> new BusinessException(POST_NOT_FOUND));
-        // if (!post.getUserId().equals(userId)) throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        // 채팅방은 동행 게시글 작성자만 개설 가능 — 게시글 존재 확인 후 작성자 일치 여부 검증
+        CompanionPost post = companionPostRepository.findById(request.postId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
+        if (!post.isOwnedBy(userId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
 
         ChatRoom chatRoom = ChatRoom.createWithOwner(
                 request.postId(),
