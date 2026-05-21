@@ -281,3 +281,25 @@ docker compose up -d
 | `scripts/dev-up.ps1` | Windows PowerShell 컨테이너 실행 스크립트 |
 | `scripts/dev-down.sh` | macOS/Linux 컨테이너 종료 스크립트 |
 | `scripts/dev-down.ps1` | Windows PowerShell 컨테이너 종료 스크립트 |
+
+## 운영 배포 전 후속 작업
+
+### Trusted Proxy / X-Forwarded-For allowlist 검증 (KAN-65 후속)
+
+RateLimitFilter는 클라이언트 IP를 `request.getRemoteAddr()`로 추출한다. 로드밸런서/리버스 프록시 뒤에 배포되면 모든 요청이 LB IP 1개로 보이게 되어 rate limit bucket이 전 클라이언트 공유 상태가 된다.
+
+**현재 적용된 최소 조치** (`application.yml`):
+
+- `server.forward-headers-strategy: NATIVE` — Tomcat RemoteIpValve 활성화. `X-Forwarded-For` 헤더를 `getRemoteAddr()` 결과에 반영.
+- Spring Boot 기본 `internal-proxies` 정규식은 RFC 1918 사설 IP 대역만 신뢰.
+
+**운영 배포 전 반드시 확인할 항목**:
+
+1. **LB IP 대역이 RFC 1918 사설 대역에 포함되는지 확인.** 사설 대역 밖이면 `server.tomcat.remoteip.internal-proxies` regex를 LB IP에 맞게 명시 설정 필요.
+2. **Trusted proxy allowlist 정책 확정.** raw `X-Forwarded-For`를 allowlist 없이 신뢰하면 spoofing 위험 (클라이언트가 임의 IP 위장 → rate limit 우회).
+3. **Spring `ForwardedHeaderFilter` 또는 동등 처리 검토.** scheme/host도 함께 신뢰해야 하면 별도 설정.
+4. **배포 환경별 검증.** AWS ALB / K8s Ingress / 직접 Nginx 등 환경에 따라 헤더 흐름이 다름. 실제 환경에서 `X-RateLimit-*` 응답 헤더를 확인하며 클라이언트 IP가 정확히 분리되는지 검증.
+
+**분리 사유**: 배포 환경(AWS ALB / K8s / 기타) 의존 결정 + ops 협의 필요. KAN-65 본 PR 범위 밖.
+
+**참조**: `src/main/java/com/chunbaetour/domain/common/ratelimit/RateLimitFilter.java`의 `extractClientIp` Javadoc.

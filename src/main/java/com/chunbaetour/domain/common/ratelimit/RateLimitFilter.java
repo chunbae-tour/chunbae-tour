@@ -86,6 +86,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String clientIp = extractClientIp(request);
         String key = "ratelimit:" + endpoint.id() + ":" + clientIp;
 
+        // RateLimiter 구현체는 인프라 예외를 RateLimitDecision.denied로 흡수하는 contract (RateLimiter Javadoc 참조).
+        // 본 필터에서 try/catch 추가 금지 — 변환되지 않은 예외(NPE 등)는 의도적으로 전파되어
+        // GlobalExceptionHandler가 500 ApiResponse로 정규화한다.
         RateLimitDecision decision = rateLimiter.tryConsume(key, endpoint.toPolicy());
 
         if (decision.allowed()) {
@@ -98,8 +101,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         // 거부 — AUTH_014 + Retry-After + 한도 헤더
         // PII 노출 방지: 키 값 자체는 로그 미포함 (endpoint id만 운영 식별용)
-        log.warn("Rate limit exceeded. endpoint={}", endpoint.id());
+        log.warn("Rate limit exceeded. endpoint={}, ip={}", endpoint.id(), maskIp(clientIp));
         Map<String, String> headers = new LinkedHashMap<>();
+        // Redis TTL race 등으로 retryAfter가 0초가 될 수 있어도 HTTP Retry-After 헤더는 최소 1초로 응답.
+        // 0초 응답 시 클라이언트가 즉시 재시도해 무한 루프 위험.
         headers.put(HEADER_RETRY_AFTER, String.valueOf(Math.max(1, decision.retryAfter().toSeconds())));
         headers.put(HEADER_RATE_LIMIT_LIMIT, String.valueOf(endpoint.limit()));
         headers.put(HEADER_RATE_LIMIT_REMAINING, "0");
@@ -113,7 +118,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
      */
     private Optional<EndpointPolicy> matchPolicy(HttpServletRequest request) {
         String method = request.getMethod();
-        String uri = request.getRequestURI();
+        // context-path 추가 시에도 yml의 path와 일관 매칭. getServletPath()는 MockMvc 기본 ""을 반환해
+        // 테스트가 깨지므로 requestURI에서 contextPath만 절단하는 방식 채택 (contextPath 미설정 시 "" → 전체 URI 유지).
+        String uri = request.getRequestURI().substring(request.getContextPath().length());
         return properties.endpoints().stream()
                 .filter(policy -> policy.method().equalsIgnoreCase(method))
                 .filter(policy -> policy.path().equals(uri))
@@ -123,13 +130,30 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /**
      * 클라이언트 IP 추출.
      *
-     * <p>현재는 {@code getRemoteAddr()}만 사용. 운영 LB 뒤 배포 시 X-Forwarded-For 신뢰 정책은 Epic B S5
-     * (SameSite/도메인 정책 확정)에서 결정. 그 전까지는 LB IP가 보호 대상이라 정책 효과 제한적이지만, 로컬/단일
-     * 호스트 환경에서는 정상 동작.
+     * <p>application.yml의 {@code server.forward-headers-strategy: NATIVE} 설정으로
+     * Tomcat RemoteIpValve가 X-Forwarded-For 헤더를 처리해 {@code getRemoteAddr()}가 실제
+     * 클라이언트 IP를 반환한다.
      *
-     * <p>followup: Spring {@code ForwardedHeaderFilter} + Trusted-Proxy 설정 도입.
+     * <p>Internal proxy 신뢰 범위는 {@code server.tomcat.remoteip.internal-proxies} 정규식으로
+     * 제어한다. Spring Boot 기본값은 RFC 1918 사설 IP 대역 regex. 운영 LB가 사설 대역 밖이면
+     * 해당 LB IP를 매칭하는 regex를 명시 설정해야 한다.
+     *
+     * <p>Trusted proxy allowlist를 운영 환경에 맞게 조정하지 않으면 X-Forwarded-For spoofing
+     * 위험이 있으므로, 운영 배포 전 별도 후속 작업으로 검증 필요.
      */
     private String extractClientIp(HttpServletRequest request) {
         return request.getRemoteAddr().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 로그용 IP 마스킹 — PII 노출 방지. IPv4는 마지막 옥텟, IPv6은 마지막 그룹을 *** 처리.
+     */
+    private String maskIp(String ip) {
+        if (ip == null || ip.isBlank()) return "***";
+        int lastDot = ip.lastIndexOf('.');
+        if (lastDot > 0) return ip.substring(0, lastDot) + ".***";
+        int lastColon = ip.lastIndexOf(':');
+        if (lastColon > 0) return ip.substring(0, lastColon) + ":***";
+        return "***";
     }
 }

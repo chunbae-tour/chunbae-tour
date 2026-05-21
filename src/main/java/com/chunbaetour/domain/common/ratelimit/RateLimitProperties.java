@@ -85,8 +85,7 @@ public record RateLimitProperties(boolean enabled, List<EndpointPolicy> endpoint
             if (path == null || path.isBlank()) {
                 throw new IllegalArgumentException("EndpointPolicy.path는 비어 있을 수 없습니다. id=" + id);
             }
-            // RateLimitPolicy compact constructor가 limit/window 검증 — 미리 던져 호출자에게 명확한 위치 안내
-            // (실제 구현은 RateLimitPolicy 생성으로 위임)
+            new RateLimitPolicy(limit, window);  // limit/window 계약을 바인딩 시점에 검증 (반환값 미사용 — 검증 부수효과만 활용)
         }
 
         /**

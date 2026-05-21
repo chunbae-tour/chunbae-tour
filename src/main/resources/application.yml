@@ -19,9 +19,13 @@ spring:
         format_sql: true
     show-sql: true
 
+# Tomcat RemoteIpValve 활성화 — trusted internal proxy에서 전달된 X-Forwarded-For를 반영.
+# 본 설정은 최소 조치이며 완전한 Trusted Proxy allowlist 해결이 아님.
+# 운영 LB가 기본 internal-proxies 정규식(RFC 1918 사설 IP regex)에 포함되지 않으면
+# server.tomcat.remoteip.internal-proxies regex를 별도 설정해야 함.
 server:
   port: 8080
-  forward-headers-strategy: framework
+  forward-headers-strategy: NATIVE
 
 jwt:
   secret: ${JWT_SECRET}
