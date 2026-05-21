@@ -128,6 +128,14 @@ public class ChatRoomService {
 
         // 퇴장으로 현재 인원 감소 — FULL 상태였으면 자동으로 OPEN 전환
         chatRoom.decrementMembers();
+
+        // saveAndFlush로 커밋 전 DB 쓰기를 강제해 낙관적 잠금 실패를 메서드 내부에서 처리
+        // closeRoom과 동일한 패턴 — 트랜잭션 커밋 시 래핑 예외로 매핑 누락되는 케이스 방지
+        try {
+            chatRoomRepository.saveAndFlush(chatRoom);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        }
     }
 
     public ChatRoomDetailResponse getRoomDetail(Long userId, Long roomId) {

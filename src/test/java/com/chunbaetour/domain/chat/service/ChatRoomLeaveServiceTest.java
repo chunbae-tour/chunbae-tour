@@ -56,9 +56,11 @@ class ChatRoomLeaveServiceTest {
         chatRoomService.leaveRoom(USER_ID, ROOM_ID);
 
         // 상태 전이 후 인원 감소 순서여야 함 — 역순이면 FULL→OPEN 전환이 먼저 일어나는 버그 가능
-        InOrder inOrder = inOrder(member, room);
+        InOrder inOrder = inOrder(member, room, chatRoomRepository);
         inOrder.verify(member).leave();
         inOrder.verify(room).decrementMembers();
+        // saveAndFlush로 낙관적 잠금 실패를 메서드 내부에서 처리하므로 반드시 호출되어야 함
+        inOrder.verify(chatRoomRepository).saveAndFlush(room);
     }
 
     @Test
