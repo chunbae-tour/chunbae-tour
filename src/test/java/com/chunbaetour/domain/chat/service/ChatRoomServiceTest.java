@@ -49,7 +49,7 @@ class ChatRoomServiceTest {
         ChatRoom room = stubRoom();
         ChatRoomMember ownerMember = stubMember(USER_ID, ChatMemberState.OWNER_ACTIVE);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateIn(eq(ROOM_ID), any()))
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of(ownerMember));
 
         ChatRoomDetailResponse response = chatRoomService.getRoomDetail(USER_ID, ROOM_ID);
@@ -64,7 +64,7 @@ class ChatRoomServiceTest {
         ChatRoom room = stubRoom();
         ChatRoomMember member = stubMember(USER_ID, ChatMemberState.MEMBER_ACTIVE);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateIn(eq(ROOM_ID), any()))
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of(member));
 
         ChatRoomDetailResponse response = chatRoomService.getRoomDetail(USER_ID, ROOM_ID);
@@ -77,7 +77,7 @@ class ChatRoomServiceTest {
         // 채팅방에 참여한 이력이 없는 사용자 — activeMembers 목록에 존재하지 않음
         // isMember 검사에서 예외가 발생하므로 ChatRoom 상세 필드 stubbing 불필요
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(mock(ChatRoom.class)));
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateIn(eq(ROOM_ID), any()))
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
@@ -91,7 +91,7 @@ class ChatRoomServiceTest {
         // KICKED 상태는 ACTIVE_STATES 필터에 포함되지 않아 repository 조회 결과에서 제외됨
         // → 요청자가 목록에 없으므로 isMember = false → CHAT_NOT_JOINED
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(mock(ChatRoom.class)));
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateIn(eq(ROOM_ID), any()))
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
@@ -104,7 +104,7 @@ class ChatRoomServiceTest {
     void getRoomDetail_left_member_throws_CHAT_NOT_JOINED() {
         // LEFT 상태도 ACTIVE_STATES 필터에 포함되지 않아 repository 조회 결과에서 제외됨
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(mock(ChatRoom.class)));
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateIn(eq(ROOM_ID), any()))
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
