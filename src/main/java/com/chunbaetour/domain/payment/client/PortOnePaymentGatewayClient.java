@@ -60,7 +60,24 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
         }
     }
 
+    @Override
+    public void cancelPayment(String pgTransactionId, Long amount, String reason) {
+        try {
+            portOneRestClient.post()
+                .uri("/payments/{paymentId}/cancel", pgTransactionId)
+                .header("Authorization", "PortOne " + properties.getSecret())
+                .body(new CancelRequest(reason, amount))
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientException e) {
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+    }
+
     private record PreRegisterRequest(String storeId, Long totalAmount, String currency) {
+    }
+
+    private record CancelRequest(String reason, Long amount) {
     }
 
     private record PortOnePaymentResponse(String status, AmountDetail amount) {

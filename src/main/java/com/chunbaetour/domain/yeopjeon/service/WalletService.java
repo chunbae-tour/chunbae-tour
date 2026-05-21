@@ -38,6 +38,27 @@ public class WalletService {
         );
     }
 
+    /**
+     * 환불 승인 시 엽전 차감 + 환불 이력 저장.
+     * 락 획득 순서: Refund → PaymentOrder → Wallet (호출자 AdminRefundService가 준수해야 데드락 방지).
+     */
+    @Transactional
+    public void refund(Long userId, Long amount, Long paymentOrderId) {
+        // SELECT FOR UPDATE로 지갑 행 락 획득
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        // 잔액 확인 (충전 후 소비했을 경우 부족 가능)
+        if (wallet.getBalance() < amount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
+        }
+        // 엽전 차감
+        wallet.debit(amount);
+        // 환불 이력 DB 저장 (balanceSnapshot = debit 후 잔액)
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofRefund(userId, amount, wallet.getBalance(), paymentOrderId)
+        );
+    }
+
     @Transactional
     public void createWallet(Long userId) {
 
