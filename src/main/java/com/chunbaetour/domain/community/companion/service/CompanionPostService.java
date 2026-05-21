@@ -86,6 +86,10 @@ public class CompanionPostService {
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
+        // placeId·placeName은 쌍으로 수정해야 함 — 한쪽만 보내면 데이터 불일치
+        if ((request.placeId() == null) != (request.placeName() == null)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         post.update(
                 request.title(), request.content(),
                 request.placeId(), request.placeName(),

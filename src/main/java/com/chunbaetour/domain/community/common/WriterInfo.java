@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.community.common;
 
+import com.chunbaetour.domain.auth.Account;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -9,4 +10,13 @@ public record WriterInfo(
         String profileImageUrl,
         Double companionScore
 ) {
+    public static WriterInfo from(Account author) {
+        if (author == null) return new WriterInfo(null, "탈퇴한 사용자", null, null);
+        return new WriterInfo(
+                author.getId(),
+                author.getNickname(),
+                author.getProfileImageUrl(),
+                (double) author.getCompanionScore()
+        );
+    }
 }

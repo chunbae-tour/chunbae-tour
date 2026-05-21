@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.community.companion.dto;
 
 import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -14,6 +15,6 @@ public record CompanionPostCreateRequest(
         @NotBlank @Size(max = 100) String placeName,
         @Size(max = 50) String region,
         @NotNull @FutureOrPresent LocalDate meetingDate,
-        @NotNull @Min(2) int maxMembers
+        @NotNull @Min(2) @Max(50) int maxMembers
 ) {
 }

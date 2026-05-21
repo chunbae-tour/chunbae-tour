@@ -11,6 +11,7 @@ public record CompanionPostGetListResponse(
         Long postId,
         String title,
         String placeName,
+        String region,
         LocalDate meetingDate,
         int maxMembers,
         int currentMembers,
@@ -19,18 +20,16 @@ public record CompanionPostGetListResponse(
         LocalDateTime createdAt
 ) {
     public static CompanionPostGetListResponse of(CompanionPost post, Account author) {
-        WriterInfo writer = author != null
-                ? new WriterInfo(author.getId(), author.getNickname(), author.getProfileImageUrl(), (double) author.getCompanionScore())
-                : new WriterInfo(null, "탈퇴한 사용자", null, null);
         return new CompanionPostGetListResponse(
                 post.getId(),
                 post.getTitle(),
                 post.getPlaceName(),
+                post.getRegion(),
                 post.getMeetingDate(),
                 post.getMaxMembers(),
                 post.getCurrentMembers(),
                 post.getStatus(),
-                writer,
+                WriterInfo.from(author),
                 post.getCreatedAt()
         );
     }

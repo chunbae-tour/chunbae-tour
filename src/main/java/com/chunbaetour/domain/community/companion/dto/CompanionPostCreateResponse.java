@@ -21,9 +21,6 @@ public record CompanionPostCreateResponse(
         LocalDateTime createdAt
 ) {
     public static CompanionPostCreateResponse of(CompanionPost post, Account author) {
-        WriterInfo writer = author != null
-                ? new WriterInfo(author.getId(), author.getNickname(), author.getProfileImageUrl(), (double) author.getCompanionScore())
-                : new WriterInfo(null, "탈퇴한 사용자", null, null);
         return new CompanionPostCreateResponse(
                 post.getId(),
                 post.getTitle(),
@@ -34,7 +31,7 @@ public record CompanionPostCreateResponse(
                 post.getMaxMembers(),
                 post.getCurrentMembers(),
                 post.getStatus(),
-                writer,
+                WriterInfo.from(author),
                 post.getCreatedAt()
         );
     }

@@ -23,9 +23,6 @@ public record CompanionPostGetOneResponse(
         LocalDateTime updatedAt
 ) {
     public static CompanionPostGetOneResponse of(CompanionPost post, Account author) {
-        WriterInfo writer = author != null
-                ? new WriterInfo(author.getId(), author.getNickname(), author.getProfileImageUrl(), (double) author.getCompanionScore())
-                : new WriterInfo(null, "탈퇴한 사용자", null, null);
         return new CompanionPostGetOneResponse(
                 post.getId(),
                 post.getTitle(),
@@ -37,7 +34,7 @@ public record CompanionPostGetOneResponse(
                 post.getMaxMembers(),
                 post.getCurrentMembers(),
                 post.getStatus(),
-                writer,
+                WriterInfo.from(author),
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );
