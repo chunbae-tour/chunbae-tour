@@ -120,7 +120,13 @@ public enum ErrorCode {
     CHAT_ROOM_DUPLICATE(HttpStatus.CONFLICT,                "CHAT_014", "해당 게시글에 이미 개설된 채팅방이 있습니다."),
     CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 직접 퇴장할 수 없습니다."),
     CHAT_MEMBER_ALREADY_INACTIVE(HttpStatus.CONFLICT,       "CHAT_016", "이미 퇴장하거나 강퇴된 멤버입니다."),
-    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다.");
+    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
+
+    // ===== REPORT (담당: 박경화) =====
+    REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND,            "REPORT_001", "신고 대상을 찾을 수 없습니다."),
+    DUPLICATE_REPORT(HttpStatus.CONFLICT,                    "REPORT_002", "이미 신고한 대상입니다."),
+    REPORT_SELF(HttpStatus.BAD_REQUEST,                      "REPORT_003", "자기 자신을 신고할 수 없습니다."),
+    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다.");
 
     private final HttpStatus status;
     private final String code;
