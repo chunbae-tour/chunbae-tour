@@ -197,8 +197,14 @@ class SearchServiceTest {
         CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1");
 
         // then
+        // 결과는 mockResult에 넣은 순서 (3, 2, 1 - ID 내림차순)대로 반환됨을 명시적으로 검증
+        assertThat(response.content().get(0).festivalId()).isEqualTo(3L);
         assertThat(response.content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
+        
+        assertThat(response.content().get(1).festivalId()).isEqualTo(2L);
         assertThat(response.content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
+        
+        assertThat(response.content().get(2).festivalId()).isEqualTo(1L);
         assertThat(response.content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
     }
 
