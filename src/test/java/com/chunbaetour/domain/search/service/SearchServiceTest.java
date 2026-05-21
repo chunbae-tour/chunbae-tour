@@ -157,7 +157,7 @@ class SearchServiceTest {
 
         // then
         assertThat(response.content()).hasSize(1);
-        verify(popularSearchService, never()).incrementSearchCount(any(), any());
+        verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
     @Test
@@ -200,5 +200,18 @@ class SearchServiceTest {
         assertThat(response.content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
         assertThat(response.content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
         assertThat(response.content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
+    }
+
+    @Test
+    @DisplayName("축제 검색 시 시작일이 종료일보다 늦으면 예외가 발생한다")
+    void searchFestivals_ThrowsException_WhenStartDateIsAfterEndDate() {
+        // given
+        LocalDate startDate = LocalDate.now().plusDays(5);
+        LocalDate endDate = LocalDate.now();
+
+        // when & then
+        assertThatThrownBy(() -> searchService.searchFestivals("축제", startDate, endDate, "서울", null, 10, "127.0.0.1"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage(ErrorCode.SEARCH_INVALID_DATE_RANGE.getMessage());
     }
 }
