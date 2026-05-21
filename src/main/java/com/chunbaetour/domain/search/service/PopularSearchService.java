@@ -397,6 +397,9 @@ public class PopularSearchService {
                 String ip = request.getHeader("X-Forwarded-For");
                 if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
                     ip = request.getRemoteAddr();
+                } else {
+                    // [CodeRabbit 리뷰 반영] 프록시 체인(client, proxy1, proxy2) 환경 고려하여 최초 클라이언트 IP 추출
+                    ip = ip.split(",")[0].trim();
                 }
                 return ip != null ? ip : "unknown";
             }
