@@ -47,6 +47,10 @@ public class RefundService {
      * 4. 환불 기간(7일) 확인 → PAY_010
      * 5. 잔액 전액 보유 확인 → PAY_017 (부분 사용 후 환불 불가)
      * 6. 중복 환불 요청 확인 → PAY_016
+     *
+     * <p><b>잔액 검증 주의:</b> 본 메서드는 요청 시점 잔액만 검증한다.
+     * PENDING 상태에서 사용자가 엽전을 추가 소비하면 잔액이 줄 수 있으므로,
+     * 관리자 승인(STORY-07) 시점에 잔액 재검증 + 차감을 원자적으로 수행해야 한다.
      */
     @Transactional
     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
