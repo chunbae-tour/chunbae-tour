@@ -11,4 +11,13 @@ public interface PaymentGatewayClient {
 
     // 결제 사전등록 — 프론트 SDK 결제 전 포트원에 금액을 미리 등록해 위변조 방지
     void preRegister(String orderUid, Long amount);
+
+    // 결제 검증 — 콜백 수신 후 포트원에서 실제 결제 상태/금액 확인 (위변조 방지)
+    PortOnePaymentInfo verifyPayment(String paymentId);
+
+    record PortOnePaymentInfo(String status, Long totalAmount) {
+        public boolean isPaid() {
+            return "PAID".equals(status);
+        }
+    }
 }
