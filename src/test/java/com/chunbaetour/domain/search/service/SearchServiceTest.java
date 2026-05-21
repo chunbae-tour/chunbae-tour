@@ -144,7 +144,7 @@ class SearchServiceTest {
                 .name("축제1").description("설명").region("서울").location("주소")
                 .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
                 .startDate(LocalDate.now().minusDays(1)).endDate(LocalDate.now().plusDays(1))
-                .thumbnailUrl("url")
+                .thumbnailUrl("http://url.com")
                 .build();
         // 리플렉션으로 ID 세팅
         org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 1L);
@@ -172,19 +172,19 @@ class SearchServiceTest {
         Festival pastFestival = Festival.builder()
                 .name("지난 축제").description("설명").region("서울").location("주소")
                 .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(today.minusDays(10)).endDate(today.minusDays(5)).thumbnailUrl("url").build();
+                .startDate(today.minusDays(10)).endDate(today.minusDays(5)).thumbnailUrl("http://url.com").build();
         org.springframework.test.util.ReflectionTestUtils.setField(pastFestival, "id", 3L);
         
         Festival ongoingFestival = Festival.builder()
                 .name("진행중 축제").description("설명").region("서울").location("주소")
                 .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(today.minusDays(1)).endDate(today.plusDays(5)).thumbnailUrl("url").build();
+                .startDate(today.minusDays(1)).endDate(today.plusDays(5)).thumbnailUrl("http://url.com").build();
         org.springframework.test.util.ReflectionTestUtils.setField(ongoingFestival, "id", 2L);
         
         Festival futureFestival = Festival.builder()
                 .name("예정 축제").description("설명").region("서울").location("주소")
                 .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(today.plusDays(5)).endDate(today.plusDays(10)).thumbnailUrl("url").build();
+                .startDate(today.plusDays(5)).endDate(today.plusDays(10)).thumbnailUrl("http://url.com").build();
         org.springframework.test.util.ReflectionTestUtils.setField(futureFestival, "id", 1L);
 
         mockResult.add(pastFestival);

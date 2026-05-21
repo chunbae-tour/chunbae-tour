@@ -12,14 +12,25 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import com.chunbaetour.domain.common.converter.StringListConverter;
+import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 
 @Entity
 @Table(name = "festivals")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
-public class Festival {
+public class Festival extends BaseEntity {
+
+    private static final BigDecimal LAT_MIN = new BigDecimal("-90");
+    private static final BigDecimal LAT_MAX = new BigDecimal("90");
+    private static final BigDecimal LNG_MIN = new BigDecimal("-180");
+    private static final BigDecimal LNG_MAX = new BigDecimal("180");
+    private static final Pattern URL_PATTERN = Pattern.compile("^(https?|ftp)://[^\\s/$.?#].[^\\s]*$");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,9 +48,11 @@ public class Festival {
     @Column(nullable = false, length = 255)
     private String location;
 
+    // 위도는 -90 ~ 90이므로 정수부 최대 3자리 (부호 포함) -> precision 10, scale 7
     @Column(nullable = false, precision = 10, scale = 7)
     private BigDecimal lat;
 
+    // 경도는 -180 ~ 180이므로 정수부 최대 4자리 (부호 포함) -> precision 11, scale 7
     @Column(nullable = false, precision = 11, scale = 7)
     private BigDecimal lng;
 
@@ -52,45 +65,38 @@ public class Festival {
     @Column(name = "thumbnail_url", length = 512)
     private String thumbnailUrl;
 
+    @Convert(converter = StringListConverter.class)
     @Column(name = "image_urls", columnDefinition = "JSON")
-    private String imageUrls;
+    private List<String> imageUrls;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private FestivalStatus status = FestivalStatus.ACTIVE;
 
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
-
     @Builder
     private Festival(String name, String description, String region, String location,
                      BigDecimal lat, BigDecimal lng, LocalDate startDate, LocalDate endDate,
-                     String thumbnailUrl, String imageUrls) {
-        if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("축제 이름은 필수입니다.");
+                     String thumbnailUrl, List<String> imageUrls) {
+        if (name == null || name.isBlank() || name.length() > 255) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (region == null || region.isBlank()) {
-            throw new IllegalArgumentException("축제 지역은 필수입니다.");
+        if (region == null || region.isBlank() || region.length() > 100) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (location == null || location.isBlank()) {
-            throw new IllegalArgumentException("축제 장소는 필수입니다.");
+        if (location == null || location.isBlank() || location.length() > 255) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (lat == null || lat.compareTo(new BigDecimal("-90")) < 0 || lat.compareTo(new BigDecimal("90")) > 0) {
-            throw new IllegalArgumentException("위도는 -90에서 90 사이여야 합니다.");
+        if (lat == null || lat.compareTo(LAT_MIN) < 0 || lat.compareTo(LAT_MAX) > 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (lng == null || lng.compareTo(new BigDecimal("-180")) < 0 || lng.compareTo(new BigDecimal("180")) > 0) {
-            throw new IllegalArgumentException("경도는 -180에서 180 사이여야 합니다.");
+        if (lng == null || lng.compareTo(LNG_MIN) < 0 || lng.compareTo(LNG_MAX) > 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (startDate == null || endDate == null) {
-            throw new IllegalArgumentException("시작일과 종료일은 필수입니다.");
+        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("시작일은 종료일 이전이어야 합니다.");
+        if (thumbnailUrl != null && !thumbnailUrl.isBlank() && !URL_PATTERN.matcher(thumbnailUrl).matches()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
         this.name = name;
@@ -103,6 +109,5 @@ public class Festival {
         this.endDate = endDate;
         this.thumbnailUrl = thumbnailUrl;
         this.imageUrls = imageUrls;
-        this.status = FestivalStatus.ACTIVE;
     }
 }
