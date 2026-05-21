@@ -7,4 +7,5 @@ public record CursorPage<T>(
         String nextCursor,
         boolean hasNext,
         int size
-) {}
+) {
+}

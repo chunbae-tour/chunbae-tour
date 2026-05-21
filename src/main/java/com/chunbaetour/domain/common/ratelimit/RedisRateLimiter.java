@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 /**
  * Redis 기반 Rate Limiter — Fixed Window 알고리즘.
  *
+ * <p>Redis 장애 시 fail-closed — {@link DataAccessException} catch → {@link RateLimitDecision#denied}.
+ *
  * <p>핵심 설계:
  * <ul>
  *   <li><b>Fixed Window</b>: 첫 요청에서 키 생성 + TTL 부여. 같은 window 안의 후속 요청은 INCR만.
