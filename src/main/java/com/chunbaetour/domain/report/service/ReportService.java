@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.report.service;
 
+import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
@@ -30,7 +32,8 @@ public class ReportService {
 
     @Transactional
     public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
-        if (request.targetType() == ReportTargetType.USER
+        if ((request.targetType() == ReportTargetType.USER
+                || request.targetType() == ReportTargetType.MERCHANT)
                 && request.targetId().equals(reporterId)) {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
@@ -68,6 +71,16 @@ public class ReportService {
                 // Account has @SQLRestriction("deleted_at IS NULL") — deleted accounts return empty
                 accountRepository.findById(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+            }
+            case MERCHANT -> {
+                Account merchant = accountRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (merchant.getRole() != Role.MERCHANT) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+            }
+            case COMMENT -> {
+                // TODO: KAN-61 merge 후 CommentRepository 주입하여 존재 검증 추가
             }
         }
     }
