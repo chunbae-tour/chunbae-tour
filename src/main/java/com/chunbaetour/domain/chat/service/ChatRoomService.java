@@ -115,6 +115,31 @@ public class ChatRoomService {
     }
 
     @Transactional
+    public void kickMember(Long ownerId, Long chatRoomId, Long targetUserId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(chatRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        if (!chatRoom.getOwnerId().equals(ownerId)) {
+            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+
+        ChatRoomMember targetMember = chatRoomMemberRepository
+                .findByChatRoomIdAndUserId(chatRoomId, targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+
+        // kick() 내부: OWNER_ACTIVE → CHAT_017, MEMBER_LEFT/KICKED → CHAT_016
+        targetMember.kick();
+
+        chatRoom.decrementMembers();
+
+        try {
+            chatRoomRepository.saveAndFlush(chatRoom);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        }
+    }
+
+    @Transactional
     public void leaveRoom(Long userId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));

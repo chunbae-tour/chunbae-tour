@@ -64,6 +64,15 @@ public class ChatRoomController {
         return ApiResponse.success(null);
     }
 
+    @DeleteMapping("/{roomId}/members/{targetUserId}")
+    public ApiResponse<Void> kickMember(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId,
+            @Min(1) @PathVariable Long targetUserId) {
+        chatRoomService.kickMember(userId, roomId, targetUserId);
+        return ApiResponse.success();
+    }
+
     @DeleteMapping("/{roomId}/members/me")
     public ApiResponse<Void> leaveRoom(
             @AuthenticationPrincipal Long userId,
