@@ -142,6 +142,9 @@ public class AdminRefundService {
         }
     }
 
+    // TODO [FUTURE]: PG 취소가 afterCommit에서 실패하면 DB는 APPROVED로 커밋된 채 실제 환불 미발생 → 금전 불일치.
+    //   장기적으로 Transactional Outbox(outbox_events 테이블 + 워커 재시도 + PG 멱등키) 또는
+    //   Saga 보상 트랜잭션으로 해결 필요. 현재는 관리자 수동 모니터링으로 대응(관리자 단일 처리 환경).
     /** DB 커밋 확정 후 PG 취소 예약. 트랜잭션 없는 컨텍스트(단위 테스트 등)에서는 즉시 실행. */
     private void schedulePgCancel(String pgTxId, Long amount, String reason) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
