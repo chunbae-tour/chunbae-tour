@@ -9,6 +9,7 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class MerchantApplicationService {
+
+    private static final String UK_BUSINESS_NUMBER = "uk_merchant_applications_business_number";
 
     private final MerchantApplicationRepository merchantApplicationRepository;
 
@@ -54,8 +57,15 @@ public class MerchantApplicationService {
             );
             return MerchantApplicationResponse.from(application);
         } catch (DataIntegrityViolationException e) {
-            // check-then-act 사이 동시 요청이 먼저 커밋된 경우
-            throw new BusinessException(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
+            if (e.getCause() instanceof ConstraintViolationException cve) {
+                String constraintName = cve.getConstraintName();
+                // 사업자번호 유니크 위반 — 다른 유저가 이미 같은 번호로 신청/등록
+                if (UK_BUSINESS_NUMBER.equalsIgnoreCase(constraintName)) {
+                    throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
+                }
+            }
+            // 예상치 못한 DB 오류는 그대로 전파 (500)
+            throw e;
         }
     }
 

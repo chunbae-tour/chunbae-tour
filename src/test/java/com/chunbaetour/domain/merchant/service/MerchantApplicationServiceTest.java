@@ -8,8 +8,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
-import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.sql.SQLException;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationResponse;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
@@ -128,17 +130,34 @@ class MerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("동시 요청으로 DB 제약 위반 시 MERCHANT_CERT_ALREADY_PENDING 예외")
-    void apply_concurrentDuplicate_throws_MERCHANT_001() {
+    @DisplayName("다른 유저가 동일 사업자번호로 동시 신청 시 DUPLICATE_BUSINESS_NUMBER 예외")
+    void apply_concurrentDuplicateBizNumber_throws_MERCHANT_004() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
                 .willReturn(false);
+        ConstraintViolationException cve = new ConstraintViolationException(
+                "Duplicate entry for business_number",
+                new SQLException(),
+                "uk_merchant_applications_business_number"
+        );
         given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
-                .willThrow(new DataIntegrityViolationException("duplicate"));
+                .willThrow(new DataIntegrityViolationException("duplicate", cve));
 
         assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
+                .isEqualTo(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
+    }
+
+    @Test
+    @DisplayName("예상치 못한 DB 오류(제약 외)는 DataIntegrityViolationException 그대로 전파")
+    void apply_unexpectedDbError_rethrows() {
+        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
+                .willThrow(new DataIntegrityViolationException("unexpected"));
+
+        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
