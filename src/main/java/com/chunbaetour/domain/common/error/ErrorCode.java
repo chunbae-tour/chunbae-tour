@@ -64,6 +64,7 @@ public enum ErrorCode {
     SEARCH_KEYWORD_TOO_LONG(HttpStatus.BAD_REQUEST,         "PLACE_006", "검색어는 최대 50자까지 입력 가능합니다."),
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
+    SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
@@ -80,6 +81,12 @@ public enum ErrorCode {
     WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_012", "엽전 지갑을 찾을 수 없습니다."),
     PAYMENT_AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST,         "PAY_013", "결제 금액이 일치하지 않습니다."),
     WEBHOOK_SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED,      "PAY_014", "웹훅 서명이 유효하지 않습니다."),
+    REFUND_NOT_ELIGIBLE(HttpStatus.BAD_REQUEST,             "PAY_015", "완료된 결제만 환불 요청할 수 있습니다."),
+    DUPLICATE_REFUND_REQUEST(HttpStatus.CONFLICT,           "PAY_016", "이미 환불 요청이 진행 중인 주문입니다."),
+    REFUND_BALANCE_INSUFFICIENT(HttpStatus.BAD_REQUEST,     "PAY_017", "환불에 필요한 엽전 잔액이 부족합니다."),
+    REFUND_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_018", "존재하지 않는 환불 요청입니다."),
+    REFUND_CANCEL_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_019", "대기 중인 환불 요청만 취소할 수 있습니다."),
+    REFUND_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_020", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),

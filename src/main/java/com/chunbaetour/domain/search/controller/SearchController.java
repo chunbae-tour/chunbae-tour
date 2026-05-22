@@ -4,9 +4,11 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
+import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
+import com.chunbaetour.domain.search.service.SuggestService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -17,13 +19,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
  * 검색 도메인 컨트롤러.
  * <p>
  * Base URL: {@code /api/v1/search}
- * 현재 구현 범위: 2-1 인기 검색어 조회 ({@code GET /search/popular})
+ * 현재 구현 범위:
+ * 2-1 인기 검색어 조회 ({@code GET /search/popular}),
+ * 2-2 관광지 검색 ({@code GET /search/places}),
+ * 2-3 축제 검색 ({@code GET /search/festivals}),
+ * 2-4 검색어 자동완성 ({@code GET /search/suggest})
  * </p>
  *
  * <p>
@@ -39,6 +46,7 @@ public class SearchController {
 
     private final PopularSearchService popularSearchService;
     private final SearchService searchService;
+    private final SuggestService suggestService;
 
     /**
      * 인기 검색어 TOP 10 조회.
@@ -94,5 +102,67 @@ public class SearchController {
         String clientIp = request.getRemoteAddr();
         CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp);
         return ApiResponse.success(response);
+    }
+
+    /**
+     * 축제 검색.
+     * <p>
+     * SA: {@code GET /api/v1/search/festivals}<br>
+     * 인증: 불필요(❌)<br>
+     * 설명: 날짜(시작/종료일)와 지역 필터를 지원하며, 유효한 검색어가 입력된 경우 인기 검색어 점수를 집계한다.
+     * </p>
+     *
+     * @param q         검색어 (옵션)
+     * @param startDate 시작일 필터 (옵션)
+     * @param endDate   종료일 필터 (옵션)
+     * @param region    지역 (옵션)
+     * @param cursor    커서 아이디 (옵션, 이전 페이지의 마지막 festivalId)
+     * @param size      페이지 사이즈 (기본값 10)
+     * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록
+     */
+    @GetMapping("/festivals")
+    public ApiResponse<CursorPageResponse<SearchFestivalResponse>> searchFestivals(
+            @RequestParam(name = "q", required = false) String q,
+            @RequestParam(name = "startDate", required = false) LocalDate startDate,
+            @RequestParam(name = "endDate", required = false) LocalDate endDate,
+            @RequestParam(name = "region", required = false) String region,
+            @RequestParam(name = "cursor", required = false) Long cursor,
+            @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            HttpServletRequest request
+    ) {
+        String clientIp = request.getRemoteAddr();
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(q, startDate, endDate, region, cursor, size, clientIp);
+        return ApiResponse.success(response);
+    }
+
+    /**
+     * 검색어 자동완성.
+     * <p>
+     * SA: {@code GET /api/v1/search/suggest?q={prefix}}<br>
+     * 인증: 불필요(❌)<br>
+     * 설명: prefix(입력 중인 검색어)를 기반으로 관광지명 DB + Redis 인기 검색어 ZSet에서
+     * 자동완성 후보를 최대 5개 반환한다. 결과는 Redis String 캐시에 5분간 캐싱된다.
+     * </p>
+     *
+     * <p>
+     * SA 응답 예시:
+     * <pre>
+     * GET /search/suggest?q=경복
+     * 200 OK
+     * { "data": ["경복궁", "경복궁 야간개장", "경복궁 한복체험"] }
+     * </pre>
+     * </p>
+     *
+     * @param q prefix (필수, 1자 이상)
+     * @return 200 OK + 자동완성 후보 목록 (최대 5개)
+     * @throws com.chunbaetour.domain.common.error.BusinessException q가 null/blank인 경우 PLACE_005
+     * @throws com.chunbaetour.domain.common.error.BusinessException q가 50자를 초과하는 경우 PLACE_006
+     */
+    @GetMapping("/suggest")
+    public ApiResponse<List<String>> suggest(
+            @RequestParam(name = "q") String q
+    ) {
+        List<String> result = suggestService.suggest(q);
+        return ApiResponse.success(result);
     }
 }

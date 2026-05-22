@@ -117,5 +117,45 @@ public class PlaceQueryRepository {
     private BooleanExpression cursorConditionForSearch(Long cursorId) {
         return cursorId != null ? place.id.lt(cursorId) : null; // desc 정렬이므로 lt
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 자동완성 (Suggest) 쿼리
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 관광지명 prefix 자동완성 (Phase 2-4).
+     * <p>
+     * {@code LIKE 'prefix%'} 패턴을 사용하므로 선행 와일드카드가 없어
+     * {@code idx_places_name} B-Tree 인덱스의 Range Scan이 가능하다.
+     * (※ {@code LIKE '%keyword%'} 방식인 keywordContains와 성능 특성이 다름)
+     * </p>
+     * <p>
+     * ACTIVE 상태 관광지만 대상으로 하여 노출 중단된 장소가 자동완성에 노출되지 않도록 한다.
+     * </p>
+     *
+     * @param prefix 사용자가 입력한 prefix (검색창 입력 중인 문자열, non-null/non-blank)
+     * @param limit  최대 반환 건수 (SA 명세 기준 최대 5)
+     * @return place.name 목록 (최대 limit 건)
+     */
+    public List<String> suggestByPrefix(String prefix, int limit) {
+        // _, % 와일드카드 이스케이프 처리하여 의도치 않은 임의 문자 매칭 방지
+        String safePrefix = prefix.replace("\\", "\\\\")
+                                  .replace("_", "\\_")
+                                  .replace("%", "\\%");
+
+        return queryFactory
+                .select(place.name)
+                .from(place)
+                .where(
+                        // LIKE 'safePrefix%' — 후행 와일드카드만 사용하므로 B-Tree 인덱스 Range Scan 가능
+                        place.name.startsWith(safePrefix),
+                        // 노출 중단/삭제된 관광지는 자동완성에서 제외
+                        place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
+                )
+                // 이름 오름차순: 자동완성은 사전순이 사용자 경험에 더 자연스러움
+                .orderBy(place.name.asc())
+                .limit(limit)
+                .fetch();
+    }
 }
 

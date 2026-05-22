@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.community.companion.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateRequest;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateResponse;
@@ -44,7 +44,7 @@ public class CompanionPostController {
     }
 
     @GetMapping
-    public ApiResponse<CursorPage<CompanionPostGetListResponse>> findAll(
+    public ApiResponse<CursorPageResponse<CompanionPostGetListResponse>> findAll(
             @RequestParam(required = false) String region,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate meetingDate,
             @RequestParam(required = false) String cursor,
