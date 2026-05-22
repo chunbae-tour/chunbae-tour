@@ -3,6 +3,7 @@ package com.chunbaetour.domain.chat.service;
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
+import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
@@ -38,7 +39,7 @@ public class JoinRequestService {
             List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
     private static final String LOCK_KEY_FORMAT = "chatroom:lock:%d";
     private static final long LOCK_WAIT_SECONDS = 3L;
-    // DB 작업 지연 시 watchdog 무한 점유 방지 — 정상 createJoinRequest는 수백 ms 이내 완료
+    // DB 작업 지연 시 watchdog 무한 점유 방지 — 정상 작업은 수백 ms 이내 완료
     private static final long LOCK_LEASE_SECONDS = 5L;
 
     private final ChatRoomRepository chatRoomRepository;
@@ -105,6 +106,39 @@ public class JoinRequestService {
                 .toList();
     }
 
+    // NOT_SUPPORTED로 외부 readOnly 트랜잭션 중단 — TransactionTemplate이 새 쓰기 트랜잭션 생성
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ApproveJoinRequestResponse approveJoinRequest(Long ownerId, Long requestId) {
+
+        // 신청 및 방장 확인은 락 밖에서 — 락 점유 시간 최소화
+        JoinRequest joinRequest = joinRequestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
+
+        Long chatRoomId = joinRequest.getChatRoomId();
+
+        // 방장 권한 확인 — OWNER_ACTIVE가 아니면 수락 불가 (CHAT_006)
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, ownerId)
+                .filter(m -> m.getMemberState() == ChatMemberState.OWNER_ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
+
+        // chatRoomId 단위 분산 락 — incrementMembers() TOCTOU 방지
+        RLock lock = redissonClient.getLock(LOCK_KEY_FORMAT.formatted(chatRoomId));
+        try {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
+                throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+            }
+            return new TransactionTemplate(transactionManager).execute(
+                    status -> doApproveJoinRequest(requestId));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
     // 락 내부 실제 비즈니스 로직 — TransactionTemplate으로 호출해 트랜잭션 커밋이 락 해제 전에 완료됨을 보장
     private CreateJoinRequestResponse doCreateJoinRequest(
             Long userId, Long chatRoomId, CreateJoinRequestRequest request, Account account) {
@@ -140,5 +174,26 @@ public class JoinRequestService {
         JoinRequest saved = joinRequestRepository.save(joinRequest);
 
         return CreateJoinRequestResponse.from(saved, account);
+    }
+
+    // 락 내부 수락 로직 — 최신 상태 재조회 후 approve() 호출, ChatRoomMember 생성 및 정원 증가
+    private ApproveJoinRequestResponse doApproveJoinRequest(Long requestId) {
+
+        // 락 획득 후 최신 상태 재조회 — 동시 수락 시 이미 처리된 신청 차단 (CHAT_012)
+        JoinRequest joinRequest = joinRequestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
+
+        // PENDING 아니면 BusinessException(CHAT_012) 발생
+        joinRequest.approve();
+
+        ChatRoom chatRoom = chatRoomRepository.findById(joinRequest.getChatRoomId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        // currentMembers +1, 정원 도달 시 자동으로 FULL 전환
+        chatRoom.incrementMembers();
+
+        chatRoomMemberRepository.save(ChatRoomMember.ofMember(chatRoom, joinRequest.getUserId()));
+
+        return ApproveJoinRequestResponse.from(joinRequest);
     }
 }
