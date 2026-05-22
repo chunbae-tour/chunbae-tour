@@ -47,16 +47,16 @@ public class Refund extends BaseEntity {
     @Column(nullable = false, length = 20)
     private RefundStatus status;
 
-    // TODO [STORY-07]: 관리자 승인/거절 시 동시성 보호를 위해 @Version 낙관적 잠금 추가 검토.
-    //                  processedBy(관리자 ID), processedAt(처리 일시) 감사 필드도 함께 추가 예정.
-
     @Column(length = 500, nullable = false)
     private String reason;
+
+    @Column(name = "reject_reason", length = 500)
+    private String rejectReason;
 
     @Builder
     private Refund(Long paymentOrderId, Long userId, Long amount, String reason) {
         if (amount == null || amount <= 0) {
-            throw new IllegalArgumentException("환불 금액은 양수여야 합니다.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         this.paymentOrderId = paymentOrderId;
         this.userId = userId;
@@ -82,12 +82,13 @@ public class Refund extends BaseEntity {
         this.status = RefundStatus.APPROVED;
     }
 
-    /** 관리자 거절 시 상태 전이. PENDING이 아니면 PAY_020. */
-    public void reject() {
+    /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
+    public void reject(String rejectReason) {
         if (this.status != RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.REJECTED;
+        this.rejectReason = rejectReason;
     }
 
     /** 사용자 취소 시 상태 전이. PENDING이 아니면 PAY_019. */
