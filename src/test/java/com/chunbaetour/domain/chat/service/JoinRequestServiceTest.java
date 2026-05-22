@@ -3,7 +3,10 @@ package com.chunbaetour.domain.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -12,22 +15,28 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
-import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class JoinRequestServiceTest {
@@ -36,18 +45,37 @@ class JoinRequestServiceTest {
     @Mock private ChatRoomMemberRepository chatRoomMemberRepository;
     @Mock private JoinRequestRepository joinRequestRepository;
     @Mock private AccountRepository accountRepository;
+    @Mock private RedissonClient redissonClient;
+    @Mock private PlatformTransactionManager transactionManager;
+    @Mock private Account account;
 
     @InjectMocks
     private JoinRequestService joinRequestService;
 
     private static final Long USER_ID = 2L;
     private static final Long ROOM_ID = 100L;
-    private static final List<ChatMemberState> ACTIVE_STATES =
-            List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+
+    @BeforeEach
+    void setUp() throws InterruptedException {
+        // RedissonClient 분산 락 목 — 락 획득 성공, 현재 스레드 보유 상태
+        RLock lock = mock(RLock.class);
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+
+        // TransactionTemplate.execute()가 콜백을 실제로 실행하도록 TransactionStatus 목 설정
+        TransactionStatus txStatus = mock(TransactionStatus.class);
+        given(transactionManager.getTransaction(any(TransactionDefinition.class))).willReturn(txStatus);
+
+        // Account 조회는 락 밖에서 먼저 실행 — 모든 테스트에서 USER_ID 기준 스텁 필요
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+    }
 
     @Test
     void createJoinRequest_success() {
         // OPEN 방 정상 신청 — JoinRequest 저장, save() 반환 엔티티로 응답 구성
+        given(account.getNickname()).willReturn("여행초보");
+
         ChatRoom room = stubOpenRoom();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
@@ -58,10 +86,6 @@ class JoinRequestServiceTest {
         given(saved.getMessage()).willReturn("같이 가요!");
         given(saved.getStatus()).willReturn(JoinRequestStatus.PENDING);
         given(joinRequestRepository.save(any())).willReturn(saved);
-
-        Account account = mock(Account.class);
-        given(account.getNickname()).willReturn("여행초보");
-        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
 
         CreateJoinRequestResponse response = joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest("같이 가요!"));
@@ -86,7 +110,7 @@ class JoinRequestServiceTest {
     @Test
     void createJoinRequest_closedRoom_throws_CHAT_ROOM_CLOSED() {
         ChatRoom room = mock(ChatRoom.class);
-        given(room.getStatus()).willReturn(ChatRoomStatus.CLOSED);
+        doThrow(new BusinessException(ErrorCode.CHAT_ROOM_CLOSED)).when(room).validateJoinable();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
@@ -99,7 +123,7 @@ class JoinRequestServiceTest {
     @Test
     void createJoinRequest_fullRoom_throws_CHAT_ROOM_FULL() {
         ChatRoom room = mock(ChatRoom.class);
-        given(room.getStatus()).willReturn(ChatRoomStatus.FULL);
+        doThrow(new BusinessException(ErrorCode.CHAT_ROOM_FULL)).when(room).validateJoinable();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
@@ -114,8 +138,11 @@ class JoinRequestServiceTest {
         // 강퇴된 유저는 재참여 신청 불가 — CHAT_010
         ChatRoom room = stubOpenRoom();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberState(
-                ROOM_ID, USER_ID, ChatMemberState.MEMBER_KICKED)).willReturn(true);
+
+        ChatRoomMember kickedMember = mock(ChatRoomMember.class);
+        given(kickedMember.getMemberState()).willReturn(ChatMemberState.MEMBER_KICKED);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(kickedMember));
 
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
@@ -129,8 +156,11 @@ class JoinRequestServiceTest {
         // OWNER_ACTIVE or MEMBER_ACTIVE 상태면 이미 참여 중 — CHAT_003
         ChatRoom room = stubOpenRoom();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
-                ROOM_ID, USER_ID, ACTIVE_STATES)).willReturn(true);
+
+        ChatRoomMember activeMember = mock(ChatRoomMember.class);
+        given(activeMember.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(activeMember));
 
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
@@ -155,9 +185,7 @@ class JoinRequestServiceTest {
     }
 
     private ChatRoom stubOpenRoom() {
-        ChatRoom room = mock(ChatRoom.class);
-        given(room.getStatus()).willReturn(ChatRoomStatus.OPEN);
-        return room;
+        return mock(ChatRoom.class);
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {
