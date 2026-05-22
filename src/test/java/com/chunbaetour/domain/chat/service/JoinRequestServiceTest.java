@@ -74,6 +74,7 @@ class JoinRequestServiceTest {
     @Test
     void createJoinRequest_success() {
         // OPEN 방 정상 신청 — JoinRequest 저장, save() 반환 엔티티로 응답 구성
+        given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행초보");
 
         ChatRoom room = stubOpenRoom();
@@ -82,7 +83,6 @@ class JoinRequestServiceTest {
         JoinRequest saved = mock(JoinRequest.class);
         given(saved.getId()).willReturn(1L);
         given(saved.getChatRoomId()).willReturn(ROOM_ID);
-        given(saved.getUserId()).willReturn(USER_ID);
         given(saved.getMessage()).willReturn("같이 가요!");
         given(saved.getStatus()).willReturn(JoinRequestStatus.PENDING);
         given(joinRequestRepository.save(any())).willReturn(saved);
@@ -91,9 +91,9 @@ class JoinRequestServiceTest {
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest("같이 가요!"));
 
         verify(joinRequestRepository).save(any(JoinRequest.class));
-        assertThat(response.userId()).isEqualTo(USER_ID);
-        assertThat(response.status()).isEqualTo("PENDING");
-        assertThat(response.nickname()).isEqualTo("여행초보");
+        assertThat(response.writer().userId()).isEqualTo(USER_ID);
+        assertThat(response.status()).isEqualTo(JoinRequestStatus.PENDING);
+        assertThat(response.writer().nickname()).isEqualTo("여행초보");
     }
 
     @Test
