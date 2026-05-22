@@ -91,9 +91,9 @@ public class JoinRequestService {
                 .findByChatRoomIdAndStatus(chatRoomId, JoinRequestStatus.PENDING);
 
         // 신청자 ID 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
+        // pending_key unique constraint로 동일 chatRoomId+userId PENDING 중복 불가 — distinct() 생략
         List<Long> userIds = requests.stream()
                 .map(JoinRequest::getUserId)
-                .distinct()
                 .toList();
         Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));

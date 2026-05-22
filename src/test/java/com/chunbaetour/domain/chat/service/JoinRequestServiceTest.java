@@ -25,6 +25,7 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -228,34 +229,47 @@ class JoinRequestServiceTest {
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(ownerMember));
 
-        // PENDING 신청 2건 stub
-        Long applicantId = 10L;
+        // PENDING 신청 2건 — 신청자 2명 (batch 조회 검증)
+        Long applicantId1 = 10L;
+        Long applicantId2 = 11L;
+        LocalDateTime now = LocalDateTime.now();
+
         JoinRequest req1 = mock(JoinRequest.class);
         given(req1.getId()).willReturn(1L);
-        given(req1.getUserId()).willReturn(applicantId);
+        given(req1.getUserId()).willReturn(applicantId1);
         given(req1.getMessage()).willReturn("같이 가요!");
         given(req1.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req1.getCreatedAt()).willReturn(now);
 
         JoinRequest req2 = mock(JoinRequest.class);
         given(req2.getId()).willReturn(2L);
-        given(req2.getUserId()).willReturn(applicantId);
+        given(req2.getUserId()).willReturn(applicantId2);
         given(req2.getMessage()).willReturn("잘 부탁드려요");
         given(req2.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req2.getCreatedAt()).willReturn(now);
 
         given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
                 .willReturn(List.of(req1, req2));
 
-        // 신청자 계정 stub — batch 조회 결과
-        Account applicant = mock(Account.class);
-        given(applicant.getId()).willReturn(applicantId);
-        given(applicant.getNickname()).willReturn("여행좋아");
-        given(accountRepository.findAllById(List.of(applicantId))).willReturn(List.of(applicant));
+        // 신청자 2명 계정 batch 조회 stub
+        Account applicant1 = mock(Account.class);
+        given(applicant1.getId()).willReturn(applicantId1);
+        given(applicant1.getNickname()).willReturn("여행좋아");
+
+        Account applicant2 = mock(Account.class);
+        given(applicant2.getId()).willReturn(applicantId2);
+        given(applicant2.getNickname()).willReturn("동행고수");
+
+        given(accountRepository.findAllById(List.of(applicantId1, applicantId2)))
+                .willReturn(List.of(applicant1, applicant2));
 
         List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
 
         assertThat(result).hasSize(2);
-        assertThat(result.get(0).applicant().userId()).isEqualTo(applicantId);
+        assertThat(result.get(0).applicant().userId()).isEqualTo(applicantId1);
         assertThat(result.get(0).applicant().nickname()).isEqualTo("여행좋아");
+        assertThat(result.get(0).createdAt()).isEqualTo(now);
+        assertThat(result.get(1).applicant().userId()).isEqualTo(applicantId2);
         assertThat(result.get(1).message()).isEqualTo("잘 부탁드려요");
     }
 
@@ -310,7 +324,7 @@ class JoinRequestServiceTest {
 
         given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
                 .willReturn(List.of());
-        // PENDING 0건 — accountRepository.findAllById 호출되지 않음
+        // requests 빈 리스트 → userIds 빈 리스트 → findAllById(빈 리스트) 호출됨
         given(accountRepository.findAllById(List.of())).willReturn(List.of());
 
         List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
@@ -328,10 +342,12 @@ class JoinRequestServiceTest {
                 .willReturn(Optional.of(ownerMember));
 
         Long deletedUserId = 99L;
+        LocalDateTime now = LocalDateTime.now();
         JoinRequest req = mock(JoinRequest.class);
         given(req.getId()).willReturn(1L);
         given(req.getUserId()).willReturn(deletedUserId);
         given(req.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req.getCreatedAt()).willReturn(now);
 
         given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
                 .willReturn(List.of(req));
@@ -344,6 +360,7 @@ class JoinRequestServiceTest {
         // WriterInfo.from(null) → userId=null, nickname="탈퇴한 사용자"
         assertThat(result.get(0).applicant().userId()).isNull();
         assertThat(result.get(0).applicant().nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(result.get(0).createdAt()).isEqualTo(now);
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
