@@ -318,6 +318,34 @@ class JoinRequestServiceTest {
         assertThat(result).isEmpty();
     }
 
+    @Test
+    void getJoinRequests_deletedApplicant_returnsWithdrawUser() {
+        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(stubOpenRoom()));
+
+        ChatRoomMember ownerMember = mock(ChatRoomMember.class);
+        given(ownerMember.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        Long deletedUserId = 99L;
+        JoinRequest req = mock(JoinRequest.class);
+        given(req.getId()).willReturn(1L);
+        given(req.getUserId()).willReturn(deletedUserId);
+        given(req.getStatus()).willReturn(JoinRequestStatus.PENDING);
+
+        given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
+                .willReturn(List.of(req));
+        // 탈퇴 계정 — findAllById 결과에 포함되지 않음 → accountMap.get() = null
+        given(accountRepository.findAllById(List.of(deletedUserId))).willReturn(List.of());
+
+        List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
+
+        assertThat(result).hasSize(1);
+        // WriterInfo.from(null) → userId=null, nickname="탈퇴한 사용자"
+        assertThat(result.get(0).applicant().userId()).isNull();
+        assertThat(result.get(0).applicant().nickname()).isEqualTo("탈퇴한 사용자");
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     private ChatRoom stubOpenRoom() {
