@@ -33,7 +33,6 @@ public class JoinRequestService {
             List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
     private static final String LOCK_KEY_FORMAT = "chatroom:lock:%d";
     private static final long LOCK_WAIT_SECONDS = 3L;
-    private static final long LOCK_LEASE_SECONDS = 5L;
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
@@ -54,7 +53,8 @@ public class JoinRequestService {
         // chatRoomId 단위 분산 락 — 상태 확인~저장 임계구역 직렬화로 TOCTOU 방지
         RLock lock = redissonClient.getLock(LOCK_KEY_FORMAT.formatted(chatRoomId));
         try {
-            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
+            // leaseTime = -1 → Redisson watchdog 활성화, 스레드 종료 전까지 자동 갱신
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, -1L, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
             // 트랜잭션 커밋이 락 해제 전에 완료되도록 TransactionTemplate 사용
@@ -70,6 +70,7 @@ public class JoinRequestService {
         }
     }
 
+    // 락 내부 실제 비즈니스 로직 — TransactionTemplate으로 호출해 트랜잭션 커밋이 락 해제 전에 완료됨을 보장
     private CreateJoinRequestResponse doCreateJoinRequest(
             Long userId, Long chatRoomId, CreateJoinRequestRequest request, Account account) {
 

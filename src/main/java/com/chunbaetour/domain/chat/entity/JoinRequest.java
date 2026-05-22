@@ -72,6 +72,7 @@ public class JoinRequest extends BaseEntity {
         this.pendingKey = null;
     }
 
+    // approve()와 동일한 PENDING 전이 규칙 — 이미 처리된 신청 재거절 차단 (CHAT_012)
     public void reject() {
         if (!isPending()) {
             throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);

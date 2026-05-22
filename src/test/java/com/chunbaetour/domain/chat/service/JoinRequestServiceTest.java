@@ -48,6 +48,7 @@ class JoinRequestServiceTest {
     @Mock private RedissonClient redissonClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private Account account;
+    @Mock private RLock lock;
 
     @InjectMocks
     private JoinRequestService joinRequestService;
@@ -57,23 +58,24 @@ class JoinRequestServiceTest {
 
     @BeforeEach
     void setUp() throws InterruptedException {
-        // RedissonClient 분산 락 목 — 락 획득 성공, 현재 스레드 보유 상태
-        RLock lock = mock(RLock.class);
-        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
-        given(lock.isHeldByCurrentThread()).willReturn(true);
+        // 락 실패/인터럽트 테스트에서 override됨 — lenient 처리
+        org.mockito.Mockito.lenient()
+                .when(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        org.mockito.Mockito.lenient()
+                .when(lock.isHeldByCurrentThread()).thenReturn(true);
         given(redissonClient.getLock(anyString())).willReturn(lock);
 
-        // TransactionTemplate.execute()가 콜백을 실제로 실행하도록 TransactionStatus 목 설정
+        // 락 실패 테스트에서 TransactionTemplate 미도달 — lenient 처리
         TransactionStatus txStatus = mock(TransactionStatus.class);
-        given(transactionManager.getTransaction(any(TransactionDefinition.class))).willReturn(txStatus);
+        org.mockito.Mockito.lenient()
+                .when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(txStatus);
 
-        // Account 조회는 락 밖에서 먼저 실행 — 모든 테스트에서 USER_ID 기준 스텁 필요
         given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
     }
 
     @Test
     void createJoinRequest_success() {
-        // OPEN 방 정상 신청 — JoinRequest 저장, save() 반환 엔티티로 응답 구성
         given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행초보");
 
@@ -94,6 +96,31 @@ class JoinRequestServiceTest {
         assertThat(response.writer().userId()).isEqualTo(USER_ID);
         assertThat(response.status()).isEqualTo(JoinRequestStatus.PENDING);
         assertThat(response.writer().nickname()).isEqualTo("여행초보");
+    }
+
+    @Test
+    void createJoinRequest_lockFailed_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.createJoinRequest(
+                USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+    }
+
+    @Test
+    void createJoinRequest_interrupted_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class)))
+                .willThrow(new InterruptedException());
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.createJoinRequest(
+                USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
     }
 
     @Test
@@ -135,7 +162,6 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_kickedUser_throws_CHAT_MEMBER_KICKED_REJOIN() {
-        // 강퇴된 유저는 재참여 신청 불가 — CHAT_010
         ChatRoom room = stubOpenRoom();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
@@ -153,7 +179,6 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_alreadyMember_throws_ALREADY_JOINED_CHAT() {
-        // OWNER_ACTIVE or MEMBER_ACTIVE 상태면 이미 참여 중 — CHAT_003
         ChatRoom room = stubOpenRoom();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
@@ -171,7 +196,6 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_duplicateRequest_throws_ALREADY_APPLIED_CHAT() {
-        // PENDING 신청이 이미 존재 — 중복 신청 차단 CHAT_004
         ChatRoom room = stubOpenRoom();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
         given(joinRequestRepository.existsByChatRoomIdAndUserIdAndStatus(

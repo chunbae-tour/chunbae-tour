@@ -14,6 +14,7 @@ public record CreateJoinRequestResponse(
         JoinRequestStatus status,
         LocalDateTime createdAt
 ) {
+    // WriterInfo.from() — 탈퇴 계정 null 처리 포함, Community 도메인과 동일 작성자 정보 패턴
     public static CreateJoinRequestResponse from(JoinRequest request, Account account) {
         return new CreateJoinRequestResponse(
                 request.getId(),
