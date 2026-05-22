@@ -16,7 +16,7 @@ import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.comment.service.CommentService;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.List;
@@ -101,7 +101,7 @@ class CommentServiceTest {
                 .willReturn(List.of());
         given(accountRepository.findAllById(any())).willReturn(List.of());
 
-        CursorPage<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
+        CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 
         assertThat(result.content()).isEmpty();
         assertThat(result.hasNext()).isFalse();
@@ -121,7 +121,7 @@ class CommentServiceTest {
                 .willReturn(comments);
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        CursorPage<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
+        CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 
         assertThat(result.content()).hasSize(10);
         assertThat(result.hasNext()).isTrue();
