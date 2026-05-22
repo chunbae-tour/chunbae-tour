@@ -139,7 +139,7 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("PG 취소 실패 시 예외 전파 — 실제 트랜잭션 환경에서는 DB 롤백됨")
+    @DisplayName("PG 취소 실패 시 예외 전파")
     void approveRefund_pg_cancel_fails_throws() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
