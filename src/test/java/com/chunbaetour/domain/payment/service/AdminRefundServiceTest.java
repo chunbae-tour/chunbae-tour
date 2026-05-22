@@ -49,6 +49,9 @@ class AdminRefundServiceTest {
     @Mock
     private WalletService walletService;
 
+    @Mock
+    private IdempotencyService idempotencyService;
+
     @InjectMocks
     private AdminRefundService adminRefundService;
 
@@ -56,6 +59,7 @@ class AdminRefundServiceTest {
     private static final Long ORDER_ID = 100L;
     private static final Long USER_ID = 1L;
     private static final Long AMOUNT = 10_000L;
+    private static final String IDEM_KEY = "test-idem-key";
 
     private Refund makePendingRefund() {
         Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "단순 변심");
@@ -76,28 +80,30 @@ class AdminRefundServiceTest {
     // ──────────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("환불 승인 성공: PG 취소 → 엽전 차감 → 상태 APPROVED")
+    @DisplayName("환불 승인 성공: 엽전 차감 → 상태 APPROVED → PG 취소")
     void approveRefund_success() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
         willDoNothing().given(walletService).refund(any(), any(), any());
+        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
 
-        RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID);
+        RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID, IDEM_KEY);
 
-        verify(paymentGatewayClient).cancelPayment(eq("pg-txn-123"), eq(AMOUNT), any());
         verify(walletService).refund(USER_ID, AMOUNT, ORDER_ID);
+        verify(paymentGatewayClient).cancelPayment(eq("pg-txn-123"), eq(AMOUNT), any());
         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
     }
 
     @Test
     @DisplayName("존재하지 않는 환불 ID 승인 시 REFUND_NOT_FOUND 예외")
     void approveRefund_refund_not_found() {
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID, IDEM_KEY))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_NOT_FOUND);
@@ -110,12 +116,31 @@ class AdminRefundServiceTest {
     void approveRefund_not_pending_throws() {
         Refund refund = makePendingRefund();
         refund.approve(); // APPROVED로 전이
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
 
-        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID, IDEM_KEY))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("PaymentOrder가 COMPLETED 아닐 때 REFUND_NOT_ELIGIBLE 예외")
+    void approveRefund_order_not_completed_throws() {
+        Refund refund = makePendingRefund();
+        PaymentOrder order = makeCompletedOrder();
+        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.CANCELLED);
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID, IDEM_KEY))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.REFUND_NOT_ELIGIBLE);
 
         verifyNoInteractions(paymentGatewayClient, walletService);
     }
@@ -125,12 +150,13 @@ class AdminRefundServiceTest {
     void approveRefund_insufficient_wallet_throws() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         willThrow(new BusinessException(ErrorCode.INSUFFICIENT_BALANCE))
                 .given(walletService).refund(any(), any(), any());
 
-        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID, IDEM_KEY))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
@@ -146,9 +172,10 @@ class AdminRefundServiceTest {
     @DisplayName("환불 거절 성공: 상태 REJECTED, PG 호출 없음")
     void rejectRefund_success() {
         Refund refund = makePendingRefund();
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
 
-        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID);
+        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID, IDEM_KEY);
 
         assertThat(response.status()).isEqualTo(RefundStatus.REJECTED);
         verifyNoInteractions(paymentGatewayClient, walletService);
@@ -159,9 +186,10 @@ class AdminRefundServiceTest {
     void rejectRefund_not_pending_throws() {
         Refund refund = makePendingRefund();
         refund.reject(); // 이미 REJECTED
+        willDoNothing().given(idempotencyService).checkAndMark(IDEM_KEY);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
 
-        assertThatThrownBy(() -> adminRefundService.rejectRefund(REFUND_ID))
+        assertThatThrownBy(() -> adminRefundService.rejectRefund(REFUND_ID, IDEM_KEY))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
@@ -206,12 +234,12 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("잘못된 cursor 형식 디코딩 시 INVALID_REQUEST 예외")
+    @DisplayName("잘못된 cursor 형식 디코딩 시 INVALID_CURSOR 예외")
     void getRefunds_invalid_cursor_throws() {
         assertThatThrownBy(() -> adminRefundService.getRefunds("!!invalid!!", 10))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST);
+                .isEqualTo(ErrorCode.INVALID_CURSOR);
     }
 
     @Test
