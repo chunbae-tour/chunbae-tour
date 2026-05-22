@@ -3,6 +3,7 @@ package com.chunbaetour.domain.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -221,7 +222,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_success_returnsPendingList() {
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(stubOpenRoom()));
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         // 방장 멤버 stub
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
@@ -248,7 +249,7 @@ class JoinRequestServiceTest {
         given(req2.getStatus()).willReturn(JoinRequestStatus.PENDING);
         given(req2.getCreatedAt()).willReturn(now);
 
-        given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
+        given(joinRequestRepository.findByChatRoomIdAndStatusOrderByCreatedAtAsc(ROOM_ID, JoinRequestStatus.PENDING))
                 .willReturn(List.of(req1, req2));
 
         // 신청자 2명 계정 batch 조회 stub
@@ -260,11 +261,12 @@ class JoinRequestServiceTest {
         given(applicant2.getId()).willReturn(applicantId2);
         given(applicant2.getNickname()).willReturn("동행고수");
 
-        given(accountRepository.findAllById(List.of(applicantId1, applicantId2)))
+        given(accountRepository.findAllById(anyList()))
                 .willReturn(List.of(applicant1, applicant2));
 
         List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
 
+        verify(accountRepository).findAllById(List.of(applicantId1, applicantId2));
         assertThat(result).hasSize(2);
         assertThat(result.get(0).applicant().userId()).isEqualTo(applicantId1);
         assertThat(result.get(0).applicant().nickname()).isEqualTo("여행좋아");
@@ -275,7 +277,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.empty());
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
 
         assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
@@ -285,7 +287,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(stubOpenRoom()));
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         // 방장이 아닌 일반 멤버
         ChatRoomMember regularMember = mock(ChatRoomMember.class);
@@ -301,7 +303,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_notMember_throws_CHAT_SETTING_FORBIDDEN() {
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(stubOpenRoom()));
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         // 채팅방 멤버 아님
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
@@ -315,14 +317,14 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_emptyList_returnsEmpty() {
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(stubOpenRoom()));
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
         given(ownerMember.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(ownerMember));
 
-        given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
+        given(joinRequestRepository.findByChatRoomIdAndStatusOrderByCreatedAtAsc(ROOM_ID, JoinRequestStatus.PENDING))
                 .willReturn(List.of());
         // requests 빈 리스트 → userIds 빈 리스트 → findAllById(빈 리스트) 호출됨
         given(accountRepository.findAllById(List.of())).willReturn(List.of());
@@ -334,7 +336,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_deletedApplicant_returnsWithdrawUser() {
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(stubOpenRoom()));
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
         given(ownerMember.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
@@ -349,7 +351,7 @@ class JoinRequestServiceTest {
         given(req.getStatus()).willReturn(JoinRequestStatus.PENDING);
         given(req.getCreatedAt()).willReturn(now);
 
-        given(joinRequestRepository.findByChatRoomIdAndStatus(ROOM_ID, JoinRequestStatus.PENDING))
+        given(joinRequestRepository.findByChatRoomIdAndStatusOrderByCreatedAtAsc(ROOM_ID, JoinRequestStatus.PENDING))
                 .willReturn(List.of(req));
         // 탈퇴 계정 — findAllById 결과에 포함되지 않음 → accountMap.get() = null
         given(accountRepository.findAllById(List.of(deletedUserId))).willReturn(List.of());

@@ -79,8 +79,9 @@ public class JoinRequestService {
     // 방장만 조회 가능 — OWNER_ACTIVE 여부로 권한 확인 후 PENDING 목록 반환
     // N+1 방지: userId 목록 추출 후 findAllById로 계정 일괄 조회
     public List<JoinRequestResponse> getJoinRequests(Long userId, Long chatRoomId) {
-        chatRoomRepository.findById(chatRoomId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+        if (!chatRoomRepository.existsById(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
 
         // 방장 권한 확인 — OWNER_ACTIVE가 아니면 열람 불가 (CHAT_006)
         chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, userId)
@@ -88,7 +89,7 @@ public class JoinRequestService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
 
         List<JoinRequest> requests = joinRequestRepository
-                .findByChatRoomIdAndStatus(chatRoomId, JoinRequestStatus.PENDING);
+                .findByChatRoomIdAndStatusOrderByCreatedAtAsc(chatRoomId, JoinRequestStatus.PENDING);
 
         // 신청자 ID 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
         // pending_key unique constraint로 동일 chatRoomId+userId PENDING 중복 불가 — distinct() 생략
