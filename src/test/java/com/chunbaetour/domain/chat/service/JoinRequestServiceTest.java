@@ -8,7 +8,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.auth.Account;
@@ -66,22 +68,21 @@ class JoinRequestServiceTest {
     @BeforeEach
     void setUp() throws InterruptedException {
         // 락 실패/인터럽트 테스트에서 override됨 — lenient 처리
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(lock.isHeldByCurrentThread()).thenReturn(true);
-        // getJoinRequests/approveJoinRequest 테스트에서 미사용 — lenient 처리
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(redissonClient.getLock(anyString())).thenReturn(lock);
 
         // 락 실패 테스트에서 TransactionTemplate 미도달 — lenient 처리
         TransactionStatus txStatus = mock(TransactionStatus.class);
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(txStatus);
 
         // approveJoinRequest 테스트에서 미사용 — lenient 처리
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(accountRepository.findById(USER_ID)).thenReturn(Optional.of(account));
     }
 
@@ -417,7 +418,7 @@ class JoinRequestServiceTest {
         joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
 
         verify(leftMember).reactivate();
-        verify(chatRoomMemberRepository, org.mockito.Mockito.never()).save(any(ChatRoomMember.class));
+        verify(chatRoomMemberRepository, never()).save(any(ChatRoomMember.class));
     }
 
     @Test
@@ -435,12 +436,12 @@ class JoinRequestServiceTest {
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
 
+        // OWNER_ID가 MEMBER_ACTIVE 상태 — isOwner() false 기본값
         ChatRoomMember member = mock(ChatRoomMember.class);
-        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
-        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
                 .willReturn(Optional.of(member));
 
-        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(USER_ID, ROOM_ID, REQUEST_ID))
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
@@ -489,13 +490,13 @@ class JoinRequestServiceTest {
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(ROOM_ID);
         // approve() 예외 또는 락 실패 시 getUserId() 미호출 — lenient 처리
-        org.mockito.Mockito.lenient().when(req.getUserId()).thenReturn(USER_ID);
+        lenient().when(req.getUserId()).thenReturn(USER_ID);
         return req;
     }
 
     private ChatRoomMember stubOwnerMember() {
         ChatRoomMember owner = mock(ChatRoomMember.class);
-        given(owner.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(owner.isOwner()).willReturn(true);
         return owner;
     }
 
