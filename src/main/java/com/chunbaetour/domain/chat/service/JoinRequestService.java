@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
@@ -83,9 +84,9 @@ public class JoinRequestService {
             throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
         }
 
-        // 방장 권한 확인 — OWNER_ACTIVE가 아니면 열람 불가 (CHAT_006)
+        // 방장 권한 확인 — isOwner()가 아니면 열람 불가 (CHAT_006)
         chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, userId)
-                .filter(m -> m.getMemberState() == ChatMemberState.OWNER_ACTIVE)
+                .filter(ChatRoomMember::isOwner)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
 
         List<JoinRequest> requests = joinRequestRepository

@@ -116,7 +116,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
     }
 
@@ -129,7 +129,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
     }
 
@@ -140,7 +140,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
@@ -153,7 +153,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_CLOSED);
     }
 
@@ -166,7 +166,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_FULL);
     }
 
@@ -183,7 +183,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_MEMBER_KICKED_REJOIN);
     }
 
@@ -200,7 +200,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.ALREADY_JOINED_CHAT);
     }
 
@@ -214,7 +214,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest(null)))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.ALREADY_APPLIED_CHAT);
     }
 
@@ -226,7 +226,7 @@ class JoinRequestServiceTest {
 
         // 방장 멤버 stub
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
-        given(ownerMember.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(ownerMember.isOwner()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(ownerMember));
 
@@ -272,6 +272,7 @@ class JoinRequestServiceTest {
         assertThat(result.get(0).applicant().nickname()).isEqualTo("여행좋아");
         assertThat(result.get(0).createdAt()).isEqualTo(now);
         assertThat(result.get(1).applicant().userId()).isEqualTo(applicantId2);
+        assertThat(result.get(1).applicant().nickname()).isEqualTo("동행고수");
         assertThat(result.get(1).message()).isEqualTo("잘 부탁드려요");
     }
 
@@ -281,7 +282,7 @@ class JoinRequestServiceTest {
 
         assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
@@ -289,15 +290,14 @@ class JoinRequestServiceTest {
     void getJoinRequests_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
-        // 방장이 아닌 일반 멤버
+        // 방장이 아닌 일반 멤버 — isOwner() false 기본값
         ChatRoomMember regularMember = mock(ChatRoomMember.class);
-        given(regularMember.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(regularMember));
 
         assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
     }
 
@@ -311,7 +311,7 @@ class JoinRequestServiceTest {
 
         assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
     }
 
@@ -320,7 +320,7 @@ class JoinRequestServiceTest {
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
-        given(ownerMember.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(ownerMember.isOwner()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(ownerMember));
 
@@ -339,7 +339,7 @@ class JoinRequestServiceTest {
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
-        given(ownerMember.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(ownerMember.isOwner()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(ownerMember));
 
