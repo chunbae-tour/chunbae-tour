@@ -68,6 +68,8 @@ public class AdminRefundService {
         order.cancel();
 
         // PG 환불 요청 — DB 작업 완료 후 마지막 호출 (PG 실패 시 @Transactional 롤백으로 DB 원복)
+        // 트레이드오프: Wallet SELECT FOR UPDATE 락이 PG 응답 대기 중에도 유지됨 (트랜잭션 경계 내)
+        //              PG 응답이 느릴 경우 락 점유 시간 증가 → 허용 가능한 수준으로 판단 (관리자 단일 처리)
         paymentGatewayClient.cancelPayment(
                 order.getPgTransactionId(),
                 refund.getAmount(),

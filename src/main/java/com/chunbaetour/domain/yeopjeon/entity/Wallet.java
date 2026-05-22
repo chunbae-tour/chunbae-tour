@@ -48,10 +48,13 @@ public class Wallet extends BaseEntity {
         this.balance += amount;
     }
 
-    /** 엽전 차감. 잔액 부족 여부는 호출자(WalletService)가 사전에 확인 후 호출. */
+    /** 엽전 차감. 잔액 부족 시 IllegalArgumentException — WalletService가 사전 확인하지만 엔티티도 자체 방어. */
     public void debit(long amount) {
         if (amount <= 0) {
             throw new IllegalArgumentException("amount must be positive");
+        }
+        if (this.balance < amount) {
+            throw new IllegalArgumentException("insufficient balance");
         }
         this.balance -= amount;
     }
