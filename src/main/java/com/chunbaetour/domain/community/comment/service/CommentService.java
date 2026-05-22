@@ -40,6 +40,7 @@ public class CommentService {
     @Transactional(readOnly = true)
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
         Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
+        // size + 1개 조회: 별도 COUNT 쿼리 없이 다음 페이지 존재 여부를 판단하기 위함
         List<Comment> comments = commentRepository.findByPost(
                 postId, postType, CommentStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
@@ -50,6 +51,7 @@ public class CommentService {
                 ? CursorUtils.encode(content.get(content.size() - 1).getId())
                 : null;
 
+        // authorId를 Set으로 모아 한 번에 조회 — 댓글마다 개별 조회 시 N+1 발생
         Set<Long> authorIds = content.stream().map(Comment::getAuthorId).collect(Collectors.toSet());
         Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));

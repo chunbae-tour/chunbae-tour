@@ -53,6 +53,7 @@ public class Comment {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    // soft delete 시각 기록 — status=DELETED로 숨기되 행은 보존 (대댓글 parent 참조 무결성 유지)
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
