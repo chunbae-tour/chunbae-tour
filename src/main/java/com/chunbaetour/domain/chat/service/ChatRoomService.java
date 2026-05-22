@@ -13,6 +13,8 @@ import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -33,12 +35,16 @@ public class ChatRoomService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final CompanionPostRepository companionPostRepository;
 
     @Transactional
     public CreateChatRoomResponse createRoom(Long userId, CreateChatRoomRequest request) {
-        // TODO: Post 도메인 연동 후 게시글 작성자 검증 추가
-        // Post post = postRepository.findById(request.postId()).orElseThrow(() -> new BusinessException(POST_NOT_FOUND));
-        // if (!post.getUserId().equals(userId)) throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        // 채팅방은 동행 게시글 작성자만 개설 가능 — 게시글 존재 확인 후 작성자 일치 여부 검증
+        CompanionPost post = companionPostRepository.findById(request.postId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
+        if (!post.isOwnedBy(userId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
 
         ChatRoom chatRoom = ChatRoom.createWithOwner(
                 request.postId(),
@@ -104,6 +110,30 @@ public class ChatRoomService {
             if (refreshed.getStatus() == ChatRoomStatus.CLOSED) {
                 throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
             }
+            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        }
+    }
+
+    @Transactional
+    public void leaveRoom(Long userId, Long roomId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        // 해당 방에서 요청자의 멤버 레코드 조회 — ACTIVE/INACTIVE 관계없이 레코드 존재 여부 먼저 확인
+        // 상태별 검증(OWNER_ACTIVE → CHAT_015, LEFT/KICKED → CHAT_016)은 leave() 내부에서 수행됨
+        ChatRoomMember member = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+
+        member.leave();
+
+        // 퇴장으로 현재 인원 감소 — FULL 상태였으면 자동으로 OPEN 전환
+        chatRoom.decrementMembers();
+
+        // saveAndFlush로 커밋 전 DB 쓰기를 강제해 낙관적 잠금 실패를 메서드 내부에서 처리
+        // closeRoom과 동일한 패턴 — 트랜잭션 커밋 시 래핑 예외로 매핑 누락되는 케이스 방지
+        try {
+            chatRoomRepository.saveAndFlush(chatRoom);
+        } catch (ObjectOptimisticLockingFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
     }
