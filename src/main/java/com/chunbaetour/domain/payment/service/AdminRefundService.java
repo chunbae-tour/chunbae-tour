@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 관리자 환불 처리 서비스 (STORY-07).
- * 승인: PG 취소 → 엽전 차감 → 이력 저장 → 상태 전이.
+ * 승인: 엽전 차감 → 상태 전이 → PG 취소 (PG 실패 시 @Transactional 롤백으로 DB 원복).
  * 거절: Refund 상태만 REJECTED로 변경.
  * 락 획득 순서: Refund → PaymentOrder → Wallet (데드락 방지).
  */
@@ -37,29 +37,22 @@ public class AdminRefundService {
 
     /**
      * 환불 승인.
-     * PG 취소 후 DB 업데이트. PG 실패 시 전체 롤백.
+     * DB 업데이트 후 PG 취소. PG 실패 시 @Transactional 롤백으로 DB 원복.
      */
     @Transactional
     public RefundDetailResponse approveRefund(Long refundId) {
         // Refund 비관적 락 획득 (동시 승인/거절 방지)
         Refund refund = refundRepository.findByIdWithLock(refundId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
         // PENDING 상태만 처리 가능 (이미 승인/거절된 요청 방지)
         if (refund.getStatus() != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
 
         // PaymentOrder 비관적 락 획득 (Refund 락 후 획득, 순서 일관성 유지)
         PaymentOrder order = paymentOrderRepository.findByIdWithLock(refund.getPaymentOrderId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
-
-        // PG 환불 요청 (포트원 결제 취소 API 호출)
-        paymentGatewayClient.cancelPayment(
-                order.getPgTransactionId(),
-                refund.getAmount(),
-                refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
-        );
 
         // 유저 엽전 차감 + 환불 이력 저장 (잔액 부족 시 PAY_001)
         walletService.refund(refund.getUserId(), refund.getAmount(), refund.getPaymentOrderId());
@@ -67,6 +60,13 @@ public class AdminRefundService {
         // 상태 전이
         refund.approve();
         order.cancel();
+
+        // PG 환불 요청 — DB 작업 완료 후 마지막 호출 (PG 실패 시 @Transactional 롤백으로 DB 원복)
+        paymentGatewayClient.cancelPayment(
+                order.getPgTransactionId(),
+                refund.getAmount(),
+                refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
+        );
 
         return RefundDetailResponse.from(refund);
     }
@@ -79,11 +79,11 @@ public class AdminRefundService {
     public RefundDetailResponse rejectRefund(Long refundId) {
         // Refund 비관적 락 획득
         Refund refund = refundRepository.findByIdWithLock(refundId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
         // PENDING 상태만 처리 가능
         if (refund.getStatus() != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
 
         refund.reject();

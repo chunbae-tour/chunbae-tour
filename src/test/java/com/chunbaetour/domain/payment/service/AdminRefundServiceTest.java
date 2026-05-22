@@ -93,20 +93,20 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("존재하지 않는 환불 ID 승인 시 PAYMENT_HISTORY_NOT_FOUND 예외")
+    @DisplayName("존재하지 않는 환불 ID 승인 시 REFUND_NOT_FOUND 예외")
     void approveRefund_refund_not_found() {
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+                .isEqualTo(ErrorCode.REFUND_NOT_FOUND);
 
         verifyNoInteractions(paymentGatewayClient, walletService);
     }
 
     @Test
-    @DisplayName("PENDING이 아닌 환불 승인 시 DUPLICATE_PAYMENT_REQUEST 예외")
+    @DisplayName("PENDING이 아닌 환불 승인 시 REFUND_INVALID_STATUS_TRANSITION 예외")
     void approveRefund_not_pending_throws() {
         Refund refund = makePendingRefund();
         refund.approve(); // APPROVED로 전이
@@ -115,19 +115,18 @@ class AdminRefundServiceTest {
         assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+                .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
 
         verifyNoInteractions(paymentGatewayClient, walletService);
     }
 
     @Test
-    @DisplayName("엽전 잔액 부족 시 INSUFFICIENT_BALANCE 예외 — PG 취소는 이미 실행됨")
+    @DisplayName("엽전 잔액 부족 시 INSUFFICIENT_BALANCE 예외 — PG 호출 없음 (DB 작업 롤백)")
     void approveRefund_insufficient_wallet_throws() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
         willThrow(new BusinessException(ErrorCode.INSUFFICIENT_BALANCE))
                 .given(walletService).refund(any(), any(), any());
 
@@ -135,6 +134,8 @@ class AdminRefundServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
+
+        verifyNoInteractions(paymentGatewayClient);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -154,7 +155,7 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("PENDING이 아닌 환불 거절 시 DUPLICATE_PAYMENT_REQUEST 예외")
+    @DisplayName("PENDING이 아닌 환불 거절 시 REFUND_INVALID_STATUS_TRANSITION 예외")
     void rejectRefund_not_pending_throws() {
         Refund refund = makePendingRefund();
         refund.reject(); // 이미 REJECTED
@@ -163,7 +164,7 @@ class AdminRefundServiceTest {
         assertThatThrownBy(() -> adminRefundService.rejectRefund(REFUND_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+                .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
