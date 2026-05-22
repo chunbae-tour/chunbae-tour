@@ -12,13 +12,20 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "join_requests")
+@Table(
+    name = "join_requests",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_join_requests_room_pending_user",
+        columnNames = {"chat_room_id", "pending_key"}
+    )
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class JoinRequest extends BaseEntity {
@@ -40,6 +47,10 @@ public class JoinRequest extends BaseEntity {
     @Column(nullable = false, length = 20)
     private JoinRequestStatus status;
 
+    // MySQL partial index 미지원 우회 — PENDING일 때만 userId 세팅, 처리 완료 시 null로 unique 제약 해제
+    @Column(name = "pending_key")
+    private Long pendingKey;
+
     @Builder
     private JoinRequest(Long chatRoomId, Long userId, String message) {
         if (chatRoomId == null || userId == null) {
@@ -49,6 +60,7 @@ public class JoinRequest extends BaseEntity {
         this.userId = userId;
         this.message = message;
         this.status = JoinRequestStatus.PENDING;
+        this.pendingKey = userId;
     }
 
     // PENDING 상태에서만 전이 허용 — 이미 처리된 신청 재처리 차단 (CHAT_012)
@@ -57,13 +69,16 @@ public class JoinRequest extends BaseEntity {
             throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
         }
         this.status = JoinRequestStatus.APPROVED;
+        this.pendingKey = null;
     }
 
+    // approve()와 동일한 PENDING 전이 규칙 — 이미 처리된 신청 재거절 차단 (CHAT_012)
     public void reject() {
         if (!isPending()) {
             throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
         }
         this.status = JoinRequestStatus.REJECTED;
+        this.pendingKey = null;
     }
 
     // 중복 처리 방지용 선행 체크 — approve/reject 호출 전 반드시 검사
