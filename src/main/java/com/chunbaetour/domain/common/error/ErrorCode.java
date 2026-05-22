@@ -110,11 +110,6 @@ public enum ErrorCode {
     INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
     SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다."),
 
-    // ===== COMMUNITY (담당: 박경화) =====
-    COMMUNITY_001(HttpStatus.NOT_FOUND,  "COMMUNITY_001", "게시글을 찾을 수 없습니다."),
-    COMMUNITY_002(HttpStatus.FORBIDDEN,  "COMMUNITY_002", "게시글 수정 권한이 없습니다."),
-    COMMUNITY_003(HttpStatus.FORBIDDEN,  "COMMUNITY_003", "게시글 삭제 권한이 없습니다."),
-
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
     CHAT_ROOM_FULL(HttpStatus.CONFLICT,                     "CHAT_002", "채팅방 정원이 가득 찼습니다."),

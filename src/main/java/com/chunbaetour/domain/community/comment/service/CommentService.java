@@ -11,6 +11,7 @@ import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.common.service.PostQueryService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
@@ -29,9 +30,11 @@ public class CommentService {
 
     private final CommentRepository commentRepository;
     private final AccountRepository accountRepository;
+    private final PostQueryService postQueryService;
 
     @Transactional
     public CommentCreateResponse create(Long authorId, Long postId, PostType postType, CommentCreateRequest request) {
+        postQueryService.validateCommentable(postId, postType);
         Account author = findAccount(authorId);
         Comment comment = Comment.create(postId, postType, authorId, request.content());
         return CommentCreateResponse.of(commentRepository.save(comment), author);
@@ -39,6 +42,7 @@ public class CommentService {
 
     @Transactional(readOnly = true)
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
+        postQueryService.validateExists(postId, postType);
         Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
         // size + 1개 조회: 별도 COUNT 쿼리 없이 다음 페이지 존재 여부를 판단하기 위함
         List<Comment> comments = commentRepository.findByPost(

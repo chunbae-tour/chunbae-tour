@@ -14,6 +14,7 @@ import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.comment.service.CommentService;
+import com.chunbaetour.domain.community.common.service.PostQueryService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import java.util.List;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -34,6 +35,9 @@ class CommentServiceTest {
 
     @Mock
     private AccountRepository accountRepository;
+
+    @Mock
+    private PostQueryService postQueryService;
 
     @InjectMocks
     private CommentService commentService;
