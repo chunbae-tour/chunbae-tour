@@ -59,11 +59,12 @@ public class WalletService {
     }
 
     /**
-     * 환불 승인 시 엽전 차감 + 환불 이력 저장.
+     * 환불 승인 시 엽전 회수(차감) + 환불 이력 저장.
+     * 충전과 반대 방향: PG가 실제 돈을 카드로 돌려주고, 앱은 엽전을 회수한다.
      * 락 획득 순서: Refund → PaymentOrder → Wallet (호출자 AdminRefundService가 준수해야 데드락 방지).
      */
     @Transactional
-    public void refund(Long userId, Long amount, Long paymentOrderId) {
+    public void reclaimForRefund(Long userId, Long amount, Long paymentOrderId) {
         // SELECT FOR UPDATE로 지갑 행 락 획득
         Wallet wallet = walletRepository.findByUserIdWithLock(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));

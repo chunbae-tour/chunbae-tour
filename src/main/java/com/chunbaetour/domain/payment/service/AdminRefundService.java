@@ -9,7 +9,6 @@ import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.entity.Refund;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.repository.RefundRepository;
-import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +17,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +31,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 거절: Refund 상태만 REJECTED로 변경.
  * 락 획득 순서: Refund → PaymentOrder → Wallet (데드락 방지).
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -64,24 +65,20 @@ public class AdminRefundService {
         PaymentOrder order = paymentOrderRepository.findByIdWithLock(refund.getPaymentOrderId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        // COMPLETED 상태만 환불 가능 (이미 취소된 주문 방지)
-        if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
-            throw new BusinessException(ErrorCode.REFUND_NOT_ELIGIBLE);
-        }
-
-        // 유저 엽전 차감 + 환불 이력 저장 (잔액 부족 시 PAY_001)
-        walletService.refund(refund.getUserId(), refund.getAmount(), refund.getPaymentOrderId());
-
-        // 상태 전이
+        // 상태 전이 — order.cancel() 내부에서 COMPLETED 가드 수행, 엔티티가 불변성 소유
+        // wallet 연산 전에 먼저 수행해 불필요한 wallet 호출 차단
         refund.approve();
         order.cancel();
+
+        // 엽전 회수 + 이력 저장 (잔액 부족 시 PAY_001)
+        walletService.reclaimForRefund(refund.getUserId(), refund.getAmount(), refund.getPaymentOrderId());
 
         // PG 취소는 DB 커밋 확정 후 실행 — "PG 성공 후 커밋 실패" 시 상태 불일치 방지
         // 트랜잭션 없는 컨텍스트(단위 테스트 등)에서는 즉시 실행
         String pgTxId = order.getPgTransactionId();
         Long refundAmount = refund.getAmount();
         String reason = refund.getReason() != null ? refund.getReason() : "관리자 환불 승인";
-        schedulePgCancel(pgTxId, refundAmount, reason);
+        schedulePgCancel(refundId, pgTxId, refundAmount, reason);
 
         return RefundDetailResponse.from(refund);
     }
@@ -138,24 +135,36 @@ public class AdminRefundService {
             }
             return Long.parseLong(matcher.group(1));
         } catch (IllegalArgumentException e) {
+            // Base64 디코딩 오류(IllegalArgumentException)와 숫자 파싱 오류(NumberFormatException, 하위 클래스)
+            // 모두 "잘못된 커서"로 동일하게 처리 — 의도된 묶음
             throw new BusinessException(ErrorCode.INVALID_CURSOR);
         }
     }
 
     // TODO [FUTURE]: PG 취소가 afterCommit에서 실패하면 DB는 APPROVED로 커밋된 채 실제 환불 미발생 → 금전 불일치.
     //   장기적으로 Transactional Outbox(outbox_events 테이블 + 워커 재시도 + PG 멱등키) 또는
-    //   Saga 보상 트랜잭션으로 해결 필요. 현재는 관리자 수동 모니터링으로 대응(관리자 단일 처리 환경).
+    //   Saga 보상 트랜잭션으로 해결 필요. 현재는 log.error 알람 + 관리자 수동 대응(관리자 단일 처리 환경).
     /** DB 커밋 확정 후 PG 취소 예약. 트랜잭션 없는 컨텍스트(단위 테스트 등)에서는 즉시 실행. */
-    private void schedulePgCancel(String pgTxId, Long amount, String reason) {
+    private void schedulePgCancel(Long refundId, String pgTxId, Long amount, String reason) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    paymentGatewayClient.cancelPayment(pgTxId, amount, reason);
+                    executePgCancel(refundId, pgTxId, amount, reason);
                 }
             });
         } else {
+            executePgCancel(refundId, pgTxId, amount, reason);
+        }
+    }
+
+    /** PG 취소 실행. 실패 시 refundId/pgTxId 컨텍스트 포함 error 로그 후 예외 재전파. */
+    private void executePgCancel(Long refundId, String pgTxId, Long amount, String reason) {
+        try {
             paymentGatewayClient.cancelPayment(pgTxId, amount, reason);
+        } catch (Exception e) {
+            log.error("PG 취소 실패 — 수동 처리 필요. refundId={}, pgTxId={}", refundId, pgTxId, e);
+            throw e;
         }
     }
 }

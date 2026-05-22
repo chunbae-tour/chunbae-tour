@@ -82,12 +82,12 @@ class AdminRefundServiceTest {
         PaymentOrder order = makeCompletedOrder();
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        willDoNothing().given(walletService).refund(any(), any(), any());
+        willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
         willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
 
         RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID);
 
-        verify(walletService).refund(USER_ID, AMOUNT, ORDER_ID);
+        verify(walletService).reclaimForRefund(USER_ID, AMOUNT, ORDER_ID);
         verify(paymentGatewayClient).cancelPayment(eq("pg-txn-123"), eq(AMOUNT), any());
         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
     }
@@ -144,7 +144,7 @@ class AdminRefundServiceTest {
         PaymentOrder order = makeCompletedOrder();
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
-        willDoNothing().given(walletService).refund(any(), any(), any());
+        willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
         willThrow(new RuntimeException("PG timeout"))
                 .given(paymentGatewayClient).cancelPayment(any(), any(), any());
 
@@ -161,7 +161,7 @@ class AdminRefundServiceTest {
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
         willThrow(new BusinessException(ErrorCode.INSUFFICIENT_BALANCE))
-                .given(walletService).refund(any(), any(), any());
+                .given(walletService).reclaimForRefund(any(), any(), any());
 
         assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
                 .isInstanceOf(BusinessException.class)
