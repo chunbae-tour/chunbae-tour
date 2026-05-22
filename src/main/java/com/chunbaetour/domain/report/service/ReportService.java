@@ -53,6 +53,7 @@ public class ReportService {
         return ReportCreateResponse.of(reportRepository.save(report));
     }
 
+    // 신고 대상 존재·활성 상태 검증 — 타입별로 다른 테이블 조회
     private void validateTargetExists(ReportTargetType targetType, Long targetId) {
         switch (targetType) {
             case POST_COMPANION -> {
