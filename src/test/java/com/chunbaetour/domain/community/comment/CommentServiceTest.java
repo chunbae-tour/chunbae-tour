@@ -14,8 +14,9 @@ import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.comment.service.CommentService;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import java.util.List;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,7 @@ class CommentServiceTest {
                 .willReturn(List.of());
         given(accountRepository.findAllById(any())).willReturn(List.of());
 
-        CursorPage<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
+        CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 
         assertThat(result.content()).isEmpty();
         assertThat(result.hasNext()).isFalse();
@@ -73,13 +74,17 @@ class CommentServiceTest {
     @Test
     void 댓글_목록_hasNext_true() {
         List<Comment> comments = java.util.stream.IntStream.rangeClosed(1, 11)
-                .mapToObj(i -> Comment.create(1L, PostType.FREE, 1L, "댓글" + i))
+                .mapToObj(i -> {
+                    Comment c = Comment.create(1L, PostType.FREE, 1L, "댓글" + i);
+                    ReflectionTestUtils.setField(c, "id", (long) i);
+                    return c;
+                })
                 .toList();
         given(commentRepository.findByPost(1L, PostType.FREE, CommentStatus.ACTIVE, null, Pageable.ofSize(11)))
                 .willReturn(comments);
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        CursorPage<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
+        CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 
         assertThat(result.content()).hasSize(10);
         assertThat(result.hasNext()).isTrue();
