@@ -5,7 +5,6 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.entity.QFestival;
 import com.querydsl.core.types.dsl.BooleanExpression;
-import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -59,20 +58,35 @@ public class FestivalQueryRepository {
                 .or(festival.description.containsIgnoreCase(keyword));
     }
 
+    /**
+     * 날짜 범위 조건을 생성한다.
+     * <p>
+     * startDate/endDate 역순 유효성 검증({@code startDate.isAfter(endDate)})은
+     * 호출자인 {@link com.chunbaetour.domain.search.service.SearchService}에서
+     * {@code SEARCH_INVALID_DATE_RANGE}로 사전 검증 후 이 메서드를 호출하므로
+     * 여기서는 중복 검증하지 않는다.
+     * </p>
+     * <ul>
+     *   <li>both null   → 조건 없음 (전체 조회)</li>
+     *   <li>both set    → 기간 겹침 조건 (startDate ≤ endDate AND festival.startDate ≤ endDate)</li>
+     *   <li>startDate only → festival.endDate ≥ startDate (시작일 이후 종료되는 축제)</li>
+     *   <li>endDate only   → festival.startDate ≤ endDate (종료일 이전 시작하는 축제)</li>
+     * </ul>
+     */
     private BooleanExpression dateBetween(LocalDate startDate, LocalDate endDate) {
         if (startDate == null && endDate == null) {
             return null;
         }
-        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
         if (startDate != null && endDate != null) {
-            // startDate <= festival.endDate AND endDate >= festival.startDate
+            // 기간 겹침 조건: festival의 기간이 [startDate, endDate]와 교차하는 경우를 필터링한다.
+            // (festival.startDate <= endDate) AND (festival.endDate >= startDate)
             return festival.endDate.goe(startDate).and(festival.startDate.loe(endDate));
         }
         if (startDate != null) {
+            // startDate만 지정: startDate 이후 종료되는 축제 (진행 중 + 예정 포함)
             return festival.endDate.goe(startDate);
         }
+        // endDate만 지정: endDate 이전 시작한 축제 (진행 중 + 종료 포함)
         return festival.startDate.loe(endDate);
     }
 

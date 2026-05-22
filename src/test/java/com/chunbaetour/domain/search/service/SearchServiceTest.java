@@ -210,18 +210,80 @@ class SearchServiceTest {
         
         assertThat(response.content().get(2).festivalId()).isEqualTo(1L);
         assertThat(response.content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
+
+        // [Fix 3] keyword="축제", 결과 있음, cursorId=null → incrementSearchCount 호출 검증 누락 수정
+        verify(popularSearchService).incrementSearchCount("축제", "127.0.0.1");
     }
 
     @Test
-    @DisplayName("축제 검색 시 시작일이 종료일보다 늦으면 예외가 발생한다")
-    void searchFestivals_ThrowsException_WhenStartDateIsAfterEndDate() {
+    @DisplayName("축제 검색 시 keyword가 51자 이상이면 예외를 던진다")
+    void searchFestivals_ThrowsException_WhenKeywordIsTooLong() {
         // given
-        LocalDate startDate = LocalDate.now().plusDays(5);
-        LocalDate endDate = LocalDate.now();
+        // [Fix 4] 관광지 검색(searchPlaces)과 별도 경로인 축제 검색(searchFestivals)의
+        // keyword 50자 초과 검증도 독립적으로 커버해야 한다.
+        String longKeyword = "가".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchFestivals("축제", startDate, endDate, "서울", null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage(ErrorCode.SEARCH_INVALID_DATE_RANGE.getMessage());
+                .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
+    }
+
+    @Test
+    @DisplayName("축제 검색 시 startDate만 입력해도 정상 동작한다 (반범위 날짜)")
+    void searchFestivals_WorksWithStartDateOnly() {
+        // given
+        // [Fix 5a] dateBetween의 startDate only 분기(festival.endDate >= startDate) 미검증 케이스
+        LocalDate startDate = LocalDate.now();
+        int size = 10;
+        List<Festival> mockResult = new ArrayList<>();
+        Festival festival = Festival.builder()
+                .name("축제1").description("설명").region("서울").location("주소")
+                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
+                .startDate(startDate).endDate(startDate.plusDays(5))
+                .thumbnailUrl("http://url.com")
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 1L);
+        mockResult.add(festival);
+
+        when(festivalQueryRepository.searchFestivals(null, startDate, null, null, null, size)).thenReturn(mockResult);
+
+        // when
+        CursorPageResponse<SearchFestivalResponse> response =
+                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1");
+
+        // then
+        assertThat(response.content()).hasSize(1);
+        // keyword null이므로 인기 검색어 집계 없음
+        verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("축제 검색 시 endDate만 입력해도 정상 동작한다 (반범위 날짜)")
+    void searchFestivals_WorksWithEndDateOnly() {
+        // given
+        // [Fix 5b] dateBetween의 endDate only 분기(festival.startDate <= endDate) 미검증 케이스
+        LocalDate endDate = LocalDate.now().plusDays(10);
+        int size = 10;
+        List<Festival> mockResult = new ArrayList<>();
+        Festival festival = Festival.builder()
+                .name("축제2").description("설명").region("부산").location("주소")
+                .lat(new java.math.BigDecimal("35.0")).lng(new java.math.BigDecimal("129.0"))
+                .startDate(endDate.minusDays(3)).endDate(endDate)
+                .thumbnailUrl("http://url.com")
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 2L);
+        mockResult.add(festival);
+
+        when(festivalQueryRepository.searchFestivals(null, null, endDate, null, null, size)).thenReturn(mockResult);
+
+        // when
+        CursorPageResponse<SearchFestivalResponse> response =
+                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1");
+
+        // then
+        assertThat(response.content()).hasSize(1);
+        // keyword null이므로 인기 검색어 집계 없음
+        verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 }
