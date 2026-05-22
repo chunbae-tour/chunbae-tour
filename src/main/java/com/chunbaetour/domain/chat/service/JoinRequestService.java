@@ -108,13 +108,16 @@ public class JoinRequestService {
 
     // NOT_SUPPORTED로 외부 readOnly 트랜잭션 중단 — TransactionTemplate이 새 쓰기 트랜잭션 생성
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public ApproveJoinRequestResponse approveJoinRequest(Long ownerId, Long requestId) {
+    public ApproveJoinRequestResponse approveJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
 
         // 신청 및 방장 확인은 락 밖에서 — 락 점유 시간 최소화
         JoinRequest joinRequest = joinRequestRepository.findById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
 
-        Long chatRoomId = joinRequest.getChatRoomId();
+        // 경로 chatRoomId와 신청의 chatRoomId 일치 검증 — 타 방 신청을 잘못 수락 방지
+        if (!joinRequest.getChatRoomId().equals(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+        }
 
         // 방장 권한 확인 — OWNER_ACTIVE가 아니면 수락 불가 (CHAT_006)
         chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, ownerId)
@@ -186,7 +189,8 @@ public class JoinRequestService {
         // PENDING 아니면 BusinessException(CHAT_012) 발생
         joinRequest.approve();
 
-        ChatRoom chatRoom = chatRoomRepository.findById(joinRequest.getChatRoomId())
+        // 비관적 락으로 조회 — Redis 장애 시 DB 단독으로 정원 정합성 보장
+        ChatRoom chatRoom = chatRoomRepository.findByIdWithLock(joinRequest.getChatRoomId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
         // currentMembers +1, 정원 도달 시 자동으로 FULL 전환
@@ -194,6 +198,6 @@ public class JoinRequestService {
 
         chatRoomMemberRepository.save(ChatRoomMember.ofMember(chatRoom, joinRequest.getUserId()));
 
-        return ApproveJoinRequestResponse.from(joinRequest);
+        return ApproveJoinRequestResponse.from(joinRequest, chatRoom.getCurrentMembers());
     }
 }

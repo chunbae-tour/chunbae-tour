@@ -6,15 +6,15 @@ import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 public record ApproveJoinRequestResponse(
         Long joinRequestId,
         Long chatRoomId,
-        Long applicantId,
-        JoinRequestStatus status
+        JoinRequestStatus status,
+        int currentMembers
 ) {
-    public static ApproveJoinRequestResponse from(JoinRequest request) {
+    public static ApproveJoinRequestResponse from(JoinRequest request, int currentMembers) {
         return new ApproveJoinRequestResponse(
                 request.getId(),
                 request.getChatRoomId(),
-                request.getUserId(),
-                request.getStatus()
+                request.getStatus(),
+                currentMembers
         );
     }
 }

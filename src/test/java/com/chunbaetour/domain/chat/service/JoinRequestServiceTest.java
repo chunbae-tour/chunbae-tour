@@ -380,24 +380,25 @@ class JoinRequestServiceTest {
                 .willReturn(Optional.of(ownerMember));
 
         ChatRoom chatRoom = mock(ChatRoom.class);
-        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(chatRoom));
+        given(chatRoomRepository.findByIdWithLock(ROOM_ID)).willReturn(Optional.of(chatRoom));
+        given(chatRoom.getCurrentMembers()).willReturn(3);
         given(req.getStatus()).willReturn(JoinRequestStatus.APPROVED);
 
-        ApproveJoinRequestResponse response = joinRequestService.approveJoinRequest(OWNER_ID, REQUEST_ID);
+        ApproveJoinRequestResponse response = joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
 
         verify(req).approve();
         verify(chatRoom).incrementMembers();
         verify(chatRoomMemberRepository).save(any(ChatRoomMember.class));
         assertThat(response.status()).isEqualTo(JoinRequestStatus.APPROVED);
         assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
-        assertThat(response.applicantId()).isEqualTo(USER_ID);
+        assertThat(response.currentMembers()).isEqualTo(3);
     }
 
     @Test
     void approveJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, REQUEST_ID))
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
@@ -413,7 +414,7 @@ class JoinRequestServiceTest {
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
 
-        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(USER_ID, REQUEST_ID))
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(USER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
@@ -432,7 +433,7 @@ class JoinRequestServiceTest {
         doThrow(new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED))
                 .when(req).approve();
 
-        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, REQUEST_ID))
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
@@ -450,7 +451,7 @@ class JoinRequestServiceTest {
         given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
         given(lock.isHeldByCurrentThread()).willReturn(false);
 
-        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, REQUEST_ID))
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
