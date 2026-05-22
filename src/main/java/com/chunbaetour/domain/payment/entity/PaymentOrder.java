@@ -92,8 +92,11 @@ public class PaymentOrder extends BaseEntity {
         this.status = PaymentOrderStatus.FAILED;
     }
 
-    /** 환불 승인 완료 후 주문 상태를 CANCELLED로 전이 */
+    /** 환불 승인 완료 후 주문 상태를 CANCELLED로 전이. COMPLETED 아니면 PaymentException. */
     public void cancel() {
+        if (this.status != PaymentOrderStatus.COMPLETED) {
+            throw new PaymentException(ErrorCode.REFUND_NOT_ELIGIBLE);
+        }
         this.status = PaymentOrderStatus.CANCELLED;
     }
 }

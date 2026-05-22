@@ -15,14 +15,19 @@ import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 관리자 환불 처리 서비스 (STORY-07).
- * 승인: 엽전 차감 → 상태 전이 → PG 취소 (PG 실패 시 @Transactional 롤백으로 DB 원복).
+ * 승인: 엽전 차감 → 상태 전이 → DB 커밋 → afterCommit에서 PG 취소.
+ *       PG 취소를 afterCommit으로 분리해 "PG 성공 후 DB 커밋 실패" 상태 불일치를 방지.
  * 거절: Refund 상태만 REJECTED로 변경.
  * 락 획득 순서: Refund → PaymentOrder → Wallet (데드락 방지).
  */
@@ -31,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminRefundService {
 
+    private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
+
     private final RefundRepository refundRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PaymentGatewayClient paymentGatewayClient;
@@ -38,7 +45,8 @@ public class AdminRefundService {
 
     /**
      * 환불 승인.
-     * DB 업데이트 후 PG 취소. PG 실패 시 @Transactional 롤백으로 DB 원복.
+     * DB 업데이트 커밋 후 afterCommit에서 PG 취소.
+     * PG 실패 시 DB 상태 유지(APPROVED) — 수동 재시도 또는 아웃박스 패턴으로 대응 필요.
      */
     @Transactional
     public RefundDetailResponse approveRefund(Long refundId) {
@@ -68,14 +76,12 @@ public class AdminRefundService {
         refund.approve();
         order.cancel();
 
-        // PG 환불 요청 — DB 작업 완료 후 마지막 호출 (PG 실패 시 @Transactional 롤백으로 DB 원복)
-        // 트레이드오프: Wallet SELECT FOR UPDATE 락이 PG 응답 대기 중에도 유지됨 (트랜잭션 경계 내)
-        //              PG 응답이 느릴 경우 락 점유 시간 증가 → 허용 가능한 수준으로 판단 (관리자 단일 처리)
-        paymentGatewayClient.cancelPayment(
-                order.getPgTransactionId(),
-                refund.getAmount(),
-                refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
-        );
+        // PG 취소는 DB 커밋 확정 후 실행 — "PG 성공 후 커밋 실패" 시 상태 불일치 방지
+        // 트랜잭션 없는 컨텍스트(단위 테스트 등)에서는 즉시 실행
+        String pgTxId = order.getPgTransactionId();
+        Long refundAmount = refund.getAmount();
+        String reason = refund.getReason() != null ? refund.getReason() : "관리자 환불 승인";
+        schedulePgCancel(pgTxId, refundAmount, reason);
 
         return RefundDetailResponse.from(refund);
     }
@@ -126,10 +132,27 @@ public class AdminRefundService {
         try {
             byte[] decoded = Base64.getUrlDecoder().decode(cursor);
             String json = new String(decoded, StandardCharsets.UTF_8);
-            String value = json.replaceAll(".*\"id\"\\s*:\\s*(\\d+).*", "$1");
-            return Long.parseLong(value);
-        } catch (Exception e) {
+            Matcher matcher = CURSOR_PATTERN.matcher(json);
+            if (!matcher.matches()) {
+                throw new IllegalArgumentException("invalid cursor format");
+            }
+            return Long.parseLong(matcher.group(1));
+        } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_CURSOR);
+        }
+    }
+
+    /** DB 커밋 확정 후 PG 취소 예약. 트랜잭션 없는 컨텍스트(단위 테스트 등)에서는 즉시 실행. */
+    private void schedulePgCancel(String pgTxId, Long amount, String reason) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    paymentGatewayClient.cancelPayment(pgTxId, amount, reason);
+                }
+            });
+        } else {
+            paymentGatewayClient.cancelPayment(pgTxId, amount, reason);
         }
     }
 }

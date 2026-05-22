@@ -138,6 +138,22 @@ class AdminRefundServiceTest {
     }
 
     @Test
+    @DisplayName("PG 취소 실패 시 예외 전파 (단위 테스트: 트랜잭션 없으므로 즉시 실행)")
+    void approveRefund_pg_cancel_fails_throws() {
+        Refund refund = makePendingRefund();
+        PaymentOrder order = makeCompletedOrder();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        willDoNothing().given(walletService).refund(any(), any(), any());
+        willThrow(new RuntimeException("PG timeout"))
+                .given(paymentGatewayClient).cancelPayment(any(), any(), any());
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("PG timeout");
+    }
+
+    @Test
     @DisplayName("엽전 잔액 부족 시 INSUFFICIENT_BALANCE 예외 — PG 호출 없음 (DB 작업 롤백)")
     void approveRefund_insufficient_wallet_throws() {
         Refund refund = makePendingRefund();
