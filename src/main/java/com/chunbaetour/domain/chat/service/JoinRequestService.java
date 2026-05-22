@@ -18,6 +18,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -66,8 +67,9 @@ public class JoinRequestService {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
             // 트랜잭션 커밋이 락 해제 전에 완료되도록 TransactionTemplate 사용
-            return new TransactionTemplate(transactionManager).execute(
-                    status -> doCreateJoinRequest(userId, chatRoomId, request, account));
+            return Objects.requireNonNull(
+                    new TransactionTemplate(transactionManager).execute(
+                            status -> doCreateJoinRequest(userId, chatRoomId, request, account)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
@@ -130,8 +132,9 @@ public class JoinRequestService {
             if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
-            return new TransactionTemplate(transactionManager).execute(
-                    status -> doApproveJoinRequest(requestId));
+            return Objects.requireNonNull(
+                    new TransactionTemplate(transactionManager).execute(
+                            status -> doApproveJoinRequest(requestId)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
@@ -196,7 +199,12 @@ public class JoinRequestService {
         // currentMembers +1, 정원 도달 시 자동으로 FULL 전환
         chatRoom.incrementMembers();
 
-        chatRoomMemberRepository.save(ChatRoomMember.ofMember(chatRoom, joinRequest.getUserId()));
+        // LEFT 이력 있으면 재활성화, 없으면 신규 생성 — unique(chat_room_id, user_id) 제약 준수
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoom.getId(), joinRequest.getUserId())
+                .ifPresentOrElse(
+                        ChatRoomMember::reactivate,
+                        () -> chatRoomMemberRepository.save(
+                                ChatRoomMember.ofMember(chatRoom, joinRequest.getUserId())));
 
         return ApproveJoinRequestResponse.from(joinRequest, chatRoom.getCurrentMembers());
     }

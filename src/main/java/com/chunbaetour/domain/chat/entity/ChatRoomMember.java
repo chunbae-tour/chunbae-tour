@@ -93,6 +93,15 @@ public class ChatRoomMember extends BaseEntity {
         this.leftAt = LocalDateTime.now();
     }
 
+    // MEMBER_LEFT 상태 유저 재참여 수락 시 호출 — 새 레코드 INSERT 대신 기존 레코드 업데이트
+    public void reactivate() {
+        if (this.memberState != ChatMemberState.MEMBER_LEFT) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        this.memberState = ChatMemberState.MEMBER_ACTIVE;
+        this.leftAt = null;
+    }
+
     // OWNER는 강퇴 불가 — close()로만 방 종료 가능
     // 이미 퇴장/강퇴된 멤버는 강퇴 대상 아님
     public void kick() {
