@@ -16,6 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 상인 신청 서비스 (STORY-08).
  * 신청 → PENDING 생성. 관리자 승인/거절은 STORY-09(AdminMerchantApplicationService).
+ *
+ * TODO [STORY-09]: AdminMerchantApplicationService 구현 필요.
+ *   - PENDING 목록 조회 (커서 기반 페이지네이션)
+ *   - 승인: application.approve() → user.role USER→MERCHANT → Shop 생성 (단일 트랜잭션)
+ *   - 거절: application.reject(reason)
+ *   - 동시 승인/거절 race condition → findByIdWithLock (비관적 락)
  */
 @Service
 @RequiredArgsConstructor
