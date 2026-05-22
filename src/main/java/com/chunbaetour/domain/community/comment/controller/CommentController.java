@@ -7,7 +7,7 @@ import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.service.CommentService;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -43,7 +43,7 @@ public class CommentController {
     }
 
     @GetMapping
-    public ApiResponse<CursorPage<CommentGetListResponse>> findAll(
+    public ApiResponse<CursorPageResponse<CommentGetListResponse>> findAll(
             @PathVariable String postType,
             @PathVariable Long postId,
             @RequestParam(required = false) String cursor,
