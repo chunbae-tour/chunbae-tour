@@ -11,7 +11,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,19 +38,13 @@ public class AdminRefundController {
 
     /** 환불 승인: 엽전 차감 → 상태 APPROVED → PG 취소 */
     @PatchMapping("/{refundId}/approve")
-    public ApiResponse<RefundDetailResponse> approveRefund(
-            @PathVariable Long refundId,
-            @RequestHeader("X-Idempotency-Key") String idempotencyKey
-    ) {
-        return ApiResponse.success(adminRefundService.approveRefund(refundId, idempotencyKey));
+    public ApiResponse<RefundDetailResponse> approveRefund(@PathVariable Long refundId) {
+        return ApiResponse.success(adminRefundService.approveRefund(refundId));
     }
 
     /** 환불 거절: 상태 REJECTED로 변경 (PG 호출 없음) */
     @PatchMapping("/{refundId}/reject")
-    public ApiResponse<RefundDetailResponse> rejectRefund(
-            @PathVariable Long refundId,
-            @RequestHeader("X-Idempotency-Key") String idempotencyKey
-    ) {
-        return ApiResponse.success(adminRefundService.rejectRefund(refundId, idempotencyKey));
+    public ApiResponse<RefundDetailResponse> rejectRefund(@PathVariable Long refundId) {
+        return ApiResponse.success(adminRefundService.rejectRefund(refundId));
     }
 }
