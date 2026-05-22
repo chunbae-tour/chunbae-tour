@@ -14,7 +14,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -29,11 +28,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "merchant_applications",
-        indexes = @Index(name = "idx_merchant_applications_user_id", columnList = "user_id"),
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_merchant_applications_business_number",
-                columnNames = "business_number"
-        )
+        indexes = @Index(name = "idx_merchant_applications_user_id", columnList = "user_id")
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

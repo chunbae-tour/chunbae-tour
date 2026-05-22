@@ -9,69 +9,63 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 상인 신청 서비스 (STORY-08).
- * 신청 → PENDING 생성. 관리자 승인/거절은 STORY-09(AdminMerchantApplicationService).
- *
- * TODO [STORY-09]: AdminMerchantApplicationService 구현 필요.
- *   - PENDING 목록 조회 (커서 기반 페이지네이션)
- *   - 승인: application.approve() → user.role USER→MERCHANT → Shop 생성 (단일 트랜잭션)
- *   - 거절: application.reject(reason)
- *   - 동시 승인/거절 race condition → findByIdWithLock (비관적 락)
+ * 신청 → PENDING 생성. 관리자 승인/거절은 AdminMerchantApplicationService(STORY-09).
  */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class MerchantApplicationService {
 
-    private static final String UK_BUSINESS_NUMBER = "uk_merchant_applications_business_number";
+    private static final List<MerchantApplicationStatus> ACTIVE_STATUSES =
+            List.of(MerchantApplicationStatus.PENDING, MerchantApplicationStatus.APPROVED);
 
     private final MerchantApplicationRepository merchantApplicationRepository;
 
     /**
      * 상인 등록 신청.
-     * 중복 신청(PENDING) 방지 → 사업자번호 유효성 검증 → 신청 저장.
+     * 중복 신청(PENDING/APPROVED) 방지 → 사업자번호 유효성 검증 → 사업자번호 중복 검사 → 신청 저장.
+     *
+     * <p><b>Known limitation</b>: existsByUserIdAndStatusIn 체크와 save 사이에 같은 유저의 동시 요청이
+     * 들어오면 두 행이 삽입될 수 있다 (check-then-act race condition). 동일 유저의 동시 신청은
+     * 실사용에서 극히 드문 케이스이므로 현재는 DB 레벨 제약 없이 허용된 한계로 남긴다.
+     * 필요 시 userId + status=PENDING 조합에 partial unique index 추가 검토.
      */
     @Transactional
     public MerchantApplicationResponse apply(Long userId, MerchantApplyRequest request) {
         // PENDING 또는 APPROVED 신청이 이미 있으면 중복 신청 불가 (MERCHANT_001)
-        if (merchantApplicationRepository.existsByUserIdAndStatusIn(userId,
-                List.of(MerchantApplicationStatus.PENDING, MerchantApplicationStatus.APPROVED))) {
+        if (merchantApplicationRepository.existsByUserIdAndStatusIn(userId, ACTIVE_STATUSES)) {
             throw new BusinessException(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
         }
 
         // 사업자등록번호 체크섬 유효성 검증 (MERCHANT_002)
+        // DTO에서 ^\d{10}$|^\d{3}-\d{2}-\d{5}$ 패턴 검증이 선행되므로 하이픈 제거 후 항상 10자리 숫자.
+        // isValidBusinessNumber는 DTO 검증을 신뢰하지만, 독립적으로 호출되는 경우를 대비해 길이 체크를 내부에서 수행한다.
         String normalized = request.businessNumber().replace("-", "");
         if (!isValidBusinessNumber(normalized)) {
             throw new BusinessException(ErrorCode.INVALID_BUSINESS_NUMBER);
         }
 
-        try {
-            MerchantApplication application = merchantApplicationRepository.saveAndFlush(
-                    MerchantApplication.create(userId, request)
-            );
-            return MerchantApplicationResponse.from(application);
-        } catch (DataIntegrityViolationException e) {
-            if (e.getCause() instanceof ConstraintViolationException cve) {
-                String constraintName = cve.getConstraintName();
-                // 사업자번호 유니크 위반 — 다른 유저가 이미 같은 번호로 신청/등록
-                if (UK_BUSINESS_NUMBER.equalsIgnoreCase(constraintName)) {
-                    throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
-                }
-            }
-            // 예상치 못한 DB 오류는 그대로 전파 (500)
-            throw e;
+        // 다른 유저가 동일 사업자번호로 이미 PENDING/APPROVED 신청 중이면 차단 (MERCHANT_004)
+        // REJECTED된 신청의 번호는 재사용 허용 — DB 레벨 전체 유니크 제약 대신 코드 레벨 체크 사용
+        if (merchantApplicationRepository.existsByBusinessNumberAndStatusIn(normalized, ACTIVE_STATUSES)) {
+            throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
         }
+
+        MerchantApplication application = merchantApplicationRepository.save(
+                MerchantApplication.create(userId, request)
+        );
+        return MerchantApplicationResponse.from(application);
     }
 
     /**
      * 한국 사업자등록번호 체크섬 검증 (국세청 NTS 알고리즘).
      * d[0..7]은 각 가중치 곱을 합산, d[8]은 d[8]*5의 십의 자리(캐리)만 가산.
+     * 호출 전 digits가 10자리 숫자임을 보장해야 한다 (DTO 패턴 검증 + replace("-","") 선행).
      */
     private boolean isValidBusinessNumber(String digits) {
         if (digits.length() != 10) return false;
