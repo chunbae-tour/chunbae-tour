@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.payment.dto.response.RefundDetailResponse;
 import com.chunbaetour.domain.payment.service.AdminRefundService;
+import com.chunbaetour.domain.payment.dto.request.RefundRejectRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -42,9 +44,13 @@ public class AdminRefundController {
         return ApiResponse.success(adminRefundService.approveRefund(refundId));
     }
 
-    /** 환불 거절: 상태 REJECTED로 변경 (PG 호출 없음) */
+    /** 환불 거절: 상태 REJECTED로 변경 + 거절 사유 저장 (PG 호출 없음). body 없이 호출 시 reason=null. */
     @PatchMapping("/{refundId}/reject")
-    public ApiResponse<RefundDetailResponse> rejectRefund(@PathVariable Long refundId) {
-        return ApiResponse.success(adminRefundService.rejectRefund(refundId));
+    public ApiResponse<RefundDetailResponse> rejectRefund(
+            @PathVariable Long refundId,
+            @RequestBody(required = false) RefundRejectRequest request
+    ) {
+        String reason = request != null ? request.reason() : null;
+        return ApiResponse.success(adminRefundService.rejectRefund(refundId, reason));
     }
 }

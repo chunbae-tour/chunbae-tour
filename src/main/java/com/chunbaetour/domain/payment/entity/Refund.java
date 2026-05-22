@@ -50,6 +50,9 @@ public class Refund extends BaseEntity {
     @Column(length = 500, nullable = false)
     private String reason;
 
+    @Column(name = "reject_reason", length = 500)
+    private String rejectReason;
+
     @Builder
     private Refund(Long paymentOrderId, Long userId, Long amount, String reason) {
         if (amount == null || amount <= 0) {
@@ -79,12 +82,13 @@ public class Refund extends BaseEntity {
         this.status = RefundStatus.APPROVED;
     }
 
-    /** 관리자 거절 시 상태 전이. PENDING이 아니면 PAY_020. */
-    public void reject() {
+    /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
+    public void reject(String rejectReason) {
         if (this.status != RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.REJECTED;
+        this.rejectReason = rejectReason;
     }
 
     /** 사용자 취소 시 상태 전이. PENDING이 아니면 PAY_019. */

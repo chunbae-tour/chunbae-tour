@@ -12,6 +12,7 @@ public record RefundDetailResponse(
         Long amount,
         RefundStatus status,
         String reason,
+        String rejectReason,
         LocalDateTime createdAt
 ) {
     public static RefundDetailResponse from(Refund refund) {
@@ -22,6 +23,7 @@ public record RefundDetailResponse(
                 refund.getAmount(),
                 refund.getStatus(),
                 refund.getReason(),
+                refund.getRejectReason(),
                 refund.getCreatedAt()
         );
     }

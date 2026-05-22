@@ -84,14 +84,14 @@ public class AdminRefundService {
 
     /**
      * 환불 거절.
-     * Refund 상태만 REJECTED로 변경. PG 호출 없음.
+     * Refund 상태 REJECTED로 변경 + 거절 사유 저장. PG 호출 없음.
      */
     @Transactional
-    public RefundDetailResponse rejectRefund(Long refundId) {
+    public RefundDetailResponse rejectRefund(Long refundId, String rejectReason) {
         Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        refund.reject();
+        refund.reject(rejectReason);
 
         return RefundDetailResponse.from(refund);
     }

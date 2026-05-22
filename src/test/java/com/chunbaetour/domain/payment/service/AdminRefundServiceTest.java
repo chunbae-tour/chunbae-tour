@@ -177,14 +177,28 @@ class AdminRefundServiceTest {
     // ──────────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("환불 거절 성공: 상태 REJECTED, PG 호출 없음")
+    @DisplayName("환불 거절 성공: 상태 REJECTED, 거절 사유 저장, PG 호출 없음")
     void rejectRefund_success() {
         Refund refund = makePendingRefund();
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
 
-        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID);
+        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID, "엽전 사용 이력 있음");
 
         assertThat(response.status()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(response.rejectReason()).isEqualTo("엽전 사용 이력 있음");
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("환불 거절 시 reason null이면 rejectReason null로 저장")
+    void rejectRefund_null_reason_success() {
+        Refund refund = makePendingRefund();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID, null);
+
+        assertThat(response.status()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(response.rejectReason()).isNull();
         verifyNoInteractions(paymentGatewayClient, walletService);
     }
 
@@ -192,10 +206,10 @@ class AdminRefundServiceTest {
     @DisplayName("PENDING이 아닌 환불 거절 시 REFUND_INVALID_STATUS_TRANSITION 예외")
     void rejectRefund_not_pending_throws() {
         Refund refund = makePendingRefund();
-        refund.reject(); // 이미 REJECTED
+        refund.reject(null); // 이미 REJECTED
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
 
-        assertThatThrownBy(() -> adminRefundService.rejectRefund(REFUND_ID))
+        assertThatThrownBy(() -> adminRefundService.rejectRefund(REFUND_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
