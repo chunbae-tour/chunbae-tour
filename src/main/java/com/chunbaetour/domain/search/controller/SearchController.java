@@ -8,6 +8,7 @@ import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
+import com.chunbaetour.domain.search.service.SuggestService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class SearchController {
 
     private final PopularSearchService popularSearchService;
     private final SearchService searchService;
+    private final SuggestService suggestService;
 
     /**
      * 인기 검색어 TOP 10 조회.
@@ -160,7 +162,7 @@ public class SearchController {
     public ApiResponse<List<String>> suggest(
             @RequestParam(name = "q") String q
     ) {
-        List<String> result = searchService.suggest(q);
+        List<String> result = suggestService.suggest(q);
         return ApiResponse.success(result);
     }
 }

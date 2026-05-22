@@ -138,12 +138,17 @@ public class PlaceQueryRepository {
      * @return place.name 목록 (최대 limit 건)
      */
     public List<String> suggestByPrefix(String prefix, int limit) {
+        // _, % 와일드카드 이스케이프 처리하여 의도치 않은 임의 문자 매칭 방지
+        String safePrefix = prefix.replace("\\", "\\\\")
+                                  .replace("_", "\\_")
+                                  .replace("%", "\\%");
+
         return queryFactory
                 .select(place.name)
                 .from(place)
                 .where(
-                        // LIKE 'prefix%' — 후행 와일드카드만 사용하므로 B-Tree 인덱스 Range Scan 가능
-                        place.name.startsWith(prefix),
+                        // LIKE 'safePrefix%' — 후행 와일드카드만 사용하므로 B-Tree 인덱스 Range Scan 가능
+                        place.name.startsWith(safePrefix),
                         // 노출 중단/삭제된 관광지는 자동완성에서 제외
                         place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
                 )

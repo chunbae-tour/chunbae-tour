@@ -209,6 +209,46 @@ public class PopularSearchService {
         }
     }
 
+    /**
+     * 자동완성 시 보완할 인기 검색어 목록을 조회한다.
+     * <p>
+     * [Known Limitation] 데이터가 많을 경우 ZSet 전체 스캔 성능 저하 위험이 있다.
+     * 이를 방지하기 위해 상위 100위({@code 0, 99})까지만 읽어 필터링한다.
+     * 향후 전체 자동완성을 위해서는 Trie 구조나 ZRANGEBYLEX 등을 도입하는 아키텍처 개선이 필요하다.
+     * </p>
+     *
+     * @param prefix 사용자가 입력한 검색어 접두사
+     * @param limit 최대 반환 건수
+     * @return 인기 검색어 중 prefix로 시작하는 키워드 목록
+     */
+    public List<String> fetchPopularSuggestions(String prefix, int limit) {
+        try {
+            Set<ZSetOperations.TypedTuple<String>> rankingSet =
+                    stringRedisTemplate.opsForZSet().reverseRangeWithScores(
+                            SearchRedisKeys.POPULAR_RANKING_KEY, 0, 99);
+
+            if (rankingSet == null || rankingSet.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            List<String> matched = new ArrayList<>();
+            String lowerPrefix = prefix.toLowerCase();
+            for (ZSetOperations.TypedTuple<String> tuple : rankingSet) {
+                String keyword = tuple.getValue();
+                if (keyword != null && keyword.toLowerCase().startsWith(lowerPrefix)) {
+                    matched.add(keyword);
+                    if (matched.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+            return matched;
+        } catch (Exception e) {
+            log.warn("[PopularSearchService] Redis ZSet 자동완성 조회 실패 (무시) - prefix: {}", prefix, e);
+            return Collections.emptyList();
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Scheduler — 자정 일간 랭킹 초기화
     // ──────────────────────────────────────────────────────────────────────────

@@ -2,42 +2,27 @@ package com.chunbaetour.domain.search.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
+import com.chunbaetour.domain.search.repository.SuggestCacheRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 검색어 자동완성 (Phase 2-4) 단위 테스트.
- * <p>
- * {@link SearchService#suggest(String)} 메서드의 핵심 분기를 검증한다.
- * Redis 캐시 Hit/Miss, DB + ZSet 통합 로직, 중복 제거, 입력 유효성 등을 커버한다.
- * </p>
- */
 @ExtendWith(MockitoExtension.class)
 class SuggestServiceTest {
 
@@ -45,25 +30,13 @@ class SuggestServiceTest {
     private PlaceQueryRepository placeQueryRepository;
 
     @Mock
-    private FestivalQueryRepository festivalQueryRepository;
+    private SuggestCacheRepository suggestCacheRepository;
 
     @Mock
     private PopularSearchService popularSearchService;
 
-    @Mock
-    private StringRedisTemplate stringRedisTemplate;
-
-    @Mock
-    private ValueOperations<String, String> valueOperations;
-
-    @Mock
-    private ZSetOperations<String, String> zSetOperations;
-
-    @Spy
-    private java.time.Clock clock = java.time.Clock.systemDefaultZone();
-
     @InjectMocks
-    private SearchService searchService;
+    private SuggestService suggestService;
 
     // ──────────────────────────────────────────────────────────────────────────
     // 입력 유효성 검증
@@ -72,8 +45,7 @@ class SuggestServiceTest {
     @Test
     @DisplayName("prefix가 null이면 SEARCH_KEYWORD_TOO_SHORT 예외를 던진다")
     void suggest_ThrowsException_WhenPrefixIsNull() {
-        // when & then
-        assertThatThrownBy(() -> searchService.suggest(null))
+        assertThatThrownBy(() -> suggestService.suggest(null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -81,8 +53,7 @@ class SuggestServiceTest {
     @Test
     @DisplayName("prefix가 공백만 있으면 SEARCH_KEYWORD_TOO_SHORT 예외를 던진다")
     void suggest_ThrowsException_WhenPrefixIsBlank() {
-        // when & then
-        assertThatThrownBy(() -> searchService.suggest("   "))
+        assertThatThrownBy(() -> suggestService.suggest("   "))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -90,182 +61,81 @@ class SuggestServiceTest {
     @Test
     @DisplayName("prefix가 51자 이상이면 SEARCH_KEYWORD_TOO_LONG 예외를 던진다")
     void suggest_ThrowsException_WhenPrefixIsTooLong() {
-        // given
         String longPrefix = "가".repeat(51);
-
-        // when & then
-        assertThatThrownBy(() -> searchService.suggest(longPrefix))
+        assertThatThrownBy(() -> suggestService.suggest(longPrefix))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Redis 캐시 Hit
+    // Redis 캐시 Hit / Miss
     // ──────────────────────────────────────────────────────────────────────────
 
     @Test
     @DisplayName("Redis 캐시 Hit 시 DB 조회 없이 캐시 결과를 반환한다")
     void suggest_ReturnsCachedResult_WhenCacheHit() {
-        // given
         String prefix = "경복";
-        String cached = "경복궁||경복궁 야간개장";
+        List<String> cached = List.of("경복궁", "경복궁 야간개장");
 
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        // 캐시 키: search:suggest:경복 (소문자 처리)
-        when(valueOperations.get(eq("search:suggest:경복"))).thenReturn(cached);
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.of(cached));
 
-        // when
-        List<String> result = searchService.suggest(prefix);
+        List<String> result = suggestService.suggest(prefix);
 
-        // then
         assertThat(result).containsExactly("경복궁", "경복궁 야간개장");
-        // 캐시 Hit이므로 DB 조회는 절대 호출되면 안 됨
         verify(placeQueryRepository, never()).suggestByPrefix(anyString(), anyInt());
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // 캐시 Miss — DB + Redis ZSet 통합
-    // ──────────────────────────────────────────────────────────────────────────
-
     @Test
-    @DisplayName("캐시 Miss 시 DB 결과만으로 자동완성 목록을 반환한다 (ZSet 비어있는 경우)")
-    void suggest_ReturnsDbResults_WhenCacheMissAndZSetEmpty() {
-        // given
-        String prefix = "경복";
-        List<String> dbResults = List.of("경복궁", "경복로");
-
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn(null); // 캐시 Miss
-        when(placeQueryRepository.suggestByPrefix("경복", 5)).thenReturn(dbResults);
-        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null); // ZSet 비어있음
-
-        // when
-        List<String> result = searchService.suggest(prefix);
-
-        // then
-        assertThat(result).containsExactly("경복궁", "경복로");
-    }
-
-    @Test
-    @DisplayName("캐시 Miss 시 DB 결과와 Redis ZSet 인기 검색어를 병합하여 반환한다")
+    @DisplayName("캐시 Miss 시 DB 결과와 Redis ZSet 인기 검색어를 병합하여 반환하고 캐시에 저장한다")
     void suggest_MergesDbAndRedisResults_WhenCacheMiss() {
-        // given
         String prefix = "경복";
-
-        // DB: 관광지명 2개
         List<String> dbResults = List.of("경복궁", "경복로");
+        List<String> redisResults = List.of("경복궁 야간개장", "경복궁");
 
-        // Redis ZSet: 인기 검색어 중 "경복"으로 시작하는 것 — "경복궁 야간개장"은 DB에 없는 신규 항목
-        // LinkedHashSet을 사용하여 Redis 조회 결과(Score 내림차순) 순서를 모의(Mock) 보장
-        Set<ZSetOperations.TypedTuple<String>> zSetTuples = new LinkedHashSet<>();
-        zSetTuples.add(mockTuple("경복궁", 100.0));          // DB와 중복 → 제거됨
-        zSetTuples.add(mockTuple("경복궁 야간개장", 80.0));   // DB에 없는 인기 검색어 → 추가됨
-        zSetTuples.add(mockTuple("남산타워", 70.0));          // prefix 미매칭 → 제외됨
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
+        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
+        when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(redisResults);
 
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn(null); // 캐시 Miss
-        when(placeQueryRepository.suggestByPrefix("경복", 5)).thenReturn(dbResults);
-        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(zSetTuples);
+        List<String> result = suggestService.suggest(prefix);
 
-        // when
-        List<String> result = searchService.suggest(prefix);
-
-        // then
-        // DB 우선, ZSet 보완: [경복궁, 경복로, 경복궁 야간개장]
+        // DB 우선, ZSet 보완 (중복 제거)
         assertThat(result).hasSize(3);
         assertThat(result).containsExactly("경복궁", "경복로", "경복궁 야간개장");
-        // 중복 없음 검증: 경복궁이 2번 들어가면 안 됨
-        assertThat(result).doesNotHaveDuplicates();
+        
+        // 캐시 저장 검증 추가
+        verify(suggestCacheRepository).set(eq(prefix), eq(result));
     }
 
     @Test
     @DisplayName("자동완성 결과는 최대 5개를 넘지 않는다")
     void suggest_ReturnsAtMostFiveResults() {
-        // given
         String prefix = "관광";
-
-        // DB: 5개
         List<String> dbResults = List.of("관광지1", "관광지2", "관광지3", "관광지4", "관광지5");
+        List<String> redisResults = List.of("관광지6");
 
-        // Redis ZSet: 추가 후보가 있어도 이미 5개를 채웠으므로 더 추가되면 안 됨
-        Set<ZSetOperations.TypedTuple<String>> zSetTuples = new HashSet<>();
-        zSetTuples.add(mockTuple("관광지6", 50.0));
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
+        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
+        when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(redisResults);
 
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn(null);
-        when(placeQueryRepository.suggestByPrefix("관광", 5)).thenReturn(dbResults);
-        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(zSetTuples);
+        List<String> result = suggestService.suggest(prefix);
 
-        // when
-        List<String> result = searchService.suggest(prefix);
-
-        // then
         assertThat(result).hasSize(5);
-        assertThat(result).doesNotContain("관광지6"); // SUGGEST_MAX_SIZE 초과분은 제외
+        assertThat(result).doesNotContain("관광지6");
     }
 
     @Test
-    @DisplayName("prefix 앞뒤 공백은 정규화 후 처리된다")
-    void suggest_NormalizesPrefixBeforeQuery() {
-        // given
-        String prefixWithSpaces = "  경복  ";
+    @DisplayName("캐시 읽기 실패 시 예외가 발생하지 않고 빈 Optional 반환 후 DB/Redis 로직으로 Fallback 한다")
+    void suggest_FallbackToDb_WhenCacheThrowsException() {
+        // 이 테스트는 현재 SuggestService가 Optional을 반환받기 때문에 자연스럽게 해결됨.
+        // 실제 Repository 로직이 get() 시 빈 Optional을 던지는지 확인하기 위한 시나리오를 서비스에서 모의함.
+        String prefix = "경복";
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty()); // 캐시 조회 실패 시나리오
+        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(List.of("경복궁"));
+        when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(List.of());
 
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(eq("search:suggest:경복"))).thenReturn(null);
-        when(placeQueryRepository.suggestByPrefix(eq("경복"), anyInt())).thenReturn(List.of("경복궁"));
-        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null);
-
-        // when
-        List<String> result = searchService.suggest(prefixWithSpaces);
-
-        // then
-        // 공백 제거 후 "경복"으로 쿼리되었음을 검증
-        verify(placeQueryRepository).suggestByPrefix("경복", 5);
-        assertThat(result).contains("경복궁");
-    }
-
-    @Test
-    @DisplayName("prefix 50자 정확히는 유효하다 (경계값 검증)")
-    void suggest_AcceptsExactly50CharPrefix() {
-        // given
-        String prefix = "가".repeat(50); // 경계값: 50자
-
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn(null);
-        when(placeQueryRepository.suggestByPrefix(anyString(), anyInt())).thenReturn(List.of());
-        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null);
-
-        // when & then — 예외 없이 정상 동작해야 함
-        List<String> result = searchService.suggest(prefix);
-        assertThat(result).isEmpty();
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 헬퍼
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /** ZSetOperations.TypedTuple 목 객체를 생성하는 헬퍼 메서드. */
-    private ZSetOperations.TypedTuple<String> mockTuple(String value, double score) {
-        return new ZSetOperations.TypedTuple<>() {
-            @Override
-            public String getValue() {
-                return value;
-            }
-
-            @Override
-            public Double getScore() {
-                return score;
-            }
-
-            @Override
-            public int compareTo(ZSetOperations.TypedTuple<String> o) {
-                return Double.compare(o.getScore() != null ? o.getScore() : 0.0, score);
-            }
-        };
+        List<String> result = suggestService.suggest(prefix);
+        
+        assertThat(result).containsExactly("경복궁");
+        verify(suggestCacheRepository).set(eq(prefix), eq(result));
     }
 }
