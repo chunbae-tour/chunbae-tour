@@ -73,9 +73,8 @@ public class RefundService {
             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
         }
 
-        // 미사용 엽전 전액 보유 확인 (부분 사용 후 환불 불가)
-        // TODO [STORY-07]: 관리자 승인 시점에 잔액 재검증 + 차감을 원자적으로 수행해야 한다.
-        //                  PENDING 중 사용자가 엽전 추가 소비 → 승인 시 잔액 부족 가능.
+        // 미사용 엽전 전액 보유 확인 (부분 사용 후 환불 불가, 요청 시점 1차 검증)
+        // 관리자 승인 시점에 WalletService.refund()가 비관적 락 + 잔액 재검증 + 차감을 원자적으로 수행
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
         if (wallet.getBalance() < order.getAmount()) {
@@ -105,10 +104,8 @@ public class RefundService {
     /** 환불 요청 취소. PENDING 상태만 취소 가능 → PAY_019. 타인 요청 취소 시 → PAY_011. */
     @Transactional
     public void cancelRefund(Long userId, Long refundId) {
-        // TODO [STORY-07]: 관리자 approve와 사용자 cancel 동시 실행 시 race condition 발생 가능.
-        //                  STORY-07 구현 시 findById → @Lock(PESSIMISTIC_WRITE) 로 교체 필요.
-        // 환불 요청 조회 (없으면 PAY_018)
-        Refund refund = refundRepository.findById(refundId)
+        // 비관적 락 획득 — 관리자 approve와 사용자 cancel 동시 실행 시 race condition 방지
+        Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
         // 본인 환불 요청인지 확인
@@ -116,12 +113,7 @@ public class RefundService {
             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
         }
 
-        // PENDING 상태만 취소 가능 (APPROVED/REJECTED/CANCELLED 불가)
-        if (refund.getStatus() != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
-        }
-
-        // 상태를 CANCELLED로 전이
+        // 상태 전이 — PENDING이 아니면 엔티티가 REFUND_CANCEL_NOT_ALLOWED(PAY_019) throw
         refund.cancel();
     }
 }

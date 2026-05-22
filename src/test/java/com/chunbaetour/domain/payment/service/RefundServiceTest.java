@@ -182,7 +182,7 @@ class RefundServiceTest {
     @DisplayName("PENDING 환불 요청 취소 시 상태가 CANCELLED로 변경된다")
     void cancelRefund_success_changes_status_to_cancelled() {
         Refund refund = Refund.create(100L, USER_ID, AMOUNT, "단순 변심");
-        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
+        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
 
         refundService.cancelRefund(USER_ID, 1L);
 
@@ -192,7 +192,7 @@ class RefundServiceTest {
     @Test
     @DisplayName("존재하지 않는 환불 요청 취소 시 PAY_018(REFUND_NOT_FOUND)를 던진다")
     void cancelRefund_not_found_throws_PAY_018() {
-        given(refundRepository.findById(1L)).willReturn(Optional.empty());
+        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> refundService.cancelRefund(USER_ID, 1L))
                 .isInstanceOf(BusinessException.class)
@@ -204,7 +204,7 @@ class RefundServiceTest {
     @DisplayName("타인의 환불 요청 취소 시 PAY_011(PAYMENT_HISTORY_FORBIDDEN)를 던진다")
     void cancelRefund_other_user_throws_PAY_011() {
         Refund refund = Refund.create(100L, 999L, AMOUNT, "단순 변심");
-        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
+        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
 
         assertThatThrownBy(() -> refundService.cancelRefund(USER_ID, 1L))
                 .isInstanceOf(BusinessException.class)
@@ -217,7 +217,7 @@ class RefundServiceTest {
     void cancelRefund_non_pending_throws_PAY_019() {
         Refund refund = Refund.create(100L, USER_ID, AMOUNT, "단순 변심");
         ReflectionTestUtils.setField(refund, "status", RefundStatus.APPROVED);
-        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
+        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
 
         assertThatThrownBy(() -> refundService.cancelRefund(USER_ID, 1L))
                 .isInstanceOf(BusinessException.class)
