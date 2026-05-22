@@ -8,8 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> {
 
-    // 개설자 승인/거부 목록 — status=PENDING 으로 호출
-    List<JoinRequest> findByChatRoomIdAndStatus(Long chatRoomId, JoinRequestStatus status);
+    // 개설자 승인/거부 목록 — status=PENDING, 신청 순서(ASC) 정렬
+    List<JoinRequest> findByChatRoomIdAndStatusOrderByCreatedAtAsc(Long chatRoomId, JoinRequestStatus status);
 
     // 신청 상세 조회·처리 — PENDING 상태로 한정해 NonUniqueResultException 방지
     Optional<JoinRequest> findByChatRoomIdAndUserIdAndStatus(Long chatRoomId, Long userId, JoinRequestStatus status);
