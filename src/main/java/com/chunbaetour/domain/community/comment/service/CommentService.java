@@ -36,6 +36,9 @@ public class CommentService {
         Account author = findAccount(authorId);
         if (request.parentCommentId() != null) {
             Comment parent = findComment(request.parentCommentId());
+            if (parent.getStatus() == CommentStatus.DELETED) {
+                throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
+            }
             if (parent.getParentCommentId() != null) {
                 throw new BusinessException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
             }
@@ -71,6 +74,9 @@ public class CommentService {
     @Transactional
     public void update(Long accountId, Long commentId, CommentUpdateRequest request) {
         Comment comment = findComment(commentId);
+        if (comment.getStatus() == CommentStatus.DELETED) {
+            throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
+        }
         if (!comment.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.COMMENT_FORBIDDEN);
         }

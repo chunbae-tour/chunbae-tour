@@ -202,4 +202,31 @@ class CommentServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
     }
+
+    @Test
+    void 삭제된_댓글_수정_400() {
+        Comment comment = Comment.create(1L, PostType.FREE, 1L, "삭제된 댓글");
+        comment.delete();
+        given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
+
+        assertThatThrownBy(() -> commentService.update(1L, 1L, new CommentUpdateRequest("수정 시도")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));
+    }
+
+    @Test
+    void 삭제된_부모_댓글에_대댓글_작성_400() {
+        Comment deletedParent = Comment.create(1L, PostType.FREE, 1L, "삭제된 부모");
+        ReflectionTestUtils.setField(deletedParent, "id", 10L);
+        deletedParent.delete();
+        given(accountRepository.findById(1L)).willReturn(Optional.of(author));
+        given(commentRepository.findById(10L)).willReturn(Optional.of(deletedParent));
+
+        assertThatThrownBy(() -> commentService.create(1L, 1L, PostType.FREE,
+                new CommentCreateRequest("대댓글 시도", 10L)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));
+    }
 }
