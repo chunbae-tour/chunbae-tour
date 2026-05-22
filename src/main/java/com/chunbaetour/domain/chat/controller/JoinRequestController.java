@@ -28,7 +28,7 @@ public class JoinRequestController {
 
     private final JoinRequestService joinRequestService;
 
-    // [S-8] 참여 신청 목록 조회 — 방장 전용, PENDING 상태 신청만 반환
+    // 참여 신청 목록 조회 — 방장 전용, PENDING 상태 신청만 반환
     @GetMapping("/{chatRoomId}/join-requests")
     public ApiResponse<List<JoinRequestResponse>> getJoinRequests(
             @AuthenticationPrincipal Long userId,
@@ -37,7 +37,7 @@ public class JoinRequestController {
                 joinRequestService.getJoinRequests(userId, chatRoomId));
     }
 
-    // [S-7] 채팅방 참여 신청 — OPEN 방에 한해 신청, 분산 락으로 TOCTOU 방지
+    // 채팅방 참여 신청 — OPEN 방에 한해 신청, 분산 락으로 TOCTOU 방지
     @PostMapping("/{chatRoomId}/join-requests")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CreateJoinRequestResponse> createJoinRequest(
