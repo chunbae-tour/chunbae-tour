@@ -8,6 +8,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.willThrow;
 
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
@@ -16,6 +17,7 @@ import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.Optional;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -124,6 +126,21 @@ class ChatRoomKickServiceTest {
                 .isEqualTo(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
 
         verify(room, never()).decrementMembers();
+    }
+
+    @Test
+    void kickMember_concurrentModification_throws_CONCURRENT_UPDATE() {
+        // saveAndFlush 시 @Version 충돌 — 동시 kick/leave/approve가 먼저 currentMembers 변경한 경우
+        ChatRoomMember target = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, TARGET_ID))
+                .willReturn(Optional.of(target));
+        willThrow(ObjectOptimisticLockingFailureException.class)
+                .given(chatRoomRepository).saveAndFlush(room);
+
+        assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {
