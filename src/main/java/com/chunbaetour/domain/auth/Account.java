@@ -124,4 +124,9 @@ public class Account {
                 .status(status)
                 .build();
     }
+
+    /** 상인 승인 시 USER → MERCHANT 권한 상승 (STORY-09). */
+    public void promoteToMerchant() {
+        this.role = Role.MERCHANT;
+    }
 }
