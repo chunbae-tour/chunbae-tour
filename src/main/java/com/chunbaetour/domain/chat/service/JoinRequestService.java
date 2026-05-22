@@ -4,7 +4,9 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
@@ -14,7 +16,10 @@ import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -70,6 +75,34 @@ public class JoinRequestService {
                 lock.unlock();
             }
         }
+    }
+
+    // 방장만 조회 가능 — OWNER_ACTIVE 여부로 권한 확인 후 PENDING 목록 반환
+    // N+1 방지: userId 목록 추출 후 findAllById로 계정 일괄 조회
+    public List<JoinRequestResponse> getJoinRequests(Long userId, Long chatRoomId) {
+        if (!chatRoomRepository.existsById(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
+
+        // 방장 권한 확인 — isOwner()가 아니면 열람 불가 (CHAT_006)
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, userId)
+                .filter(ChatRoomMember::isOwner)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
+
+        List<JoinRequest> requests = joinRequestRepository
+                .findByChatRoomIdAndStatusOrderByCreatedAtAsc(chatRoomId, JoinRequestStatus.PENDING);
+
+        // 신청자 ID 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
+        // pending_key unique constraint로 동일 chatRoomId+userId PENDING 중복 불가 — distinct() 생략
+        List<Long> userIds = requests.stream()
+                .map(JoinRequest::getUserId)
+                .toList();
+        Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+        return requests.stream()
+                .map(r -> JoinRequestResponse.from(r, accountMap.get(r.getUserId())))
+                .toList();
     }
 
     // 락 내부 실제 비즈니스 로직 — TransactionTemplate으로 호출해 트랜잭션 커밋이 락 해제 전에 완료됨을 보장

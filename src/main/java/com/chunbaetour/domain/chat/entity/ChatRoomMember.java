@@ -76,6 +76,10 @@ public class ChatRoomMember extends BaseEntity {
                 .build();
     }
 
+    public boolean isOwner() {
+        return this.memberState == ChatMemberState.OWNER_ACTIVE;
+    }
+
     // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
         if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
