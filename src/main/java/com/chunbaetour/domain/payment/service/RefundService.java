@@ -113,12 +113,7 @@ public class RefundService {
             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
         }
 
-        // PENDING 상태만 취소 가능 (APPROVED/REJECTED/CANCELLED 불가)
-        if (refund.getStatus() != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
-        }
-
-        // 상태를 CANCELLED로 전이
+        // 상태 전이 — PENDING이 아니면 엔티티가 REFUND_CANCEL_NOT_ALLOWED(PAY_019) throw
         refund.cancel();
     }
 }

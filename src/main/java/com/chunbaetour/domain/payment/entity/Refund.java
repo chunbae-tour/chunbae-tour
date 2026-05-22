@@ -53,7 +53,7 @@ public class Refund extends BaseEntity {
     @Builder
     private Refund(Long paymentOrderId, Long userId, Long amount, String reason) {
         if (amount == null || amount <= 0) {
-            throw new IllegalArgumentException("환불 금액은 양수여야 합니다.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         this.paymentOrderId = paymentOrderId;
         this.userId = userId;

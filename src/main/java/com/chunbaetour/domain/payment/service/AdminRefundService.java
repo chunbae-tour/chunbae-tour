@@ -46,7 +46,8 @@ public class AdminRefundService {
         Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        // PENDING 상태만 처리 가능 (이미 승인/거절된 요청 방지)
+        // PENDING 상태 사전 체크 — 실패 시 아래 PaymentOrder findByIdWithLock(DB 쿼리+락) 건너뜀
+        // 엔티티 approve()도 동일 체크를 수행하지만, 불필요한 DB 접근 방지 목적으로 서비스 레이어에서도 유지
         if (refund.getStatus() != RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
@@ -89,11 +90,7 @@ public class AdminRefundService {
         Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        // PENDING 상태만 처리 가능
-        if (refund.getStatus() != RefundStatus.PENDING) {
-            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
-        }
-
+        // 상태 전이 — PENDING이 아니면 엔티티가 REFUND_INVALID_STATUS_TRANSITION(PAY_020) throw
         refund.reject();
 
         return RefundDetailResponse.from(refund);
