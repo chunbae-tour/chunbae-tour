@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
@@ -143,6 +144,29 @@ public class JoinRequestService {
                 lock.unlock();
             }
         }
+    }
+
+    // 참여 신청 거절 — 방장 전용, PENDING 상태만 거절 가능
+    @Transactional
+    public RejectJoinRequestResponse rejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
+        if (!chatRoomRepository.existsById(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
+
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, ownerId)
+                .filter(ChatRoomMember::isOwner)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
+
+        JoinRequest joinRequest = joinRequestRepository.findById(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
+
+        // requestId가 다른 채팅방 신청일 경우 — 존재하지 않는 것으로 처리 (CHAT_011)
+        if (!joinRequest.getChatRoomId().equals(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+        }
+
+        joinRequest.reject();
+        return RejectJoinRequestResponse.from(joinRequest);
     }
 
     // 락 내부 실제 비즈니스 로직 — TransactionTemplate으로 호출해 트랜잭션 커밋이 락 해제 전에 완료됨을 보장

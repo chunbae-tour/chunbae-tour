@@ -19,6 +19,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
@@ -497,6 +498,116 @@ class JoinRequestServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+    }
+
+    // ─── rejectJoinRequest ────────────────────────────────────────────────────
+
+    @Test
+    void rejectJoinRequest_success() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+
+        JoinRequest joinRequest = mock(JoinRequest.class);
+        given(joinRequest.getChatRoomId()).willReturn(ROOM_ID);
+        given(joinRequest.getId()).willReturn(REQUEST_ID);
+        given(joinRequest.getStatus()).willReturn(JoinRequestStatus.REJECTED);
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+
+        RejectJoinRequestResponse response =
+                joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
+
+        verify(joinRequest).reject();
+        assertThat(response.joinRequestId()).isEqualTo(REQUEST_ID);
+        assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
+        assertThat(response.status()).isEqualTo(JoinRequestStatus.REJECTED);
+    }
+
+    @Test
+    void rejectJoinRequest_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    void rejectJoinRequest_notMember_throws_CHAT_SETTING_FORBIDDEN() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void rejectJoinRequest_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        // isOwner() mock 기본값 false — OWNER_ACTIVE가 아닌 일반 멤버 시나리오
+        ChatRoomMember member = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void rejectJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    void rejectJoinRequest_chatRoomIdMismatch_throws_CHAT_APPLICATION_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+
+        JoinRequest joinRequest = mock(JoinRequest.class);
+        given(joinRequest.getChatRoomId()).willReturn(999L);
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    void rejectJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+
+        JoinRequest joinRequest = mock(JoinRequest.class);
+        given(joinRequest.getChatRoomId()).willReturn(ROOM_ID);
+        doThrow(new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED))
+                .when(joinRequest).reject();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
