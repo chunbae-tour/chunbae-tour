@@ -1,4 +1,7 @@
-package com.chunbaetour.domain.community.comment.entity;
+package com.chunbaetour.domain.community.common;
+
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 
 public enum PostType {
     COMPANION, FREE;
@@ -9,7 +12,7 @@ public enum PostType {
         return switch (pathSegment) {
             case "companions" -> COMPANION;
             case "free" -> FREE;
-            default -> throw new IllegalArgumentException("Unknown postType: " + pathSegment);
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         };
     }
 }

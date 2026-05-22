@@ -4,7 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateRequest;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
-import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import jakarta.validation.Valid;

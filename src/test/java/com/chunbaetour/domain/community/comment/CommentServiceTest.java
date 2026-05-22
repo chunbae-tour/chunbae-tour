@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.community.comment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
@@ -11,10 +12,12 @@ import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
-import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.community.common.service.PostQueryService;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import java.util.List;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -92,6 +95,18 @@ class CommentServiceTest {
 
         assertThat(result.content()).hasSize(10);
         assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    void 댓글_작성_존재하지않는_사용자_404() {
+        given(accountRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.create(999L, 1L, PostType.FREE,
+                new CommentCreateRequest("내용")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.USER_NOT_FOUND));
     }
 
     @Test

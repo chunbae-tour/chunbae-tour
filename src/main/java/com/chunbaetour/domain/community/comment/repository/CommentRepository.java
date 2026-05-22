@@ -2,7 +2,7 @@ package com.chunbaetour.domain.community.comment.repository;
 
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
-import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.common.PostType;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

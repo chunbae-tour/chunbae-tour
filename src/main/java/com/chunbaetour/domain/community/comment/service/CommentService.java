@@ -9,7 +9,7 @@ import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
-import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.common.service.PostQueryService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CommentService {
 
     private final CommentRepository commentRepository;
@@ -40,7 +41,6 @@ public class CommentService {
         return CommentCreateResponse.of(commentRepository.save(comment), author);
     }
 
-    @Transactional(readOnly = true)
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
         postQueryService.validateExists(postId, postType);
         Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
