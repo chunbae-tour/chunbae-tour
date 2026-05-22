@@ -134,7 +134,7 @@ public class JoinRequestService {
             }
             return Objects.requireNonNull(
                     new TransactionTemplate(transactionManager).execute(
-                            status -> doApproveJoinRequest(requestId)));
+                            status -> doApproveJoinRequest(ownerId, chatRoomId, requestId)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
@@ -183,11 +183,19 @@ public class JoinRequestService {
     }
 
     // 락 내부 수락 로직 — 최신 상태 재조회 후 approve() 호출, ChatRoomMember 생성 및 정원 증가
-    private ApproveJoinRequestResponse doApproveJoinRequest(Long requestId) {
+    private ApproveJoinRequestResponse doApproveJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
 
         // 락 획득 후 최신 상태 재조회 — 동시 수락 시 이미 처리된 신청 차단 (CHAT_012)
         JoinRequest joinRequest = joinRequestRepository.findById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
+
+        // 락 내부 재검증 — 락 획득 전 검증과 실제 상태 변경 사이 방장 교체 방지
+        if (!joinRequest.getChatRoomId().equals(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+        }
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, ownerId)
+                .filter(ChatRoomMember::isOwner)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
 
         // PENDING 아니면 BusinessException(CHAT_012) 발생
         joinRequest.approve();
