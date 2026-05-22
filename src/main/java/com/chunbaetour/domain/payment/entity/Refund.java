@@ -47,9 +47,6 @@ public class Refund extends BaseEntity {
     @Column(nullable = false, length = 20)
     private RefundStatus status;
 
-    // TODO [STORY-07]: 관리자 승인/거절 시 동시성 보호를 위해 @Version 낙관적 잠금 추가 검토.
-    //                  processedBy(관리자 ID), processedAt(처리 일시) 감사 필드도 함께 추가 예정.
-
     @Column(length = 500, nullable = false)
     private String reason;
 
