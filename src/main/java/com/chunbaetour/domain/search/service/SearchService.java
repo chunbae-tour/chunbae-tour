@@ -244,10 +244,10 @@ public class SearchService {
 
         // 3. Redis 캐시 먼저 조회 (캐시 Hit 시 즉시 반환)
         String cacheKey = SUGGEST_CACHE_KEY_PREFIX + normalized.toLowerCase();
-        List<String> cached = stringRedisTemplate.opsForList().range(cacheKey, 0, -1);
-        if (cached != null && !cached.isEmpty()) {
-            log.debug("[SearchService] 자동완성 캐시 Hit - prefix: {}, count: {}", normalized, cached.size());
-            return cached;
+        String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        if (StringUtils.hasText(cachedData)) {
+            log.debug("[SearchService] 자동완성 캐시 Hit - prefix: {}", normalized);
+            return List.of(cachedData.split("\\|\\|"));
         }
 
         // 4. 캐시 Miss — DB + Redis ZSet 통합 조회
@@ -271,13 +271,12 @@ public class SearchService {
         }
         List<String> result = new ArrayList<>(merged);
 
-        // 5. 결과를 Redis List로 캐싱 (TTL SUGGEST_CACHE_TTL)
+        // 5. 결과를 Redis String으로 캐싱 (TTL SUGGEST_CACHE_TTL)
+        // 동시성(Race Condition) 방지를 위해 List가 아닌 단일 String(구분자 ||)으로 직렬화하여 원자적(set)으로 저장한다.
         if (!result.isEmpty()) {
             try {
-                // 기존 캐시 키 삭제 후 재저장 (RPUSH 전 삭제하지 않으면 이전 값이 남음)
-                stringRedisTemplate.delete(cacheKey);
-                stringRedisTemplate.opsForList().rightPushAll(cacheKey, result);
-                stringRedisTemplate.expire(cacheKey, SUGGEST_CACHE_TTL);
+                String joinedResult = String.join("||", result);
+                stringRedisTemplate.opsForValue().set(cacheKey, joinedResult, SUGGEST_CACHE_TTL);
                 log.debug("[SearchService] 자동완성 캐시 저장 - prefix: {}, count: {}", normalized, result.size());
             } catch (Exception e) {
                 // 캐시 저장 실패는 응답에 영향을 주지 않도록 warn만 기록 (장애 격리)

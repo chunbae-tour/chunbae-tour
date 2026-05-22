@@ -11,7 +11,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.ListOperations;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
@@ -53,7 +53,7 @@ class SuggestServiceTest {
     private StringRedisTemplate stringRedisTemplate;
 
     @Mock
-    private ListOperations<String, String> listOperations;
+    private ValueOperations<String, String> valueOperations;
 
     @Mock
     private ZSetOperations<String, String> zSetOperations;
@@ -107,11 +107,11 @@ class SuggestServiceTest {
     void suggest_ReturnsCachedResult_WhenCacheHit() {
         // given
         String prefix = "경복";
-        List<String> cached = List.of("경복궁", "경복궁 야간개장");
+        String cached = "경복궁||경복궁 야간개장";
 
-        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         // 캐시 키: search:suggest:경복 (소문자 처리)
-        when(listOperations.range(eq("search:suggest:경복"), eq(0L), eq(-1L))).thenReturn(cached);
+        when(valueOperations.get(eq("search:suggest:경복"))).thenReturn(cached);
 
         // when
         List<String> result = searchService.suggest(prefix);
@@ -133,8 +133,8 @@ class SuggestServiceTest {
         String prefix = "경복";
         List<String> dbResults = List.of("경복궁", "경복로");
 
-        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
-        when(listOperations.range(anyString(), anyLong(), anyLong())).thenReturn(List.of()); // 캐시 Miss
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null); // 캐시 Miss
         when(placeQueryRepository.suggestByPrefix("경복", 5)).thenReturn(dbResults);
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null); // ZSet 비어있음
@@ -161,8 +161,8 @@ class SuggestServiceTest {
         zSetTuples.add(mockTuple("경복궁 야간개장", 80.0));   // DB에 없는 인기 검색어 → 추가됨
         zSetTuples.add(mockTuple("남산타워", 70.0));          // prefix 미매칭 → 제외됨
 
-        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
-        when(listOperations.range(anyString(), anyLong(), anyLong())).thenReturn(List.of()); // 캐시 Miss
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null); // 캐시 Miss
         when(placeQueryRepository.suggestByPrefix("경복", 5)).thenReturn(dbResults);
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(zSetTuples);
@@ -191,8 +191,8 @@ class SuggestServiceTest {
         Set<ZSetOperations.TypedTuple<String>> zSetTuples = new HashSet<>();
         zSetTuples.add(mockTuple("관광지6", 50.0));
 
-        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
-        when(listOperations.range(anyString(), anyLong(), anyLong())).thenReturn(List.of());
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
         when(placeQueryRepository.suggestByPrefix("관광", 5)).thenReturn(dbResults);
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(zSetTuples);
@@ -211,8 +211,8 @@ class SuggestServiceTest {
         // given
         String prefixWithSpaces = "  경복  ";
 
-        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
-        when(listOperations.range(eq("search:suggest:경복"), anyLong(), anyLong())).thenReturn(List.of());
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(eq("search:suggest:경복"))).thenReturn(null);
         when(placeQueryRepository.suggestByPrefix(eq("경복"), anyInt())).thenReturn(List.of("경복궁"));
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null);
@@ -232,8 +232,8 @@ class SuggestServiceTest {
         // given
         String prefix = "가".repeat(50); // 경계값: 50자
 
-        when(stringRedisTemplate.opsForList()).thenReturn(listOperations);
-        when(listOperations.range(anyString(), anyLong(), anyLong())).thenReturn(List.of());
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
         when(placeQueryRepository.suggestByPrefix(anyString(), anyInt())).thenReturn(List.of());
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         when(zSetOperations.reverseRangeWithScores(anyString(), anyLong(), anyLong())).thenReturn(null);
