@@ -395,6 +395,32 @@ class JoinRequestServiceTest {
     }
 
     @Test
+    void approveJoinRequest_leftMemberRejoin_reactivates() {
+        JoinRequest req = stubPendingRequest();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        ChatRoomMember ownerMember = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        ChatRoom chatRoom = mock(ChatRoom.class);
+        given(chatRoom.getId()).willReturn(ROOM_ID);
+        given(chatRoomRepository.findByIdWithLock(ROOM_ID)).willReturn(Optional.of(chatRoom));
+        given(chatRoom.getCurrentMembers()).willReturn(3);
+        given(req.getStatus()).willReturn(JoinRequestStatus.APPROVED);
+
+        // LEFT 상태 기존 멤버 레코드 존재 — reactivate 분기
+        ChatRoomMember leftMember = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(leftMember));
+
+        joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
+
+        verify(leftMember).reactivate();
+        verify(chatRoomMemberRepository, org.mockito.Mockito.never()).save(any(ChatRoomMember.class));
+    }
+
+    @Test
     void approveJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
 
