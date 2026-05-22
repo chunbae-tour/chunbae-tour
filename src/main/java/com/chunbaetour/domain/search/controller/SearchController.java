@@ -139,7 +139,7 @@ public class SearchController {
      * SA: {@code GET /api/v1/search/suggest?q={prefix}}<br>
      * 인증: 불필요(❌)<br>
      * 설명: prefix(입력 중인 검색어)를 기반으로 관광지명 DB + Redis 인기 검색어 ZSet에서
-     * 자동완성 후보를 최대 5개 반환한다. 결과는 Redis List에 5분간 캐싱된다.
+     * 자동완성 후보를 최대 5개 반환한다. 결과는 Redis String 캐시에 5분간 캐싱된다.
      * </p>
      *
      * <p>

@@ -16,6 +16,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -156,7 +157,8 @@ class SuggestServiceTest {
         List<String> dbResults = List.of("경복궁", "경복로");
 
         // Redis ZSet: 인기 검색어 중 "경복"으로 시작하는 것 — "경복궁 야간개장"은 DB에 없는 신규 항목
-        Set<ZSetOperations.TypedTuple<String>> zSetTuples = new HashSet<>();
+        // LinkedHashSet을 사용하여 Redis 조회 결과(Score 내림차순) 순서를 모의(Mock) 보장
+        Set<ZSetOperations.TypedTuple<String>> zSetTuples = new LinkedHashSet<>();
         zSetTuples.add(mockTuple("경복궁", 100.0));          // DB와 중복 → 제거됨
         zSetTuples.add(mockTuple("경복궁 야간개장", 80.0));   // DB에 없는 인기 검색어 → 추가됨
         zSetTuples.add(mockTuple("남산타워", 70.0));          // prefix 미매칭 → 제외됨
@@ -173,7 +175,7 @@ class SuggestServiceTest {
         // then
         // DB 우선, ZSet 보완: [경복궁, 경복로, 경복궁 야간개장]
         assertThat(result).hasSize(3);
-        assertThat(result).contains("경복궁", "경복로", "경복궁 야간개장");
+        assertThat(result).containsExactly("경복궁", "경복로", "경복궁 야간개장");
         // 중복 없음 검증: 경복궁이 2번 들어가면 안 됨
         assertThat(result).doesNotHaveDuplicates();
     }

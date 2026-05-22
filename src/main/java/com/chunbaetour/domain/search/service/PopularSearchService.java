@@ -4,6 +4,7 @@ import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
 import com.chunbaetour.domain.search.type.RankingChangeType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.chunbaetour.domain.search.constant.SearchRedisKeys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -70,15 +71,6 @@ public class PopularSearchService {
     // Redis Key 상수
     // ──────────────────────────────────────────────────────────────────────────
 
-    // 외부 접근을 차단하기 위해 private으로 캡슐화.
-    // 단위 테스트에서는 상수 문자열("search:ranking")을 직접 사용하거나 @TestPropertySource로 주입할 것.
-
-    /** 오늘 누적 검색 횟수 ZSet 키 (score 높을수록 인기) */
-    private static final String RANKING_KEY      = "search:ranking";
-
-    /** 전일 인기 검색어 스냅샷 ZSet 키 (자정 초기화 직전 백업) */
-    private static final String RANKING_PREV_KEY = "search:ranking:prev";
-
     /** 스케줄러 분산 락 만료 시간 */
     private static final long RESET_LOCK_LEASE_SECONDS = 10L;
 
@@ -132,7 +124,7 @@ public class PopularSearchService {
             
             if (Boolean.TRUE.equals(isFirstSearch)) {
                 // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
-                stringRedisTemplate.opsForZSet().incrementScore(RANKING_KEY, normalized, 1);
+                stringRedisTemplate.opsForZSet().incrementScore(SearchRedisKeys.POPULAR_RANKING_KEY, normalized, 1);
                 log.debug("[PopularSearch] 검색어 카운트 증가: '{}'", normalized);
             } else {
                 log.debug("[PopularSearch] 중복 검색(어뷰징) 차단: '{}'", normalized);
@@ -166,7 +158,7 @@ public class PopularSearchService {
             // 1. 현재 인기 검색어 TOP N 조회 (score 내림차순)
             Set<ZSetOperations.TypedTuple<String>> currentRanking =
                     stringRedisTemplate.opsForZSet()
-                            .reverseRangeWithScores(RANKING_KEY, 0, topN - 1);
+                            .reverseRangeWithScores(SearchRedisKeys.POPULAR_RANKING_KEY, 0, topN - 1);
 
             // 랭킹 데이터가 아직 없는 경우 (초기 상태) 빈 리스트 반환
             if (currentRanking == null || currentRanking.isEmpty()) {
@@ -298,19 +290,19 @@ public class PopularSearchService {
         // search:ranking 키 존재 여부 확인
         // [주의] 다중 인스턴스 동시 실행 시, A가 rename한 뒤 B가 hasKey=false로 판단하여 delete해버리는 
         // 심각한 데이터 유실(스냅샷 증발) 문제가 발생할 수 있다. 분산 락이 이를 방지한다.
-        Boolean rankingExists = stringRedisTemplate.hasKey(RANKING_KEY);
+        Boolean rankingExists = stringRedisTemplate.hasKey(SearchRedisKeys.POPULAR_RANKING_KEY);
 
         if (Boolean.TRUE.equals(rankingExists)) {
             // RENAME: search:ranking → search:ranking:prev
             // - 원자적 연산: prev가 이미 존재하면 자동 교체 (별도 delete 불필요)
             // - 실행 후 search:ranking 키는 소멸 → 당일 집계 초기화 완료
-            stringRedisTemplate.rename(RANKING_KEY, RANKING_PREV_KEY);
-            log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", RANKING_KEY, RANKING_PREV_KEY);
+            stringRedisTemplate.rename(SearchRedisKeys.POPULAR_RANKING_KEY, SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
+            log.info("[PopularSearch] 랭킹 스냅샷 완료: {} → {}", SearchRedisKeys.POPULAR_RANKING_KEY, SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
         } else {
             // 오늘 검색이 한 건도 없었던 경우, 이전 랭킹 기준이 무의미하므로 스냅샷을 제거한다.
             // (다음 날 조회 시 이전 랭킹이 없어져 모두 NEW로 표시되도록 하는 올바른 설계 동작)
-            stringRedisTemplate.delete(RANKING_PREV_KEY);
-            log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", RANKING_PREV_KEY);
+            stringRedisTemplate.delete(SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
+            log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
         }
     }
 
@@ -334,7 +326,7 @@ public class PopularSearchService {
      */
     private Map<String, Integer> buildPrevRankMap() {
         Set<String> prevKeywords = stringRedisTemplate.opsForZSet()
-                .reverseRange(RANKING_PREV_KEY, 0, topN - 1);
+                .reverseRange(SearchRedisKeys.POPULAR_RANKING_PREV_KEY, 0, topN - 1);
 
         if (prevKeywords == null || prevKeywords.isEmpty()) {
             return Collections.emptyMap(); // 이전 랭킹 없음 → 전부 NEW 처리

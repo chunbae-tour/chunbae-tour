@@ -8,6 +8,7 @@ import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
 import com.chunbaetour.domain.festival.type.FestivalProgressStatus;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.search.constant.SearchRedisKeys;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import lombok.RequiredArgsConstructor;
@@ -59,15 +60,7 @@ public class SearchService {
     /** 자동완성 캐시 TTL — prefix는 관광지 데이터 변경이 잦지 않으므로 5분 캐싱으로 DB 부하 감소 */
     private static final Duration SUGGEST_CACHE_TTL = Duration.ofMinutes(5);
 
-    /**
-     * 인기 검색어 ZSet 키.
-     * <p>
-     * {@link PopularSearchService}의 {@code RANKING_KEY}와 동일한 값이어야 한다.
-     * 두 클래스가 같은 Redis 키를 공유하므로, 키 이름 변경 시 반드시 양쪽을 함께 수정해야 한다.
-     * PopularSearchService의 상수가 private이므로 여기서는 독립 선언한다.
-     * </p>
-     */
-    private static final String POPULAR_RANKING_KEY = "search:ranking";
+
 
     // ──────────────────────────────────────────────────────────────────────────
     // 관광지 검색 (Phase 2-2)
@@ -244,7 +237,13 @@ public class SearchService {
 
         // 3. Redis 캐시 먼저 조회 (캐시 Hit 시 즉시 반환)
         String cacheKey = SUGGEST_CACHE_KEY_PREFIX + normalized.toLowerCase();
-        String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        String cachedData = null;
+        try {
+            cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            log.warn("[SearchService] 자동완성 캐시 조회 실패 (DB fallback) - prefix: {}", normalized, e);
+        }
+
         if (StringUtils.hasText(cachedData)) {
             log.debug("[SearchService] 자동완성 캐시 Hit - prefix: {}", normalized);
             return List.of(cachedData.split("\\|\\|"));
@@ -302,7 +301,7 @@ public class SearchService {
             // 인기 검색어 TOP 100 기준으로 순회 (자동완성 보완이 목적이므로 전체를 읽지 않음)
             Set<ZSetOperations.TypedTuple<String>> rankingSet =
                     stringRedisTemplate.opsForZSet().reverseRangeWithScores(
-                            POPULAR_RANKING_KEY, 0, 99);
+                            SearchRedisKeys.POPULAR_RANKING_KEY, 0, 99);
 
             if (rankingSet == null || rankingSet.isEmpty()) {
                 return List.of();
