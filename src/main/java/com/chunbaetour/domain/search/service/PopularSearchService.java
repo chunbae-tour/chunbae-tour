@@ -222,6 +222,9 @@ public class PopularSearchService {
      * @return 인기 검색어 중 prefix로 시작하는 키워드 목록
      */
     public List<String> fetchPopularSuggestions(String prefix, int limit) {
+        if (!StringUtils.hasText(prefix) || limit <= 0) {
+            return Collections.emptyList();
+        }
         try {
             Set<ZSetOperations.TypedTuple<String>> rankingSet =
                     stringRedisTemplate.opsForZSet().reverseRangeWithScores(

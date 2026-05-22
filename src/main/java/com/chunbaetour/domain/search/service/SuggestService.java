@@ -67,7 +67,9 @@ public class SuggestService {
         Optional<List<String>> cached = suggestCacheRepository.get(normalized);
         if (cached.isPresent()) {
             log.debug("[SuggestService] 자동완성 캐시 Hit - prefix: {}", normalized);
-            return cached.get();
+            return cached.get().stream()
+                    .limit(SUGGEST_MAX_SIZE)
+                    .toList();
         }
 
         // 2. 캐시 Miss — DB 조회
@@ -84,7 +86,9 @@ public class SuggestService {
             }
             merged.add(keyword);
         }
-        List<String> result = new ArrayList<>(merged);
+        List<String> result = new ArrayList<>(merged).stream()
+                .limit(SUGGEST_MAX_SIZE)
+                .toList();
 
         // 5. 결과 캐싱
         suggestCacheRepository.set(normalized, result);
