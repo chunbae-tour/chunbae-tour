@@ -14,6 +14,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 신고 접수 API.
+ *
+ * <p>USER 전용 — ADMIN은 신고 처리자(KAN-91/92)이며 신고자가 아니다.
+ * SecurityConfig에서 {@code POST /api/v1/community/reports → hasRole("USER")} 로 강제.
+ */
 @RestController
 @RequestMapping("/api/v1/community/reports")
 @RequiredArgsConstructor

@@ -32,12 +32,14 @@ public class ReportService {
 
     @Transactional
     public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
+        // 자기신고 차단: USER·MERCHANT만 체크 — 게시글/댓글은 ID 체계가 달라 비교 무의미
         if ((request.targetType() == ReportTargetType.USER
                 || request.targetType() == ReportTargetType.MERCHANT)
                 && request.targetId().equals(reporterId)) {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
 
+        // 검증 순서: DB 조회 없는 자기신고 체크 → 존재 확인(DB 1회) → 중복 확인(DB 1회) — 빠른 실패 원칙
         validateTargetExists(request.targetType(), request.targetId());
 
         if (reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
@@ -73,6 +75,7 @@ public class ReportService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
             }
             case MERCHANT -> {
+                // MERCHANT는 별도 테이블 없이 Account.role로 구분 — role 불일치 시 대상 없음으로 처리
                 Account merchant = accountRepository.findById(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (merchant.getRole() != Role.MERCHANT) {
