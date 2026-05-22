@@ -66,6 +66,9 @@ public class AdminMerchantApplicationService {
 
     /**
      * 상인 신청 승인.
+     * 두 관리자가 동일 신청을 동시 승인할 경우, 두 트랜잭션 모두 PENDING을 읽고
+     * 상태 가드를 통과해 Shop이 중복 생성될 수 있다. findByIdWithLock(SELECT FOR UPDATE)으로
+     * 첫 번째 트랜잭션이 커밋될 때까지 두 번째 요청을 블로킹해 이를 방지한다.
      * 단일 트랜잭션: application → account → shop 순으로 락 획득 후 처리.
      * 이미 가게가 있으면 SHOP_ALREADY_EXISTS.
      */
