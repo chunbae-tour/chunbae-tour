@@ -9,12 +9,15 @@ import com.chunbaetour.domain.payment.service.ChargeService;
 import com.chunbaetour.domain.payment.service.RefundService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 결제 API: 엽전 충전 요청 및 환불 요청 */
@@ -45,8 +48,18 @@ public class PaymentController {
     public ApiResponse<RefundResponse> requestRefund(
             @AuthenticationPrincipal Long userId,
             @PathVariable String orderId,
-            @RequestBody RefundRequest request
+            @Valid @RequestBody RefundRequest request
     ) {
         return ApiResponse.success(refundService.requestRefund(userId, orderId, request));
+    }
+
+    /** 환불 요청 취소 — PENDING 상태인 본인 환불 요청만 취소 가능. */
+    @PatchMapping("/refund/{refundId}/cancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelRefund(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long refundId
+    ) {
+        refundService.cancelRefund(userId, refundId);
     }
 }

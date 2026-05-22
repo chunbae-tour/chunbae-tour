@@ -9,7 +9,7 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.community.common.CursorPage;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
@@ -109,7 +109,7 @@ class CompanionPostServiceTest {
                 .willReturn(List.of(p1, p2));
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        CursorPage<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 10);
+        CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 10);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isFalse();
@@ -130,7 +130,7 @@ class CompanionPostServiceTest {
                 .willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        CursorPage<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 10);
+        CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 10);
 
         assertThat(result.content()).hasSize(10);
         assertThat(result.hasNext()).isTrue();

@@ -3,11 +3,10 @@ package com.chunbaetour.domain.yeopjeon.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.yeopjeon.dto.response.YeopjeonHistoryResponse;
 import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
 import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -16,8 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 엽전 사용 내역 cursor 페이징 서비스.
- * cursor 형식: id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음).
- * CursorUtils PR 머지 후 encode/decode를 공통 유틸로 교체 예정.
+ * cursor 형식: id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음, URL-safe).
  */
 @Service
 @RequiredArgsConstructor
@@ -65,22 +63,15 @@ public class YeopjeonHistoryService {
         return yeopjeonHistoryRepository.findByUserIdAndIdLessThanOrderByIdDesc(userId, cursorId, pageable);
     }
 
-    // TODO: CursorUtils PR 머지 후 아래 두 메서드를 제거하고 CursorUtils.encode/decode로 교체
-    // private String encodeCursor(Long id) { return CursorUtils.encode(id); }
-    // private Long decodeCursor(String cursor) { return CursorUtils.decode(cursor); }
-
-    // id를 문자열로 변환 후 Base64URL 인코딩 (padding 없음, URL-safe)
     private String encodeCursor(Long id) {
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(Long.toString(id).getBytes(StandardCharsets.UTF_8));
+        return CursorUtils.encode(id);
     }
 
     // 잘못된 cursor 또는 음수 id 전달 시 COMMON_002(INVALID_REQUEST) 반환
     private Long decodeCursor(String cursor) {
         try {
-            long id = Long.parseLong(
-                    new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
-            if (id <= 0) throw new IllegalArgumentException("cursor id must be positive");
+            long id = CursorUtils.decode(cursor);
+            if (id <= 0) throw new IllegalArgumentException();
             return id;
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
