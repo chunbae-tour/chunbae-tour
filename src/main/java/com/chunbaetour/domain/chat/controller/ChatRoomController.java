@@ -64,6 +64,7 @@ public class ChatRoomController {
         return ApiResponse.success(null);
     }
 
+    // 참여자 강퇴 — 방장 전용, OWNER_ACTIVE 대상 강퇴 불가(CHAT_017), MVP에서 방장 자기 강퇴 불가
     @DeleteMapping("/{roomId}/members/{targetUserId}")
     public ApiResponse<Void> kickMember(
             @AuthenticationPrincipal Long userId,

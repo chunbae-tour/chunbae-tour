@@ -114,6 +114,7 @@ public class ChatRoomService {
         }
     }
 
+    // 참여자 강퇴 — 방장만 가능, kick()으로 MEMBER_KICKED 전환 후 currentMembers -1
     @Transactional
     public void kickMember(Long ownerId, Long chatRoomId, Long targetUserId) {
         ChatRoom chatRoom = chatRoomRepository.findById(chatRoomId)
