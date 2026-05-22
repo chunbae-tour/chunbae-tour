@@ -76,7 +76,7 @@ class AdminRefundServiceTest {
     // ──────────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("환불 승인 성공: 엽전 차감 → 상태 APPROVED → PG 취소")
+    @DisplayName("환불 승인 성공: order REFUNDED → refund APPROVED → 엽전 차감 → PG 취소 (단일 트랜잭션)")
     void approveRefund_success() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
@@ -90,6 +90,7 @@ class AdminRefundServiceTest {
         verify(walletService).reclaimForRefund(USER_ID, AMOUNT, ORDER_ID);
         verify(paymentGatewayClient).cancelPayment(eq("pg-txn-123"), eq(AMOUNT), any());
         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
     }
 
     @Test
@@ -121,11 +122,11 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("PaymentOrder가 COMPLETED 아닐 때 REFUND_NOT_ELIGIBLE 예외")
+    @DisplayName("PaymentOrder가 COMPLETED 아닐 때 REFUND_NOT_ELIGIBLE 예외 — PG·Wallet 호출 없음")
     void approveRefund_order_not_completed_throws() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
-        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.CANCELLED);
+        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.REFUNDED);
         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
 
@@ -138,7 +139,7 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("PG 취소 실패 시 예외 전파 (단위 테스트: 트랜잭션 없으므로 즉시 실행)")
+    @DisplayName("PG 취소 실패 시 예외 전파 — 실제 트랜잭션 환경에서는 DB 롤백됨")
     void approveRefund_pg_cancel_fails_throws() {
         Refund refund = makePendingRefund();
         PaymentOrder order = makeCompletedOrder();
@@ -236,6 +237,24 @@ class AdminRefundServiceTest {
         assertThat(page.content()).hasSize(4);
         assertThat(page.hasNext()).isTrue();
         assertThat(page.nextCursor()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("size가 0이면 INVALID_PAGE_SIZE 예외")
+    void getRefunds_size_zero_throws() {
+        assertThatThrownBy(() -> adminRefundService.getRefunds(null, 0))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
+    }
+
+    @Test
+    @DisplayName("size가 101이면 INVALID_PAGE_SIZE 예외")
+    void getRefunds_size_over_max_throws() {
+        assertThatThrownBy(() -> adminRefundService.getRefunds(null, 101))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
     }
 
     @Test

@@ -31,9 +31,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * AdminRefundService 통합 테스트.
- * 핵심 목적: @Transactional + afterCommit 경계에서 PG 취소 호출 순서 및 DB 상태 정합성 검증.
- * 단위 테스트(AdminRefundServiceTest)는 TransactionSynchronizationManager.isSynchronizationActive() == false로
- * afterCommit 경로를 탈 수 없으므로, 실제 트랜잭션이 커밋되는 통합 환경에서 보완 검증한다.
+ * 핵심 목적: 단일 트랜잭션 내 PG 취소 실행 — 성공 시 전체 커밋, 실패 시 전체 롤백 검증.
+ * 단위 테스트(AdminRefundServiceTest)에서는 실제 트랜잭션 롤백을 검증할 수 없어 보완한다.
  */
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -94,12 +93,12 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // afterCommit 경계 검증
+    // 트랜잭션 정합성 검증
     // ──────────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("승인 성공: DB 커밋 후 afterCommit에서 PG 취소 호출, DB 상태 APPROVED/CANCELLED/차감 확인")
-    void approveRefund_commits_db_then_calls_pg_in_afterCommit() {
+    @DisplayName("승인 성공: PG 취소까지 단일 트랜잭션으로 커밋 — Refund APPROVED, PaymentOrder REFUNDED, 엽전 차감")
+    void approveRefund_success_all_committed() {
         PaymentOrder order = saveCompletedOrder();
         saveWalletWithBalance(AMOUNT);
         Refund refund = savePendingRefund(order.getId());
@@ -107,44 +106,42 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
 
         RefundDetailResponse response = adminRefundService.approveRefund(refund.getId());
 
-        // 반환값 상태 확인
         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
 
-        // DB 커밋 확인 — Refund APPROVED, PaymentOrder CANCELLED
         Refund savedRefund = refundRepository.findById(refund.getId()).orElseThrow();
         assertThat(savedRefund.getStatus()).isEqualTo(RefundStatus.APPROVED);
 
         PaymentOrder savedOrder = paymentOrderRepository.findById(order.getId()).orElseThrow();
-        assertThat(savedOrder.getStatus()).isEqualTo(PaymentOrderStatus.CANCELLED);
+        assertThat(savedOrder.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
 
-        // 엽전 차감 확인 (AMOUNT → 0)
         Wallet savedWallet = walletRepository.findByUserId(USER_ID).orElseThrow();
         assertThat(savedWallet.getBalance()).isZero();
 
-        // afterCommit에서 PG 취소 호출 확인
         verify(paymentGatewayClient).cancelPayment(any(), any(), any());
     }
 
     @Test
-    @DisplayName("PG 취소 afterCommit 실패: DB는 이미 커밋(APPROVED/차감 유지), PG 예외 전파")
-    void approveRefund_pg_cancel_fails_in_afterCommit_db_stays_committed() {
+    @DisplayName("PG 취소 실패 시 트랜잭션 전체 롤백 — Refund PENDING, PaymentOrder COMPLETED, 엽전 차감 없음")
+    void approveRefund_pg_cancel_fails_rolls_back_all() {
         PaymentOrder order = saveCompletedOrder();
         saveWalletWithBalance(AMOUNT);
         Refund refund = savePendingRefund(order.getId());
         willThrow(new RuntimeException("PG timeout"))
                 .given(paymentGatewayClient).cancelPayment(any(), any(), any());
 
-        // afterCommit 내 예외는 Spring finally 블록에서 호출자에게 전파됨
         assertThatThrownBy(() -> adminRefundService.approveRefund(refund.getId()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("PG timeout");
 
-        // DB 커밋은 PG 호출 전에 완료 — 롤백 불가, APPROVED 상태 유지
+        // 트랜잭션 롤백 — 모든 DB 상태 원상 복구
         Refund savedRefund = refundRepository.findById(refund.getId()).orElseThrow();
-        assertThat(savedRefund.getStatus()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(savedRefund.getStatus()).isEqualTo(RefundStatus.PENDING);
 
-        // 엽전 차감도 커밋 완료 — 0 유지
+        PaymentOrder savedOrder = paymentOrderRepository.findById(order.getId()).orElseThrow();
+        assertThat(savedOrder.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+
+        // 엽전 회수도 롤백 — 잔액 원상 복구
         Wallet savedWallet = walletRepository.findByUserId(USER_ID).orElseThrow();
-        assertThat(savedWallet.getBalance()).isZero();
+        assertThat(savedWallet.getBalance()).isEqualTo(AMOUNT);
     }
 }
