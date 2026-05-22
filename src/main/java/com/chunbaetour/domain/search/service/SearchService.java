@@ -12,18 +12,24 @@ import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 검색 서비스.
  * <p>
- * Phase 2-2 관광지 검색, Phase 2-3 축제 검색 등의 검색 기능을 담당한다.
+ * Phase 2-2 관광지 검색, Phase 2-3 축제 검색, Phase 2-4 검색어 자동완성 기능을 담당한다.
  * 각 검색 메서드는 내부적으로 {@link PopularSearchService#incrementSearchCount(String)}를
  * 호출하여 인기 검색어 집계에 기여한다.
  * </p>
@@ -37,7 +43,35 @@ public class SearchService {
     private final PlaceQueryRepository placeQueryRepository;
     private final FestivalQueryRepository festivalQueryRepository;
     private final PopularSearchService popularSearchService;
+    private final StringRedisTemplate stringRedisTemplate;
     private final Clock clock;
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 상수
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /** 자동완성 최대 반환 건수 (SA 명세 F-SEARCH-003 §4. 최대 5개 반환) */
+    private static final int SUGGEST_MAX_SIZE = 5;
+
+    /** 자동완성 Redis 캐시 키 prefix. 실제 키: {@code search:suggest:{prefix}} */
+    private static final String SUGGEST_CACHE_KEY_PREFIX = "search:suggest:";
+
+    /** 자동완성 캐시 TTL — prefix는 관광지 데이터 변경이 잦지 않으므로 5분 캐싱으로 DB 부하 감소 */
+    private static final Duration SUGGEST_CACHE_TTL = Duration.ofMinutes(5);
+
+    /**
+     * 인기 검색어 ZSet 키.
+     * <p>
+     * {@link PopularSearchService}의 {@code RANKING_KEY}와 동일한 값이어야 한다.
+     * 두 클래스가 같은 Redis 키를 공유하므로, 키 이름 변경 시 반드시 양쪽을 함께 수정해야 한다.
+     * PopularSearchService의 상수가 private이므로 여기서는 독립 선언한다.
+     * </p>
+     */
+    private static final String POPULAR_RANKING_KEY = "search:ranking";
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 관광지 검색 (Phase 2-2)
+    // ──────────────────────────────────────────────────────────────────────────
 
     /**
      * 관광지 키워드 검색 (Phase 2-2).
@@ -92,6 +126,10 @@ public class SearchService {
 
         return new CursorPageResponse<>(resultItems, nextCursorStr, hasNext, resultItems.size());
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 축제 검색 (Phase 2-3)
+    // ──────────────────────────────────────────────────────────────────────────
 
     /**
      * 축제 검색 (Phase 2-3).
@@ -150,5 +188,148 @@ public class SearchService {
         }
 
         return new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 검색어 자동완성 (Phase 2-4)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 검색어 자동완성 (Phase 2-4).
+     * <p>
+     * SA 명세서: {@code GET /api/v1/search/suggest?q={prefix}}<br>
+     * F-SEARCH-003: prefix 최소 1자, 최대 5개 반환.
+     * </p>
+     *
+     * <p><b>통합 전략 (DB + Redis ZSet):</b>
+     * <ol>
+     *   <li>Redis 캐시({@code search:suggest:{prefix}}) 먼저 조회 → Hit 시 즉시 반환</li>
+     *   <li>캐시 Miss 시:
+     *     <ol>
+     *       <li>DB에서 {@code LIKE 'prefix%'} 관광지명 최대 5개 조회</li>
+     *       <li>Redis ZSet({@code search:ranking})에서 prefix로 시작하는 인기 검색어 조회하여 병합</li>
+     *       <li>중복 제거 후 최대 {@link #SUGGEST_MAX_SIZE}개로 제한</li>
+     *       <li>결과를 Redis List로 캐싱 (TTL {@link #SUGGEST_CACHE_TTL})</li>
+     *     </ol>
+     *   </li>
+     * </ol>
+     * </p>
+     *
+     * <p><b>[성능 고려]</b><br>
+     * {@code LIKE 'prefix%'} 패턴은 {@code idx_places_name} B-Tree 인덱스의 Range Scan을
+     * 활용할 수 있어 {@code LIKE '%keyword%'} 방식보다 훨씬 빠르다.
+     * Redis 캐싱(5분 TTL)을 통해 동일 prefix 반복 입력 시 DB 조회를 생략한다.
+     * </p>
+     *
+     * @param prefix   사용자가 입력 중인 검색어 prefix (non-null, 1자 이상)
+     * @return 자동완성 후보 문자열 목록 (최대 5개, 중복 없음)
+     * @throws BusinessException prefix가 null/blank인 경우 {@code SEARCH_KEYWORD_TOO_SHORT}
+     * @throws BusinessException prefix가 50자를 초과하는 경우 {@code SEARCH_KEYWORD_TOO_LONG}
+     */
+    public List<String> suggest(String prefix) {
+        log.info("[SearchService] 자동완성 요청 - prefixLength: {}", prefix != null ? prefix.length() : 0);
+
+        // 1. 입력값 정규화 (양끝 공백 제거)
+        String normalized = prefix != null ? prefix.strip() : null;
+
+        // 2. 입력값 검증
+        // [정책] prefix는 최소 1자 이상이어야 함 (SA 명세 F-SEARCH-003 §동작 방식 1. prefix 수신(최소 1자))
+        if (!StringUtils.hasText(normalized)) {
+            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_SHORT);
+        }
+        // [정책] prefix가 50자를 초과하면 쿼리 비용이 커지므로 차단 (searchPlaces와 동일 제한)
+        if (normalized.length() > 50) {
+            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
+        }
+
+        // 3. Redis 캐시 먼저 조회 (캐시 Hit 시 즉시 반환)
+        String cacheKey = SUGGEST_CACHE_KEY_PREFIX + normalized.toLowerCase();
+        List<String> cached = stringRedisTemplate.opsForList().range(cacheKey, 0, -1);
+        if (cached != null && !cached.isEmpty()) {
+            log.debug("[SearchService] 자동완성 캐시 Hit - prefix: {}, count: {}", normalized, cached.size());
+            return cached;
+        }
+
+        // 4. 캐시 Miss — DB + Redis ZSet 통합 조회
+        // 4-1. DB: 관광지명 prefix LIKE 검색 (최대 SUGGEST_MAX_SIZE개)
+        List<String> dbResults = placeQueryRepository.suggestByPrefix(normalized, SUGGEST_MAX_SIZE);
+
+        // 4-2. Redis ZSet(search:ranking)에서 prefix로 시작하는 인기 검색어 조회
+        //      ZSet 전체를 score 내림차순(인기순)으로 읽어 prefix 필터링
+        //      [알려진 한계] 데이터 규모가 커지면 ZSet 순회 비용 증가 →
+        //      추후 Trie 구조 또는 별도 sorted-set 설계로 개선 필요
+        List<String> redisResults = fetchPopularSuggestions(normalized);
+
+        // 4-3. DB 결과 우선, Redis 인기 검색어 보완 (중복 제거, 최대 5개)
+        //      LinkedHashSet으로 삽입 순서(DB → Redis) 보존 + 중복 제거
+        Set<String> merged = new LinkedHashSet<>(dbResults);
+        for (String keyword : redisResults) {
+            if (merged.size() >= SUGGEST_MAX_SIZE) {
+                break;
+            }
+            merged.add(keyword);
+        }
+        List<String> result = new ArrayList<>(merged);
+
+        // 5. 결과를 Redis List로 캐싱 (TTL SUGGEST_CACHE_TTL)
+        if (!result.isEmpty()) {
+            try {
+                // 기존 캐시 키 삭제 후 재저장 (RPUSH 전 삭제하지 않으면 이전 값이 남음)
+                stringRedisTemplate.delete(cacheKey);
+                stringRedisTemplate.opsForList().rightPushAll(cacheKey, result);
+                stringRedisTemplate.expire(cacheKey, SUGGEST_CACHE_TTL);
+                log.debug("[SearchService] 자동완성 캐시 저장 - prefix: {}, count: {}", normalized, result.size());
+            } catch (Exception e) {
+                // 캐시 저장 실패는 응답에 영향을 주지 않도록 warn만 기록 (장애 격리)
+                log.warn("[SearchService] 자동완성 캐시 저장 실패 (무시) - prefix: {}", normalized, e);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Redis ZSet({@code search:ranking})에서 prefix로 시작하는 인기 검색어를 조회한다.
+     * <p>
+     * score 내림차순(인기순)으로 최대 전체 랭킹을 순회하여 prefix 매칭하는 항목을 추출한다.
+     * SA 명세 §3. 검색(Search): "Redis ZSet prefix 매칭 병행 (선택)"에 해당하는 선택적 보완 로직.
+     * </p>
+     *
+     * @param prefix 매칭할 prefix (소문자 정규화 전)
+     * @return prefix로 시작하는 인기 검색어 목록 (최대 SUGGEST_MAX_SIZE 건)
+     */
+    private List<String> fetchPopularSuggestions(String prefix) {
+        try {
+            // 인기 검색어 TOP 100 기준으로 순회 (자동완성 보완이 목적이므로 전체를 읽지 않음)
+            Set<ZSetOperations.TypedTuple<String>> rankingSet =
+                    stringRedisTemplate.opsForZSet().reverseRangeWithScores(
+                            POPULAR_RANKING_KEY, 0, 99);
+
+            if (rankingSet == null || rankingSet.isEmpty()) {
+                return List.of();
+            }
+
+            List<String> matched = new ArrayList<>();
+            String lowerPrefix = prefix.toLowerCase();
+
+            for (ZSetOperations.TypedTuple<String> tuple : rankingSet) {
+                String keyword = tuple.getValue();
+                if (keyword == null || keyword.isBlank()) {
+                    continue;
+                }
+                // case-insensitive prefix 매칭 — 사용자 입력 대소문자와 무관하게 매칭
+                if (keyword.toLowerCase().startsWith(lowerPrefix)) {
+                    matched.add(keyword);
+                }
+                if (matched.size() >= SUGGEST_MAX_SIZE) {
+                    break;
+                }
+            }
+            return matched;
+        } catch (Exception e) {
+            // Redis 장애 시 DB 결과만으로 응답 (자동완성 보완은 선택적 기능)
+            log.warn("[SearchService] Redis ZSet 자동완성 조회 실패 (무시) - prefix: {}", prefix, e);
+            return List.of();
+        }
     }
 }
