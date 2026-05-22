@@ -11,8 +11,8 @@ import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.entity.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
-import com.chunbaetour.domain.community.common.CursorPage;
-import com.chunbaetour.domain.community.common.CursorUtils;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,7 +38,7 @@ public class CommentService {
     }
 
     @Transactional(readOnly = true)
-    public CursorPage<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
+    public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
         Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
         List<Comment> comments = commentRepository.findByPost(
                 postId, postType, CommentStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
@@ -58,11 +58,11 @@ public class CommentService {
                 .map(c -> CommentGetListResponse.of(c, authors.get(c.getAuthorId())))
                 .toList();
 
-        return new CursorPage<>(items, nextCursor, hasNext, content.size());
+        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
     }
 
     private Account findAccount(Long accountId) {
         return accountRepository.findById(accountId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMMUNITY_001));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 }
