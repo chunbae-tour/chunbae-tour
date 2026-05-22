@@ -381,9 +381,13 @@ class JoinRequestServiceTest {
                 .willReturn(Optional.of(ownerMember));
 
         ChatRoom chatRoom = mock(ChatRoom.class);
+        given(chatRoom.getId()).willReturn(ROOM_ID);
         given(chatRoomRepository.findByIdWithLock(ROOM_ID)).willReturn(Optional.of(chatRoom));
         given(chatRoom.getCurrentMembers()).willReturn(3);
         given(req.getStatus()).willReturn(JoinRequestStatus.APPROVED);
+        // 신규 참여 케이스 — LEFT 이력 없음
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.empty());
 
         ApproveJoinRequestResponse response = joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
 
@@ -419,6 +423,17 @@ class JoinRequestServiceTest {
 
         verify(leftMember).reactivate();
         verify(chatRoomMemberRepository, never()).save(any(ChatRoomMember.class));
+    }
+
+    @Test
+    void approveJoinRequest_wrongChatRoomId_throws_CHAT_APPLICATION_NOT_FOUND() {
+        JoinRequest req = stubPendingRequest(); // getChatRoomId() = ROOM_ID
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, 999L, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
     }
 
     @Test
