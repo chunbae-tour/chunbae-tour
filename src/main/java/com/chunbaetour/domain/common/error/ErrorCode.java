@@ -112,6 +112,7 @@ public enum ErrorCode {
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
     INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
     SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다."),
+    SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_007", "정지 또는 폐업 상태의 가게는 수정할 수 없습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

@@ -19,7 +19,7 @@ public record ShopResponse(
         String operatingHours,
         String closedDays,
         boolean isCertified,
-        float rating,
+        double rating,
         int reviewCount,
         ShopStatus status
 ) {

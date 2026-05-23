@@ -27,7 +27,11 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "shops",
-        uniqueConstraints = @UniqueConstraint(name = "uk_shops_user_id", columnNames = {"user_id"})
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_shops_user_id", columnNames = {"user_id"}),
+                // 동일 신청서로 가게 2개 생성 방지 — 동시 승인 race condition 차단
+                @UniqueConstraint(name = "uk_shops_application_id", columnNames = {"application_id"})
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -83,7 +87,7 @@ public class Shop extends BaseEntity {
 
     // 리뷰 집계 — 리뷰 도메인에서 갱신
     @Column(nullable = false)
-    private float rating = 0f;
+    private double rating = 0.0;
 
     @Column(name = "review_count", nullable = false)
     private int reviewCount = 0;

@@ -75,14 +75,32 @@ class ShopServiceTest {
                 "새로운 가게명", null, "02-9999-8888", "업데이트된 소개글", null, null, null
         );
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(shop.getUserId()).willReturn(USER_ID);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
         stubShopGetters();
 
         // when
-        shopService.updateMyShop(USER_ID, request);
+        ShopResponse response = shopService.updateMyShop(USER_ID, request);
 
-        // then — shop.update() 호출 확인
+        // then — update() 호출 확인 + 응답 필드 검증
         verify(shop).update(request);
+        assertThat(response.userId()).isEqualTo(USER_ID);
+        assertThat(response.status()).isEqualTo(ShopStatus.ACTIVE);
+        assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
+    }
+
+    @Test
+    @DisplayName("내 가게 수정 — SUSPENDED 상태 → SHOP_INACTIVE")
+    void updateMyShop_suspended_throws() {
+        // given — 정지된 가게는 수정 불가
+        ShopUpdateRequest request = new ShopUpdateRequest("새이름", null, null, null, null, null, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
+
+        // then
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
     }
 
     @Test
@@ -116,7 +134,7 @@ class ShopServiceTest {
         given(shop.getOperatingHours()).willReturn("10:00~21:00");
         given(shop.getClosedDays()).willReturn("매주 일요일");
         given(shop.isCertified()).willReturn(false);
-        given(shop.getRating()).willReturn(4.5f);
+        given(shop.getRating()).willReturn(4.5);
         given(shop.getReviewCount()).willReturn(10);
         given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
     }

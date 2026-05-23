@@ -9,12 +9,14 @@ import jakarta.validation.constraints.Size;
  * null 필드는 수정하지 않음 (부분 수정 지원).
  */
 public record ShopUpdateRequest(
-        @Size(max = 50) String shopName,
-        @Size(max = 50) String category,
+        // null = 수정 안 함, "" = min=1로 거부 — 빈 가게명/카테고리 저장 방지
+        @Size(min = 1, max = 50) String shopName,
+        @Size(min = 1, max = 50) String category,
         @Pattern(regexp = "^\\d{2,3}-\\d{3,4}-\\d{4}$") String phone,
         @Size(max = 500) String description,
         @Size(max = 100) String operatingHours,
         @Size(max = 100) String closedDays,
-        String imageUrls
+        // JSON 배열 전체 문자열 길이 제한 — URL 1개가 아닌 모든 URL 합산 (URL 1개 ≈ 70자, 약 25장 커버)
+        @Size(max = 2000) String imageUrls
 ) {
 }
