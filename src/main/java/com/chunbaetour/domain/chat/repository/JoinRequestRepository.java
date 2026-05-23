@@ -5,6 +5,10 @@ import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> {
 
@@ -16,4 +20,10 @@ public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> 
 
     // 중복 신청 방지 — CHAT_004 선행 체크용
     boolean existsByChatRoomIdAndUserIdAndStatus(Long chatRoomId, Long userId, JoinRequestStatus status);
+
+    // 조건부 원자적 거절 — WHERE status=PENDING으로 이중 거절 차단, 영향 행 수 반환 (0이면 이미 처리된 신청)
+    @Transactional
+    @Modifying
+    @Query("UPDATE JoinRequest j SET j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.REJECTED, j.pendingKey = null WHERE j.id = :id AND j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.PENDING")
+    int rejectIfPending(@Param("id") Long id);
 }

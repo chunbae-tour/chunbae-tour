@@ -146,29 +146,9 @@ public class JoinRequestService {
         }
     }
 
-    // NOT_SUPPORTED로 외부 readOnly 트랜잭션 중단 — approve와 동일 chatRoomId 락으로 approve/reject 경합 직렬화
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    // 거절 — 방장 전용, WHERE status='PENDING' 조건부 UPDATE로 분산 락 없이 이중 거절 원자적 차단
+    @Transactional
     public RejectJoinRequestResponse rejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
-        RLock lock = redissonClient.getLock(LOCK_KEY_FORMAT.formatted(chatRoomId));
-        try {
-            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
-                throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
-            }
-            return Objects.requireNonNull(
-                    new TransactionTemplate(transactionManager).execute(
-                            status -> doRejectJoinRequest(ownerId, chatRoomId, requestId)));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
-        } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
-    }
-
-    // 락 내부 거절 로직 — 락 점유 중 reject() 호출로 approve/reject 경합 시 CHAT_012 보장
-    private RejectJoinRequestResponse doRejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
         if (!chatRoomRepository.existsById(chatRoomId)) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
         }
@@ -180,9 +160,13 @@ public class JoinRequestService {
         JoinRequest joinRequest = joinRequestRepository.findById(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
 
-        // requestId가 다른 채팅방 신청일 경우 — 존재하지 않는 것으로 처리 (CHAT_011)
         if (!joinRequest.getChatRoomId().equals(chatRoomId)) {
             throw new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+        }
+
+        // WHERE status='PENDING' 조건부 원자적 UPDATE — 영향 행 0이면 이미 처리된 신청 (CHAT_012)
+        if (joinRequestRepository.rejectIfPending(requestId) == 0) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
         }
 
         joinRequest.reject();
