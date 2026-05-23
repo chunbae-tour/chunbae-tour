@@ -144,6 +144,20 @@ class MerchantApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("동시 요청이 uk_merchant_active_user_id 위반 시 MERCHANT_CERT_ALREADY_PENDING 예외")
+    void apply_concurrentSameUser_throws_MERCHANT_001() {
+        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
+                .willThrow(new DataIntegrityViolationException("uk_merchant_active_user_id violation"));
+
+        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
+    }
+
+    @Test
     @DisplayName("알 수 없는 DB 제약 위반은 DataIntegrityViolationException 재전파")
     void apply_unknownDbConstraintViolation_rethrows() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))

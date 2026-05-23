@@ -30,10 +30,16 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "merchant_applications",
         indexes = @Index(name = "idx_merchant_applications_user_id", columnList = "user_id"),
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_merchant_active_business_number",
-                columnNames = {"business_number", "active_flag"}
-        )
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_merchant_active_business_number",
+                        columnNames = {"business_number", "active_flag"}
+                ),
+                @UniqueConstraint(
+                        name = "uk_merchant_active_user_id",
+                        columnNames = {"user_id", "active_flag"}
+                )
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
