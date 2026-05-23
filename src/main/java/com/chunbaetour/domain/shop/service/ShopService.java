@@ -66,11 +66,14 @@ public class ShopService {
         return ShopResponse.from(shop);
     }
 
-    /** imageUrls가 유효한 JSON인지 검사 — null이면 수정 안 함으로 통과 */
+    /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */
     private void validateImageUrls(String imageUrls) {
         if (imageUrls == null) return;
         try {
-            objectMapper.readTree(imageUrls);
+            var node = objectMapper.readTree(imageUrls);
+            if (!node.isArray()) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
         } catch (JsonProcessingException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
