@@ -38,6 +38,7 @@ public class PostQueryService {
                     throw new BusinessException(ErrorCode.POST_NOT_FOUND);
                 }
             }
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 
@@ -61,6 +62,7 @@ public class PostQueryService {
                     throw new BusinessException(ErrorCode.POST_NOT_FOUND);
                 }
             }
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 }

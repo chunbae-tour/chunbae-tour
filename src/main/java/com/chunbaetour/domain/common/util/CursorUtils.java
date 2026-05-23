@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.common.util;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -17,7 +19,7 @@ public final class CursorUtils {
             return Long.parseLong(new String(
                     Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
         } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid cursor: " + cursor);
+            throw new BusinessException(ErrorCode.INVALID_CURSOR);
         }
     }
 }

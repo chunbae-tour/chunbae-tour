@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,8 +23,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-// GET(댓글 목록)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/** permitAll 처리
+// GET(댓글 목록)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/posts/companions/**, /posts/free/** permitAll 처리
 // POST(댓글 작성)는 USER·ADMIN 인증 필요
+@Validated
 @RestController
 @RequestMapping("/api/v1/community/posts/{postType}/{postId}/comments")
 @RequiredArgsConstructor
