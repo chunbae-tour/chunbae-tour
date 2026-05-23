@@ -9,22 +9,22 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import java.sql.SQLException;
-import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationResponse;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.util.List;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -130,14 +130,14 @@ class MerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("다른 유저가 동일 사업자번호로 동시 신청 시 DUPLICATE_BUSINESS_NUMBER 예외")
+    @DisplayName("동시 요청이 uk_merchant_active_business_number 위반 시 DUPLICATE_BUSINESS_NUMBER 예외")
     void apply_concurrentDuplicateBizNumber_throws_MERCHANT_004() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
                 .willReturn(false);
         ConstraintViolationException cve = new ConstraintViolationException(
-                "Duplicate entry for business_number",
+                "Duplicate entry",
                 new SQLException(),
-                "uk_merchant_applications_business_number"
+                "uk_merchant_active_business_number"
         );
         given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
                 .willThrow(new DataIntegrityViolationException("duplicate", cve));
@@ -161,14 +161,16 @@ class MerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("사업자번호가 10자리가 아니면 INVALID_BUSINESS_NUMBER 예외")
-    void apply_bizNumberWrongLength_throws_MERCHANT_002() {
+    @DisplayName("REJECTED된 사업자번호는 재사용 가능 — active_flag=null이므로 DB 제약 미적용")
+    void apply_rejectedBizNumberCanBeReused() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
                 .willReturn(false);
+        MerchantApplication saved = MerchantApplication.create(USER_ID, makeRequest("재신청가게", VALID_BIZ_NUMBER));
+        ReflectionTestUtils.setField(saved, "id", 3L);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class))).willReturn(saved);
 
-        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", "123456789")))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_BUSINESS_NUMBER);
+        MerchantApplicationResponse response = merchantApplicationService.apply(USER_ID, makeRequest("재신청가게", VALID_BIZ_NUMBER));
+
+        assertThat(response.status()).isEqualTo(MerchantApplicationStatus.PENDING);
     }
 }

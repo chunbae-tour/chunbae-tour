@@ -31,8 +31,8 @@ import lombok.NoArgsConstructor;
         name = "merchant_applications",
         indexes = @Index(name = "idx_merchant_applications_user_id", columnList = "user_id"),
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_merchant_applications_business_number",
-                columnNames = "business_number"
+                name = "uk_merchant_active_business_number",
+                columnNames = {"business_number", "active_flag"}
         )
 )
 @Getter
@@ -78,6 +78,11 @@ public class MerchantApplication extends BaseEntity {
     @Column(name = "reject_reason")
     private String rejectReason;
 
+    // MySQL unique index에서 NULL은 서로 다른 값으로 취급 → REJECTED 재신청 허용
+    // PENDING/APPROVED: '1', REJECTED: null → unique(business_number, active_flag)으로 동시 INSERT 차단
+    @Column(name = "active_flag", length = 1)
+    private String activeFlag;
+
     @Builder
     private MerchantApplication(Long userId, String shopName, String businessNumber,
             String category, String address, BigDecimal lat, BigDecimal lng,
@@ -92,6 +97,7 @@ public class MerchantApplication extends BaseEntity {
         this.phone = phone;
         this.description = description;
         this.status = MerchantApplicationStatus.PENDING;
+        this.activeFlag = "1";
     }
 
     public static MerchantApplication create(Long userId, MerchantApplyRequest request) {
@@ -126,5 +132,6 @@ public class MerchantApplication extends BaseEntity {
         }
         this.status = MerchantApplicationStatus.REJECTED;
         this.rejectReason = rejectReason;
+        this.activeFlag = null;
     }
 }
