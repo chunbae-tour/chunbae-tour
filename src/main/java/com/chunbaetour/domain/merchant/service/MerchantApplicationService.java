@@ -61,14 +61,28 @@ public class MerchantApplicationService {
         }
 
         try {
-            MerchantApplication application = merchantApplicationRepository.save(
+            MerchantApplication application = merchantApplicationRepository.saveAndFlush(
                     MerchantApplication.create(userId, request)
             );
             return MerchantApplicationResponse.from(application);
         } catch (DataIntegrityViolationException e) {
-            // 코드 레벨 체크를 통과한 동시 요청이 uk_merchant_active_business_number 위반 시
-            throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
+            if (isUkActiveBusinessNumberViolation(e)) {
+                throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
+            }
+            throw e;
         }
+    }
+
+    private boolean isUkActiveBusinessNumberViolation(DataIntegrityViolationException e) {
+        Throwable cause = e;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains("uk_merchant_active_business_number")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     /**

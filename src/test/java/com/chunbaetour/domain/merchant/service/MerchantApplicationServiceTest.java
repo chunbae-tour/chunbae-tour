@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -66,11 +65,11 @@ class MerchantApplicationServiceTest {
                 .willReturn(false);
         MerchantApplication saved = MerchantApplication.create(USER_ID, makeRequest("우리떡볶이", VALID_BIZ_NUMBER));
         ReflectionTestUtils.setField(saved, "id", 1L);
-        given(merchantApplicationRepository.save(any(MerchantApplication.class))).willReturn(saved);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class))).willReturn(saved);
 
         MerchantApplicationResponse response = merchantApplicationService.apply(USER_ID, makeRequest("우리떡볶이", VALID_BIZ_NUMBER));
 
-        verify(merchantApplicationRepository).save(any(MerchantApplication.class));
+        verify(merchantApplicationRepository).saveAndFlush(any(MerchantApplication.class));
         assertThat(response.status()).isEqualTo(MerchantApplicationStatus.PENDING);
         assertThat(response.shopName()).isEqualTo("우리떡볶이");
     }
@@ -86,7 +85,7 @@ class MerchantApplicationServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
 
-        verify(merchantApplicationRepository, never()).save(any());
+        verify(merchantApplicationRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -100,7 +99,7 @@ class MerchantApplicationServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
 
-        verify(merchantApplicationRepository, never()).save(any());
+        verify(merchantApplicationRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -125,7 +124,7 @@ class MerchantApplicationServiceTest {
                 .willReturn(false);
         MerchantApplication saved = MerchantApplication.create(USER_ID, makeRequest("테스트가게", VALID_BIZ_NORMALIZED));
         ReflectionTestUtils.setField(saved, "id", 2L);
-        given(merchantApplicationRepository.save(any(MerchantApplication.class))).willReturn(saved);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class))).willReturn(saved);
 
         MerchantApplicationResponse response = merchantApplicationService.apply(USER_ID, makeRequest("테스트가게", VALID_BIZ_NORMALIZED));
 
@@ -145,23 +144,37 @@ class MerchantApplicationServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
 
-        verify(merchantApplicationRepository, never()).save(any());
+        verify(merchantApplicationRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    @DisplayName("동시 요청이 DB 유니크 제약(uk_merchant_active_business_number) 위반 시 DUPLICATE_BUSINESS_NUMBER 예외")
-    void apply_concurrentRequest_dbConstraintViolation_throws_MERCHANT_004() {
+    @DisplayName("동시 요청이 uk_merchant_active_business_number 위반 시 DUPLICATE_BUSINESS_NUMBER 예외")
+    void apply_concurrentDuplicateBizNumber_throws_MERCHANT_004() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
                 .willReturn(false);
         given(merchantApplicationRepository.existsByBusinessNumberAndStatusIn(VALID_BIZ_NORMALIZED, BLOCKING_STATUSES))
                 .willReturn(false);
-        willThrow(new DataIntegrityViolationException("uk_merchant_active_business_number"))
-                .given(merchantApplicationRepository).save(any(MerchantApplication.class));
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
+                .willThrow(new DataIntegrityViolationException("uk_merchant_active_business_number violation"));
 
         assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
+    }
+
+    @Test
+    @DisplayName("uk_merchant_active_business_number 외 DB 오류는 DataIntegrityViolationException 재전파")
+    void apply_otherDbConstraintViolation_rethrows() {
+        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.existsByBusinessNumberAndStatusIn(VALID_BIZ_NORMALIZED, BLOCKING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
+                .willThrow(new DataIntegrityViolationException("some_other_constraint violation"));
+
+        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -174,7 +187,7 @@ class MerchantApplicationServiceTest {
                 .willReturn(false);
         MerchantApplication saved = MerchantApplication.create(USER_ID, makeRequest("재신청가게", VALID_BIZ_NUMBER));
         ReflectionTestUtils.setField(saved, "id", 3L);
-        given(merchantApplicationRepository.save(any(MerchantApplication.class))).willReturn(saved);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class))).willReturn(saved);
 
         MerchantApplicationResponse response = merchantApplicationService.apply(USER_ID, makeRequest("재신청가게", VALID_BIZ_NUMBER));
 
