@@ -14,6 +14,7 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -91,7 +92,12 @@ public class AdminMerchantApplicationService {
         // 선행 검증 통과 후 상태 전이 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
         application.approve();                                      // 신청 상태 PENDING → APPROVED
         account.promoteToMerchant();                                // 계정 역할 USER → MERCHANT
-        shopRepository.save(Shop.fromApplication(application));     // 가게 엔티티 신규 생성
+        try {
+            shopRepository.save(Shop.fromApplication(application)); // 가게 엔티티 신규 생성
+        } catch (DataIntegrityViolationException e) {
+            // existsByUserId 체크 → save 사이 극히 드문 race condition — uk_shops_user_id 제약 위반
+            throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
+        }
 
         return MerchantApplicationDetailResponse.from(application);
     }
