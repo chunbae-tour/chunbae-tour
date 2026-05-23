@@ -5,17 +5,14 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -32,15 +29,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminMerchantApplicationService {
 
-    private static final Pattern CURSOR_PATTERN = Pattern.compile("\\{\"id\":(\\d{1,19})\\}");
-
     private final MerchantApplicationRepository applicationRepository;
     private final AccountRepository accountRepository;
     private final ShopRepository shopRepository;
 
     /**
      * PENDING 상인 신청 목록 cursor 페이징 조회.
-     * cursor 형식: {"id":N} → Base64URL 인코딩 (padding 없음).
+     * cursor 형식: id → Base64URL 인코딩 (CursorUtils 공통 유틸 사용).
      */
     public CursorPageResponse<MerchantApplicationDetailResponse> getApplications(String cursor, int size) {
         // 페이지 크기 유효성 검증 — 1 이상 100 이하만 허용
@@ -55,13 +50,13 @@ public class AdminMerchantApplicationService {
                 ? applicationRepository.findByStatusOrderByIdDesc(MerchantApplicationStatus.PENDING, pageable)
                 // cursor 있으면 다음 페이지: cursor id보다 작은 항목만 조회 (keyset pagination)
                 : applicationRepository.findByStatusAndIdLessThanOrderByIdDesc(
-                        MerchantApplicationStatus.PENDING, decodeCursor(cursor), pageable);
+                        MerchantApplicationStatus.PENDING, parseCursor(cursor), pageable);
 
         // size+1번째 항목이 존재하면 다음 페이지 있음 — 실제 응답에는 size개만 포함
         boolean hasNext = applications.size() > size;
         List<MerchantApplication> content = hasNext ? applications.subList(0, size) : applications;
         // 다음 페이지 커서: 현재 페이지 마지막 항목(가장 작은 id)의 id를 인코딩
-        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
         List<MerchantApplicationDetailResponse> responses = content.stream()
                 .map(MerchantApplicationDetailResponse::from)
@@ -119,28 +114,12 @@ public class AdminMerchantApplicationService {
     }
 
     /**
-     * id를 Base64URL 인코딩된 커서 문자열로 변환.
-     * 형식: {"id":N} → Base64URL (padding 없음) — URL 파라미터로 안전하게 전달 가능.
-     */
-    private String encodeCursor(Long id) {
-        String json = "{\"id\":" + id + "}";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
-    }
-
-    /**
      * Base64URL 커서 문자열을 id(Long)로 복원.
-     * 디코딩 실패 또는 형식 불일치({"id":N} 패턴 미준수) 시 INVALID_CURSOR 예외.
-     * \d{1,19}로 Long 최대 자릿수 제한 — parseLong 오버플로우 방지.
+     * CursorUtils.decode 실패 또는 id < 1이면 INVALID_CURSOR 예외.
      */
-    private Long decodeCursor(String cursor) {
+    private long parseCursor(String cursor) {
         try {
-            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
-            String json = new String(decoded, StandardCharsets.UTF_8);
-            Matcher matcher = CURSOR_PATTERN.matcher(json);
-            if (!matcher.matches()) {
-                throw new IllegalArgumentException("invalid cursor format");
-            }
-            long id = Long.parseLong(matcher.group(1));
+            long id = CursorUtils.decode(cursor);
             if (id < 1) {
                 throw new IllegalArgumentException("cursor id must be >= 1");
             }

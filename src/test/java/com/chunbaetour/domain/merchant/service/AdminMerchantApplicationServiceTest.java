@@ -18,9 +18,8 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -208,8 +207,7 @@ class AdminMerchantApplicationServiceTest {
     @DisplayName("목록 조회: cursor 있음, 두 번째 페이지, 다음 없음")
     void getApplications_withCursor_noNext() {
         MerchantApplication app = pendingApplication();
-        String cursor = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("{\"id\":1}".getBytes(StandardCharsets.UTF_8));
+        String cursor = CursorUtils.encode(1L);
 
         given(applicationRepository.findByStatusAndIdLessThanOrderByIdDesc(
                 MerchantApplicationStatus.PENDING, 1L, PageRequest.of(0, 3)))
