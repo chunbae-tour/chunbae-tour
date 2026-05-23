@@ -610,6 +610,18 @@ class JoinRequestServiceTest {
                 .isEqualTo(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
     }
 
+    @Test
+    void rejectJoinRequest_lockFailed_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        // approve와 동일 락 — 락 획득 실패 시 즉시 CONCURRENT_UPDATE
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     private JoinRequest stubPendingRequest() {

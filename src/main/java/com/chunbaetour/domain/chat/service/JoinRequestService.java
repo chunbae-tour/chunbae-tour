@@ -146,9 +146,29 @@ public class JoinRequestService {
         }
     }
 
-    // 참여 신청 거절 — 방장 전용, PENDING 상태만 거절 가능
-    @Transactional
+    // NOT_SUPPORTED로 외부 readOnly 트랜잭션 중단 — approve와 동일 chatRoomId 락으로 approve/reject 경합 직렬화
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RejectJoinRequestResponse rejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
+        RLock lock = redissonClient.getLock(LOCK_KEY_FORMAT.formatted(chatRoomId));
+        try {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
+                throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+            }
+            return Objects.requireNonNull(
+                    new TransactionTemplate(transactionManager).execute(
+                            status -> doRejectJoinRequest(ownerId, chatRoomId, requestId)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    // 락 내부 거절 로직 — 락 점유 중 reject() 호출로 approve/reject 경합 시 CHAT_012 보장
+    private RejectJoinRequestResponse doRejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
         if (!chatRoomRepository.existsById(chatRoomId)) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
         }
