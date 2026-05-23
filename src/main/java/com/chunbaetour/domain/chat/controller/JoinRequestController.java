@@ -4,6 +4,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.service.JoinRequestService;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -57,5 +58,15 @@ public class JoinRequestController {
             @Min(1) @PathVariable Long requestId) {
         return ApiResponse.success(
                 joinRequestService.approveJoinRequest(userId, chatRoomId, requestId));
+    }
+
+    // 참여 신청 거절 — 방장 전용
+    @PostMapping("/{chatRoomId}/join-requests/{requestId}/reject")
+    public ApiResponse<RejectJoinRequestResponse> rejectJoinRequest(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long chatRoomId,
+            @Min(1) @PathVariable Long requestId) {
+        return ApiResponse.success(
+                joinRequestService.rejectJoinRequest(userId, chatRoomId, requestId));
     }
 }
