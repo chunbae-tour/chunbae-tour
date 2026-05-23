@@ -134,13 +134,8 @@ class MerchantApplicationServiceTest {
     void apply_concurrentDuplicateBizNumber_throws_MERCHANT_004() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
                 .willReturn(false);
-        ConstraintViolationException cve = new ConstraintViolationException(
-                "Duplicate entry",
-                new SQLException(),
-                "uk_merchant_active_business_number"
-        );
         given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
-                .willThrow(new DataIntegrityViolationException("duplicate", cve));
+                .willThrow(new DataIntegrityViolationException("uk_merchant_active_business_number violation"));
 
         assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
                 .isInstanceOf(BusinessException.class)
@@ -149,12 +144,12 @@ class MerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("예상치 못한 DB 오류(제약 외)는 DataIntegrityViolationException 그대로 전파")
-    void apply_unexpectedDbError_rethrows() {
+    @DisplayName("알 수 없는 DB 제약 위반은 DataIntegrityViolationException 재전파")
+    void apply_unknownDbConstraintViolation_rethrows() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
                 .willReturn(false);
         given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class)))
-                .willThrow(new DataIntegrityViolationException("unexpected"));
+                .willThrow(new DataIntegrityViolationException("some_other_constraint violation"));
 
         assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
                 .isInstanceOf(DataIntegrityViolationException.class);

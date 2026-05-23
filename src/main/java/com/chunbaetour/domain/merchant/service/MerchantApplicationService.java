@@ -61,12 +61,23 @@ public class MerchantApplicationService {
             );
             return MerchantApplicationResponse.from(application);
         } catch (DataIntegrityViolationException e) {
-            if (e.getCause() instanceof ConstraintViolationException cve
-                    && UK_ACTIVE_BUSINESS_NUMBER.equalsIgnoreCase(cve.getConstraintName())) {
+            if (isUkActiveBusinessNumberViolation(e)) {
                 throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
             }
             throw e;
         }
+    }
+
+    private boolean isUkActiveBusinessNumberViolation(DataIntegrityViolationException e) {
+        Throwable cause = e;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains("uk_merchant_active_business_number")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     /**
