@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -16,6 +17,7 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -144,6 +146,22 @@ class MerchantApplicationServiceTest {
                 .isEqualTo(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
 
         verify(merchantApplicationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("동시 요청이 DB 유니크 제약(uk_merchant_active_business_number) 위반 시 DUPLICATE_BUSINESS_NUMBER 예외")
+    void apply_concurrentRequest_dbConstraintViolation_throws_MERCHANT_004() {
+        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.existsByBusinessNumberAndStatusIn(VALID_BIZ_NORMALIZED, BLOCKING_STATUSES))
+                .willReturn(false);
+        willThrow(new DataIntegrityViolationException("uk_merchant_active_business_number"))
+                .given(merchantApplicationRepository).save(any(MerchantApplication.class));
+
+        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,10 +31,13 @@ public class MerchantApplicationService {
      * 상인 등록 신청.
      * 중복 신청(PENDING/APPROVED) 방지 → 사업자번호 유효성 검증 → 사업자번호 중복 검사 → 신청 저장.
      *
-     * <p><b>Known limitation</b>: existsByUserIdAndStatusIn 체크와 save 사이에 같은 유저의 동시 요청이
-     * 들어오면 두 행이 삽입될 수 있다 (check-then-act race condition). 동일 유저의 동시 신청은
-     * 실사용에서 극히 드문 케이스이므로 현재는 DB 레벨 제약 없이 허용된 한계로 남긴다.
-     * 필요 시 userId + status=PENDING 조합에 partial unique index 추가 검토.
+     * <p>사업자번호 동시성: existsByBusinessNumberAndStatusIn + save 사이 check-then-act race condition을
+     * uk_merchant_active_business_number (business_number, active_flag) 유니크 제약으로 최종 차단.
+     * MySQL unique index에서 NULL은 서로 다른 값으로 취급 → active_flag=null(REJECTED)은 제약 대상 제외,
+     * active_flag='1'(PENDING/APPROVED)만 중복 INSERT 시 DataIntegrityViolationException 발생.
+     *
+     * <p><b>Known limitation</b>: existsByUserIdAndStatusIn(userId) 체크는 DB 레벨 보호 없음.
+     * 동일 유저의 동시 신청은 실사용에서 극히 드문 케이스이므로 허용된 한계로 남긴다.
      */
     @Transactional
     public MerchantApplicationResponse apply(Long userId, MerchantApplyRequest request) {
@@ -51,15 +55,20 @@ public class MerchantApplicationService {
         }
 
         // 다른 유저가 동일 사업자번호로 이미 PENDING/APPROVED 신청 중이면 차단 (MERCHANT_004)
-        // REJECTED된 신청의 번호는 재사용 허용 — DB 레벨 전체 유니크 제약 대신 코드 레벨 체크 사용
+        // REJECTED된 신청의 번호는 재사용 허용 — 코드 레벨 선제 차단 + DB 제약 최종 방어선
         if (merchantApplicationRepository.existsByBusinessNumberAndStatusIn(normalized, ACTIVE_STATUSES)) {
             throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
         }
 
-        MerchantApplication application = merchantApplicationRepository.save(
-                MerchantApplication.create(userId, request)
-        );
-        return MerchantApplicationResponse.from(application);
+        try {
+            MerchantApplication application = merchantApplicationRepository.save(
+                    MerchantApplication.create(userId, request)
+            );
+            return MerchantApplicationResponse.from(application);
+        } catch (DataIntegrityViolationException e) {
+            // 코드 레벨 체크를 통과한 동시 요청이 uk_merchant_active_business_number 위반 시
+            throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
+        }
     }
 
     /**
