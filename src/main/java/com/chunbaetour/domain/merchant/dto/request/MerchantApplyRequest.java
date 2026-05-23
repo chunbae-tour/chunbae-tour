@@ -13,7 +13,7 @@ public record MerchantApplyRequest(
         @NotBlank @Size(max = 50) String shopName,
         @NotBlank @Pattern(regexp = "^\\d{10}$|^\\d{3}-\\d{2}-\\d{5}$") String businessNumber,
         @NotBlank @Size(max = 50) String category,
-        @NotBlank String address,
+        @NotBlank @Size(max = 255) String address,
         @NotNull @DecimalMin("-90.0000000") @DecimalMax("90.0000000") BigDecimal lat,
         @NotNull @DecimalMin("-180.0000000") @DecimalMax("180.0000000") BigDecimal lng,
         @Pattern(regexp = "^\\d{2,3}-\\d{3,4}-\\d{4}$") String phone,

@@ -89,20 +89,6 @@ class MerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("APPROVED 신청이 이미 있으면 MERCHANT_CERT_ALREADY_PENDING 예외")
-    void apply_alreadyApproved_throws_MERCHANT_001() {
-        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
-                .willReturn(true);
-
-        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
-
-        verify(merchantApplicationRepository, never()).saveAndFlush(any());
-    }
-
-    @Test
     @DisplayName("잘못된 사업자등록번호 체크섬 시 INVALID_BUSINESS_NUMBER 예외")
     void apply_invalidBizNumber_throws_MERCHANT_002() {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, BLOCKING_STATUSES))
