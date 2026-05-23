@@ -80,7 +80,6 @@ public class GlobalExceptionHandler {
                     case "email" -> ErrorCode.INVALID_EMAIL_FORMAT;
                     case "password" -> ErrorCode.INVALID_PASSWORD_FORMAT;
                     case "originLat", "originLng", "destLat", "destLng" -> ErrorCode.INVALID_LOCATION;
-                    case "shopName" -> ErrorCode.SHOP_NAME_TOO_LONG;
                     default -> ErrorCode.INVALID_REQUEST;
                 })
                 .orElse(ErrorCode.INVALID_REQUEST);
