@@ -19,6 +19,8 @@ import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -128,8 +130,10 @@ class AdminMerchantApplicationServiceTest {
         given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
         adminMerchantApplicationService.approve(APPLICATION_ID); // 첫 번째 승인
 
-        // 이미 APPROVED인 상태에서 다시 findByIdWithLock 반환
+        // 이미 APPROVED인 상태에서 다시 stub 세팅 — 순서 변경 시 NPE 방지
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        given(shopRepository.existsByUserId(USER_ID)).willReturn(false);
 
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
                 .isInstanceOf(BusinessException.class)
@@ -198,5 +202,32 @@ class AdminMerchantApplicationServiceTest {
         assertThat(result.hasNext()).isTrue();
         assertThat(result.content()).hasSize(2);
         assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("목록 조회: cursor 있음, 두 번째 페이지, 다음 없음")
+    void getApplications_withCursor_noNext() {
+        MerchantApplication app = pendingApplication();
+        String cursor = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("{\"id\":1}".getBytes(StandardCharsets.UTF_8));
+
+        given(applicationRepository.findByStatusAndIdLessThanOrderByIdDesc(
+                MerchantApplicationStatus.PENDING, 1L, PageRequest.of(0, 3)))
+                .willReturn(List.of(app));
+
+        CursorPageResponse<MerchantApplicationDetailResponse> result =
+                adminMerchantApplicationService.getApplications(cursor, 2);
+
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("목록 조회: 잘못된 cursor 형식 → INVALID_CURSOR")
+    void getApplications_invalidCursor_throws() {
+        assertThatThrownBy(() -> adminMerchantApplicationService.getApplications("not-valid-base64!!!", 2))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.INVALID_CURSOR.getMessage());
     }
 }

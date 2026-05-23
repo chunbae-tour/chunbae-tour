@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 관리자 상인 신청 처리 서비스 (STORY-09).
- * 승인: application.approve() → account.promoteToMerchant() → Shop 생성 (단일 트랜잭션).
+ * 승인: account/shop 선제 검증 → application.approve() → account.promoteToMerchant() → Shop 생성 (단일 트랜잭션).
  * 거절: application.reject(rejectReason).
  * 락 획득 순서: MerchantApplication → Account (데드락 방지).
  */
@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AdminMerchantApplicationService {
 
-    private static final Pattern CURSOR_PATTERN = Pattern.compile("\\{\"id\":(\\d+)\\}");
+    private static final Pattern CURSOR_PATTERN = Pattern.compile("\\{\"id\":(\\d{1,19})\\}");
 
     private final MerchantApplicationRepository applicationRepository;
     private final AccountRepository accountRepository;
@@ -77,15 +77,14 @@ public class AdminMerchantApplicationService {
         MerchantApplication application = applicationRepository.findByIdWithLock(applicationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND));
 
-        application.approve();
-
         Account account = accountRepository.findByIdWithLock(application.getUserId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         if (shopRepository.existsByUserId(account.getId())) {
             throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
         }
 
+        application.approve();
         account.promoteToMerchant();
         shopRepository.save(Shop.fromApplication(application));
 

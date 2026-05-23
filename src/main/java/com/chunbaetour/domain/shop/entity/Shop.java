@@ -7,8 +7,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -22,7 +22,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "shops",
-        indexes = @Index(name = "idx_shops_user_id", columnList = "user_id")
+        uniqueConstraints = @UniqueConstraint(name = "uk_shops_user_id", columnNames = {"user_id"})
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
