@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
@@ -145,6 +146,34 @@ public class JoinRequestService {
         }
     }
 
+    // 거절 — 방장 전용, WHERE status='PENDING' 조건부 UPDATE로 분산 락 없이 이중 거절 원자적 차단
+    @Transactional
+    public RejectJoinRequestResponse rejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
+        if (!chatRoomRepository.existsById(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
+
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, ownerId)
+                .filter(ChatRoomMember::isOwner)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
+
+        // SELECT FOR UPDATE — approve와 동일 행 잠금으로 approve↔reject 경합 직렬화
+        JoinRequest joinRequest = joinRequestRepository.findByIdWithLock(requestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
+
+        if (!joinRequest.getChatRoomId().equals(chatRoomId)) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+        }
+
+        // WHERE status='PENDING' 조건부 원자적 UPDATE — 영향 행 0이면 이미 처리된 신청 (CHAT_012)
+        if (joinRequestRepository.rejectIfPending(requestId) == 0) {
+            throw new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
+        }
+
+        joinRequest.reject();
+        return RejectJoinRequestResponse.from(joinRequest);
+    }
+
     // 락 내부 실제 비즈니스 로직 — TransactionTemplate으로 호출해 트랜잭션 커밋이 락 해제 전에 완료됨을 보장
     private CreateJoinRequestResponse doCreateJoinRequest(
             Long userId, Long chatRoomId, CreateJoinRequestRequest request, Account account) {
@@ -185,8 +214,8 @@ public class JoinRequestService {
     // 락 내부 수락 로직 — 최신 상태 재조회 후 approve() 호출, ChatRoomMember 생성 및 정원 증가
     private ApproveJoinRequestResponse doApproveJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
 
-        // 락 획득 후 최신 상태 재조회 — 동시 수락 시 이미 처리된 신청 차단 (CHAT_012)
-        JoinRequest joinRequest = joinRequestRepository.findById(requestId)
+        // SELECT FOR UPDATE — 락 획득 후 최신 상태 재조회, reject와 동일 행 잠금으로 approve↔reject 경합 직렬화
+        JoinRequest joinRequest = joinRequestRepository.findByIdWithLock(requestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
 
         // 락 내부 재검증 — 락 획득 전 검증과 실제 상태 변경 사이 방장 교체 방지

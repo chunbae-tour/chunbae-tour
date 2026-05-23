@@ -19,6 +19,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
@@ -374,7 +375,10 @@ class JoinRequestServiceTest {
     @Test
     void approveJoinRequest_success() {
         JoinRequest req = stubPendingRequest();
+        // outer 선행 체크용 (락 전) — 검증 통과
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+        // inner doApproveJoinRequest용 SELECT FOR UPDATE — approve↔reject 직렬화
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
 
         ChatRoomMember ownerMember = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -403,6 +407,7 @@ class JoinRequestServiceTest {
     void approveJoinRequest_leftMemberRejoin_reactivates() {
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
 
         ChatRoomMember ownerMember = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -466,6 +471,7 @@ class JoinRequestServiceTest {
     void approveJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
 
         ChatRoomMember ownerMember = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -497,6 +503,120 @@ class JoinRequestServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+    }
+
+    // ─── rejectJoinRequest ────────────────────────────────────────────────────
+
+    @Test
+    void rejectJoinRequest_success() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+
+        JoinRequest joinRequest = mock(JoinRequest.class);
+        given(joinRequest.getChatRoomId()).willReturn(ROOM_ID);
+        given(joinRequest.getId()).willReturn(REQUEST_ID);
+        // reject()는 mock 기본 no-op — getStatus()는 REJECTED 고정 반환으로 응답 검증
+        given(joinRequest.getStatus()).willReturn(JoinRequestStatus.REJECTED);
+        // SELECT FOR UPDATE — approve↔reject 경합 직렬화용 비관적 락 조회
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+        // 조건부 UPDATE 성공 — 영향 행 1 반환
+        given(joinRequestRepository.rejectIfPending(REQUEST_ID)).willReturn(1);
+
+        RejectJoinRequestResponse response =
+                joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
+
+        verify(joinRequest).reject();
+        assertThat(response.joinRequestId()).isEqualTo(REQUEST_ID);
+        assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
+        assertThat(response.status()).isEqualTo(JoinRequestStatus.REJECTED);
+    }
+
+    @Test
+    void rejectJoinRequest_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    void rejectJoinRequest_notMember_throws_CHAT_SETTING_FORBIDDEN() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void rejectJoinRequest_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        // isOwner() mock 기본값 false — OWNER_ACTIVE가 아닌 일반 멤버 시나리오
+        ChatRoomMember member = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void rejectJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    void rejectJoinRequest_chatRoomIdMismatch_throws_CHAT_APPLICATION_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+
+        JoinRequest joinRequest = mock(JoinRequest.class);
+        given(joinRequest.getChatRoomId()).willReturn(999L);
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    void rejectJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember owner = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(owner));
+
+        JoinRequest joinRequest = mock(JoinRequest.class);
+        given(joinRequest.getChatRoomId()).willReturn(ROOM_ID);
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+        // 조건부 UPDATE 영향 행 0 — 이미 처리된 신청 (CHAT_012)
+        given(joinRequestRepository.rejectIfPending(REQUEST_ID)).willReturn(0);
+
+        assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
