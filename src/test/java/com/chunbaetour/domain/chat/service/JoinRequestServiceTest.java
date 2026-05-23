@@ -3,17 +3,22 @@ package com.chunbaetour.domain.chat.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
+import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
@@ -24,6 +29,8 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,32 +61,39 @@ class JoinRequestServiceTest {
     private JoinRequestService joinRequestService;
 
     private static final Long USER_ID = 2L;
+    private static final Long OWNER_ID = 1L;
     private static final Long ROOM_ID = 100L;
+    private static final Long REQUEST_ID = 50L;
 
     @BeforeEach
     void setUp() throws InterruptedException {
         // 락 실패/인터럽트 테스트에서 override됨 — lenient 처리
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(lock.isHeldByCurrentThread()).thenReturn(true);
-        given(redissonClient.getLock(anyString())).willReturn(lock);
+        lenient()
+                .when(redissonClient.getLock(anyString())).thenReturn(lock);
 
         // 락 실패 테스트에서 TransactionTemplate 미도달 — lenient 처리
         TransactionStatus txStatus = mock(TransactionStatus.class);
-        org.mockito.Mockito.lenient()
+        lenient()
                 .when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(txStatus);
 
-        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        // approveJoinRequest 테스트에서 미사용 — lenient 처리
+        lenient()
+                .when(accountRepository.findById(USER_ID)).thenReturn(Optional.of(account));
     }
+
+    // ─── createJoinRequest ────────────────────────────────────────────────────
 
     @Test
     void createJoinRequest_success() {
         given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행초보");
 
-        ChatRoom room = stubOpenRoom();
+        ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         JoinRequest saved = mock(JoinRequest.class);
@@ -162,7 +176,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_kickedUser_throws_CHAT_MEMBER_KICKED_REJOIN() {
-        ChatRoom room = stubOpenRoom();
+        ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         ChatRoomMember kickedMember = mock(ChatRoomMember.class);
@@ -179,7 +193,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_alreadyMember_throws_ALREADY_JOINED_CHAT() {
-        ChatRoom room = stubOpenRoom();
+        ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         ChatRoomMember activeMember = mock(ChatRoomMember.class);
@@ -196,7 +210,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_duplicateRequest_throws_ALREADY_APPLIED_CHAT() {
-        ChatRoom room = stubOpenRoom();
+        ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
         given(joinRequestRepository.existsByChatRoomIdAndUserIdAndStatus(
                 ROOM_ID, USER_ID, JoinRequestStatus.PENDING)).willReturn(true);
@@ -208,8 +222,297 @@ class JoinRequestServiceTest {
                 .isEqualTo(ErrorCode.ALREADY_APPLIED_CHAT);
     }
 
-    private ChatRoom stubOpenRoom() {
-        return mock(ChatRoom.class);
+    // ─── getJoinRequests ──────────────────────────────────────────────────────
+
+    @Test
+    void getJoinRequests_success_returnsPendingList() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+
+        // 방장 멤버 stub
+        ChatRoomMember ownerMember = mock(ChatRoomMember.class);
+        given(ownerMember.isOwner()).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        // PENDING 신청 2건 — 신청자 2명 (batch 조회 검증)
+        Long applicantId1 = 10L;
+        Long applicantId2 = 11L;
+        LocalDateTime now = LocalDateTime.now();
+
+        JoinRequest req1 = mock(JoinRequest.class);
+        given(req1.getId()).willReturn(1L);
+        given(req1.getUserId()).willReturn(applicantId1);
+        given(req1.getMessage()).willReturn("같이 가요!");
+        given(req1.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req1.getCreatedAt()).willReturn(now);
+
+        JoinRequest req2 = mock(JoinRequest.class);
+        given(req2.getId()).willReturn(2L);
+        given(req2.getUserId()).willReturn(applicantId2);
+        given(req2.getMessage()).willReturn("잘 부탁드려요");
+        given(req2.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req2.getCreatedAt()).willReturn(now);
+
+        given(joinRequestRepository.findByChatRoomIdAndStatusOrderByCreatedAtAsc(ROOM_ID, JoinRequestStatus.PENDING))
+                .willReturn(List.of(req1, req2));
+
+        // 신청자 2명 계정 batch 조회 stub
+        Account applicant1 = mock(Account.class);
+        given(applicant1.getId()).willReturn(applicantId1);
+        given(applicant1.getNickname()).willReturn("여행좋아");
+
+        Account applicant2 = mock(Account.class);
+        given(applicant2.getId()).willReturn(applicantId2);
+        given(applicant2.getNickname()).willReturn("동행고수");
+
+        given(accountRepository.findAllById(anyList()))
+                .willReturn(List.of(applicant1, applicant2));
+
+        List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
+
+        verify(accountRepository).findAllById(List.of(applicantId1, applicantId2));
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).applicant().userId()).isEqualTo(applicantId1);
+        assertThat(result.get(0).applicant().nickname()).isEqualTo("여행좋아");
+        assertThat(result.get(0).createdAt()).isEqualTo(now);
+        assertThat(result.get(1).applicant().userId()).isEqualTo(applicantId2);
+        assertThat(result.get(1).applicant().nickname()).isEqualTo("동행고수");
+        assertThat(result.get(1).message()).isEqualTo("잘 부탁드려요");
+    }
+
+    @Test
+    void getJoinRequests_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    void getJoinRequests_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+
+        // 방장이 아닌 일반 멤버 — isOwner() false 기본값
+        ChatRoomMember regularMember = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(regularMember));
+
+        assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void getJoinRequests_notMember_throws_CHAT_SETTING_FORBIDDEN() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+
+        // 채팅방 멤버 아님
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void getJoinRequests_emptyList_returnsEmpty() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+
+        ChatRoomMember ownerMember = mock(ChatRoomMember.class);
+        given(ownerMember.isOwner()).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        given(joinRequestRepository.findByChatRoomIdAndStatusOrderByCreatedAtAsc(ROOM_ID, JoinRequestStatus.PENDING))
+                .willReturn(List.of());
+        // requests 빈 리스트 → userIds 빈 리스트 → findAllById(빈 리스트) 호출됨
+        given(accountRepository.findAllById(List.of())).willReturn(List.of());
+
+        List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getJoinRequests_deletedApplicant_returnsWithdrawUser() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+
+        ChatRoomMember ownerMember = mock(ChatRoomMember.class);
+        given(ownerMember.isOwner()).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        Long deletedUserId = 99L;
+        LocalDateTime now = LocalDateTime.now();
+        JoinRequest req = mock(JoinRequest.class);
+        given(req.getId()).willReturn(1L);
+        given(req.getUserId()).willReturn(deletedUserId);
+        given(req.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req.getCreatedAt()).willReturn(now);
+
+        given(joinRequestRepository.findByChatRoomIdAndStatusOrderByCreatedAtAsc(ROOM_ID, JoinRequestStatus.PENDING))
+                .willReturn(List.of(req));
+        // 탈퇴 계정 — findAllById 결과에 포함되지 않음 → accountMap.get() = null
+        given(accountRepository.findAllById(List.of(deletedUserId))).willReturn(List.of());
+
+        List<JoinRequestResponse> result = joinRequestService.getJoinRequests(USER_ID, ROOM_ID);
+
+        assertThat(result).hasSize(1);
+        // WriterInfo.from(null) → userId=null, nickname="탈퇴한 사용자"
+        assertThat(result.get(0).applicant().userId()).isNull();
+        assertThat(result.get(0).applicant().nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(result.get(0).createdAt()).isEqualTo(now);
+    }
+
+    // ─── approveJoinRequest ───────────────────────────────────────────────────
+
+    @Test
+    void approveJoinRequest_success() {
+        JoinRequest req = stubPendingRequest();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        ChatRoomMember ownerMember = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        ChatRoom chatRoom = mock(ChatRoom.class);
+        given(chatRoom.getId()).willReturn(ROOM_ID);
+        given(chatRoomRepository.findByIdWithLock(ROOM_ID)).willReturn(Optional.of(chatRoom));
+        given(chatRoom.getCurrentMembers()).willReturn(3);
+        given(req.getStatus()).willReturn(JoinRequestStatus.APPROVED);
+        // 신규 참여 케이스 — LEFT 이력 없음
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.empty());
+
+        ApproveJoinRequestResponse response = joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
+
+        verify(req).approve();
+        verify(chatRoom).incrementMembers();
+        verify(chatRoomMemberRepository).save(any(ChatRoomMember.class));
+        assertThat(response.status()).isEqualTo(JoinRequestStatus.APPROVED);
+        assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
+        assertThat(response.currentMembers()).isEqualTo(3);
+    }
+
+    @Test
+    void approveJoinRequest_leftMemberRejoin_reactivates() {
+        JoinRequest req = stubPendingRequest();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        ChatRoomMember ownerMember = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        ChatRoom chatRoom = mock(ChatRoom.class);
+        given(chatRoom.getId()).willReturn(ROOM_ID);
+        given(chatRoomRepository.findByIdWithLock(ROOM_ID)).willReturn(Optional.of(chatRoom));
+        given(chatRoom.getCurrentMembers()).willReturn(3);
+        given(req.getStatus()).willReturn(JoinRequestStatus.APPROVED);
+
+        // LEFT 상태 기존 멤버 레코드 존재 — reactivate 분기
+        ChatRoomMember leftMember = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(leftMember));
+
+        joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
+
+        verify(leftMember).reactivate();
+        verify(chatRoomMemberRepository, never()).save(any(ChatRoomMember.class));
+    }
+
+    @Test
+    void approveJoinRequest_wrongChatRoomId_throws_CHAT_APPLICATION_NOT_FOUND() {
+        JoinRequest req = stubPendingRequest(); // getChatRoomId() = ROOM_ID
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, 999L, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    void approveJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    void approveJoinRequest_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        JoinRequest req = stubPendingRequest();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        // OWNER_ID가 MEMBER_ACTIVE 상태 — isOwner() false 기본값
+        ChatRoomMember member = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
+    }
+
+    @Test
+    void approveJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
+        JoinRequest req = stubPendingRequest();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        ChatRoomMember ownerMember = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        // approve()가 이미 처리된 신청에 대해 예외 발생 (CHAT_012)
+        doThrow(new BusinessException(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED))
+                .when(req).approve();
+
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_APPLICATION_ALREADY_PROCESSED);
+    }
+
+    @Test
+    void approveJoinRequest_lockFailed_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        JoinRequest req = stubPendingRequest();
+        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+
+        ChatRoomMember ownerMember = stubOwnerMember();
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.of(ownerMember));
+
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+    }
+
+    // ─── helpers ──────────────────────────────────────────────────────────────
+
+    private JoinRequest stubPendingRequest() {
+        JoinRequest req = mock(JoinRequest.class);
+        given(req.getChatRoomId()).willReturn(ROOM_ID);
+        // approve() 예외 또는 락 실패 시 getUserId() 미호출 — lenient 처리
+        lenient().when(req.getUserId()).thenReturn(USER_ID);
+        return req;
+    }
+
+    private ChatRoomMember stubOwnerMember() {
+        ChatRoomMember owner = mock(ChatRoomMember.class);
+        given(owner.isOwner()).willReturn(true);
+        return owner;
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {
