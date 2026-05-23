@@ -66,18 +66,21 @@ public class MerchantApplicationService {
             );
             return MerchantApplicationResponse.from(application);
         } catch (DataIntegrityViolationException e) {
-            if (isUkActiveBusinessNumberViolation(e)) {
+            if (containsConstraint(e, "uk_merchant_active_user_id")) {
+                throw new BusinessException(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
+            }
+            if (containsConstraint(e, "uk_merchant_active_business_number")) {
                 throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
             }
             throw e;
         }
     }
 
-    private boolean isUkActiveBusinessNumberViolation(DataIntegrityViolationException e) {
+    private boolean containsConstraint(DataIntegrityViolationException e, String constraintName) {
         Throwable cause = e;
         while (cause != null) {
             String message = cause.getMessage();
-            if (message != null && message.contains("uk_merchant_active_business_number")) {
+            if (message != null && message.contains(constraintName)) {
                 return true;
             }
             cause = cause.getCause();
