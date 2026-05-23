@@ -14,6 +14,7 @@ import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
+import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.Optional;
@@ -116,9 +117,9 @@ class ChatRoomKickServiceTest {
         verify(room, never()).decrementMembers();
     }
 
-    // 이미 비활성(MEMBER_LEFT/MEMBER_KICKED) 멤버 재강퇴 시도 — CHAT_016, decrementMembers() 미호출
+    // 이미 강퇴된(MEMBER_KICKED) 멤버 재강퇴 시도 — CHAT_016, decrementMembers() 미호출
     @Test
-    void kickMember_alreadyInactive_throws_CHAT_MEMBER_ALREADY_INACTIVE() {
+    void kickMember_alreadyKicked_throws_CHAT_MEMBER_ALREADY_INACTIVE() {
         ChatRoomMember target = mock(ChatRoomMember.class);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, TARGET_ID))
                 .willReturn(Optional.of(target));
@@ -128,6 +129,35 @@ class ChatRoomKickServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
+
+        verify(room, never()).decrementMembers();
+    }
+
+    // 이미 퇴장한(MEMBER_LEFT) 멤버 강퇴 시도 — CHAT_016, decrementMembers() 미호출
+    @Test
+    void kickMember_alreadyLeft_throws_CHAT_MEMBER_ALREADY_INACTIVE() {
+        ChatRoomMember target = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, TARGET_ID))
+                .willReturn(Optional.of(target));
+        doThrow(new BusinessException(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE)).when(target).kick();
+
+        assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
+
+        verify(room, never()).decrementMembers();
+    }
+
+    // 종료된 채팅방에서 강퇴 시도 — CHAT_013, decrementMembers() 미호출
+    @Test
+    void kickMember_closedRoom_throws_CHAT_ROOM_CLOSED() {
+        given(room.getStatus()).willReturn(ChatRoomStatus.CLOSED);
+
+        assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CHAT_ROOM_CLOSED);
 
         verify(room, never()).decrementMembers();
     }

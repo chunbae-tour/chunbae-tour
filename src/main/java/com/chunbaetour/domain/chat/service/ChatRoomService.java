@@ -114,14 +114,20 @@ public class ChatRoomService {
         }
     }
 
-    // 참여자 강퇴 — 방장만 가능, kick()으로 MEMBER_KICKED 전환 후 currentMembers -1
+    // 참여자 강퇴 — 방장만 가능, CLOSED 방 강퇴 불가, kick()으로 MEMBER_KICKED 전환 후 currentMembers -1
     @Transactional
     public void kickMember(Long ownerId, Long chatRoomId, Long targetUserId) {
         ChatRoom chatRoom = chatRoomRepository.findById(chatRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        if (!chatRoom.getOwnerId().equals(ownerId)) {
+        // ownerId는 @AuthenticationPrincipal 보장 — NPE 방지를 위해 ownerId 기준으로 equals 호출
+        if (!ownerId.equals(chatRoom.getOwnerId())) {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+
+        // 종료된 방은 강퇴 불가 — 정책 미명시로 팀 협의 후 CLOSED 방 강퇴 차단으로 결정
+        if (chatRoom.getStatus() == ChatRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
         }
 
         ChatRoomMember targetMember = chatRoomMemberRepository
