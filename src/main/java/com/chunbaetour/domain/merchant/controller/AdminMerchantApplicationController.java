@@ -10,6 +10,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -42,13 +43,12 @@ public class AdminMerchantApplicationController {
         return ApiResponse.success(adminMerchantApplicationService.approve(applicationId));
     }
 
-    /** 상인 신청 거절: 거절 사유 선택 입력. body 없이 호출 시 rejectReason=null. */
+    /** 상인 신청 거절: 거절 사유 필수 입력 — 상인이 재신청 기준 파악 가능해야 함 */
     @PatchMapping("/{applicationId}/reject")
     public ApiResponse<MerchantApplicationDetailResponse> reject(
             @PathVariable Long applicationId,
-            @RequestBody(required = false) MerchantApplicationDecisionRequest request
+            @Valid @RequestBody MerchantApplicationDecisionRequest request
     ) {
-        String reason = request != null ? request.rejectReason() : null;
-        return ApiResponse.success(adminMerchantApplicationService.reject(applicationId, reason));
+        return ApiResponse.success(adminMerchantApplicationService.reject(applicationId, request.rejectReason()));
     }
 }
