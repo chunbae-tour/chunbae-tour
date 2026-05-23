@@ -104,4 +104,8 @@ public class CompanionPost extends BaseEntity {
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
     }
+
+    public boolean isVisible() {
+        return status != CompanionPostStatus.DELETED && status != CompanionPostStatus.HIDDEN;
+    }
 }

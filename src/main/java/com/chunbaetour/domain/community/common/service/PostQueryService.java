@@ -15,27 +15,27 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class PostQueryService {
 
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
 
     // ACTIVE 상태인 게시글만 허용 — 삭제·숨김·마감 게시글에 새 댓글 차단
-    @Transactional(readOnly = true)
     public void validateCommentable(Long postId, PostType postType) {
         switch (postType) {
             case COMPANION -> {
                 CompanionPost post = companionPostRepository.findById(postId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
                 if (post.getStatus() != CompanionPostStatus.ACTIVE) {
-                    throw new BusinessException(ErrorCode.POST_NOT_FOUND);
+                    throw new BusinessException(ErrorCode.POST_NOT_COMMENTABLE);
                 }
             }
             case FREE -> {
                 FreePost post = freePostRepository.findById(postId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
                 if (post.getStatus() != FreePostStatus.ACTIVE) {
-                    throw new BusinessException(ErrorCode.POST_NOT_FOUND);
+                    throw new BusinessException(ErrorCode.POST_NOT_COMMENTABLE);
                 }
             }
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
@@ -43,22 +43,19 @@ public class PostQueryService {
     }
 
     // CLOSED(마감) 게시글은 기존 댓글 조회 허용 — 삭제·숨김은 차단
-    @Transactional(readOnly = true)
     public void validateExists(Long postId, PostType postType) {
         switch (postType) {
             case COMPANION -> {
                 CompanionPost post = companionPostRepository.findById(postId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
-                if (post.getStatus() == CompanionPostStatus.DELETED
-                        || post.getStatus() == CompanionPostStatus.HIDDEN) {
+                if (!post.isVisible()) {
                     throw new BusinessException(ErrorCode.POST_NOT_FOUND);
                 }
             }
             case FREE -> {
                 FreePost post = freePostRepository.findById(postId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
-                if (post.getStatus() == FreePostStatus.DELETED
-                        || post.getStatus() == FreePostStatus.HIDDEN) {
+                if (!post.isVisible()) {
                     throw new BusinessException(ErrorCode.POST_NOT_FOUND);
                 }
             }
