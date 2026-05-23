@@ -7,6 +7,8 @@ import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ShopService {
 
     private final ShopRepository shopRepository;
+    private final ObjectMapper objectMapper;
 
     /**
      * 내 가게 조회.
@@ -54,9 +57,22 @@ public class ShopService {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
 
+        // imageUrls JSON 유효성 검사 — 형식 오류 시 DB flush에서 MySQL 5xx 발생하므로 사전 차단
+        validateImageUrls(request.imageUrls());
+
         // 수정 가능한 필드 업데이트 (위치 제외)
         shop.update(request);
 
         return ShopResponse.from(shop);
+    }
+
+    /** imageUrls가 유효한 JSON인지 검사 — null이면 수정 안 함으로 통과 */
+    private void validateImageUrls(String imageUrls) {
+        if (imageUrls == null) return;
+        try {
+            objectMapper.readTree(imageUrls);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
     }
 }

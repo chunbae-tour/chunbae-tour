@@ -3,7 +3,7 @@ package com.chunbaetour.domain.shop.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -12,6 +12,7 @@ import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,21 +28,34 @@ class ShopServiceTest {
     private ShopRepository shopRepository;
 
     @Mock
-    private Shop shop;
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private ShopService shopService;
 
     private static final Long USER_ID = 1L;
 
+    /** 실제 Shop 인스턴스 생성 — 빌더 기본값: status=ACTIVE */
+    private Shop createShop() {
+        return Shop.builder()
+                .userId(USER_ID)
+                .applicationId(1L)
+                .shopName("광화문 떡볶이")
+                .category("FOOD")
+                .address("서울 종로구 세종대로 172")
+                .phone("02-1234-5678")
+                .description("전통 떡볶이 전문점")
+                .build();
+    }
+
     // ── GET /merchants/me/shop ──────────────────────────────────────────────
 
     @Test
     @DisplayName("내 가게 조회 — 성공")
     void getMyShop_success() {
-        // given — shopRepository가 shop 반환하도록 stub
+        // given — 실제 Shop 인스턴스 사용 (ACTIVE 상태)
+        Shop shop = createShop();
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        stubShopGetters();
 
         // when
         ShopResponse response = shopService.getMyShop(USER_ID);
@@ -68,33 +82,49 @@ class ShopServiceTest {
     // ── PATCH /merchants/me/shop ────────────────────────────────────────────
 
     @Test
-    @DisplayName("내 가게 수정 — 성공 (부분 수정)")
+    @DisplayName("내 가게 수정 — 성공 (부분 수정, 실제 값 변경 검증)")
     void updateMyShop_success() {
-        // given — 일부 필드만 수정 (null 필드는 기존 값 유지)
+        // given — 실제 Shop 인스턴스로 update() 실제 호출 검증
+        Shop shop = createShop();
         ShopUpdateRequest request = new ShopUpdateRequest(
                 "새로운 가게명", null, "02-9999-8888", "업데이트된 소개글", null, null, null
         );
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
-        stubShopGetters();
 
         // when
         ShopResponse response = shopService.updateMyShop(USER_ID, request);
 
-        // then — update() 호출 확인 + 응답 필드 검증
-        verify(shop).update(request);
-        assertThat(response.userId()).isEqualTo(USER_ID);
-        assertThat(response.status()).isEqualTo(ShopStatus.ACTIVE);
-        assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
+        // then — update() 실제 호출 후 변경된 값 검증 (null 필드는 기존 값 유지 확인)
+        assertThat(response.shopName()).isEqualTo("새로운 가게명");
+        assertThat(response.phone()).isEqualTo("02-9999-8888");
+        assertThat(response.description()).isEqualTo("업데이트된 소개글");
+        assertThat(response.category()).isEqualTo("FOOD"); // null 요청 → 기존 값 유지
     }
 
     @Test
     @DisplayName("내 가게 수정 — SUSPENDED 상태 → SHOP_INACTIVE")
     void updateMyShop_suspended_throws() {
-        // given — 정지된 가게는 수정 불가
+        // given — 상태 제어가 필요해 mock 사용 (빌더로 SUSPENDED 생성 불가)
+        Shop shop = mock(Shop.class);
         ShopUpdateRequest request = new ShopUpdateRequest("새이름", null, null, null, null, null, null);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
+
+        // then
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
+    @DisplayName("내 가게 수정 — CLOSED 상태 → SHOP_INACTIVE")
+    void updateMyShop_closed_throws() {
+        // given — 폐업 가게는 수정 불가
+        Shop shop = mock(Shop.class);
+        ShopUpdateRequest request = new ShopUpdateRequest("새이름", null, null, null, null, null, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shop.getStatus()).willReturn(ShopStatus.CLOSED);
 
         // then
         assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, request))
@@ -115,27 +145,5 @@ class ShopServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
-    }
-
-    // ── 공통 stub ──────────────────────────────────────────────────────────
-
-    /** ShopResponse.from(shop) 호출 시 필요한 getter stub */
-    private void stubShopGetters() {
-        given(shop.getId()).willReturn(1L);
-        given(shop.getUserId()).willReturn(USER_ID);
-        given(shop.getShopName()).willReturn("광화문 떡볶이");
-        given(shop.getCategory()).willReturn("FOOD");
-        given(shop.getAddress()).willReturn("서울 종로구 세종대로 172");
-        given(shop.getLat()).willReturn(null);
-        given(shop.getLng()).willReturn(null);
-        given(shop.getPhone()).willReturn("02-1234-5678");
-        given(shop.getDescription()).willReturn("전통 떡볶이 전문점");
-        given(shop.getImageUrls()).willReturn(null);
-        given(shop.getOperatingHours()).willReturn("10:00~21:00");
-        given(shop.getClosedDays()).willReturn("매주 일요일");
-        given(shop.isCertified()).willReturn(false);
-        given(shop.getRating()).willReturn(4.5);
-        given(shop.getReviewCount()).willReturn(10);
-        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
     }
 }
