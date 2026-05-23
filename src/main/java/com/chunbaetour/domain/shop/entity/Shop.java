@@ -2,8 +2,11 @@ package com.chunbaetour.domain.shop.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
+import com.chunbaetour.domain.shop.type.ShopStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -16,8 +19,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 상인 가게 엔티티.
- * 관리자가 MerchantApplication을 승인하면 생성된다 (STORY-09).
+ * 상인 가게 엔티티 (STORY-09/10).
+ * 관리자가 MerchantApplication을 승인하면 자동 생성 (STORY-09).
+ * 상인이 운영시간/소개글 등 직접 수정 가능, 위치(address/lat/lng)는 수정 불가 (STORY-10).
  */
 @Entity
 @Table(
@@ -59,6 +63,33 @@ public class Shop extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    // 이미지 URL 배열 — JSON 형식으로 저장
+    @Column(name = "image_urls", columnDefinition = "JSON")
+    private String imageUrls;
+
+    // 운영시간 — 예: "월~금 09:00-22:00"
+    @Column(name = "operating_hours", length = 100)
+    private String operatingHours;
+
+    // 휴무일 — 예: "매주 일요일"
+    @Column(name = "closed_days", length = 100)
+    private String closedDays;
+
+    // 관리자가 부여하는 인증 마크 (상인이 직접 변경 불가)
+    @Column(name = "is_certified", nullable = false)
+    private boolean isCertified = false;
+
+    // 리뷰 집계 — 리뷰 도메인에서 갱신
+    @Column(nullable = false)
+    private float rating = 0f;
+
+    @Column(name = "review_count", nullable = false)
+    private int reviewCount = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ShopStatus status;
+
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,
             String address, BigDecimal lat, BigDecimal lng, String phone, String description) {
@@ -71,8 +102,10 @@ public class Shop extends BaseEntity {
         this.lng = lng;
         this.phone = phone;
         this.description = description;
+        this.status = ShopStatus.ACTIVE;
     }
 
+    /** 관리자 상인 승인 시 MerchantApplication으로부터 가게 생성 (STORY-09). */
     public static Shop fromApplication(MerchantApplication application) {
         return Shop.builder()
                 .userId(application.getUserId())
