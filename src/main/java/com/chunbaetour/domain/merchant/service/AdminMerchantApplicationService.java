@@ -23,7 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
  * 관리자 상인 신청 처리 서비스 (STORY-09).
  * 승인: account/shop 선제 검증 → application.approve() → account.promoteToMerchant() → Shop 생성 (단일 트랜잭션).
  * 거절: application.reject(rejectReason).
- * 락 획득 순서: MerchantApplication → Account (데드락 방지).
+ *
+ * [락 순서 규칙] MerchantApplication → Account → Shop → Wallet (이 순서 고정, 역방향 금지).
+ * Account에 SELECT FOR UPDATE를 추가할 경우 반드시 MerchantApplication 락 이후에 획득해야 데드락 방지.
  */
 @Service
 @RequiredArgsConstructor
