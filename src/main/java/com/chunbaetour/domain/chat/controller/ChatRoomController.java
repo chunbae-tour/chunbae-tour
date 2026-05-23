@@ -33,6 +33,7 @@ public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
 
+    // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복 시 CHAT_ROOM_DUPLICATE
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CreateChatRoomResponse> createRoom(
@@ -41,6 +42,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.createRoom(userId, request));
     }
 
+    // 내 채팅방 목록 — ACTIVE 멤버 상태 기준 커서 페이지네이션, CLOSED 방도 포함
     @GetMapping
     public ApiResponse<CursorPageResponse<MyChatRoomResponse>> getMyRooms(
             @AuthenticationPrincipal Long userId,
@@ -49,6 +51,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getMyRooms(userId, cursor, size));
     }
 
+    // 채팅방 상세 조회 — ACTIVE 멤버만 접근 가능, 비멤버·강퇴·퇴장은 CHAT_NOT_JOINED
     @GetMapping("/{roomId}")
     public ApiResponse<ChatRoomDetailResponse> getRoomDetail(
             @AuthenticationPrincipal Long userId,
@@ -56,6 +59,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getRoomDetail(userId, roomId));
     }
 
+    // 채팅방 종료 — 방장 전용, room.status만 CLOSED로 전이, 멤버 상태 유지
     @PatchMapping("/{roomId}/close")
     public ApiResponse<Void> closeRoom(
             @AuthenticationPrincipal Long userId,
@@ -74,6 +78,7 @@ public class ChatRoomController {
         return ApiResponse.success();
     }
 
+    // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
     @DeleteMapping("/{roomId}/members/me")
     public ApiResponse<Void> leaveRoom(
             @AuthenticationPrincipal Long userId,

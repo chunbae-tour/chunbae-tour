@@ -37,6 +37,7 @@ public class ChatRoomService {
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final CompanionPostRepository companionPostRepository;
 
+    // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복은 DB 제약으로 원자적 차단
     @Transactional
     public CreateChatRoomResponse createRoom(Long userId, CreateChatRoomRequest request) {
         // 채팅방은 동행 게시글 작성자만 개설 가능 — 게시글 존재 확인 후 작성자 일치 여부 검증
@@ -64,6 +65,7 @@ public class ChatRoomService {
         return new CreateChatRoomResponse(chatRoom.getId());
     }
 
+    // 내 채팅방 목록 — ACTIVE 멤버 상태 기준 커서 페이지네이션, CLOSED 방도 포함
     public CursorPageResponse<MyChatRoomResponse> getMyRooms(Long userId, String cursor, int size) {
         Long cursorId = cursor != null ? decodeCursor(cursor) : Long.MAX_VALUE;
         // ACTIVE_STATES(멤버 상태)로 필터링 — close() 이후에도 멤버 상태는 OWNER_ACTIVE/MEMBER_ACTIVE 유지되므로
@@ -86,6 +88,7 @@ public class ChatRoomService {
         );
     }
 
+    // 채팅방 종료 — 방장만 가능, room.status만 CLOSED로 전이, 멤버 상태 유지
     @Transactional
     public void closeRoom(Long userId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
@@ -147,6 +150,7 @@ public class ChatRoomService {
         }
     }
 
+    // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
     @Transactional
     public void leaveRoom(Long userId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
@@ -171,6 +175,7 @@ public class ChatRoomService {
         }
     }
 
+    // 채팅방 상세 조회 — ACTIVE 멤버만 접근 가능, 비멤버·강퇴·퇴장은 CHAT_NOT_JOINED
     public ChatRoomDetailResponse getRoomDetail(Long userId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
