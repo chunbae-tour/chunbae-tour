@@ -48,6 +48,7 @@ class ChatRoomKickServiceTest {
     @BeforeEach
     void setUp() {
         room = mock(ChatRoom.class);
+        // lenient: kickMember_nonExistentRoom에서 findById를 재정의하므로 기본 스텁이 미사용 경고 없이 동작해야 함
         lenient().when(chatRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
         lenient().when(room.getOwnerId()).thenReturn(OWNER_ID);
     }
@@ -74,7 +75,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
@@ -85,7 +86,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN);
     }
 
@@ -97,7 +98,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
@@ -111,7 +112,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, OWNER_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_OWNER_CANNOT_BE_KICKED);
 
         verify(room, never()).decrementMembers();
@@ -127,7 +128,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
 
         verify(room, never()).decrementMembers();
@@ -143,7 +144,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
 
         verify(room, never()).decrementMembers();
@@ -156,7 +157,7 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_CLOSED);
 
         verify(room, never()).decrementMembers();
@@ -173,8 +174,13 @@ class ChatRoomKickServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> extractErrorCode(ex))
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+
+        // saveAndFlush 호출 전까지 kick()과 decrementMembers()는 이미 실행된 상태임을 명시
+        verify(target).kick();
+        verify(room).decrementMembers();
+        verify(chatRoomRepository).saveAndFlush(room);
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {
