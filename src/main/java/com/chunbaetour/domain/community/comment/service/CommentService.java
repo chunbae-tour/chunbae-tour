@@ -43,7 +43,14 @@ public class CommentService {
 
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
         postQueryService.validateExists(postId, postType);
-        Long cursorId = cursor != null ? CursorUtils.decode(cursor) : null;
+        Long cursorId = null;
+        if (cursor != null) {
+            try {
+                cursorId = CursorUtils.decode(cursor);
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(ErrorCode.INVALID_CURSOR);
+            }
+        }
         // size + 1개 조회: 별도 COUNT 쿼리 없이 다음 페이지 존재 여부를 판단하기 위함
         List<Comment> comments = commentRepository.findByPost(
                 postId, postType, CommentStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
