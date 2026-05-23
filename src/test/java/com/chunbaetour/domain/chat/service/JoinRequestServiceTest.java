@@ -375,7 +375,10 @@ class JoinRequestServiceTest {
     @Test
     void approveJoinRequest_success() {
         JoinRequest req = stubPendingRequest();
+        // outer 선행 체크용 (락 전) — 검증 통과
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+        // inner doApproveJoinRequest용 SELECT FOR UPDATE — approve↔reject 직렬화
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
 
         ChatRoomMember ownerMember = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -404,6 +407,7 @@ class JoinRequestServiceTest {
     void approveJoinRequest_leftMemberRejoin_reactivates() {
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
 
         ChatRoomMember ownerMember = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -467,6 +471,7 @@ class JoinRequestServiceTest {
     void approveJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
 
         ChatRoomMember ownerMember = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -514,7 +519,8 @@ class JoinRequestServiceTest {
         given(joinRequest.getId()).willReturn(REQUEST_ID);
         // reject()는 mock 기본 no-op — getStatus()는 REJECTED 고정 반환으로 응답 검증
         given(joinRequest.getStatus()).willReturn(JoinRequestStatus.REJECTED);
-        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+        // SELECT FOR UPDATE — approve↔reject 경합 직렬화용 비관적 락 조회
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(joinRequest));
         // 조건부 UPDATE 성공 — 영향 행 1 반환
         given(joinRequestRepository.rejectIfPending(REQUEST_ID)).willReturn(1);
 
@@ -569,7 +575,7 @@ class JoinRequestServiceTest {
         ChatRoomMember owner = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
                 .willReturn(Optional.of(owner));
-        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
@@ -586,7 +592,7 @@ class JoinRequestServiceTest {
 
         JoinRequest joinRequest = mock(JoinRequest.class);
         given(joinRequest.getChatRoomId()).willReturn(999L);
-        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(joinRequest));
 
         assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
@@ -603,7 +609,7 @@ class JoinRequestServiceTest {
 
         JoinRequest joinRequest = mock(JoinRequest.class);
         given(joinRequest.getChatRoomId()).willReturn(ROOM_ID);
-        given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(joinRequest));
+        given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(joinRequest));
         // 조건부 UPDATE 영향 행 0 — 이미 처리된 신청 (CHAT_012)
         given(joinRequestRepository.rejectIfPending(REQUEST_ID)).willReturn(0);
 
