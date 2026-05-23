@@ -140,7 +140,11 @@ public class AdminMerchantApplicationService {
             if (!matcher.matches()) {
                 throw new IllegalArgumentException("invalid cursor format");
             }
-            return Long.parseLong(matcher.group(1));
+            long id = Long.parseLong(matcher.group(1));
+            if (id < 1) {
+                throw new IllegalArgumentException("cursor id must be >= 1");
+            }
+            return id;
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_CURSOR);
         }

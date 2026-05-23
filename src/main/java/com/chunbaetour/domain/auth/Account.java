@@ -125,8 +125,11 @@ public class Account {
                 .build();
     }
 
-    /** 상인 승인 시 USER → MERCHANT 권한 상승 (STORY-09). */
+    /** 상인 승인 시 USER → MERCHANT 권한 상승 (STORY-09). USER 이외의 role은 승격 불가. */
     public void promoteToMerchant() {
+        if (this.role != Role.USER) {
+            throw new IllegalStateException("Only USER can be promoted to MERCHANT.");
+        }
         this.role = Role.MERCHANT;
     }
 }
