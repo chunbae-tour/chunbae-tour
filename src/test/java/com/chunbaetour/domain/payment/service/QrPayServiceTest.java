@@ -287,6 +287,7 @@ class QrPayServiceTest {
 
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
@@ -310,6 +311,7 @@ class QrPayServiceTest {
         Wallet lowWallet = createWallet(3_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(lowWallet));
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
