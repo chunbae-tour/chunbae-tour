@@ -64,7 +64,11 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
 
-        // 중복 menuId 검증 — 같은 메뉴 두 번 요청 시 금액 계산 이상 방지
+        // 중복 menuId 검증
+        // 정상 프론트라면 메뉴별 수량만 조절하므로 같은 menuId가 두 번 들어올 일 없음.
+        // 단, 프론트 버그 또는 API 직접 호출 시 [{menuId:100, qty:2}, {menuId:100, qty:3}] 형태로
+        // 중복 요청이 들어오면 스냅샷에 같은 메뉴가 2줄 생기고 totalAmount도 두 번 누적되어
+        // 결제 금액이 의도와 다르게 계산됨. 서버에서 사전 차단.
         List<Long> menuIds = request.menuItems().stream()
                 .map(QrPayItemRequest::menuId)
                 .toList();
