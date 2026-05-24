@@ -1,0 +1,101 @@
+package com.chunbaetour.domain.payment.entity;
+
+import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.payment.type.QrPayStatus;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+/**
+ * QR 결제 요청 엔티티 (STORY-13).
+ * 사용자가 QR 스캔 후 결제 요청을 생성하면 PENDING 상태로 저장.
+ * 상인이 승인/거절하거나 5분 타임아웃 시 상태 전이.
+ * menu_items: 결제 시점 메뉴 정보 JSON 스냅샷 — 이후 메뉴 수정/삭제돼도 영수증 보존.
+ */
+@Entity
+@Table(name = "qr_pay_requests")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class QrPayRequest extends BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    // 클라이언트에 노출되는 외부 식별자 (UUID)
+    @Column(name = "pay_request_id", nullable = false, unique = true, length = 36)
+    private String payRequestId;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Column(name = "shop_id", nullable = false)
+    private Long shopId;
+
+    @Column(nullable = false)
+    private Long amount;
+
+    // 결제 시점 메뉴 스냅샷 — [{menuId, name, price, quantity}]
+    @Column(name = "menu_items", columnDefinition = "JSON", nullable = false)
+    private String menuItems;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private QrPayStatus status;
+
+    @Column(name = "reject_reason", columnDefinition = "TEXT")
+    private String rejectReason;
+
+    @Column(name = "expired_at", nullable = false)
+    private LocalDateTime expiredAt;
+
+    @Builder
+    private QrPayRequest(String payRequestId, Long userId, Long shopId, Long amount,
+            String menuItems, LocalDateTime expiredAt) {
+        this.payRequestId = payRequestId;
+        this.userId = userId;
+        this.shopId = shopId;
+        this.amount = amount;
+        this.menuItems = menuItems;
+        this.status = QrPayStatus.PENDING;
+        this.expiredAt = expiredAt;
+    }
+
+    public static QrPayRequest create(String payRequestId, Long userId, Long shopId, Long amount,
+            String menuItems, LocalDateTime expiredAt) {
+        return QrPayRequest.builder()
+                .payRequestId(payRequestId)
+                .userId(userId)
+                .shopId(shopId)
+                .amount(amount)
+                .menuItems(menuItems)
+                .expiredAt(expiredAt)
+                .build();
+    }
+
+    /** 상인 승인 — STORY-14에서 호출 */
+    public void complete() {
+        this.status = QrPayStatus.COMPLETED;
+    }
+
+    /** 상인 거절 — STORY-14에서 호출 */
+    public void reject(String reason) {
+        this.status = QrPayStatus.REJECTED;
+        this.rejectReason = reason;
+    }
+
+    /** 5분 타임아웃 만료 — STORY-15 스케줄러에서 호출 */
+    public void expire() {
+        this.status = QrPayStatus.EXPIRED;
+    }
+}
