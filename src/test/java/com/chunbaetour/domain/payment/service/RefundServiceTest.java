@@ -252,7 +252,7 @@ class RefundServiceTest {
         // given
         Refund r1 = makeRefund(10L, RefundStatus.PENDING);
         Refund r2 = makeRefund(9L, RefundStatus.APPROVED);
-        given(refundRepository.findByUserIdOrderByIdDesc(eq(USER_ID), any(PageRequest.class)))
+        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(null), any(PageRequest.class)))
                 .willReturn(List.of(r1, r2));
 
         // when
@@ -271,7 +271,7 @@ class RefundServiceTest {
     void getUserRefundHistory_statusFilter() {
         // given
         Refund r1 = makeRefund(10L, RefundStatus.PENDING);
-        given(refundRepository.findByUserIdAndStatusOrderByIdDesc(eq(USER_ID), eq(RefundStatus.PENDING), any(PageRequest.class)))
+        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(RefundStatus.PENDING), eq(null), any(PageRequest.class)))
                 .willReturn(List.of(r1));
 
         // when
@@ -290,7 +290,7 @@ class RefundServiceTest {
         Refund r1 = makeRefund(10L, RefundStatus.PENDING);
         Refund r2 = makeRefund(9L, RefundStatus.APPROVED);
         Refund r3 = mock(Refund.class); // slice 대상 — from() 호출 안 됨, stub 불필요
-        given(refundRepository.findByUserIdOrderByIdDesc(eq(USER_ID), any(PageRequest.class)))
+        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(null), any(PageRequest.class)))
                 .willReturn(List.of(r1, r2, r3));
 
         // when
@@ -309,7 +309,7 @@ class RefundServiceTest {
         // given — id=9 CursorUtils 인코딩
         String cursor = CursorUtils.encode(9L);
         Refund r1 = makeRefund(8L, RefundStatus.APPROVED);
-        given(refundRepository.findByUserIdAndIdLessThanOrderByIdDesc(eq(USER_ID), eq(9L), any(PageRequest.class)))
+        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(9L), any(PageRequest.class)))
                 .willReturn(List.of(r1));
 
         // when

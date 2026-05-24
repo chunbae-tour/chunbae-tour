@@ -118,21 +118,14 @@ public class RefundService {
             throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
         }
 
+        // size+1개 조회 → hasNext 판단 후 실제 size개만 응답
         PageRequest pageable = PageRequest.of(0, size + 1);
         Long cursorId = cursor != null ? decodeCursorSafe(cursor) : null;
 
-        // status 필터 여부에 따라 분기
-        List<Refund> refunds;
-        if (status == null) {
-            refunds = (cursorId == null)
-                    ? refundRepository.findByUserIdOrderByIdDesc(userId, pageable)
-                    : refundRepository.findByUserIdAndIdLessThanOrderByIdDesc(userId, cursorId, pageable);
-        } else {
-            refunds = (cursorId == null)
-                    ? refundRepository.findByUserIdAndStatusOrderByIdDesc(userId, status, pageable)
-                    : refundRepository.findByUserIdAndStatusAndIdLessThanOrderByIdDesc(userId, status, cursorId, pageable);
-        }
+        // status/cursorId null이면 조건 미적용 — 4가지 조합을 쿼리 1개로 처리
+        List<Refund> refunds = refundRepository.findByUserIdWithFilter(userId, status, cursorId, pageable);
 
+        // 다음 페이지 존재 여부 판단 + nextCursor 생성
         boolean hasNext = refunds.size() > size;
         List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
