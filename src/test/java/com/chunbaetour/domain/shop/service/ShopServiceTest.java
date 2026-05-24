@@ -9,7 +9,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
-import com.chunbaetour.domain.shop.dto.response.ShopQrInfoResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
@@ -191,7 +191,7 @@ class ShopServiceTest {
 
     @Test
     @DisplayName("QR 스캔 가게 정보 조회 — 성공: 메뉴 목록 포함")
-    void getShopQrInfo_success() {
+    void getShopInfo_success() {
         // given
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
@@ -200,7 +200,7 @@ class ShopServiceTest {
         given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(menu));
 
         // when
-        ShopQrInfoResponse response = shopService.getShopQrInfo(SHOP_ID);
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
         // then
         assertThat(response.shopId()).isEqualTo(SHOP_ID);
@@ -211,10 +211,10 @@ class ShopServiceTest {
 
     @Test
     @DisplayName("QR 스캔 가게 정보 조회 — 가게 없음 → SHOP_NOT_FOUND")
-    void getShopQrInfo_notFound_throws() {
+    void getShopInfo_notFound_throws() {
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shopService.getShopQrInfo(SHOP_ID))
+        assertThatThrownBy(() -> shopService.getShopInfo(SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -222,13 +222,13 @@ class ShopServiceTest {
 
     @Test
     @DisplayName("QR 스캔 가게 정보 조회 — 메뉴 없는 가게도 빈 목록으로 성공")
-    void getShopQrInfo_noMenus_success() {
+    void getShopInfo_noMenus_success() {
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of());
 
-        ShopQrInfoResponse response = shopService.getShopQrInfo(SHOP_ID);
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
         assertThat(response.menus()).isEmpty();
     }

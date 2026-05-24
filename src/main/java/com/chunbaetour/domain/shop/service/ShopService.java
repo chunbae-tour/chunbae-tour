@@ -4,7 +4,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
-import com.chunbaetour.domain.shop.dto.response.ShopQrInfoResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
@@ -90,7 +90,7 @@ public class ShopService {
      * QR 스캔·앱 탐색 등 진입 경로 무관. 실제 결제(POST /payments/qr)는 USER 인증 필수.
      * 삭제된 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함 — 프론트에서 비활성 표시.
      */
-    public ShopQrInfoResponse getShopQrInfo(Long shopId) {
+    public ShopInfoResponse getShopInfo(Long shopId) {
         // shopId로 가게 조회 — 없으면 SHOP_001
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
@@ -98,7 +98,7 @@ public class ShopService {
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
         List<Menu> menus = menuRepository.findByShopId(shopId);
 
-        return ShopQrInfoResponse.from(shop, menus);
+        return ShopInfoResponse.from(shop, menus);
     }
 
     /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */
