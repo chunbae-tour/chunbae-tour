@@ -8,11 +8,16 @@ import static org.mockito.Mockito.mock;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
+import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopQrInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
+import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class ShopServiceTest {
@@ -28,12 +34,16 @@ class ShopServiceTest {
     private ShopRepository shopRepository;
 
     @Mock
+    private MenuRepository menuRepository;
+
+    @Mock
     private ObjectMapper objectMapper;
 
     @InjectMocks
     private ShopService shopService;
 
     private static final Long USER_ID = 1L;
+    private static final Long SHOP_ID = 10L;
 
     /** 실제 Shop 인스턴스 생성 — 빌더 기본값: status=ACTIVE */
     private Shop createShop() {
@@ -145,5 +155,81 @@ class ShopServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    // ── GET /merchants/me/qr ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("QR 코드 조회 — 성공: qrPayload 형식 검증")
+    void getMyQrCode_success() {
+        // given — id 있는 Shop 필요 (qrPayload에 shopId 포함)
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+
+        // when
+        QrCodeResponse response = shopService.getMyQrCode(USER_ID);
+
+        // then
+        assertThat(response.shopId()).isEqualTo(SHOP_ID);
+        assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
+        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
+    }
+
+    @Test
+    @DisplayName("QR 코드 조회 — 가게 없음 → SHOP_NOT_FOUND")
+    void getMyQrCode_notFound_throws() {
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.getMyQrCode(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    // ── GET /shops/{shopId}/qr-info ────────────────────────────────────────
+
+    @Test
+    @DisplayName("QR 스캔 가게 정보 조회 — 성공: 메뉴 목록 포함")
+    void getShopQrInfo_success() {
+        // given
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        Menu menu = Menu.builder().shopId(SHOP_ID).name("떡볶이").price(5000L).build();
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(menu));
+
+        // when
+        ShopQrInfoResponse response = shopService.getShopQrInfo(SHOP_ID);
+
+        // then
+        assertThat(response.shopId()).isEqualTo(SHOP_ID);
+        assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
+        assertThat(response.menus()).hasSize(1);
+        assertThat(response.menus().get(0).name()).isEqualTo("떡볶이");
+    }
+
+    @Test
+    @DisplayName("QR 스캔 가게 정보 조회 — 가게 없음 → SHOP_NOT_FOUND")
+    void getShopQrInfo_notFound_throws() {
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.getShopQrInfo(SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 스캔 가게 정보 조회 — 메뉴 없는 가게도 빈 목록으로 성공")
+    void getShopQrInfo_noMenus_success() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of());
+
+        ShopQrInfoResponse response = shopService.getShopQrInfo(SHOP_ID);
+
+        assertThat(response.menus()).isEmpty();
     }
 }

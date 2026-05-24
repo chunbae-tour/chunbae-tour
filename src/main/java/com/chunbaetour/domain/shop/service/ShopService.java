@@ -3,12 +3,17 @@ package com.chunbaetour.domain.shop.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
+import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopQrInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
+import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ShopService {
 
     private final ShopRepository shopRepository;
+    private final MenuRepository menuRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -64,6 +70,35 @@ public class ShopService {
         shop.update(request);
 
         return ShopResponse.from(shop);
+    }
+
+    /**
+     * 내 가게 QR 코드 payload 조회.
+     * qrPayload = "YEOPJEON_PAY:SHOP:{shopId}" — 클라이언트가 이 문자열로 QR 이미지 렌더링.
+     * 가게가 없으면 SHOP_001. SUSPENDED/CLOSED여도 QR 확인 허용 — 결제 차단은 STORY-13에서 처리.
+     */
+    public QrCodeResponse getMyQrCode(Long userId) {
+        // userId로 내 가게 조회 — 가게 없으면 SHOP_001
+        Shop shop = shopRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        return QrCodeResponse.from(shop);
+    }
+
+    /**
+     * 가게 공개 정보 + 메뉴 목록 조회 (비인증 공개).
+     * QR 스캔·앱 탐색 등 진입 경로 무관. 실제 결제(POST /payments/qr)는 USER 인증 필수.
+     * 삭제된 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함 — 프론트에서 비활성 표시.
+     */
+    public ShopQrInfoResponse getShopQrInfo(Long shopId) {
+        // shopId로 가게 조회 — 없으면 SHOP_001
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
+        List<Menu> menus = menuRepository.findByShopId(shopId);
+
+        return ShopQrInfoResponse.from(shop, menus);
     }
 
     /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */
