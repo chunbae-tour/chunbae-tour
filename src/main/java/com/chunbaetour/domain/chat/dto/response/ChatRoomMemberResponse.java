@@ -20,6 +20,7 @@ public record ChatRoomMemberResponse(
                 account.getProfileImageUrl(),
                 account.getCompanionScore(),
                 member.getMemberState(),
+                // ChatRoomDetailResponse.MemberInfo와 동일 — 재참여(reactivate) 시 원 가입 시점 반환
                 member.getCreatedAt()
         );
     }
