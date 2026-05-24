@@ -3,6 +3,7 @@ package com.chunbaetour.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -18,6 +19,7 @@ import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
@@ -63,13 +65,14 @@ class QrPayServiceTest {
     private QrPayService qrPayService;
 
     private static final Long USER_ID = 1L;
+    private static final Long MERCHANT_USER_ID = 99L; // 상인 ID — USER_ID(결제자)와 다른 계정
     private static final Long SHOP_ID = 10L;
     private static final Long MENU_ID_1 = 100L;
     private static final Long MENU_ID_2 = 101L;
 
     private Shop createActiveShop() {
         Shop shop = Shop.builder()
-                .userId(USER_ID)
+                .userId(MERCHANT_USER_ID)
                 .applicationId(1L)
                 .shopName("광화문 떡볶이")
                 .category("FOOD")
@@ -339,5 +342,48 @@ class QrPayServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — 본인 가게에 결제 요청 → SELF_PAYMENT_NOT_ALLOWED")
+    void createQrPayRequest_selfPayment_throws() {
+        // given — shop.userId == userId (요청자가 해당 가게 상인 본인)
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getUserId()).willReturn(USER_ID); // 상인 ID = 결제자 ID
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 1)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SELF_PAYMENT_NOT_ALLOWED);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — 동일 사용자·가게에 PENDING 이미 존재 → DUPLICATE_QR_PAY_REQUEST")
+    void createQrPayRequest_duplicatePending_throws() {
+        // given — 메뉴 검증 통과 후 중복 PENDING 체크에서 차단되는 경로
+        Shop shop = createActiveShop();
+        Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
+
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING))
+                .willReturn(true);
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 1)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
     }
 }
