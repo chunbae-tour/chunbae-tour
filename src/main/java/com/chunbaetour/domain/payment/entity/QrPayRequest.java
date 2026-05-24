@@ -32,7 +32,7 @@ public class QrPayRequest extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 클라이언트에 노출되는 외부 식별자 (UUID)
+    // 클라이언트에 노출되는 외부 식별자 (UUID) — PK id는 내부용
     @Column(name = "pay_request_id", nullable = false, unique = true, length = 36)
     private String payRequestId;
 
@@ -45,7 +45,8 @@ public class QrPayRequest extends BaseEntity {
     @Column(nullable = false)
     private Long amount;
 
-    // 결제 시점 메뉴 스냅샷 — [{menuId, name, price, quantity}]
+    // 결제 시점 메뉴 정보 JSON 스냅샷 — [{menuId, name, price, quantity}]
+    // 이후 메뉴 수정/삭제돼도 영수증에 당시 가격·이름 보존
     @Column(name = "menu_items", columnDefinition = "JSON", nullable = false)
     private String menuItems;
 
@@ -53,9 +54,11 @@ public class QrPayRequest extends BaseEntity {
     @Column(nullable = false, length = 20)
     private QrPayStatus status;
 
+    // 상인이 결제 거절 시 남기는 사유 (STORY-14) — PENDING/COMPLETED/EXPIRED 상태에서는 null
     @Column(name = "reject_reason", columnDefinition = "TEXT")
     private String rejectReason;
 
+    // 요청 생성 시각 + 5분 — 상인이 이 시각까지 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
     @Column(name = "expired_at", nullable = false)
     private LocalDateTime expiredAt;
 
