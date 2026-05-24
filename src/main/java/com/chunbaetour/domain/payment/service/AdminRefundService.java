@@ -48,34 +48,37 @@ public class AdminRefundService {
      */
     @Transactional
     public RefundDetailResponse approveRefund(Long refundId) {
-        // Refund 비관적 락 획득 (동시 승인/거절 방지)
+        // 1. Refund 비관적 락 획득 — 동시에 승인/거절/취소 요청이 들어와도 하나만 처리됨
         Refund refund = refundRepository.findByIdWithLock(refundId)
             .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        // PENDING 사전 체크 — 아래 PaymentOrder DB 쿼리+락 건너뜀 (불필요한 DB 접근 방지)
+        // 2. PENDING 여부 사전 체크 — 이미 처리된 환불이면 즉시 실패, 불필요한 PaymentOrder 락 획득 생략
         if (refund.getStatus() != RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
 
-        // PaymentOrder 비관적 락 획득 (Refund 락 후 획득, 순서 일관성 유지)
+        // 3. PaymentOrder 비관적 락 획득 — Refund 락 획득 후 Order 락 획득 (데드락 방지를 위한 락 순서 준수)
         PaymentOrder order = paymentOrderRepository.findByIdWithLock(refund.getPaymentOrderId())
             .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        // order.refund() 먼저 — COMPLETED 가드 수행 후 REFUNDED로 전이
-        // 결제 주문 취소 가능 여부를 먼저 확인한 뒤 환불 승인으로 전이하는 것이 도메인 의도에 부합
+        // 4. 결제 주문 상태를 REFUNDED로 전이 — order.refund() 내부에서 COMPLETED 가드 수행 (아니면 예외)
+        // order를 먼저 전이해야 "취소 가능한 주문인지" 도메인 레벨 검증 후 환불 승인 진행
         order.refund();
+        // 5. 환불 상태를 APPROVED로 전이
         refund.approve();
 
-        // 엽전 회수 + 이력 저장 (잔액 부족 시 PAY_001)
+        // 6. 사용자 잔액에서 환불 금액 차감 + 이력 저장
+        // PENDING 중 엽전 소비로 잔액 부족이면 PAY_001 예외 → 트랜잭션 전체 롤백
         walletService.reclaimForRefund(refund.getUserId(), refund.getAmount(), refund.getPaymentOrderId());
 
-        // PG 취소 — 트랜잭션 내 실행. 실패 시 위의 모든 DB 변경 롤백
+        // 7. PG에 결제 취소 요청 — 실패 시 예외 전파 → order/refund/wallet 모두 롤백
+        // PG 호출을 마지막에 두는 이유: DB가 커밋 준비된 상태에서 외부 호출해야 재시도 시 멱등 복구 가능
         paymentGatewayClient.cancelPayment(
             order.getPgTransactionId(),
             refund.getAmount(),
             refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
         );
-
+        // 승인 완료된 환불 정보를 DTO로 변환해서 반환
         return RefundDetailResponse.from(refund);
     }
 
@@ -85,11 +88,13 @@ public class AdminRefundService {
      */
     @Transactional
     public RefundDetailResponse rejectRefund(Long refundId, String rejectReason) {
+        // 거절 처리 중 동시 승인/취소 방지 — 비관적 락으로 단독 접근 보장
         Refund refund = refundRepository.findByIdWithLock(refundId)
             .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
+        // PENDING → REJECTED 상태 전이 + 거절 사유 저장 — 실제 환불이 아니므로 PG 취소·PaymentOrder 변경 없음
         refund.reject(rejectReason);
-
+        // 거절된 환불 정보를 DTO로 변환해서 반환
         return RefundDetailResponse.from(refund);
     }
 
@@ -98,25 +103,30 @@ public class AdminRefundService {
      * cursor: CursorUtils — id를 Base64URL 인코딩 (padding 없음).
      */
     public CursorPageResponse<RefundDetailResponse> getRefunds(String cursor, int size) {
-        // 페이지 크기 범위 검증
+        // size가 허용 범위(1~100) 벗어나면 즉시 거부 — 과도한 DB 조회 방지
         if (size < 1 || size > 100) {
             throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
         }
 
-        // size+1개 조회 → hasNext 판단 후 실제 size개만 응답
+        // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
         PageRequest pageable = PageRequest.of(0, size + 1);
+        // cursor가 있으면 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
         Long cursorId = cursor != null ? decodeCursorSafe(cursor) : null;
+        // cursorId null이면 전체 첫 페이지, 값 있으면 해당 id 이전 데이터 조회
         List<Refund> refunds = refundRepository.findWithCursor(cursorId, pageable);
 
-        // 다음 페이지 존재 여부 판단 + nextCursor 생성
+        // size+1개 왔으면 다음 페이지 존재
         boolean hasNext = refunds.size() > size;
+        // 실제 응답은 size개만 — size+1번째 원소는 hasNext 판단 후 제거
         List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
+        // 다음 페이지 cursor — 마지막 원소의 id를 Base64URL로 인코딩해서 클라이언트에 전달
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
+        // Refund 엔티티를 관리자용 응답 DTO로 변환
         List<RefundDetailResponse> responses = content.stream()
             .map(RefundDetailResponse::from)
             .toList();
-
+        // cursor 페이지 응답 조립 후 반환
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
     }
 
