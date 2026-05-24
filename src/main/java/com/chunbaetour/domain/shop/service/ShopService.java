@@ -88,6 +88,7 @@ public class ShopService {
     /**
      * 가게 공개 정보 + 메뉴 목록 조회 (비인증 공개).
      * QR 스캔·앱 탐색 등 진입 경로 무관. 실제 결제(POST /payments/qr)는 USER 인증 필수.
+     * SUSPENDED/CLOSED 가게도 조회 허용 — 영업 종료 가게 정보도 열람 가능해야 함.
      * 삭제된 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함 — 프론트에서 비활성 표시.
      */
     public ShopInfoResponse getShopInfo(Long shopId) {

@@ -187,6 +187,20 @@ class ShopServiceTest {
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("QR 코드 조회 — SUSPENDED 가게도 QR 정상 반환 (상태 가드 없음)")
+    void getMyQrCode_suspendedShop_success() {
+        // given — SUSPENDED 상태 가게도 상인이 QR 확인 가능해야 함, 상태 체크 없이 바로 반환
+        Shop shop = mock(Shop.class);
+        given(shop.getId()).willReturn(SHOP_ID);
+        given(shop.getShopName()).willReturn("광화문 떡볶이");
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+
+        QrCodeResponse response = shopService.getMyQrCode(USER_ID);
+
+        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
+    }
+
     // ── GET /shops/{shopId}/qr-info ────────────────────────────────────────
 
     @Test
@@ -231,5 +245,26 @@ class ShopServiceTest {
         ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
         assertThat(response.menus()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — isAvailable=false 메뉴도 응답에 포함")
+    void getShopInfo_includesUnavailableMenus() {
+        // given — 품절 메뉴(isAvailable=false)도 응답에 포함 — 프론트에서 비활성 표시 처리
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        Menu availableMenu = Menu.builder().shopId(SHOP_ID).name("떡볶이").price(5000L).build();
+        Menu unavailableMenu = mock(Menu.class);
+        given(unavailableMenu.getShopId()).willReturn(SHOP_ID);
+        given(unavailableMenu.getName()).willReturn("순대");
+        given(unavailableMenu.getPrice()).willReturn(4000L);
+        given(unavailableMenu.isAvailable()).willReturn(false);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(availableMenu, unavailableMenu));
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        assertThat(response.menus()).hasSize(2);
+        assertThat(response.menus()).anyMatch(m -> m.name().equals("순대") && !m.isAvailable());
     }
 }
