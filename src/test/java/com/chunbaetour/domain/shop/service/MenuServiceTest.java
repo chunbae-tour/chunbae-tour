@@ -135,12 +135,14 @@ class MenuServiceTest {
     @Test
     @DisplayName("메뉴 수정 — 성공 (부분 수정, 실제 값 변경 검증)")
     void updateMenu_success() {
-        // given — 실제 Menu 인스턴스로 update() 실제 호출 검증
-        Shop shop = createShop();
+        // given — Shop mock으로 getId() SHOP_ID 고정, Menu는 실제 인스턴스로 update() 호출 검증
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         MenuUpdateRequest request = new MenuUpdateRequest("순대국밥", null, 7000L, null, null);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByIdAndShopId(MENU_ID, shop.getId())).willReturn(Optional.of(menu));
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
         MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
@@ -155,11 +157,13 @@ class MenuServiceTest {
     @DisplayName("메뉴 수정 — isAvailable 변경 성공")
     void updateMenu_isAvailable_success() {
         // given
-        Shop shop = createShop();
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         MenuUpdateRequest request = new MenuUpdateRequest(null, null, null, null, false);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByIdAndShopId(MENU_ID, shop.getId())).willReturn(Optional.of(menu));
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
         MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
@@ -186,10 +190,12 @@ class MenuServiceTest {
     @DisplayName("메뉴 수정 — 메뉴 없음 또는 타 가게 소속 → MENU_NOT_FOUND")
     void updateMenu_menuNotFound_throws() {
         // given
-        Shop shop = createShop();
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
         MenuUpdateRequest request = new MenuUpdateRequest("새이름", null, null, null, null);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByIdAndShopId(MENU_ID, shop.getId())).willReturn(Optional.empty());
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.empty());
 
         // then
         assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
@@ -204,10 +210,12 @@ class MenuServiceTest {
     @DisplayName("메뉴 삭제 — 성공")
     void deleteMenu_success() {
         // given
-        Shop shop = createShop();
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByIdAndShopId(MENU_ID, shop.getId())).willReturn(Optional.of(menu));
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
         menuService.deleteMenu(USER_ID, MENU_ID);
@@ -233,9 +241,11 @@ class MenuServiceTest {
     @DisplayName("메뉴 삭제 — 메뉴 없음 또는 타 가게 소속 → MENU_NOT_FOUND")
     void deleteMenu_menuNotFound_throws() {
         // given
-        Shop shop = createShop();
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByIdAndShopId(MENU_ID, shop.getId())).willReturn(Optional.empty());
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.empty());
 
         // then
         assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, MENU_ID))
