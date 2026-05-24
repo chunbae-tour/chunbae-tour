@@ -110,6 +110,11 @@ public class QrPayService {
             totalAmount += menu.getPrice() * item.quantity();
         }
 
+        // totalAmount 0원 차단 — 메뉴 가격 데이터 오류(price=0)가 있어도 결제 생성 방지
+        if (totalAmount == 0) {
+            throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
+        }
+
         // 동일 사용자·가게에 PENDING 요청 중복 방지
         // 프론트 더블클릭·네트워크 재시도로 같은 요청이 두 번 들어오면 PENDING이 2개 생기고,
         // 상인이 둘 다 승인할 경우 이중 차감 발생. 서버에서 선제 차단.

@@ -345,6 +345,27 @@ class QrPayServiceTest {
     }
 
     @Test
+    @DisplayName("QR 결제 요청 생성 — 모든 메뉴 가격 0원 → ZERO_AMOUNT_NOT_ALLOWED")
+    void createQrPayRequest_zeroTotalAmount_throws() {
+        // given — 메뉴 price=0 데이터가 DB에 존재하는 경우 (데이터 오류)
+        Shop shop = createActiveShop();
+        Menu zeroMenu = createMenu(MENU_ID_1, SHOP_ID, "공짜메뉴", 0L, true);
+
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(zeroMenu));
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 3)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
+    }
+
+    @Test
     @DisplayName("QR 결제 요청 생성 — 본인 가게에 결제 요청 → SELF_PAYMENT_NOT_ALLOWED")
     void createQrPayRequest_selfPayment_throws() {
         // given — shop.userId == userId (요청자가 해당 가게 상인 본인)
