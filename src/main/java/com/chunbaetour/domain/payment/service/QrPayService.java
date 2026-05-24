@@ -13,6 +13,8 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -38,6 +40,7 @@ public class QrPayService {
     private final ShopRepository shopRepository;
     private final MenuRepository menuRepository;
     private final QrPayRequestRepository qrPayRequestRepository;
+    private final WalletRepository walletRepository;
     private final ObjectMapper objectMapper;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
@@ -85,6 +88,13 @@ public class QrPayService {
 
             snapshots.add(new MenuSnapshotItem(menu.getId(), menu.getName(), menu.getPrice(), item.quantity()));
             totalAmount += menu.getPrice() * item.quantity();
+        }
+
+        // 결제 요청 시점 잔액 사전 체크 — 명백한 잔액 부족 조기 차단 (실제 차감은 상인 승인 시 STORY-14)
+        Wallet wallet = walletRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        if (wallet.getBalance() < totalAmount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
         }
 
         // 결제 시점 메뉴 정보 JSON 스냅샷 직렬화

@@ -19,6 +19,8 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +45,9 @@ class QrPayServiceTest {
     @Mock
     private QrPayRequestRepository qrPayRequestRepository;
 
+    @Mock
+    private WalletRepository walletRepository;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -66,6 +71,12 @@ class QrPayServiceTest {
                 .build();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         return shop;
+    }
+
+    private Wallet createWallet(long balance) {
+        Wallet wallet = mock(Wallet.class);
+        given(wallet.getBalance()).willReturn(balance);
+        return wallet;
     }
 
     private Menu createMenu(Long menuId, Long shopId, String name, Long price, boolean isAvailable) {
@@ -94,8 +105,10 @@ class QrPayServiceTest {
                 new QrPayItemRequest(MENU_ID_2, 1)
         ));
 
+        Wallet wallet = createWallet(50_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1, MENU_ID_2))).willReturn(List.of(menu1, menu2));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
         given(qrPayRequestRepository.save(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
 
         // when
@@ -121,8 +134,10 @@ class QrPayServiceTest {
                 new QrPayItemRequest(MENU_ID_1, 3)
         ));
 
+        Wallet wallet = createWallet(50_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
         given(qrPayRequestRepository.save(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
 
         // when
@@ -229,6 +244,51 @@ class QrPayServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — 지갑 없음 → WALLET_NOT_FOUND")
+    void createQrPayRequest_walletNotFound_throws() {
+        // given
+        Shop shop = createActiveShop();
+        Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
+
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 1)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.WALLET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — 잔액 부족 → INSUFFICIENT_BALANCE")
+    void createQrPayRequest_insufficientBalance_throws() {
+        // given — 잔액 3,000원인데 5,000원짜리 메뉴 2개 요청 (10,000원)
+        Shop shop = createActiveShop();
+        Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
+
+        Wallet lowWallet = createWallet(3_000L);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(lowWallet));
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 2)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
     }
 
     @Test
