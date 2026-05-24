@@ -37,23 +37,19 @@ public class AdminMerchantApplicationService {
     private final ShopRepository shopRepository;
 
     /**
-     * PENDING 상인 신청 목록 cursor 페이징 조회.
+     * 상인 신청 목록 cursor 페이징 조회 (status 필터).
      * cursor 형식: id → Base64URL 인코딩 (CursorUtils 공통 유틸 사용).
+     * size 유효성(@Min(1)/@Max(100))은 컨트롤러에서 처리.
      */
-    public CursorPageResponse<MerchantApplicationDetailResponse> getApplications(String cursor, int size) {
-        // 페이지 크기 유효성 검증 — 1 이상 100 이하만 허용
-        if (size < 1 || size > 100) {
-            throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
-        }
-
+    public CursorPageResponse<MerchantApplicationDetailResponse> getApplications(String cursor, int size, MerchantApplicationStatus status) {
         // size+1개 조회 — 다음 페이지 존재 여부를 추가 쿼리 없이 판단하기 위한 sentinel 조회
         PageRequest pageable = PageRequest.of(0, size + 1);
         List<MerchantApplication> applications = (cursor == null)
-                // cursor 없으면 첫 페이지: id 내림차순으로 최신 PENDING 신청부터 조회
-                ? applicationRepository.findByStatusOrderByIdDesc(MerchantApplicationStatus.PENDING, pageable)
+                // cursor 없으면 첫 페이지: id 내림차순으로 최신 신청부터 조회
+                ? applicationRepository.findByStatusOrderByIdDesc(status, pageable)
                 // cursor 있으면 다음 페이지: cursor id보다 작은 항목만 조회 (keyset pagination)
                 : applicationRepository.findByStatusAndIdLessThanOrderByIdDesc(
-                        MerchantApplicationStatus.PENDING, parseCursor(cursor), pageable);
+                        status, parseCursor(cursor), pageable);
 
         // size+1번째 항목이 존재하면 다음 페이지 있음 — 실제 응답에는 size개만 포함
         boolean hasNext = applications.size() > size;
@@ -97,8 +93,13 @@ public class AdminMerchantApplicationService {
         try {
             shopRepository.save(Shop.fromApplication(application)); // 가게 엔티티 신규 생성
         } catch (DataIntegrityViolationException e) {
-            // existsByUserId 체크 → save 사이 극히 드문 race condition — uk_shops_user_id 제약 위반
-            throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
+            // existsByUserId 체크 → save 사이 극히 드문 race condition
+            // uk_shops_user_id(동일 사용자) 또는 uk_shops_application_id(동일 신청서) 제약 위반
+            String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();
+            if (msg != null && (msg.contains("uk_shops_user_id") || msg.contains("uk_shops_application_id"))) {
+                throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
+            }
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
 
         return MerchantApplicationDetailResponse.from(application);

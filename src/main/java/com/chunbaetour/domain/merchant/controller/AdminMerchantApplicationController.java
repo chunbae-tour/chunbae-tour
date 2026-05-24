@@ -2,15 +2,18 @@ package com.chunbaetour.domain.merchant.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.merchant.dto.request.MerchantApplicationDecisionRequest;
+import com.chunbaetour.domain.merchant.dto.request.MerchantApplicationRejectRequest;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.service.AdminMerchantApplicationService;
+import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,13 +31,14 @@ public class AdminMerchantApplicationController {
 
     private final AdminMerchantApplicationService adminMerchantApplicationService;
 
-    /** PENDING 상인 신청 목록 조회 (cursor 페이징) */
+    /** 상인 신청 목록 조회 (cursor 페이징, status 필터) */
     @GetMapping
     public ApiResponse<CursorPageResponse<MerchantApplicationDetailResponse>> getApplications(
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @RequestParam(defaultValue = "PENDING") MerchantApplicationStatus status
     ) {
-        return ApiResponse.success(adminMerchantApplicationService.getApplications(cursor, size));
+        return ApiResponse.success(adminMerchantApplicationService.getApplications(cursor, size, status));
     }
 
     /** 상인 신청 승인: application APPROVED → user MERCHANT → Shop 생성 */
@@ -47,7 +51,7 @@ public class AdminMerchantApplicationController {
     @PatchMapping("/{applicationId}/reject")
     public ApiResponse<MerchantApplicationDetailResponse> reject(
             @PathVariable Long applicationId,
-            @Valid @RequestBody MerchantApplicationDecisionRequest request
+            @Valid @RequestBody MerchantApplicationRejectRequest request
     ) {
         return ApiResponse.success(adminMerchantApplicationService.reject(applicationId, request.rejectReason()));
     }

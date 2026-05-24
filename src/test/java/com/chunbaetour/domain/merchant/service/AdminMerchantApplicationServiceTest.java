@@ -180,15 +180,7 @@ class AdminMerchantApplicationServiceTest {
     // ===== getApplications =====
 
     @Test
-    @DisplayName("목록 조회: size 범위 초과 → INVALID_PAGE_SIZE")
-    void getApplications_invalidSize_throws() {
-        assertThatThrownBy(() -> adminMerchantApplicationService.getApplications(null, 101))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.INVALID_PAGE_SIZE.getMessage());
-    }
-
-    @Test
-    @DisplayName("목록 조회: cursor 없음, 다음 페이지 있음")
+    @DisplayName("목록 조회: cursor 없음, PENDING, 다음 페이지 있음")
     void getApplications_noCursor_hasNext() {
         MerchantApplication app = pendingApplication();
         given(applicationRepository.findByStatusOrderByIdDesc(
@@ -196,7 +188,7 @@ class AdminMerchantApplicationServiceTest {
                 .willReturn(List.of(app, app, app)); // size=2, size+1=3개 반환 → hasNext=true
 
         CursorPageResponse<MerchantApplicationDetailResponse> result =
-                adminMerchantApplicationService.getApplications(null, 2);
+                adminMerchantApplicationService.getApplications(null, 2, MerchantApplicationStatus.PENDING);
 
         assertThat(result.hasNext()).isTrue();
         assertThat(result.content()).hasSize(2);
@@ -214,7 +206,7 @@ class AdminMerchantApplicationServiceTest {
                 .willReturn(List.of(app));
 
         CursorPageResponse<MerchantApplicationDetailResponse> result =
-                adminMerchantApplicationService.getApplications(cursor, 2);
+                adminMerchantApplicationService.getApplications(cursor, 2, MerchantApplicationStatus.PENDING);
 
         assertThat(result.hasNext()).isFalse();
         assertThat(result.content()).hasSize(1);
@@ -222,9 +214,27 @@ class AdminMerchantApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("목록 조회: APPROVED status 필터 적용")
+    void getApplications_approvedStatus() {
+        MerchantApplication app = pendingApplication();
+        // APPROVED 상태로 전이
+        app.approve();
+        given(applicationRepository.findByStatusOrderByIdDesc(
+                MerchantApplicationStatus.APPROVED, PageRequest.of(0, 21)))
+                .willReturn(List.of(app));
+
+        CursorPageResponse<MerchantApplicationDetailResponse> result =
+                adminMerchantApplicationService.getApplications(null, 20, MerchantApplicationStatus.APPROVED);
+
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.content()).hasSize(1);
+    }
+
+    @Test
     @DisplayName("목록 조회: 잘못된 cursor 형식 → INVALID_CURSOR")
     void getApplications_invalidCursor_throws() {
-        assertThatThrownBy(() -> adminMerchantApplicationService.getApplications("not-valid-base64!!!", 2))
+        assertThatThrownBy(() -> adminMerchantApplicationService.getApplications(
+                "not-valid-base64!!!", 2, MerchantApplicationStatus.PENDING))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.INVALID_CURSOR.getMessage());
     }
