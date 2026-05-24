@@ -17,10 +17,13 @@ import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +45,7 @@ public class QrPayService {
     private final QrPayRequestRepository qrPayRequestRepository;
     private final WalletRepository walletRepository;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
 
@@ -60,10 +64,16 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
 
-        // 요청 menuId 목록으로 메뉴 일괄 조회 (N+1 방지)
+        // 중복 menuId 검증 — 같은 메뉴 두 번 요청 시 금액 계산 이상 방지
         List<Long> menuIds = request.menuItems().stream()
                 .map(QrPayItemRequest::menuId)
                 .toList();
+        Set<Long> uniqueMenuIds = new HashSet<>(menuIds);
+        if (uniqueMenuIds.size() != menuIds.size()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        // 메뉴 일괄 조회 (N+1 방지)
         Map<Long, Menu> menuMap = menuRepository.findAllById(menuIds).stream()
                 .collect(Collectors.toMap(Menu::getId, m -> m));
 
@@ -101,7 +111,7 @@ public class QrPayService {
         String menuItemsJson = serializeSnapshots(snapshots);
 
         // QrPayRequest 생성 — expiredAt = 현재 + 5분, 상인 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
-        LocalDateTime expiredAt = LocalDateTime.now().plusMinutes(QR_PAY_EXPIRY_MINUTES);
+        LocalDateTime expiredAt = LocalDateTime.now(clock).plusMinutes(QR_PAY_EXPIRY_MINUTES);
         QrPayRequest qrPayRequest = QrPayRequest.create(
                 UUID.randomUUID().toString(),
                 userId,

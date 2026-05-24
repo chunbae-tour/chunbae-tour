@@ -22,6 +22,10 @@ import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -50,6 +54,10 @@ class QrPayServiceTest {
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
+
+    // 고정 시각으로 Clock 주입 — expiredAt 범위 검증 가능
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-05-25T10:00:00Z"), ZoneOffset.UTC);
 
     @InjectMocks
     private QrPayService qrPayService;
@@ -120,7 +128,9 @@ class QrPayServiceTest {
         assertThat(response.shopId()).isEqualTo(SHOP_ID);
         assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
         assertThat(response.menuItems()).hasSize(2);
-        assertThat(response.expiredAt()).isNotNull();
+        // Clock 고정(10:00:00) + 5분 = 10:05:00 정확히 검증
+        LocalDateTime expectedExpiry = LocalDateTime.of(2026, 5, 25, 10, 5, 0);
+        assertThat(response.expiredAt()).isEqualTo(expectedExpiry);
     }
 
     @Test
@@ -150,6 +160,25 @@ class QrPayServiceTest {
         assertThat(response.menuItems().get(0).price()).isEqualTo(5000L);
         assertThat(response.menuItems().get(0).quantity()).isEqualTo(3);
         assertThat(response.totalAmount()).isEqualTo(15_000L); // 5000 * 3
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — 중복 menuId → INVALID_REQUEST")
+    void createQrPayRequest_duplicateMenuId_throws() {
+        // given — 같은 menuId(100)를 두 번 포함한 요청
+        Shop shop = createActiveShop();
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 1),
+                new QrPayItemRequest(MENU_ID_1, 2)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test
