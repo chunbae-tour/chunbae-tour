@@ -111,7 +111,7 @@ public class AdminRefundService {
         // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
         PageRequest pageable = PageRequest.of(0, size + 1);
         // cursor가 있으면 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
-        Long cursorId = cursor != null ? decodeCursorSafe(cursor) : null;
+        Long cursorId = CursorUtils.decodeSafe(cursor);
         // cursorId null이면 전체 첫 페이지, 값 있으면 해당 id 이전 데이터 조회
         List<Refund> refunds = refundRepository.findWithCursor(cursorId, pageable);
 
@@ -130,12 +130,4 @@ public class AdminRefundService {
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
     }
 
-    // CursorUtils.decode 예외를 INVALID_CURSOR 비즈니스 예외로 변환
-    private Long decodeCursorSafe(String cursor) {
-        try {
-            return CursorUtils.decode(cursor);
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
-        }
-    }
 }

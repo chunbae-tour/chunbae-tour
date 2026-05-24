@@ -114,7 +114,7 @@ public class RefundService {
     /**
      * 사용자 환불 내역 cursor 페이징 조회 (KAN-115).
      * status 파라미터 생략 시 전체 상태 조회.
-     * cursor 형식: {"id":N} → Base64URL 인코딩 (padding 없음).
+     * cursor 형식: id(Long)를 Base64URL 인코딩 (padding 없음).
      */
     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
             Long userId, RefundStatus status, String cursor, int size) {
@@ -126,7 +126,7 @@ public class RefundService {
         // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
         PageRequest pageable = PageRequest.of(0, size + 1);
         // cursor가 있으면 Base64URL 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
-        Long cursorId = cursor != null ? decodeCursorSafe(cursor) : null;
+        Long cursorId = CursorUtils.decodeSafe(cursor);
         // status/cursorId null이면 조건 미적용 — 4가지 조합(필터유무×cursor유무)을 쿼리 1개로 처리
         List<Refund> refunds = refundRepository.findByUserIdWithFilter(userId, status, cursorId, pageable);
 
@@ -162,11 +162,4 @@ public class RefundService {
         refund.cancel();
     }
 
-    private Long decodeCursorSafe(String cursor) {
-        try {
-            return CursorUtils.decode(cursor);
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
-        }
-    }
 }
