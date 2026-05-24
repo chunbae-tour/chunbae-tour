@@ -3,13 +3,17 @@ package com.chunbaetour.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.payment.dto.request.RefundRequest;
 import com.chunbaetour.domain.payment.dto.response.RefundResponse;
+import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.entity.Refund;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
@@ -20,6 +24,8 @@ import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.mockito.Mockito;
@@ -29,6 +35,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -223,5 +230,122 @@ class RefundServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+    }
+
+    // ── GET /payments/refunds ─────────────────────────────────────────────────
+
+    private Refund makeRefund(Long id, RefundStatus status) {
+        Refund refund = mock(Refund.class);
+        given(refund.getId()).willReturn(id);
+        given(refund.getPaymentOrderId()).willReturn(100L);
+        given(refund.getAmount()).willReturn(AMOUNT);
+        given(refund.getStatus()).willReturn(status);
+        given(refund.getReason()).willReturn("단순 변심");
+        given(refund.getRejectReason()).willReturn(null);
+        given(refund.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 25, 10, 0, 0));
+        return refund;
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — 성공: 상태 필터 없음, 첫 페이지")
+    void getUserRefundHistory_noFilter_firstPage() {
+        // given
+        Refund r1 = makeRefund(10L, RefundStatus.PENDING);
+        Refund r2 = makeRefund(9L, RefundStatus.APPROVED);
+        given(refundRepository.findByUserIdOrderByIdDesc(eq(USER_ID), any(PageRequest.class)))
+                .willReturn(List.of(r1, r2));
+
+        // when
+        CursorPageResponse<UserRefundResponse> result =
+                refundService.getUserRefundHistory(USER_ID, null, null, 20);
+
+        // then
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.content().get(0).refundId()).isEqualTo(10L);
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — 성공: PENDING 상태 필터")
+    void getUserRefundHistory_statusFilter() {
+        // given
+        Refund r1 = makeRefund(10L, RefundStatus.PENDING);
+        given(refundRepository.findByUserIdAndStatusOrderByIdDesc(eq(USER_ID), eq(RefundStatus.PENDING), any(PageRequest.class)))
+                .willReturn(List.of(r1));
+
+        // when
+        CursorPageResponse<UserRefundResponse> result =
+                refundService.getUserRefundHistory(USER_ID, RefundStatus.PENDING, null, 20);
+
+        // then
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).status()).isEqualTo(RefundStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — hasNext true, nextCursor 반환")
+    void getUserRefundHistory_hasNext() {
+        // given — size=2 요청, 저장소에서 3개(size+1) 반환 → hasNext=true
+        Refund r1 = makeRefund(10L, RefundStatus.PENDING);
+        Refund r2 = makeRefund(9L, RefundStatus.APPROVED);
+        Refund r3 = mock(Refund.class); // slice 대상 — from() 호출 안 됨, stub 불필요
+        given(refundRepository.findByUserIdOrderByIdDesc(eq(USER_ID), any(PageRequest.class)))
+                .willReturn(List.of(r1, r2, r3));
+
+        // when
+        CursorPageResponse<UserRefundResponse> result =
+                refundService.getUserRefundHistory(USER_ID, null, null, 2);
+
+        // then
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — cursor 전달 시 다음 페이지 조회")
+    void getUserRefundHistory_withCursor() {
+        // given — cursor = {"id":9} Base64 인코딩
+        String cursor = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("{\"id\":9}".getBytes());
+        Refund r1 = makeRefund(8L, RefundStatus.APPROVED);
+        given(refundRepository.findByUserIdAndIdLessThanOrderByIdDesc(eq(USER_ID), eq(9L), any(PageRequest.class)))
+                .willReturn(List.of(r1));
+
+        // when
+        CursorPageResponse<UserRefundResponse> result =
+                refundService.getUserRefundHistory(USER_ID, null, cursor, 20);
+
+        // then
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).refundId()).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — 잘못된 cursor → INVALID_CURSOR")
+    void getUserRefundHistory_invalidCursor_throws() {
+        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, "not-valid-base64!!", 20))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_CURSOR);
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — size 0 → INVALID_PAGE_SIZE")
+    void getUserRefundHistory_invalidSize_throws() {
+        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, null, 0))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
+    }
+
+    @Test
+    @DisplayName("환불 내역 조회 — size 101 → INVALID_PAGE_SIZE")
+    void getUserRefundHistory_sizeExceeded_throws() {
+        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, null, 101))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
     }
 }

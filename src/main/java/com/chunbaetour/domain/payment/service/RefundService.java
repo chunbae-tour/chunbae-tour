@@ -2,8 +2,10 @@ package com.chunbaetour.domain.payment.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.payment.dto.request.RefundRequest;
 import com.chunbaetour.domain.payment.dto.response.RefundResponse;
+import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.entity.Refund;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
@@ -12,15 +14,21 @@ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 환불 요청 서비스 (STORY-06).
+ * 환불 요청 서비스 (STORY-06, KAN-115).
  * 유저가 환불을 요청하면 Refund 엔티티를 PENDING으로 생성.
  * 실제 PG 환불은 STORY-07 관리자 승인 시점에 수행.
  */
@@ -31,6 +39,7 @@ public class RefundService {
 
     private static final int REFUND_PERIOD_DAYS = 7;
     private static final String UK_REFUNDS_PAYMENT_ORDER_ID = "uk_refunds_payment_order_id";
+    private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
@@ -101,6 +110,44 @@ public class RefundService {
         }
     }
 
+    /**
+     * 사용자 환불 내역 cursor 페이징 조회 (KAN-115).
+     * status 파라미터 생략 시 전체 상태 조회.
+     * cursor 형식: {"id":N} → Base64URL 인코딩 (padding 없음).
+     */
+    public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
+            Long userId, RefundStatus status, String cursor, int size) {
+        // 페이지 크기 검증
+        if (size < 1 || size > 100) {
+            throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
+        }
+
+        PageRequest pageable = PageRequest.of(0, size + 1);
+        Long cursorId = cursor != null ? decodeCursor(cursor) : null;
+
+        // status 필터 여부에 따라 분기
+        List<Refund> refunds;
+        if (status == null) {
+            refunds = (cursorId == null)
+                    ? refundRepository.findByUserIdOrderByIdDesc(userId, pageable)
+                    : refundRepository.findByUserIdAndIdLessThanOrderByIdDesc(userId, cursorId, pageable);
+        } else {
+            refunds = (cursorId == null)
+                    ? refundRepository.findByUserIdAndStatusOrderByIdDesc(userId, status, pageable)
+                    : refundRepository.findByUserIdAndStatusAndIdLessThanOrderByIdDesc(userId, status, cursorId, pageable);
+        }
+
+        boolean hasNext = refunds.size() > size;
+        List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
+        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
+
+        List<UserRefundResponse> responses = content.stream()
+                .map(UserRefundResponse::from)
+                .toList();
+
+        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+    }
+
     /** 환불 요청 취소. PENDING 상태만 취소 가능 → PAY_019. 타인 요청 취소 시 → PAY_011. */
     @Transactional
     public void cancelRefund(Long userId, Long refundId) {
@@ -115,5 +162,24 @@ public class RefundService {
 
         // 상태 전이 — PENDING이 아니면 엔티티가 REFUND_CANCEL_NOT_ALLOWED(PAY_019) throw
         refund.cancel();
+    }
+
+    private String encodeCursor(Long id) {
+        String json = "{\"id\":" + id + "}";
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Long decodeCursor(String cursor) {
+        try {
+            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
+            String json = new String(decoded, StandardCharsets.UTF_8);
+            Matcher matcher = CURSOR_PATTERN.matcher(json);
+            if (!matcher.matches()) {
+                throw new IllegalArgumentException("invalid cursor format");
+            }
+            return Long.parseLong(matcher.group(1));
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_CURSOR);
+        }
     }
 }

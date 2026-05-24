@@ -32,4 +32,16 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     /** 관리자 환불 목록 cursor 다음 페이지 */
     @Query("SELECT r FROM Refund r WHERE r.id < :cursorId ORDER BY r.id DESC")
     List<Refund> findByIdLessThanOrderByIdDesc(@Param("cursorId") Long cursorId, Pageable pageable);
+
+    /** 사용자 환불 목록 — 상태 필터 없음, 첫 페이지 */
+    List<Refund> findByUserIdOrderByIdDesc(Long userId, Pageable pageable);
+
+    /** 사용자 환불 목록 — 상태 필터 없음, cursor 다음 페이지 */
+    List<Refund> findByUserIdAndIdLessThanOrderByIdDesc(Long userId, Long cursorId, Pageable pageable);
+
+    /** 사용자 환불 목록 — 상태 필터, 첫 페이지 */
+    List<Refund> findByUserIdAndStatusOrderByIdDesc(Long userId, RefundStatus status, Pageable pageable);
+
+    /** 사용자 환불 목록 — 상태 필터, cursor 다음 페이지 */
+    List<Refund> findByUserIdAndStatusAndIdLessThanOrderByIdDesc(Long userId, RefundStatus status, Long cursorId, Pageable pageable);
 }
