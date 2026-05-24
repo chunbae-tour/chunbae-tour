@@ -1,0 +1,100 @@
+package com.chunbaetour.domain.shop.service;
+
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.shop.dto.request.MenuCreateRequest;
+import com.chunbaetour.domain.shop.dto.request.MenuUpdateRequest;
+import com.chunbaetour.domain.shop.dto.response.MenuResponse;
+import com.chunbaetour.domain.shop.entity.Menu;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.MenuRepository;
+import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.type.ShopStatus;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 메뉴 CRUD 서비스 (STORY-11).
+ * 등록/수정/삭제 모두 ACTIVE 가게만 허용.
+ * 메뉴 소유권은 shopId 매칭으로 검증 — 타 가게 menuId 접근 시 MENU_NOT_FOUND 반환.
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class MenuService {
+
+    private final ShopRepository shopRepository;
+    private final MenuRepository menuRepository;
+
+    /**
+     * 메뉴 등록.
+     * ACTIVE 가게만 등록 가능.
+     */
+    @Transactional
+    public MenuResponse createMenu(Long userId, MenuCreateRequest request) {
+        // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
+        Shop shop = getActiveShop(userId);
+
+        Menu menu = Menu.builder()
+                .shopId(shop.getId())
+                .name(request.name())
+                .description(request.description())
+                .price(request.price())
+                .imageUrl(request.imageUrl())
+                .build();
+
+        return MenuResponse.from(menuRepository.save(menu));
+    }
+
+    /**
+     * 메뉴 수정.
+     * ACTIVE 가게만 수정 가능. null 필드는 기존 값 유지.
+     * 다른 가게 메뉴 접근 시 MENU_NOT_FOUND (소유권 노출 방지).
+     */
+    @Transactional
+    public MenuResponse updateMenu(Long userId, Long menuId, MenuUpdateRequest request) {
+        // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
+        Shop shop = getActiveShop(userId);
+
+        // menuId + shopId 조합 조회 — 타 가게 메뉴는 MENU_NOT_FOUND로 처리
+        Menu menu = getMenuOfShop(menuId, shop.getId());
+
+        menu.update(request);
+        return MenuResponse.from(menu);
+    }
+
+    /**
+     * 메뉴 삭제.
+     * ACTIVE 가게만 삭제 가능. 본인 가게 메뉴만 삭제 가능.
+     */
+    @Transactional
+    public void deleteMenu(Long userId, Long menuId) {
+        // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
+        Shop shop = getActiveShop(userId);
+
+        // menuId + shopId 조합 조회 — 타 가게 메뉴는 MENU_NOT_FOUND로 처리
+        Menu menu = getMenuOfShop(menuId, shop.getId());
+
+        // hard delete 대신 soft delete — QR 결제 내역에서 menuId 참조 보존
+        menu.softDelete();
+    }
+
+    /** userId로 ACTIVE 가게 조회. 없으면 SHOP_001, 비활성이면 SHOP_005. */
+    private Shop getActiveShop(Long userId) {
+        Shop shop = shopRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        if (shop.getStatus() != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+
+        return shop;
+    }
+
+    /** menuId + shopId 조합 조회. 없거나 다른 가게 소속이면 MENU_NOT_FOUND. */
+    private Menu getMenuOfShop(Long menuId, Long shopId) {
+        return menuRepository.findByIdAndShopId(menuId, shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MENU_NOT_FOUND));
+    }
+}
