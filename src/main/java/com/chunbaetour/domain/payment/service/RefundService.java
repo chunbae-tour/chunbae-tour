@@ -14,12 +14,9 @@ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
-import java.nio.charset.StandardCharsets;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -39,7 +36,6 @@ public class RefundService {
 
     private static final int REFUND_PERIOD_DAYS = 7;
     private static final String UK_REFUNDS_PAYMENT_ORDER_ID = "uk_refunds_payment_order_id";
-    private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
@@ -123,7 +119,7 @@ public class RefundService {
         }
 
         PageRequest pageable = PageRequest.of(0, size + 1);
-        Long cursorId = cursor != null ? decodeCursor(cursor) : null;
+        Long cursorId = cursor != null ? decodeCursorSafe(cursor) : null;
 
         // status 필터 여부에 따라 분기
         List<Refund> refunds;
@@ -139,7 +135,7 @@ public class RefundService {
 
         boolean hasNext = refunds.size() > size;
         List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
-        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
         List<UserRefundResponse> responses = content.stream()
                 .map(UserRefundResponse::from)
@@ -164,20 +160,9 @@ public class RefundService {
         refund.cancel();
     }
 
-    private String encodeCursor(Long id) {
-        String json = "{\"id\":" + id + "}";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private Long decodeCursor(String cursor) {
+    private Long decodeCursorSafe(String cursor) {
         try {
-            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
-            String json = new String(decoded, StandardCharsets.UTF_8);
-            Matcher matcher = CURSOR_PATTERN.matcher(json);
-            if (!matcher.matches()) {
-                throw new IllegalArgumentException("invalid cursor format");
-            }
-            return Long.parseLong(matcher.group(1));
+            return CursorUtils.decode(cursor);
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_CURSOR);
         }

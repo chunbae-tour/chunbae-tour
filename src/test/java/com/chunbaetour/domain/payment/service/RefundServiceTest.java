@@ -23,8 +23,8 @@ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
@@ -306,9 +306,8 @@ class RefundServiceTest {
     @Test
     @DisplayName("환불 내역 조회 — cursor 전달 시 다음 페이지 조회")
     void getUserRefundHistory_withCursor() {
-        // given — cursor = {"id":9} Base64 인코딩
-        String cursor = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("{\"id\":9}".getBytes());
+        // given — id=9 CursorUtils 인코딩
+        String cursor = CursorUtils.encode(9L);
         Refund r1 = makeRefund(8L, RefundStatus.APPROVED);
         given(refundRepository.findByUserIdAndIdLessThanOrderByIdDesc(eq(USER_ID), eq(9L), any(PageRequest.class)))
                 .willReturn(List.of(r1));
