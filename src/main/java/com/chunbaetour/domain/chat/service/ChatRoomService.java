@@ -210,6 +210,7 @@ public class ChatRoomService {
         }
     }
 
+    // 채팅방 ID를 URL-safe Base64(padding 없음)로 인코딩 — decodeCursor와 대칭
     private String encodeCursor(Long id) {
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(Long.toString(id).getBytes(StandardCharsets.UTF_8));
