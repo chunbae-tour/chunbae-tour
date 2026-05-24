@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -58,6 +59,16 @@ public class JoinRequestController {
             @Min(1) @PathVariable Long requestId) {
         return ApiResponse.success(
                 joinRequestService.approveJoinRequest(userId, chatRoomId, requestId));
+    }
+
+    // 참여 신청 취소 — 신청자 본인만 가능, PENDING 상태 신청만 취소 허용
+    @DeleteMapping("/{chatRoomId}/join-requests/{joinRequestId}")
+    public ApiResponse<Void> cancelJoinRequest(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long chatRoomId,
+            @Min(1) @PathVariable Long joinRequestId) {
+        joinRequestService.cancelJoinRequest(userId, chatRoomId, joinRequestId);
+        return ApiResponse.success();
     }
 
     // 참여 신청 거절 — 방장 전용
