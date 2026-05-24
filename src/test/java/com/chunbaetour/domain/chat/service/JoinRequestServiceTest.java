@@ -532,6 +532,7 @@ class JoinRequestServiceTest {
     @Test
     void cancelJoinRequest_success() {
         // 정상 취소 — deleteIfPending 영향 행 1 반환, 신청 삭제 확인
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(ROOM_ID);
         given(req.getUserId()).willReturn(USER_ID);
@@ -544,8 +545,20 @@ class JoinRequestServiceTest {
     }
 
     @Test
+    void cancelJoinRequest_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 채팅방 — CHAT_ROOM_NOT_FOUND
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> joinRequestService.cancelJoinRequest(USER_ID, ROOM_ID, REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
     void cancelJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
         // 존재하지 않는 신청 취소 — CHAT_APPLICATION_NOT_FOUND
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> joinRequestService.cancelJoinRequest(USER_ID, ROOM_ID, REQUEST_ID))
@@ -557,6 +570,7 @@ class JoinRequestServiceTest {
     @Test
     void cancelJoinRequest_chatRoomIdMismatch_throws_CHAT_APPLICATION_NOT_FOUND() {
         // 경로 chatRoomId와 신청 chatRoomId 불일치 — CHAT_APPLICATION_NOT_FOUND
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(999L);
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
@@ -570,6 +584,7 @@ class JoinRequestServiceTest {
     @Test
     void cancelJoinRequest_notApplicant_throws_ACCESS_DENIED() {
         // 신청자 본인이 아닌 사용자 취소 시도 — ACCESS_DENIED
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(ROOM_ID);
         given(req.getUserId()).willReturn(999L);
@@ -584,6 +599,7 @@ class JoinRequestServiceTest {
     @Test
     void cancelJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
         // 이미 처리된 신청 취소 — deleteIfPending 영향 행 0 → CHAT_APPLICATION_ALREADY_PROCESSED
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(ROOM_ID);
         given(req.getUserId()).willReturn(USER_ID);
