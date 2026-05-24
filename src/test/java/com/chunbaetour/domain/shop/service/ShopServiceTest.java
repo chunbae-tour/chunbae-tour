@@ -255,9 +255,12 @@ class ShopServiceTest {
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         Menu availableMenu = Menu.builder().shopId(SHOP_ID).name("떡볶이").price(5000L).build();
         Menu unavailableMenu = mock(Menu.class);
+        given(unavailableMenu.getId()).willReturn(2L);
         given(unavailableMenu.getShopId()).willReturn(SHOP_ID);
         given(unavailableMenu.getName()).willReturn("순대");
+        given(unavailableMenu.getDescription()).willReturn(null);
         given(unavailableMenu.getPrice()).willReturn(4000L);
+        given(unavailableMenu.getImageUrl()).willReturn(null);
         given(unavailableMenu.isAvailable()).willReturn(false);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(availableMenu, unavailableMenu));
