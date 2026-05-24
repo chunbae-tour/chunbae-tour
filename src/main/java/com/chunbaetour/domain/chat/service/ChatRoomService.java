@@ -1,7 +1,10 @@
 package com.chunbaetour.domain.chat.service;
 
+import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
+import com.chunbaetour.domain.chat.dto.response.ChatRoomMemberResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
@@ -18,6 +21,9 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -36,6 +42,7 @@ public class ChatRoomService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final CompanionPostRepository companionPostRepository;
+    private final AccountRepository accountRepository;
 
     // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복은 DB 제약으로 원자적 차단
     @Transactional
@@ -194,6 +201,32 @@ public class ChatRoomService {
 
         // userId를 함께 전달해 응답에 요청자 본인의 memberState(방장 여부 포함) 포함
         return ChatRoomDetailResponse.from(chatRoom, activeMembers, userId);
+    }
+
+    // 참여자 목록 — ACTIVE 멤버만 반환, N+1 방지: userId 추출 후 Account 일괄 조회
+    public List<ChatRoomMemberResponse> getMembers(Long userId, Long roomId) {
+        if (!chatRoomRepository.existsById(roomId)) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
+
+        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(createdAt ASC) 정렬
+        List<ChatRoomMember> activeMembers = chatRoomMemberRepository
+                .findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(roomId, ACTIVE_STATES);
+
+        // 비참여자·강퇴·퇴장 모두 CHAT_NOT_JOINED로 통일 — API 계약 일관성 유지
+        boolean isMember = activeMembers.stream().anyMatch(m -> m.getUserId().equals(userId));
+        if (!isMember) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
+
+        // 멤버 userId 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
+        List<Long> userIds = activeMembers.stream().map(ChatRoomMember::getUserId).toList();
+        Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+        return activeMembers.stream()
+                .map(m -> ChatRoomMemberResponse.from(m, accountMap.get(m.getUserId())))
+                .toList();
     }
 
     // cursor는 "채팅방 ID를 URL-safe Base64로 인코딩한 문자열"

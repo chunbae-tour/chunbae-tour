@@ -7,7 +7,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
+import com.chunbaetour.domain.chat.dto.response.ChatRoomMemberResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
@@ -34,6 +37,9 @@ class ChatRoomServiceTest {
 
     @Mock
     private ChatRoomMemberRepository chatRoomMemberRepository;
+
+    @Mock
+    private AccountRepository accountRepository;
 
     @InjectMocks
     private ChatRoomService chatRoomService;
@@ -122,6 +128,55 @@ class ChatRoomServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    // ===== getMembers =====
+
+    @Test
+    void getMembers_success_returns_member_list_with_account_info() {
+        // 정상 조회 — ACTIVE 멤버 반환, Account 정보 포함 확인
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember member = stubMember(USER_ID, ChatMemberState.OWNER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
+                .willReturn(List.of(member));
+        Account account = mock(Account.class);
+        given(account.getId()).willReturn(USER_ID);
+        given(account.getNickname()).willReturn("여행자");
+        given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
+        given(account.getCompanionScore()).willReturn(4.5f);
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of(account));
+
+        List<ChatRoomMemberResponse> result = chatRoomService.getMembers(USER_ID, ROOM_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).userId()).isEqualTo(USER_ID);
+        assertThat(result.get(0).nickname()).isEqualTo("여행자");
+        assertThat(result.get(0).companionScore()).isEqualTo(4.5f);
+        assertThat(result.get(0).memberState()).isEqualTo(ChatMemberState.OWNER_ACTIVE);
+    }
+
+    @Test
+    void getMembers_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 채팅방 — CHAT_ROOM_NOT_FOUND
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    void getMembers_notMember_throws_CHAT_NOT_JOINED() {
+        // 비참여자 접근 — activeMembers에 userId 없으면 CHAT_NOT_JOINED
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
+                .willReturn(List.of());
+
+        assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
     // ===== decodeCursor — getMyRooms를 통해 간접 검증 =====
