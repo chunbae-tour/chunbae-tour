@@ -53,7 +53,7 @@ class ChatRoomKickServiceTest {
         lenient().when(room.getOwnerId()).thenReturn(OWNER_ID);
     }
 
-    // 정상 강퇴 — kick() → decrementMembers() → saveAndFlush() 순서 보장
+    // 정상 강퇴 — kick() → saveAndFlush(target) → decrementMembers() → saveAndFlush(room) 순서 보장
     @Test
     void kickMember_success() {
         ChatRoomMember target = mock(ChatRoomMember.class);
@@ -62,8 +62,9 @@ class ChatRoomKickServiceTest {
 
         chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID);
 
-        InOrder inOrder = inOrder(target, room, chatRoomRepository);
+        InOrder inOrder = inOrder(target, chatRoomMemberRepository, room, chatRoomRepository);
         inOrder.verify(target).kick();
+        inOrder.verify(chatRoomMemberRepository).saveAndFlush(target);
         inOrder.verify(room).decrementMembers();
         inOrder.verify(chatRoomRepository).saveAndFlush(room);
     }
@@ -118,7 +119,7 @@ class ChatRoomKickServiceTest {
         verify(room, never()).decrementMembers();
     }
 
-    // 이미 강퇴된(MEMBER_KICKED) 멤버 재강퇴 시도 — CHAT_016, decrementMembers() 미호출
+    // 이미 강퇴된(MEMBER_KICKED) 멤버 재강퇴 시도 — kick() 내부 MEMBER_KICKED 분기 → CHAT_016, decrementMembers() 미호출
     @Test
     void kickMember_alreadyKicked_throws_CHAT_MEMBER_ALREADY_INACTIVE() {
         ChatRoomMember target = mock(ChatRoomMember.class);
@@ -134,7 +135,7 @@ class ChatRoomKickServiceTest {
         verify(room, never()).decrementMembers();
     }
 
-    // 이미 퇴장한(MEMBER_LEFT) 멤버 강퇴 시도 — CHAT_016, decrementMembers() 미호출
+    // 이미 퇴장한(MEMBER_LEFT) 멤버 강퇴 시도 — kick() 내부 MEMBER_LEFT 분기 → CHAT_016, decrementMembers() 미호출
     @Test
     void kickMember_alreadyLeft_throws_CHAT_MEMBER_ALREADY_INACTIVE() {
         ChatRoomMember target = mock(ChatRoomMember.class);
@@ -177,8 +178,9 @@ class ChatRoomKickServiceTest {
                 .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
 
-        // saveAndFlush 호출 전까지 kick()과 decrementMembers()는 이미 실행된 상태임을 명시
+        // saveAndFlush(room) 충돌 전까지 kick()/saveAndFlush(target)/decrementMembers()는 이미 실행된 상태임을 명시
         verify(target).kick();
+        verify(chatRoomMemberRepository).saveAndFlush(target);
         verify(room).decrementMembers();
         verify(chatRoomRepository).saveAndFlush(room);
     }

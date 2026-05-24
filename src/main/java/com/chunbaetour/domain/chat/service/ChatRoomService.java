@@ -136,6 +136,7 @@ public class ChatRoomService {
 
         // kick() 내부: OWNER_ACTIVE → CHAT_017, MEMBER_LEFT/KICKED → CHAT_016
         targetMember.kick();
+        chatRoomMemberRepository.saveAndFlush(targetMember);
 
         chatRoom.decrementMembers();
 
