@@ -209,15 +209,14 @@ public class ChatRoomService {
             throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
         }
 
+        // 참여 여부 먼저 확인 — 전체 멤버 로드 전에 단건 조회로 비용 최소화
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
+                .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+
         // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(createdAt ASC) 정렬
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
                 .findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(roomId, ACTIVE_STATES);
-
-        // 비참여자·강퇴·퇴장 모두 CHAT_NOT_JOINED로 통일 — API 계약 일관성 유지
-        boolean isMember = activeMembers.stream().anyMatch(m -> m.getUserId().equals(userId));
-        if (!isMember) {
-            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
-        }
 
         // 멤버 userId 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
         List<Long> userIds = activeMembers.stream().map(ChatRoomMember::getUserId).toList();

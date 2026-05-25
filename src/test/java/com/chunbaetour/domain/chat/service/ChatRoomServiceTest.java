@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import java.time.LocalDateTime;
+
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
@@ -88,7 +90,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
@@ -102,7 +104,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
@@ -115,7 +117,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
@@ -126,7 +128,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
@@ -136,7 +138,11 @@ class ChatRoomServiceTest {
     void getMembers_success_returns_member_list_with_account_info() {
         // 정상 조회 — ACTIVE 멤버 반환, Account 정보 포함 확인
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        LocalDateTime joinedAt = LocalDateTime.of(2025, 1, 1, 0, 0);
         ChatRoomMember member = stubMember(USER_ID, ChatMemberState.OWNER_ACTIVE);
+        given(member.getCreatedAt()).willReturn(joinedAt);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
         given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of(member));
         Account account = mock(Account.class);
@@ -151,8 +157,10 @@ class ChatRoomServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).userId()).isEqualTo(USER_ID);
         assertThat(result.get(0).nickname()).isEqualTo("여행자");
+        assertThat(result.get(0).profileImageUrl()).isEqualTo("https://cdn.example.com/img.jpg");
         assertThat(result.get(0).companionScore()).isEqualTo(4.5f);
         assertThat(result.get(0).memberState()).isEqualTo(ChatMemberState.OWNER_ACTIVE);
+        assertThat(result.get(0).joinedAt()).isEqualTo(joinedAt);
     }
 
     @Test
@@ -162,20 +170,20 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
     }
 
     @Test
     void getMembers_notMember_throws_CHAT_NOT_JOINED() {
-        // 비참여자 접근 — activeMembers에 userId 없으면 CHAT_NOT_JOINED
+        // 비참여자 접근 — findByChatRoomIdAndUserId 결과 없으면 CHAT_NOT_JOINED
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
-        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
-                .willReturn(List.of());
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
@@ -185,6 +193,9 @@ class ChatRoomServiceTest {
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         ChatRoomMember member1 = mock(ChatRoomMember.class);
         given(member1.getUserId()).willReturn(USER_ID);
+        given(member1.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member1));
         ChatRoomMember member2 = mock(ChatRoomMember.class);
         given(member2.getUserId()).willReturn(2L);
         given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
@@ -196,7 +207,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
 
@@ -211,7 +222,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getMyRooms(USER_ID, cursor, 10))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.INVALID_CURSOR);
     }
 
@@ -223,7 +234,7 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getMyRooms(USER_ID, cursor, 10))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.INVALID_CURSOR);
     }
 
@@ -234,11 +245,15 @@ class ChatRoomServiceTest {
 
         assertThatThrownBy(() -> chatRoomService.getMyRooms(USER_ID, cursor, 10))
                 .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.INVALID_CURSOR);
     }
 
     // ===== helpers =====
+
+    private ErrorCode extractErrorCode(Throwable ex) {
+        return ((BusinessException) ex).getErrorCode();
+    }
 
     private ChatRoom stubRoom() {
         ChatRoom room = mock(ChatRoom.class);

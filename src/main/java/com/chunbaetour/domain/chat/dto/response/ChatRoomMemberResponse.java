@@ -4,6 +4,7 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 public record ChatRoomMemberResponse(
         Long userId,
@@ -14,6 +15,7 @@ public record ChatRoomMemberResponse(
         LocalDateTime joinedAt
 ) {
     public static ChatRoomMemberResponse from(ChatRoomMember member, Account account) {
+        Objects.requireNonNull(account, "account must not be null for userId=" + member.getUserId());
         return new ChatRoomMemberResponse(
                 member.getUserId(),
                 account.getNickname(),
