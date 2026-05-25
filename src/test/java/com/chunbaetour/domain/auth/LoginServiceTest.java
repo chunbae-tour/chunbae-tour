@@ -99,6 +99,8 @@ class LoginServiceTest {
 
         // Refresh가 Redis에 저장돼야 reissue 흐름에서 조회 가능 (PRD 핵심 동작)
         verify(refreshTokenStore).save(1L, "rid", REFRESH_TTL);
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "success").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -126,6 +128,8 @@ class LoginServiceTest {
 
         // 실패 시 어떤 tokenId/TTL 조합으로도 Redis 저장이 일어나면 안 된다.
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "invalid_password").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -139,6 +143,8 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.LOGIN_FAILED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "invalid_password").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -153,6 +159,8 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "suspended").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -167,6 +175,8 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "role_mismatch").count())
+                .isEqualTo(1.0);
     }
 
     /**
@@ -190,6 +200,10 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "role_mismatch").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "suspended").count())
+                .isEqualTo(0.0);
     }
 
     private void verifyRefreshWasNotSaved() {

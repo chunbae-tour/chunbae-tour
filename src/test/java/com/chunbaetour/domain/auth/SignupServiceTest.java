@@ -66,6 +66,8 @@ class SignupServiceTest {
         assertThat(saved.getRole()).isEqualTo(Role.USER);
         assertThat(saved.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+        assertThat(meterRegistry.counter("auth.signup.attempt.total", "outcome", "success").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -76,6 +78,9 @@ class SignupServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_EMAIL);
+
+        assertThat(meterRegistry.counter("auth.signup.attempt.total", "outcome", "email_dup").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -87,5 +92,8 @@ class SignupServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_NICKNAME);
+
+        assertThat(meterRegistry.counter("auth.signup.attempt.total", "outcome", "nickname_dup").count())
+                .isEqualTo(1.0);
     }
 }

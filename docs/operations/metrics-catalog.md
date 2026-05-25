@@ -12,7 +12,7 @@
 | `/actuator/prometheus` | permitAll (prod는 후속 IP allowlist 필수) | Prometheus scrape |
 | `/actuator/**` (그 외) | denyAll | env/beans/mappings 등 정보 노출 차단 |
 
-**운영 배포 전 필수 정비**: `/actuator/prometheus` IP allowlist. 옵션:
+**운영 배포 전 필수 정비 (release blocker #149에서 추적)**: `/actuator/prometheus` IP allowlist. 옵션:
 1. Spring Security `hasIpAddress` 매핑 (운영 모니터링 인스턴스 IP만 허용)
 2. `management.server.port` 분리 (예: 8081) → LB에서 외부 노출 안 함
 3. ECS Task에서 별도 sidecar로 분리
