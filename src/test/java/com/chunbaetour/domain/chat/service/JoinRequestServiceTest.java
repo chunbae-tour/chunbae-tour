@@ -542,6 +542,7 @@ class JoinRequestServiceTest {
         joinRequestService.cancelJoinRequest(USER_ID, ROOM_ID, REQUEST_ID);
 
         verify(joinRequestRepository).deleteIfPending(REQUEST_ID);
+        verify(joinRequestRepository, never()).save(any());
     }
 
     @Test
@@ -568,8 +569,8 @@ class JoinRequestServiceTest {
     }
 
     @Test
-    void cancelJoinRequest_chatRoomIdMismatch_throws_CHAT_APPLICATION_NOT_FOUND() {
-        // 경로 chatRoomId와 신청 chatRoomId 불일치 — CHAT_APPLICATION_NOT_FOUND
+    void cancelJoinRequest_chatRoomIdMismatch_throws_INVALID_REQUEST() {
+        // 경로 chatRoomId와 신청 chatRoomId 불일치 — INVALID_REQUEST
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(999L);
@@ -578,7 +579,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.cancelJoinRequest(USER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(this::extractErrorCode)
-                .isEqualTo(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test

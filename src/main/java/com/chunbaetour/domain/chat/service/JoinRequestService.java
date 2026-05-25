@@ -158,7 +158,7 @@ public class JoinRequestService {
 
         // 경로 chatRoomId와 신청의 chatRoomId 일치 검증 — 타 방 신청 조작 방지
         if (!joinRequest.getChatRoomId().equals(chatRoomId)) {
-            throw new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND);
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
         // 본인 신청만 취소 가능 — userId 기준 equals 호출 (NPE 방지)
