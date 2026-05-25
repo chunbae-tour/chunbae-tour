@@ -241,7 +241,6 @@ class RefundServiceTest {
         given(refund.getAmount()).willReturn(AMOUNT);
         given(refund.getStatus()).willReturn(status);
         given(refund.getReason()).willReturn("단순 변심");
-        given(refund.getRejectReason()).willReturn(null);
         given(refund.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 25, 10, 0, 0));
         return refund;
     }

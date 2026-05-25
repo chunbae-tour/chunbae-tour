@@ -46,8 +46,12 @@ public final class CursorUtils {
      */
     public static long decode(String cursor) {
         try {
-            return Long.parseLong(new String(
+            long id = Long.parseLong(new String(
                     Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
+            if (id < 1L) {
+                throw new IllegalArgumentException("Invalid cursor: " + cursor);
+            }
+            return id;
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid cursor: " + cursor);
         }

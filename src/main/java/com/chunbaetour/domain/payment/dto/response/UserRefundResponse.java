@@ -21,7 +21,7 @@ public record UserRefundResponse(
                 refund.getAmount(),
                 refund.getStatus(),
                 refund.getReason(),
-                refund.getRejectReason(),
+                refund.getStatus() == RefundStatus.REJECTED ? refund.getRejectReason() : null,
                 refund.getCreatedAt()
         );
     }
