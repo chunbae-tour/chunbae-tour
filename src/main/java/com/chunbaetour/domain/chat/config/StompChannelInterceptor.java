@@ -1,0 +1,60 @@
+package com.chunbaetour.domain.chat.config;
+
+import com.chunbaetour.domain.auth.jwt.AccessClaims;
+import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import io.jsonwebtoken.JwtException;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.stereotype.Component;
+
+// STOMP CONNECT 프레임에서 JWT 검증 — HTTP 필터 체인 우회하는 WebSocket 인증 담당
+@Component
+@RequiredArgsConstructor
+public class StompChannelInterceptor implements ChannelInterceptor {
+
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    private final TokenIssuer tokenIssuer;
+
+    @Override
+    public Message<?> preSend(Message<?> message, MessageChannel channel) {
+        StompHeaderAccessor accessor =
+                MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        if (accessor == null || !StompCommand.CONNECT.equals(accessor.getCommand())) {
+            return message;
+        }
+
+        String authHeader = accessor.getFirstNativeHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+
+        String token = authHeader.substring(BEARER_PREFIX.length()).trim();
+        AccessClaims claims;
+        try {
+            claims = tokenIssuer.verifyAccess(token);
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.ACCESS_TOKEN_INVALID);
+        }
+
+        // principal.getName() = userId String — ChatMessageController에서 Long.parseLong으로 추출
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                String.valueOf(claims.userId()),
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name()))
+        );
+        accessor.setUser(auth);
+        return message;
+    }
+}
