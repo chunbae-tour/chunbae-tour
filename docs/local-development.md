@@ -315,6 +315,20 @@ docker compose up -d
 | `scripts/dev-down.sh` | macOS/Linux 컨테이너 종료 스크립트 |
 | `scripts/dev-down.ps1` | Windows PowerShell 컨테이너 종료 스크립트 |
 
+## 시크릿 관리
+
+운영 시크릿 주입 표준은 [ADR 0002 — Secret Injection Standard](adr/0002-secret-injection-standard.md)에 박제되어 있고, 전체 시크릿 목록 + 환경별 주입 방식 + 권장 회전 주기는 [시크릿 카탈로그](operations/secrets-catalog.md)에 정리되어 있습니다.
+
+**환경별 주입 방식 요약**:
+
+- **local**: `.env` 파일 (`.env.example` 복사). docker-compose가 env_file로 컨테이너에 주입.
+- **staging/prod (현재)**: GitHub Actions Secret → 컨테이너 env var (Phase 1).
+- **prod (ECS 전환 후)**: AWS Secrets Manager + ECS Task Definition `secrets[]` (Phase 2).
+
+**신규 시크릿 추가 시**: [secrets-catalog.md §"신규 시크릿 추가 절차"](operations/secrets-catalog.md#신규-시크릿-추가-절차)를 따라 카탈로그 + `.env.example` + `application-prod.yml` + `SecretValidator` 4곳을 동기 갱신해야 합니다.
+
+**부팅 시 검증**: prod 프로파일은 `SecretValidator`가 시크릿 카탈로그 기반 검증을 수행해 잘못된 값/placeholder가 운영에 노출되는 것을 차단합니다. 검증 실패 시 부팅 단계에서 `IllegalStateException`으로 즉시 실패합니다.
+
 ## 운영 배포 전 후속 작업
 
 ### Trusted Proxy / X-Forwarded-For allowlist 검증 (KAN-65 후속)

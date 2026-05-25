@@ -2,6 +2,8 @@ package com.chunbaetour.domain.search.dto.response;
 
 import com.chunbaetour.domain.place.type.PlaceCategory;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * 관광지 검색 결과 단건 응답 DTO.
  * <p>
@@ -21,7 +23,7 @@ public record SearchPlaceResponse(
         String name,
         PlaceCategory category,
         String address,
-        String thumbnailUrl,
+        @JsonProperty("imageUrl") String thumbnailUrl,
         float rating,
         int reviewCount
 ) {

@@ -114,9 +114,29 @@ public class CallbackService {
         scheduleUnmark(order.getIdempotencyKey());
     }
 
-    // DB 커밋 성공 후에만 Redis 키 삭제 — 커밋 실패 시 키 보존으로 재시도 가능
+    /**
+     * 멱등성 키 해제를 DB 커밋 이후로 예약.
+     *
+     * 문제 상황:
+     *   트랜잭션 내에서 unmark()를 즉시 호출하면, 그 직후 DB 커밋이 실패해도
+     *   Redis 키는 이미 삭제된 상태 → 사용자가 재시도하면 중복 충전 발생 가능.
+     *
+     * 해결:
+     *   Spring의 TransactionSynchronization을 활용해 커밋 확정 시점에만 키 삭제.
+     *   afterCommit()은 DB 커밋 성공 후에만 실행되므로, 커밋 실패 시 키가 보존됨
+     *   → 포트원이 웹훅 재전송 → 재시도 가능.
+     *
+     * @Override 이유:
+     *   TransactionSynchronization은 Spring 인터페이스로, afterCommit()은 default 메서드.
+     *   @Override로 "인터페이스 메서드를 재정의한다"는 의도를 명시하고
+     *   메서드명 오타 시 컴파일 오류로 잡아줌.
+     *
+     * else 분기:
+     *   트랜잭션 컨텍스트 밖(테스트, 비동기 등)에서 호출된 경우 즉시 unmark.
+     */
     private void scheduleUnmark(String idempotencyKey) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            // 현재 트랜잭션에 콜백 등록 — 커밋 완료 시 afterCommit() 실행됨
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
@@ -124,6 +144,7 @@ public class CallbackService {
                 }
             });
         } else {
+            // 트랜잭션 밖 → 즉시 실행
             idempotencyService.unmark(idempotencyKey);
         }
     }
