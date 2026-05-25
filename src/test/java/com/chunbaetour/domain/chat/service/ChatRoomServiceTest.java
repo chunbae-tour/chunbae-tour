@@ -179,6 +179,27 @@ class ChatRoomServiceTest {
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
     }
 
+    @Test
+    void getMembers_accountMissing_throws_USER_NOT_FOUND() {
+        // 탈퇴 등으로 Account가 삭제됐으나 ChatRoomMember 레코드가 남은 경우 — 데이터 정합성 오류
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        ChatRoomMember member1 = mock(ChatRoomMember.class);
+        given(member1.getUserId()).willReturn(USER_ID);
+        ChatRoomMember member2 = mock(ChatRoomMember.class);
+        given(member2.getUserId()).willReturn(2L);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
+                .willReturn(List.of(member1, member2));
+        Account account = mock(Account.class);
+        given(account.getId()).willReturn(USER_ID);
+        // member2의 Account 누락 — findAllById가 1건만 반환
+        given(accountRepository.findAllById(any())).willReturn(List.of(account));
+
+        assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
     // ===== decodeCursor — getMyRooms를 통해 간접 검증 =====
     // cursor가 유효하지 않으면 repository 호출 전에 예외가 발생함
 

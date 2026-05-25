@@ -224,6 +224,11 @@ public class ChatRoomService {
         Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
+        // 조회된 Account 수가 멤버 수와 불일치 시 데이터 정합성 오류 — 탈퇴 계정이 멤버로 남은 경우
+        if (accountMap.size() != userIds.size()) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
         return activeMembers.stream()
                 .map(m -> ChatRoomMemberResponse.from(m, accountMap.get(m.getUserId())))
                 .toList();
