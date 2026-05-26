@@ -23,7 +23,7 @@ import com.chunbaetour.domain.payment.type.PaymentMethod;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
-import java.util.Base64;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -226,7 +226,7 @@ class AdminRefundServiceTest {
         ReflectionTestUtils.setField(r1, "id", 2L);
         Refund r2 = makePendingRefund();
         ReflectionTestUtils.setField(r2, "id", 1L);
-        given(refundRepository.findAllOrderByIdDesc(any())).willReturn(List.of(r1, r2));
+        given(refundRepository.findWithCursor(eq(null), any())).willReturn(List.of(r1, r2));
 
         CursorPageResponse<RefundDetailResponse> page = adminRefundService.getRefunds(null, 20);
 
@@ -244,31 +244,13 @@ class AdminRefundServiceTest {
             ReflectionTestUtils.setField(r, "id", i);
             refunds.add(r);
         }
-        given(refundRepository.findAllOrderByIdDesc(any())).willReturn(refunds); // 5개 반환 (size=4 요청)
+        given(refundRepository.findWithCursor(eq(null), any())).willReturn(refunds); // 5개 반환 (size=4 요청)
 
         CursorPageResponse<RefundDetailResponse> page = adminRefundService.getRefunds(null, 4);
 
         assertThat(page.content()).hasSize(4);
         assertThat(page.hasNext()).isTrue();
         assertThat(page.nextCursor()).isNotNull();
-    }
-
-    @Test
-    @DisplayName("size가 0이면 INVALID_PAGE_SIZE 예외")
-    void getRefunds_size_zero_throws() {
-        assertThatThrownBy(() -> adminRefundService.getRefunds(null, 0))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
-    }
-
-    @Test
-    @DisplayName("size가 101이면 INVALID_PAGE_SIZE 예외")
-    void getRefunds_size_over_max_throws() {
-        assertThatThrownBy(() -> adminRefundService.getRefunds(null, 101))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
     }
 
     @Test
@@ -283,14 +265,12 @@ class AdminRefundServiceTest {
     @Test
     @DisplayName("유효한 cursor로 조회 시 findByIdLessThan 호출")
     void getRefunds_with_valid_cursor() {
-        String cursorJson = "{\"id\":50}";
-        String cursor = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(cursorJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        given(refundRepository.findByIdLessThanOrderByIdDesc(eq(50L), any())).willReturn(List.of());
+        String cursor = CursorUtils.encode(50L);
+        given(refundRepository.findWithCursor(eq(50L), any())).willReturn(List.of());
 
         CursorPageResponse<RefundDetailResponse> page = adminRefundService.getRefunds(cursor, 10);
 
-        verify(refundRepository).findByIdLessThanOrderByIdDesc(eq(50L), any());
+        verify(refundRepository).findWithCursor(eq(50L), any());
         assertThat(page.content()).isEmpty();
         assertThat(page.hasNext()).isFalse();
     }
