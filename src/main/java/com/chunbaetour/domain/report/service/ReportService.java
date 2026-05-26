@@ -42,15 +42,16 @@ public class ReportService {
 
     @Transactional
     public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
-        // 자기신고 차단: USER·MERCHANT만 체크 — 게시글/댓글은 ID 체계가 달라 비교 무의미
+        // USER·MERCHANT 자기신고 — DB 없이 즉시 차단 (ID 일치 비교)
+        // 게시글·댓글 자기신고 — validateTargetExists 내부에서 authorId 비교 후 차단
         if ((request.targetType() == ReportTargetType.USER
                 || request.targetType() == ReportTargetType.MERCHANT)
                 && request.targetId().equals(reporterId)) {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
 
-        // 검증 순서: DB 조회 없는 자기신고 체크 → 존재 확인(DB 1회) → 중복 확인(DB 1회) — 빠른 실패 원칙
-        validateTargetExists(request.targetType(), request.targetId());
+        // 검증 순서: DB 조회 없는 자기신고 체크 → 존재 확인(DB 1회, 게시글/댓글 자기신고 포함) → 중복 확인(DB 1회)
+        validateTargetExists(request.targetType(), request.targetId(), reporterId);
 
         if (reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
                 reporterId, request.targetType(), request.targetId())) {
@@ -109,8 +110,8 @@ public class ReportService {
         return MyReportResponse.of(report);
     }
 
-    // 신고 대상 존재·활성 상태 검증 — 타입별로 다른 테이블 조회
-    private void validateTargetExists(ReportTargetType targetType, Long targetId) {
+    // 신고 대상 존재·활성 상태 검증 + 게시글/댓글 자기신고 차단
+    private void validateTargetExists(ReportTargetType targetType, Long targetId, Long reporterId) {
         switch (targetType) {
             case POST_COMPANION -> {
                 CompanionPost post = companionPostRepository.findById(targetId)
@@ -118,12 +119,18 @@ public class ReportService {
                 if (post.getStatus() != CompanionPostStatus.ACTIVE) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
                 }
+                if (post.getAuthorId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
+                }
             }
             case POST_FREE -> {
                 FreePost post = freePostRepository.findById(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (post.getStatus() != FreePostStatus.ACTIVE) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (post.getAuthorId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
             case USER -> {
@@ -144,6 +151,9 @@ public class ReportService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (comment.getStatus() == CommentStatus.DELETED) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (comment.getAuthorId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
         }
