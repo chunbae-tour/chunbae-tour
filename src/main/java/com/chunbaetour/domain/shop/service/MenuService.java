@@ -29,21 +29,24 @@ public class MenuService {
 
     /**
      * 메뉴 등록.
-     * ACTIVE 가게만 등록 가능. 가게 내 메뉴 이름 중복 불허.
+     * ACTIVE 가게만 등록 가능. 가게 내 메뉴 이름 중복 불허 (trim 기준).
      */
     @Transactional
     public MenuResponse createMenu(Long userId, MenuCreateRequest request) {
         // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
         Shop shop = getActiveShop(userId);
 
+        // 앞뒤 공백 trim — " 떡볶이 "와 "떡볶이"를 같은 이름으로 처리
+        String normalizedName = request.name().trim();
+
         // 동일 가게 내 중복 메뉴 이름 차단 (@SQLRestriction으로 soft-deleted 메뉴 제외)
-        if (menuRepository.existsByShopIdAndName(shop.getId(), request.name())) {
+        if (menuRepository.existsByShopIdAndName(shop.getId(), normalizedName)) {
             throw new BusinessException(ErrorCode.MENU_DUPLICATE);
         }
 
         Menu menu = Menu.builder()
                 .shopId(shop.getId())
-                .name(request.name())
+                .name(normalizedName)
                 .description(request.description())
                 .price(request.price())
                 .imageUrl(request.imageUrl())
@@ -65,11 +68,13 @@ public class MenuService {
         // menuId + shopId 조합 조회 — 타 가게 메뉴는 MENU_NOT_FOUND로 처리
         Menu menu = getMenuOfShop(menuId, shop.getId());
 
-        // 이름 변경 시 동일 가게 내 중복 체크 — 자기 자신 이름은 허용
-        if (request.name() != null
-                && !request.name().equals(menu.getName())
-                && menuRepository.existsByShopIdAndName(shop.getId(), request.name())) {
-            throw new BusinessException(ErrorCode.MENU_DUPLICATE);
+        // 이름 변경 시 trim 후 중복 체크 — 자기 자신 이름은 허용
+        if (request.name() != null) {
+            String normalizedName = request.name().trim();
+            if (!normalizedName.equals(menu.getName())
+                    && menuRepository.existsByShopIdAndName(shop.getId(), normalizedName)) {
+                throw new BusinessException(ErrorCode.MENU_DUPLICATE);
+            }
         }
 
         menu.update(request);
@@ -90,6 +95,13 @@ public class MenuService {
 
         // hard delete 대신 soft delete — QR 결제 내역에서 menuId 참조 보존
         menu.softDelete();
+    }
+
+    /** 결제 내역 조회용 — soft-deleted 메뉴 포함 단건 조회 (QR 결제 영수증 메뉴명 표시). */
+    public MenuResponse getMenuIncludingDeleted(Long menuId) {
+        return menuRepository.findByIdIncludingDeleted(menuId)
+                .map(MenuResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MENU_NOT_FOUND));
     }
 
     /** userId로 ACTIVE 가게 조회. 없으면 SHOP_001, 비활성이면 SHOP_005. */

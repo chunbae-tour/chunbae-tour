@@ -3,6 +3,7 @@ package com.chunbaetour.domain.shop.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -82,6 +83,26 @@ class MenuServiceTest {
         assertThat(response.name()).isEqualTo("떡볶이");
         assertThat(response.price()).isEqualTo(5000L);
         assertThat(response.isAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("메뉴 등록 — 앞뒤 공백 포함 이름 trim 후 저장")
+    void createMenu_nameTrimmed() {
+        // given — " 떡볶이 " 입력 시 "떡볶이"로 중복 체크 및 저장
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
+        Menu menu = createMenu();
+        MenuCreateRequest request = new MenuCreateRequest(" 떡볶이 ", null, 5000L, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.existsByShopIdAndName(eq(SHOP_ID), eq("떡볶이"))).willReturn(false);
+        given(menuRepository.save(any(Menu.class))).willReturn(menu);
+
+        // when
+        menuService.createMenu(USER_ID, request);
+
+        // then — trim된 "떡볶이"로 중복 체크
+        then(menuRepository).should().existsByShopIdAndName(SHOP_ID, "떡볶이");
     }
 
     @Test
@@ -278,6 +299,25 @@ class MenuServiceTest {
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
     }
 
+    @Test
+    @DisplayName("메뉴 수정 — imageUrl 빈 문자열 → null 저장 (이미지 삭제)")
+    void updateMenu_imageUrl_cleared_when_empty() {
+        // given
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
+        Menu menu = createMenu();
+        MenuUpdateRequest request = new MenuUpdateRequest(null, null, null, "", null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
+
+        // when
+        MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
+
+        // then — "" 전송 시 imageUrl이 null로 저장됨
+        assertThat(response.imageUrl()).isNull();
+    }
+
     // ── DELETE /merchants/me/shop/menus/{menuId} ───────────────────────────
 
     @Test
@@ -338,6 +378,35 @@ class MenuServiceTest {
 
         // then
         assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, MENU_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.MENU_NOT_FOUND);
+    }
+
+    // ── getMenuIncludingDeleted ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("삭제된 메뉴 조회 — 성공 (결제 내역 표시용)")
+    void getMenuIncludingDeleted_success() {
+        // given
+        Menu menu = createMenu();
+        given(menuRepository.findByIdIncludingDeleted(MENU_ID)).willReturn(Optional.of(menu));
+
+        // when
+        MenuResponse response = menuService.getMenuIncludingDeleted(MENU_ID);
+
+        // then
+        assertThat(response.name()).isEqualTo("떡볶이");
+    }
+
+    @Test
+    @DisplayName("삭제된 메뉴 조회 — 존재하지 않음 → MENU_NOT_FOUND")
+    void getMenuIncludingDeleted_notFound_throws() {
+        // given
+        given(menuRepository.findByIdIncludingDeleted(MENU_ID)).willReturn(Optional.empty());
+
+        // then
+        assertThatThrownBy(() -> menuService.getMenuIncludingDeleted(MENU_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_NOT_FOUND);

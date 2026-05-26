@@ -64,13 +64,15 @@ public class Menu extends BaseEntity {
 
     /**
      * null 필드는 기존 값 유지 (부분 수정 지원).
+     * name: 앞뒤 공백 자동 trim.
      * description: null = 수정 안 함, "" = 소개글 삭제 (선택 필드, 빈 값 허용).
+     * imageUrl: null = 수정 안 함, "" = 이미지 삭제 (null로 저장).
      */
     public void update(MenuUpdateRequest request) {
-        if (request.name() != null) this.name = request.name();
+        if (request.name() != null) this.name = request.name().trim();
         if (request.description() != null) this.description = request.description();
         if (request.price() != null) this.price = request.price();
-        if (request.imageUrl() != null) this.imageUrl = request.imageUrl();
+        if (request.imageUrl() != null) this.imageUrl = request.imageUrl().isBlank() ? null : request.imageUrl();
         if (request.isAvailable() != null) this.isAvailable = request.isAvailable();
     }
 }
