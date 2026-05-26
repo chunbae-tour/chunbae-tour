@@ -5,10 +5,18 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
+import com.chunbaetour.domain.community.free.entity.FreePost;
+import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.type.ReportStatus;
+import com.chunbaetour.domain.report.type.ReportTargetType;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -33,6 +41,9 @@ public class ReportService {
 
     private final ReportRepository reportRepository;
     private final AccountRepository accountRepository;
+    private final CompanionPostRepository companionPostRepository;
+    private final FreePostRepository freePostRepository;
+    private final CommentRepository commentRepository;
 
     // ── KAN-91: 신고 목록 조회 ────────────────────────────────────────────
 
@@ -74,10 +85,11 @@ public class ReportService {
      * 관리자 신고 단건 상세 조회.
      * AdminReportController 전용 — SecurityConfig에서 ADMIN 역할 보장.
      */
-    public ReportResponse getReport(Long reportId) {
+    public ReportDetailResponse getReport(Long reportId) {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
-        return ReportResponse.of(report, resolveNickname(report.getReporterId()));
+        String targetContent = resolveTargetContent(report.getTargetType(), report.getTargetId());
+        return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()), targetContent);
     }
 
     /**
@@ -99,6 +111,25 @@ public class ReportService {
     }
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
+
+    /**
+     * targetType + targetId → 신고 대상 콘텐츠 텍스트.
+     * REVIEW: 리뷰 도메인 미구현 → null.
+     * POST: companion 먼저 조회, 없으면 free 조회.
+     */
+    private String resolveTargetContent(ReportTargetType type, Long targetId) {
+        return switch (type) {
+            case POST -> companionPostRepository.findById(targetId)
+                    .map(CompanionPost::getContent)
+                    .orElseGet(() -> freePostRepository.findById(targetId)
+                            .map(FreePost::getContent).orElse(null));
+            case COMMENT -> commentRepository.findById(targetId)
+                    .map(Comment::getContent).orElse(null);
+            case REVIEW -> null; // TODO: 리뷰 도메인 구현 후 연결
+            case USER, MERCHANT -> accountRepository.findById(targetId)
+                    .map(Account::getNickname).orElse(null);
+        };
+    }
 
     /**
      * reporterId → 닉네임. 탈퇴 계정이면 "탈퇴한 사용자" 반환.
