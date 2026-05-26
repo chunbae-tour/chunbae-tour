@@ -11,6 +11,10 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
+import com.chunbaetour.domain.common.ratelimit.RateLimitPolicy;
+import com.chunbaetour.domain.common.ratelimit.RateLimiter;
+import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ChatMessageService {
 
+    // 운영 보안 정책 설계서 11번 — 채팅 메시지 전송 30회/10초
+    private static final RateLimitPolicy MESSAGE_RATE_LIMIT = new RateLimitPolicy(30, Duration.ofSeconds(10));
+
     private static final List<ChatMemberState> ACTIVE_STATES =
             List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
 
@@ -27,10 +34,17 @@ public class ChatMessageService {
     private final AccountRepository accountRepository;
     private final MessageRepository messageRepository;
     private final ChatRedisPubSubService chatRedisPubSubService;
+    private final RateLimiter rateLimiter;
 
-    // 메시지 전송 — ACTIVE 멤버 검증 후 DB 저장 및 Redis 발행
+    // 메시지 전송 — rate limit 선검증 후 ACTIVE 멤버 확인, DB 저장 및 Redis 발행
     @Transactional
     public void sendMessage(Long userId, Long chatRoomId, ChatSendMessageRequest request) {
+        // rate limit 선검증 — userId 단위 30회/10초, 초과 시 COMMON_006(TOO_MANY_REQUESTS)
+        RateLimitDecision decision = rateLimiter.tryConsume("ratelimit:chat-message:" + userId, MESSAGE_RATE_LIMIT);
+        if (!decision.allowed()) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
+        }
+
         // senderId는 SecurityContext(STOMP principal)에서 추출 — 클라이언트 전달값 신뢰 금지
         boolean isMember = chatRoomMemberRepository
                 .existsByChatRoomIdAndUserIdAndMemberStateIn(chatRoomId, userId, ACTIVE_STATES);
