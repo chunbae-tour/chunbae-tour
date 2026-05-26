@@ -87,8 +87,14 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         // /actuator/prometheus 이중 방어 (#149):
                         // - 운영(application-prod.yml): management.server.port=9090 + address=127.0.0.1 → main 포트 도달 자체 차단
-                        // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용 → 외부 IP 호출은 403
+                        // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용 → 차단 응답:
+                        //   * 익명 사용자(일반 시나리오): 401 AUTH_006 (RestAuthenticationEntryPoint가 인증 요구로 해석)
+                        //   * 인증된 사용자(role mismatch): 403 (RestAccessDeniedHandler)
                         // 로컬/테스트(management port 분리 안 됨)에서는 localhost 호출이라 통과. ::1은 IPv6 loopback.
+                        //
+                        // ⚠️ LB/Nginx 뒤 배포 시 주의: request.getRemoteAddr()이 프록시 IP를 반환하면 hasIpAddress 매칭이 깨질 수 있다.
+                        // 운영은 management port 분리(옵션 A)가 1차 방어선이라 영향 작지만, X-Forwarded-For 처리(ForwardedHeaderFilter
+                        // 또는 server.forward-headers-strategy)가 활성화된 환경에서는 trusted-proxy CIDR 확인 필수.
                         .requestMatchers("/actuator/prometheus")
                         .access(new WebExpressionAuthorizationManager(
                                 "hasIpAddress('127.0.0.1') or hasIpAddress('::1')"))

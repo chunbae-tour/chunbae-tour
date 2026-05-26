@@ -26,12 +26,13 @@ import org.springframework.test.web.servlet.MockMvc;
  * 발동되어 401 AUTH_006으로 응답한다 ("인증 요구"로 해석). 인증된 사용자 대상으로는 403 응답. 본 테스트는
  * 익명 사용자만 검증하므로 deny = 401 패턴.
  *
- * <p>운영(application-prod.yml)에서는 별도 management.server.port(9090) + loopback 바인딩으로 이중 보호.
- * 본 테스트는 SecurityConfig의 IP allowlist만 검증한다 (management port 분리는 통합 테스트 환경에서
- * 시뮬레이션이 어려워 제외).
+ * <p><b>MockMvc 검증 범위 한계</b>: MockMvc는 Spring Security 필터 체인만 통과시키므로
+ * {@code management.server.port=9090} 같은 서블릿 컨테이너 레벨 포트 바인딩은 검증하지 못한다.
+ * 본 테스트는 SecurityConfig의 IP allowlist 동작만 검증한다 — 옵션 A(포트 분리)는 운영
+ * 인프라 단에서 별도 검증 필요(예: 운영 배포 후 외부 IP에서 :9090/actuator/prometheus 호출 → 응답 없음 확인).
  *
  * <p><b>prometheus endpoint 등록</b>: 테스트 환경에서는 prometheus endpoint 자체가 등록되지 않을 수 있어
- * (Micrometer registry 자동 구성 조건), 권한 통과 케이스는 status 자체보다 "권한 차단(401)이 아닌지"만 검증한다.
+ * (Micrometer registry 자동 구성 조건), 권한 통과 케이스는 status 자체보다 허용 응답 범위로 검증한다.
  *
  * <p>release blocker #149 회귀 가드.
  */
@@ -59,34 +60,44 @@ class ActuatorSecurityIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("/actuator/prometheus loopback(127.0.0.1) 호출 시 권한 통과 (401이 아님)")
+    @DisplayName("/actuator/prometheus는 loopback(127.0.0.1)에서 호출 시 권한 통과 (401 차단되지 않음)")
     void prometheus_isNotBlockedFromLoopback() throws Exception {
         var result = mockMvc.perform(get("/actuator/prometheus")
                         .with(req -> { req.setRemoteAddr("127.0.0.1"); return req; }))
                 .andReturn();
-        // endpoint 등록 안 된 환경에서는 404/500이 정상 — 핵심은 권한 차단(401)이 발생하지 않는 것
-        assertThat(result.getResponse().getStatus()).isNotEqualTo(401);
+        // 권한 통과 검증: 401(차단)이 아니어야 함.
+        // 허용 응답 범위: 200(prometheus endpoint 등록됨) / 404(endpoint 미등록 — micrometer-registry-prometheus
+        // auto-config 비활성화 시) / 500(NoResourceFoundException를 GlobalExceptionHandler가 변환).
+        // 그 외 값이면 회귀로 판단.
+        assertThat(result.getResponse().getStatus()).isIn(200, 404, 500);
     }
 
     @Test
-    @DisplayName("/actuator/prometheus IPv6 loopback(::1) 호출 시에도 권한 통과 (401이 아님)")
+    @DisplayName("/actuator/prometheus는 IPv6 loopback(::1)에서도 호출 시 권한 통과 (401 차단되지 않음)")
     void prometheus_isNotBlockedFromIpv6Loopback() throws Exception {
         var result = mockMvc.perform(get("/actuator/prometheus")
                         .with(req -> { req.setRemoteAddr("::1"); return req; }))
                 .andReturn();
-        assertThat(result.getResponse().getStatus()).isNotEqualTo(401);
+        assertThat(result.getResponse().getStatus()).isIn(200, 404, 500);
     }
 
     @Test
-    @DisplayName("/actuator/prometheus 외부 IP(203.0.113.x) 호출 시 401 차단 — #149 release blocker 회귀 가드")
+    @DisplayName("/actuator/prometheus는 외부 IP(203.0.113.x)에서 호출 시 401 차단 — #149 release blocker 회귀 가드")
     void prometheus_isBlockedFromExternalIp() throws Exception {
         mockMvc.perform(get("/actuator/prometheus")
                         .with(req -> { req.setRemoteAddr("203.0.113.1"); return req; }))
                 .andExpect(status().isUnauthorized());
     }
 
+    /**
+     * ⚠️ 본 케이스는 "loopback만 허용" 정책 가정에 종속.
+     * 운영 Prometheus 클러스터가 VPC 내부 IP에서 직접 scrape하도록 인프라가 결정되면
+     * SecurityConfig hasIpAddress 정책에 VPC CIDR(예: 10.0.0.0/8)이 추가되며, 본 테스트는 깨진다.
+     * 그 경우 본 케이스를 "허용 CIDR 외부 IP 차단"으로 재정의 또는 삭제 필요.
+     * application-prod.yml의 management.server.address TODO 주석과 함께 추적.
+     */
     @Test
-    @DisplayName("/actuator/prometheus 사설망 IP(10.x.x.x) 호출 시에도 401 차단 — loopback만 허용 정책")
+    @DisplayName("/actuator/prometheus는 사설망 IP(10.x.x.x)에서도 호출 시 401 차단 — loopback만 허용 정책")
     void prometheus_isBlockedFromPrivateNetworkIp() throws Exception {
         mockMvc.perform(get("/actuator/prometheus")
                         .with(req -> { req.setRemoteAddr("10.0.0.5"); return req; }))

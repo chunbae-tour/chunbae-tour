@@ -36,8 +36,17 @@ ratelimit:
 # - address 127.0.0.1: loopback에만 binding → 외부 IP에서 도달 불가
 # Prometheus scraper는 같은 호스트(sidecar) 또는 SSH 터널/VPN을 통해서만 접근 가능.
 # 운영 인프라(별도 호스트의 Prometheus 클러스터)에서 직접 scrape 필요해지면 address를 VPC 내부 IP로 조정.
+# ⚠️ TODO(infra): 운영 Prometheus 배포 토폴로지 확정 전까지는 sidecar/SSH 터널 가정. 별도 호스트 클러스터 채택 시
+#   1) 본 address를 VPC 내부 IP로 변경 + 2) SecurityConfig hasIpAddress 정책에 해당 CIDR 추가 + 3) ActuatorSecurityIntegrationTest의
+#   prometheus_isBlockedFromPrivateNetworkIp 케이스 재검토 (10.x.x.x 차단 가정 깨짐).
 # release blocker #149.
 management:
   server:
     port: 9090
     address: 127.0.0.1
+  # base application.yml의 exposure(health,info,prometheus)를 운영에서 명시적으로 재선언.
+  # base yml이 향후 변경되어도 운영에서 예상치 못한 endpoint 노출이 발생하지 않도록 이중 안전.
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
