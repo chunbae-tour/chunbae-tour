@@ -6,6 +6,8 @@ import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,9 +73,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /** logout은 인증 필요. {@link #shouldNotFilter}에서 명시적으로 예외 처리. */
     private static final String LOGOUT_PATH = "/api/v1/auth/logout";
 
+    /**
+     * KAN-104 운영 모니터링 메트릭 이름.
+     *
+     * <p>Prometheus 노출 시 dot이 underscore로 변환됨 (예: {@code auth_jwt_verify_duration_seconds}).
+     * 카탈로그({@code docs/operations/metrics-catalog.md})와 동기 유지.
+     */
+    private static final String METRIC_VERIFY_DURATION = "auth.jwt.verify.duration";
+    private static final String METRIC_VERIFY_FAILURE = "auth.jwt.failure.total";
+
     private final TokenIssuer tokenIssuer;
     private final SecurityResponseWriter responseWriter;
     private final AccessTokenBlacklist accessTokenBlacklist;
+    private final MeterRegistry meterRegistry;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -96,45 +108,64 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        AccessClaims claims;
+        // KAN-104: 메트릭 시작. outcome 분기별로 할당하고 finally에서 단일 stop()으로 기록.
+        // 직접 stop을 분기마다 호출하는 패턴은 예상 밖 RuntimeException에서 Timer.Sample 누수 위험이 있어 회피.
+        // 기본값 "unexpected"는 미커버 예외 발생 시 운영 알람 트리거용 sentinel.
+        Timer.Sample verifySample = Timer.start(meterRegistry);
+        String outcome = "unexpected";
+
         try {
-            claims = tokenIssuer.verifyAccess(token);
-        } catch (ExpiredJwtException e) {
-            // exp 클레임 초과: 클라이언트가 reissue로 재발급해야 함
-            responseWriter.write(response, ErrorCode.ACCESS_TOKEN_EXPIRED);
-            return;
-        } catch (JwtException | IllegalArgumentException e) {
-            // 서명 오류/Malformed/잘못된 claim → 변조 가능성 (사유 노출 최소화)
-            responseWriter.write(response, ErrorCode.ACCESS_TOKEN_INVALID);
-            return;
+            AccessClaims claims;
+            try {
+                claims = tokenIssuer.verifyAccess(token);
+            } catch (ExpiredJwtException e) {
+                outcome = "expired";
+                meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_002").increment();
+                // exp 클레임 초과: 클라이언트가 reissue로 재발급해야 함
+                responseWriter.write(response, ErrorCode.ACCESS_TOKEN_EXPIRED);
+                return;
+            } catch (JwtException | IllegalArgumentException e) {
+                outcome = "tampered";
+                meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_003").increment();
+                // 서명 오류/Malformed/잘못된 claim → 변조 가능성 (사유 노출 최소화)
+                responseWriter.write(response, ErrorCode.ACCESS_TOKEN_INVALID);
+                return;
+            }
+
+            boolean blacklisted;
+            try {
+                blacklisted = accessTokenBlacklist.contains(claims.tokenId());
+            } catch (DataAccessException e) {
+                outcome = "redis_failure";
+                log.warn("Failed to check access token blacklist. tokenId={}", claims.tokenId(), e);
+                responseWriter.write(response, ErrorCode.INTERNAL_SERVER_ERROR);
+                return;
+            }
+
+            // S4: 로그아웃된 토큰은 verify 통과해도 거부. 블랙리스트 키는 토큰 만료 시점까지만 유지됨 → Redis 부하 제한적.
+            if (blacklisted) {
+                outcome = "blacklisted";
+                meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_013").increment();
+                responseWriter.write(response, ErrorCode.BLACKLISTED_TOKEN);
+                return;
+            }
+
+            outcome = "success";
+
+            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                    claims.userId(),
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name()))
+            );
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+
+            // S4: Controller(logout 등)에서 JWT 재파싱 없이 tokenId/expiresAt에 접근할 수 있도록 attribute로 노출.
+            request.setAttribute(REQUEST_ATTR_ACCESS_CLAIMS, claims);
+
+            filterChain.doFilter(request, response);
+        } finally {
+            verifySample.stop(meterRegistry.timer(METRIC_VERIFY_DURATION, "outcome", outcome));
         }
-
-        boolean blacklisted;
-        try {
-            blacklisted = accessTokenBlacklist.contains(claims.tokenId());
-        } catch (DataAccessException e) {
-            log.warn("Failed to check access token blacklist. tokenId={}", claims.tokenId(), e);
-            responseWriter.write(response, ErrorCode.INTERNAL_SERVER_ERROR);
-            return;
-        }
-
-        // S4: 로그아웃된 토큰은 verify 통과해도 거부. 블랙리스트 키는 토큰 만료 시점까지만 유지됨 → Redis 부하 제한적.
-        if (blacklisted) {
-            responseWriter.write(response, ErrorCode.BLACKLISTED_TOKEN);
-            return;
-        }
-
-        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                claims.userId(),
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().name()))
-        );
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-
-        // S4: Controller(logout 등)에서 JWT 재파싱 없이 tokenId/expiresAt에 접근할 수 있도록 attribute로 노출.
-        request.setAttribute(REQUEST_ATTR_ACCESS_CLAIMS, claims);
-
-        filterChain.doFilter(request, response);
     }
 
     private String extractToken(HttpServletRequest request) {

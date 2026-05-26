@@ -127,6 +127,39 @@ RATELIMIT_ENABLED=false
 
 `AbstractIntegrationTest`가 기본적으로 `ratelimit.enabled=false`로 설정하여 같은 IP로 반복 호출하는 다른 통합 테스트가 자기 한도에 부딪히지 않게 합니다. Rate Limit 자체 동작은 `RateLimitIntegrationTest`가 `@DynamicPropertySource`로 별도 활성화하여 검증.
 
+## 모니터링 (Actuator + Prometheus)
+
+운영 메트릭 카탈로그는 [metrics-catalog.md](operations/metrics-catalog.md)에 정리되어 있습니다 (KAN-104).
+
+### 로컬에서 확인
+
+애플리케이션 실행 후 다음 endpoint 접속 가능:
+
+- **Health**: <http://localhost:8080/actuator/health> — DB/Redis component UP/DOWN
+- **Info**: <http://localhost:8080/actuator/info> — 빌드 정보
+- **Prometheus**: <http://localhost:8080/actuator/prometheus> — 모든 메트릭 (text format)
+
+### 메트릭 확인 예시
+
+```bash
+# JWT 검증 메트릭 (호출 후 호출 횟수 누적)
+curl http://localhost:8080/actuator/prometheus | grep auth_jwt_verify_duration_seconds_count
+
+# Rate Limit 판정 메트릭
+curl http://localhost:8080/actuator/prometheus | grep ratelimit_decision_total
+
+# 로그인 시도 메트릭
+curl http://localhost:8080/actuator/prometheus | grep auth_login_attempt_total
+```
+
+### 미노출 endpoint
+
+`env`/`beans`/`mappings`/`configprops` 등은 SecurityConfig에서 `denyAll` + yml `exposure.include`에서 제외 → 외부 정보 노출 차단. 디버깅이 필요해 추가 노출하려면 `application-local.yml`에 한정해 추가 후 운영 yml에는 절대 추가 금지.
+
+### 운영 배포 전 필수
+
+`/actuator/prometheus`는 본 PR에서 `permitAll`. 운영 배포 전 IP allowlist 또는 별도 management port 분리 필수. 상세는 [metrics-catalog.md](operations/metrics-catalog.md) § 노출 정책 참조.
+
 ## 실행 방법
 
 ### 방법 1. 스크립트로 실행

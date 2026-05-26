@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.common.ratelimit;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -84,7 +85,15 @@ public class RedisRateLimiter implements RateLimiter {
             List.class
     );
 
+    /**
+     * KAN-104 메트릭 — Redis 장애로 fail-closed 처리한 빈도.
+     * 카탈로그({@code docs/operations/metrics-catalog.md})와 동기. endpoint tag는 미부여
+     * (Redis 장애는 endpoint별로 다르지 않음 + RateLimiter 추상화 단순 유지).
+     */
+    private static final String METRIC_REDIS_FAILURE = "ratelimit.redis.failure.total";
+
     private final StringRedisTemplate redis;
+    private final MeterRegistry meterRegistry;
 
     @Override
     public RateLimitDecision tryConsume(String key, RateLimitPolicy policy) {
@@ -99,6 +108,7 @@ public class RedisRateLimiter implements RateLimiter {
 
             if (result == null || result.size() != 2) {
                 // Lua 실행 결과 누락은 비정상 상태 — 정책상 fail-closed 차단 + 짧은 retry 안내.
+                meterRegistry.counter(METRIC_REDIS_FAILURE).increment();
                 log.warn("Redis rate limit Lua 실행 결과 누락 또는 형식 불일치");
                 return RateLimitDecision.denied(FAIL_CLOSED_RETRY);
             }
@@ -116,6 +126,7 @@ public class RedisRateLimiter implements RateLimiter {
             // Redis 장애 (연결 실패, 타임아웃, Lua 오류 등) 시 fail-closed 차단.
             // 보안 정책 강제 우선 — Redis 장애 동안 회원가입/로그인이 일시 차단되더라도 무차별 공격 방어가 더 중요.
             // ERROR 레벨로 로그 — 운영 알람 트리거(WARN보다 강한 시급도). 빈번하면 Redis 클러스터/장애 조사 필요.
+            meterRegistry.counter(METRIC_REDIS_FAILURE).increment();
             log.error("Redis rate limit 호출 실패; fail-closed로 차단", e);
             return RateLimitDecision.denied(FAIL_CLOSED_RETRY);
         }

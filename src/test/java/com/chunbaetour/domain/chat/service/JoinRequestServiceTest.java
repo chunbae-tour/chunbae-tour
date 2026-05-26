@@ -91,6 +91,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_success() {
+        // 정상 신청 — JoinRequest 저장 및 writer 정보 반환 검증
         given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행초보");
 
@@ -115,6 +116,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_lockFailed_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        // 분산 락 획득 실패 — tryLock false 시 CONCURRENT_UPDATE
         given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
         given(lock.isHeldByCurrentThread()).willReturn(false);
 
@@ -127,6 +129,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_interrupted_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        // 락 대기 중 인터럽트 — InterruptedException → CONCURRENT_UPDATE, 스레드 상태 복원
         given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class)))
                 .willThrow(new InterruptedException());
         given(lock.isHeldByCurrentThread()).willReturn(false);
@@ -140,6 +143,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 방 신청 — CHAT_ROOM_NOT_FOUND
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> joinRequestService.createJoinRequest(
@@ -151,6 +155,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_closedRoom_throws_CHAT_ROOM_CLOSED() {
+        // CLOSED 방 신청 — validateJoinable()에서 CHAT_ROOM_CLOSED
         ChatRoom room = mock(ChatRoom.class);
         doThrow(new BusinessException(ErrorCode.CHAT_ROOM_CLOSED)).when(room).validateJoinable();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
@@ -164,6 +169,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_fullRoom_throws_CHAT_ROOM_FULL() {
+        // 정원 초과 방 신청 — validateJoinable()에서 CHAT_ROOM_FULL
         ChatRoom room = mock(ChatRoom.class);
         doThrow(new BusinessException(ErrorCode.CHAT_ROOM_FULL)).when(room).validateJoinable();
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
@@ -177,6 +183,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_kickedUser_throws_CHAT_MEMBER_KICKED_REJOIN() {
+        // 강퇴 이력 있는 사용자 재신청 — CHAT_MEMBER_KICKED_REJOIN
         ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
@@ -194,6 +201,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_alreadyMember_throws_ALREADY_JOINED_CHAT() {
+        // 이미 활성 참여 중인 사용자 — ALREADY_JOINED_CHAT
         ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
@@ -211,6 +219,7 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_duplicateRequest_throws_ALREADY_APPLIED_CHAT() {
+        // PENDING 신청 중복 — ALREADY_APPLIED_CHAT
         ChatRoom room = mock(ChatRoom.class);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
         given(joinRequestRepository.existsByChatRoomIdAndUserIdAndStatus(
@@ -227,6 +236,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_success_returnsPendingList() {
+        // 방장의 PENDING 신청 목록 조회 — 신청자 batch 조회 및 매핑 검증
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         // 방장 멤버 stub
@@ -283,6 +293,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 방 조회 — CHAT_ROOM_NOT_FOUND
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
 
         assertThatThrownBy(() -> joinRequestService.getJoinRequests(USER_ID, ROOM_ID))
@@ -293,6 +304,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        // 방장이 아닌 일반 멤버 조회 시도 — CHAT_SETTING_FORBIDDEN
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         // 방장이 아닌 일반 멤버 — isOwner() false 기본값
@@ -308,6 +320,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_notMember_throws_CHAT_SETTING_FORBIDDEN() {
+        // 채팅방 비멤버 조회 시도 — CHAT_SETTING_FORBIDDEN
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         // 채팅방 멤버 아님
@@ -322,6 +335,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_emptyList_returnsEmpty() {
+        // 신청 없는 방 — 빈 리스트 반환, findAllById 빈 리스트 호출
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
@@ -341,6 +355,7 @@ class JoinRequestServiceTest {
 
     @Test
     void getJoinRequests_deletedApplicant_returnsWithdrawUser() {
+        // 탈퇴 계정 신청자 — accountMap에 없으면 "탈퇴한 사용자" 반환
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
 
         ChatRoomMember ownerMember = mock(ChatRoomMember.class);
@@ -374,6 +389,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_success() {
+        // 정상 수락 — 신규 멤버 생성, currentMembers +1 검증
         JoinRequest req = stubPendingRequest();
         // outer 선행 체크용 (락 전) — 검증 통과
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
@@ -405,6 +421,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_leftMemberRejoin_reactivates() {
+        // LEFT 이력 멤버 재수락 — save 대신 reactivate() 호출
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
         given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
@@ -432,6 +449,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_wrongChatRoomId_throws_CHAT_APPLICATION_NOT_FOUND() {
+        // 경로 chatRoomId와 신청 chatRoomId 불일치 — CHAT_APPLICATION_NOT_FOUND
         JoinRequest req = stubPendingRequest(); // getChatRoomId() = ROOM_ID
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
 
@@ -443,6 +461,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
+        // 존재하지 않는 신청 수락 — CHAT_APPLICATION_NOT_FOUND
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> joinRequestService.approveJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
@@ -453,6 +472,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        // 방장이 아닌 멤버 수락 시도 — CHAT_SETTING_FORBIDDEN
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
 
@@ -469,6 +489,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
+        // 이미 처리된 신청 수락 — approve()에서 CHAT_APPLICATION_ALREADY_PROCESSED
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
         given(joinRequestRepository.findByIdWithLock(REQUEST_ID)).willReturn(Optional.of(req));
@@ -489,6 +510,7 @@ class JoinRequestServiceTest {
 
     @Test
     void approveJoinRequest_lockFailed_throws_CONCURRENT_UPDATE() throws InterruptedException {
+        // 분산 락 획득 실패 — tryLock false 시 CONCURRENT_UPDATE
         JoinRequest req = stubPendingRequest();
         given(joinRequestRepository.findById(REQUEST_ID)).willReturn(Optional.of(req));
 
@@ -509,6 +531,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_success() {
+        // 정상 거절 — SELECT FOR UPDATE 후 조건부 UPDATE, reject() 호출 검증
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         ChatRoomMember owner = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -535,6 +558,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 방 거절 — CHAT_ROOM_NOT_FOUND
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
 
         assertThatThrownBy(() -> joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID))
@@ -545,6 +569,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_notMember_throws_CHAT_SETTING_FORBIDDEN() {
+        // 채팅방 비멤버 거절 시도 — CHAT_SETTING_FORBIDDEN
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
                 .willReturn(Optional.empty());
@@ -557,6 +582,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
+        // 방장이 아닌 멤버 거절 시도 — CHAT_SETTING_FORBIDDEN
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         // isOwner() mock 기본값 false — OWNER_ACTIVE가 아닌 일반 멤버 시나리오
         ChatRoomMember member = mock(ChatRoomMember.class);
@@ -571,6 +597,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_requestNotFound_throws_CHAT_APPLICATION_NOT_FOUND() {
+        // 존재하지 않는 신청 거절 — CHAT_APPLICATION_NOT_FOUND
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         ChatRoomMember owner = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -585,6 +612,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_chatRoomIdMismatch_throws_CHAT_APPLICATION_NOT_FOUND() {
+        // 경로 chatRoomId와 신청 chatRoomId 불일치 — CHAT_APPLICATION_NOT_FOUND
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         ChatRoomMember owner = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
@@ -602,6 +630,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_alreadyProcessed_throws_CHAT_APPLICATION_ALREADY_PROCESSED() {
+        // 이미 처리된 신청 거절 — rejectIfPending 영향 행 0 → CHAT_APPLICATION_ALREADY_PROCESSED
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         ChatRoomMember owner = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
