@@ -1,13 +1,17 @@
 package com.chunbaetour.domain.auth;
 
+import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -50,6 +54,24 @@ public class UserMeController {
         // long unboxing 시 NPE 대신 표준 AUTH_006 응답으로 통일.
         requireAuthenticated(userId);
         return ApiResponse.success(userMeService.getMe(userId));
+    }
+
+    /**
+     * 본인 정보 partial update (Epic A S2, KAN-127).
+     *
+     * <p>{@link PatchUserMeRequest}의 nickname/language/profileImageUrl 중 보낸 필드만 갱신.
+     * URL에 userId 노출 X — {@link AuthenticationPrincipal}로 SecurityContext에서 추출해 PK 변조 원천 차단.
+     *
+     * @param userId  SecurityContext에 저장된 본인 ID
+     * @param request partial update 요청 (모든 필드 optional)
+     * @return 갱신 후 사용자 정보 (GET /me와 동일 포맷)
+     */
+    @PatchMapping
+    public ApiResponse<UserMeResponse> updateMe(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody PatchUserMeRequest request) {
+        requireAuthenticated(userId);
+        return ApiResponse.success(userMeService.updateMe(userId, request));
     }
 
     /**
