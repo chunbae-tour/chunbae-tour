@@ -187,10 +187,10 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 조회 — 참여 순서(createdAt ASC) 정렬
+        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 조회 — 참여 순서(createdAt ASC, id ASC) 정렬
         // KICKED/LEFT 멤버는 필터에서 제외되어 isMember 검사에서 자동으로 접근 거부 처리됨
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
-                .findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(roomId, ACTIVE_STATES);
+                .findByChatRoomIdAndMemberStateInOrderByCreatedAtAscIdAsc(roomId, ACTIVE_STATES);
 
         // 비멤버, KICKED, LEFT 모두 CHAT_NOT_JOINED로 통일 — API 계약 일관성 유지
         boolean isMember = activeMembers.stream()
@@ -214,20 +214,16 @@ public class ChatRoomService {
                 .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
 
-        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(createdAt ASC) 정렬
+        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(createdAt ASC, id ASC) 정렬
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
-                .findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(roomId, ACTIVE_STATES);
+                .findByChatRoomIdAndMemberStateInOrderByCreatedAtAscIdAsc(roomId, ACTIVE_STATES);
 
         // 멤버 userId 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
         List<Long> userIds = activeMembers.stream().map(ChatRoomMember::getUserId).toList();
         Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
-        // 조회된 Account 수가 멤버 수와 불일치 시 데이터 정합성 오류 — 탈퇴 계정이 멤버로 남은 경우
-        if (accountMap.size() != userIds.size()) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
-
+        // accountMap에 없는 userId — 탈퇴 계정, from()에서 fallback 처리
         return activeMembers.stream()
                 .map(m -> ChatRoomMemberResponse.from(m, accountMap.get(m.getUserId())))
                 .toList();
