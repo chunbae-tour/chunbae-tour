@@ -115,6 +115,7 @@ class ChatRoomServiceTest {
 
     @Test
     void getRoomDetail_room_not_found_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 채팅방 조회 — findById empty 시 CHAT_ROOM_NOT_FOUND
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> chatRoomService.getRoomDetail(USER_ID, ROOM_ID))

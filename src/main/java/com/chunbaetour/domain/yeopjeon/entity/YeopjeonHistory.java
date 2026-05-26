@@ -93,4 +93,15 @@ public class YeopjeonHistory extends BaseEntity {
                 .description(null)
                 .build();
     }
+
+    /** 환불 이력 전용 팩토리. 관리자 승인 후 차감된 엽전 이력 기록. */
+    public static YeopjeonHistory ofRefund(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.REFUND)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .paymentOrderId(paymentOrderId)
+                .build();
+    }
 }

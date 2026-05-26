@@ -127,6 +127,39 @@ RATELIMIT_ENABLED=false
 
 `AbstractIntegrationTest`가 기본적으로 `ratelimit.enabled=false`로 설정하여 같은 IP로 반복 호출하는 다른 통합 테스트가 자기 한도에 부딪히지 않게 합니다. Rate Limit 자체 동작은 `RateLimitIntegrationTest`가 `@DynamicPropertySource`로 별도 활성화하여 검증.
 
+## 모니터링 (Actuator + Prometheus)
+
+운영 메트릭 카탈로그는 [metrics-catalog.md](operations/metrics-catalog.md)에 정리되어 있습니다 (KAN-104).
+
+### 로컬에서 확인
+
+애플리케이션 실행 후 다음 endpoint 접속 가능:
+
+- **Health**: <http://localhost:8080/actuator/health> — DB/Redis component UP/DOWN
+- **Info**: <http://localhost:8080/actuator/info> — 빌드 정보
+- **Prometheus**: <http://localhost:8080/actuator/prometheus> — 모든 메트릭 (text format)
+
+### 메트릭 확인 예시
+
+```bash
+# JWT 검증 메트릭 (호출 후 호출 횟수 누적)
+curl http://localhost:8080/actuator/prometheus | grep auth_jwt_verify_duration_seconds_count
+
+# Rate Limit 판정 메트릭
+curl http://localhost:8080/actuator/prometheus | grep ratelimit_decision_total
+
+# 로그인 시도 메트릭
+curl http://localhost:8080/actuator/prometheus | grep auth_login_attempt_total
+```
+
+### 미노출 endpoint
+
+`env`/`beans`/`mappings`/`configprops` 등은 SecurityConfig에서 `denyAll` + yml `exposure.include`에서 제외 → 외부 정보 노출 차단. 디버깅이 필요해 추가 노출하려면 `application-local.yml`에 한정해 추가 후 운영 yml에는 절대 추가 금지.
+
+### 운영 배포 전 필수
+
+`/actuator/prometheus`는 본 PR에서 `permitAll`. 운영 배포 전 IP allowlist 또는 별도 management port 분리 필수. 상세는 [metrics-catalog.md](operations/metrics-catalog.md) § 노출 정책 참조.
+
 ## 실행 방법
 
 ### 방법 1. 스크립트로 실행
@@ -281,6 +314,20 @@ docker compose up -d
 | `scripts/dev-up.ps1` | Windows PowerShell 컨테이너 실행 스크립트 |
 | `scripts/dev-down.sh` | macOS/Linux 컨테이너 종료 스크립트 |
 | `scripts/dev-down.ps1` | Windows PowerShell 컨테이너 종료 스크립트 |
+
+## 시크릿 관리
+
+운영 시크릿 주입 표준은 [ADR 0002 — Secret Injection Standard](adr/0002-secret-injection-standard.md)에 박제되어 있고, 전체 시크릿 목록 + 환경별 주입 방식 + 권장 회전 주기는 [시크릿 카탈로그](operations/secrets-catalog.md)에 정리되어 있습니다.
+
+**환경별 주입 방식 요약**:
+
+- **local**: `.env` 파일 (`.env.example` 복사). docker-compose가 env_file로 컨테이너에 주입.
+- **staging/prod (현재)**: GitHub Actions Secret → 컨테이너 env var (Phase 1).
+- **prod (ECS 전환 후)**: AWS Secrets Manager + ECS Task Definition `secrets[]` (Phase 2).
+
+**신규 시크릿 추가 시**: [secrets-catalog.md §"신규 시크릿 추가 절차"](operations/secrets-catalog.md#신규-시크릿-추가-절차)를 따라 카탈로그 + `.env.example` + `application-prod.yml` + `SecretValidator` 4곳을 동기 갱신해야 합니다.
+
+**부팅 시 검증**: prod 프로파일은 `SecretValidator`가 시크릿 카탈로그 기반 검증을 수행해 잘못된 값/placeholder가 운영에 노출되는 것을 차단합니다. 검증 실패 시 부팅 단계에서 `IllegalStateException`으로 즉시 실패합니다.
 
 ## 운영 배포 전 후속 작업
 

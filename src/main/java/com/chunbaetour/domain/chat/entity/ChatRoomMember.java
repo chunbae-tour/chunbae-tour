@@ -76,6 +76,10 @@ public class ChatRoomMember extends BaseEntity {
                 .build();
     }
 
+    public boolean isOwner() {
+        return this.memberState == ChatMemberState.OWNER_ACTIVE;
+    }
+
     // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
         if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
@@ -87,6 +91,15 @@ public class ChatRoomMember extends BaseEntity {
         }
         this.memberState = ChatMemberState.MEMBER_LEFT;
         this.leftAt = LocalDateTime.now();
+    }
+
+    // MEMBER_LEFT 상태 유저 재참여 수락 시 호출 — 새 레코드 INSERT 대신 기존 레코드 업데이트
+    public void reactivate() {
+        if (this.memberState != ChatMemberState.MEMBER_LEFT) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        this.memberState = ChatMemberState.MEMBER_ACTIVE;
+        this.leftAt = null;
     }
 
     // OWNER는 강퇴 불가 — close()로만 방 종료 가능

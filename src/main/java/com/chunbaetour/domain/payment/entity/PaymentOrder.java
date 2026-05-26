@@ -54,8 +54,8 @@ public class PaymentOrder extends BaseEntity {
     @Column(name = "pg_transaction_id", length = 100)
     private String pgTransactionId; // 결제 완료 후 포트원 웹훅으로 수신한 트랜잭션 ID
 
-    @Builder
-    public PaymentOrder(String orderUid, Long userId, Long amount,
+    @Builder(access = AccessLevel.PRIVATE)
+    private PaymentOrder(String orderUid, Long userId, Long amount,
                         String idempotencyKey, PaymentMethod paymentMethod,
                         PaymentOrderStatus status, String pgOrderId) {
         this.orderUid = orderUid;
@@ -90,5 +90,13 @@ public class PaymentOrder extends BaseEntity {
 
     public void fail() {
         this.status = PaymentOrderStatus.FAILED;
+    }
+
+    /** 환불 승인 완료 후 주문 상태를 REFUNDED로 전이. COMPLETED 아니면 PaymentException. */
+    public void refund() {
+        if (this.status != PaymentOrderStatus.COMPLETED) {
+            throw new PaymentException(ErrorCode.REFUND_NOT_ELIGIBLE);
+        }
+        this.status = PaymentOrderStatus.REFUNDED;
     }
 }

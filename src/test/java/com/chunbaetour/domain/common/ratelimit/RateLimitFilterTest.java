@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import com.chunbaetour.domain.auth.security.SecurityResponseWriter;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitProperties.EndpointPolicy;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 import java.time.Duration;
 import java.util.List;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -50,6 +53,10 @@ class RateLimitFilterTest {
     @Mock
     private FilterChain chain;
 
+    /** KAN-104 메트릭 in-memory registry. */
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     @InjectMocks
     private RateLimitFilter filter;
 
@@ -65,6 +72,12 @@ class RateLimitFilterTest {
         verify(chain).doFilter(request, response);
         verify(rateLimiter, never()).tryConsume(any(), any());
         verify(responseWriter, never()).write(any(), any(), any());
+
+        // KAN-104: enabled=false → 어떤 decision도 카운트 0.
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "allowed").count())
+                .isEqualTo(0.0);
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "denied").count())
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -79,6 +92,12 @@ class RateLimitFilterTest {
 
         verify(chain).doFilter(request, response);
         verify(rateLimiter, never()).tryConsume(any(), any());
+
+        // KAN-104: OPTIONS preflight 우회 → 어떤 decision도 카운트 0.
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "allowed").count())
+                .isEqualTo(0.0);
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "denied").count())
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -95,6 +114,12 @@ class RateLimitFilterTest {
 
         verify(chain).doFilter(request, response);
         verify(rateLimiter, never()).tryConsume(any(), any());
+
+        // KAN-104: 정책 미매칭 → 어떤 decision도 카운트 0.
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "allowed").count())
+                .isEqualTo(0.0);
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "denied").count())
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -114,6 +139,12 @@ class RateLimitFilterTest {
         assertThat(response.getHeader("X-RateLimit-Limit")).isEqualTo("3");
         assertThat(response.getHeader("X-RateLimit-Remaining")).isEqualTo("2");
         assertThat(response.getHeader("Retry-After")).isNull();
+
+        // KAN-104: allowed 분기 → signup/allowed 1회 + denied 0.
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "allowed").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "denied").count())
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -131,6 +162,12 @@ class RateLimitFilterTest {
 
         verify(chain, never()).doFilter(request, response);
         verify(responseWriter).write(eq(response), eq(ErrorCode.RATE_LIMITED), any());
+
+        // KAN-104: denied 분기 → user-login/denied 1회 + allowed 0.
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "user-login", "decision", "denied").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "user-login", "decision", "allowed").count())
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -147,6 +184,12 @@ class RateLimitFilterTest {
 
         verify(chain).doFilter(request, response);
         verify(rateLimiter, never()).tryConsume(any(), any());
+
+        // KAN-104: method 미스매치 → 어떤 decision도 카운트 0.
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "allowed").count())
+                .isEqualTo(0.0);
+        assertThat(meterRegistry.counter("ratelimit.decision.total", "endpoint", "signup", "decision", "denied").count())
+                .isEqualTo(0.0);
     }
 
     private static MockHttpServletRequest post(String path) {
