@@ -15,6 +15,7 @@ import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
@@ -22,11 +23,7 @@ import com.chunbaetour.domain.report.dto.ReportCreateResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -36,8 +33,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReportService {
-
-    private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
 
     private final ReportRepository reportRepository;
     private final CompanionPostRepository companionPostRepository;
@@ -86,14 +81,15 @@ public class ReportService {
      */
     public CursorPageResponse<MyReportResponse> getMyReports(Long reporterId, String cursor, int size) {
         PageRequest pageable = PageRequest.of(0, size + 1);
-        List<Report> reports = (cursor == null)
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        List<Report> reports = (cursorId == null)
                 ? reportRepository.findByReporterIdOrderByIdDesc(reporterId, pageable)
                 : reportRepository.findByReporterIdAndIdLessThanOrderByIdDesc(
-                        reporterId, decodeCursor(cursor), pageable);
+                        reporterId, cursorId, pageable);
 
         boolean hasNext = reports.size() > size;
         List<Report> content = hasNext ? reports.subList(0, size) : reports;
-        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
         return new CursorPageResponse<>(
                 content.stream().map(MyReportResponse::of).toList(),
@@ -102,37 +98,15 @@ public class ReportService {
 
     /**
      * 내 신고 단건 조회 — 본인이 신고한 건만 허용.
+     * 신고 없음·타인 신고 모두 RESOURCE_NOT_FOUND 통일 → reportId enumeration 차단.
      *
-     * @throws BusinessException REPORT_TARGET_NOT_FOUND: 신고 없음
-     * @throws BusinessException ACCESS_DENIED: 본인 신고 아님
+     * @throws BusinessException RESOURCE_NOT_FOUND: 신고 없음 또는 본인 신고 아님
      */
     public MyReportResponse getMyReport(Long reportId, Long requesterId) {
-        // REPORT_TARGET_NOT_FOUND(REPORT_001)는 신고 대상 없음 — 신고 레코드 자체 없음은 RESOURCE_NOT_FOUND
         Report report = reportRepository.findById(reportId)
+                .filter(r -> r.getReporterId().equals(requesterId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        if (!report.getReporterId().equals(requesterId)) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED);
-        }
         return MyReportResponse.of(report);
-    }
-
-    // ── 내부 유틸 ──────────────────────────────────────────────────────────
-
-    private String encodeCursor(Long id) {
-        String json = "{\"id\":" + id + "}";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private Long decodeCursor(String cursor) {
-        try {
-            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
-            String json = new String(decoded, StandardCharsets.UTF_8);
-            Matcher matcher = CURSOR_PATTERN.matcher(json);
-            if (!matcher.matches()) throw new IllegalArgumentException("invalid cursor format");
-            return Long.parseLong(matcher.group(1));
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
-        }
     }
 
     // 신고 대상 존재·활성 상태 검증 — 타입별로 다른 테이블 조회
@@ -171,10 +145,6 @@ public class ReportService {
                 if (comment.getStatus() == CommentStatus.DELETED) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
                 }
-            }
-            case REVIEW -> {
-                // TODO: 리뷰 도메인 구현 후 ReviewRepository 주입하여 존재 검증 추가
-                throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
             }
         }
     }
