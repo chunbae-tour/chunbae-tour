@@ -41,19 +41,38 @@ public class RecommendService {
     @Transactional(readOnly = true)
     public List<RecommendPlaceResponse> getPopularRecommendations() {
         String key = PlaceRedisConstants.RECOMMEND_POPULAR_KEY;
-        Set<String> cachedPlaceIds = stringRedisTemplate.opsForZSet().reverseRange(key, 0, 9);
+        Set<String> cachedPlaceIds = null;
+        
+        try {
+            cachedPlaceIds = stringRedisTemplate.opsForZSet().reverseRange(key, 0, 9);
+        } catch (Exception e) {
+            log.error("Redis 인기 추천 조회 실패. DB Fallback 진행", e);
+        }
 
         // Redis 캐시 히트
         if (cachedPlaceIds != null && !cachedPlaceIds.isEmpty()) {
-            List<Long> ids = cachedPlaceIds.stream().map(Long::valueOf).collect(Collectors.toList());
-            Map<Long, Place> placeMap = placeRepository.findAllById(ids).stream()
-                    .collect(Collectors.toMap(Place::getId, Function.identity()));
-            
-            // Redis 정렬 순서 유지
-            return ids.stream()
-                    .filter(placeMap::containsKey)
-                    .map(id -> RecommendPlaceResponse.from(placeMap.get(id)))
+            List<Long> ids = cachedPlaceIds.stream()
+                    .map(idStr -> {
+                        try {
+                            return Long.valueOf(idStr);
+                        } catch (NumberFormatException e) {
+                            log.warn("캐시된 관광지 ID 파싱 실패: {}", idStr);
+                            return null;
+                        }
+                    })
+                    .filter(java.util.Objects::nonNull)
                     .collect(Collectors.toList());
+            
+            if (!ids.isEmpty()) {
+                Map<Long, Place> placeMap = placeRepository.findAllById(ids).stream()
+                        .collect(Collectors.toMap(Place::getId, Function.identity()));
+            
+                // Redis 정렬 순서 유지
+                return ids.stream()
+                        .filter(placeMap::containsKey)
+                        .map(id -> RecommendPlaceResponse.from(placeMap.get(id)))
+                        .collect(Collectors.toList());
+            }
         }
 
         // DB Fallback 쿼리
@@ -62,13 +81,17 @@ public class RecommendService {
 
         // Redis 캐싱 (ZADD Bulk Insert) - 시니어 아키텍트 리뷰: forEach 단건 삽입 대신 한 번의 네트워크 I/O로 최적화
         if (!popularPlaces.isEmpty()) {
-            Set<TypedTuple<String>> tuples = new HashSet<>();
-            popularPlaces.forEach(place -> {
-                double score = (place.getLikeCount() * 0.7) + (place.getViewCount() * 0.3);
-                tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
-            });
-            stringRedisTemplate.opsForZSet().add(key, tuples);
-            stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            try {
+                Set<TypedTuple<String>> tuples = new HashSet<>();
+                popularPlaces.forEach(place -> {
+                    double score = (place.getLikeCount() * 0.7) + (place.getViewCount() * 0.3);
+                    tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
+                });
+                stringRedisTemplate.opsForZSet().add(key, tuples);
+                stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                log.error("Redis 인기 추천 데이터 캐싱 실패", e);
+            }
         }
 
         return popularPlaces.stream()

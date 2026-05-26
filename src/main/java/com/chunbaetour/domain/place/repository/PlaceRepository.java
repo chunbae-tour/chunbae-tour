@@ -31,6 +31,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' " +
                    "AND (6371 * acos(cos(radians(:lat)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(p.lat)))) <= :radiusKm " +
+                   "ORDER BY (6371 * acos(cos(radians(:lat)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(p.lat)))) ASC " +
                    "LIMIT :limit", nativeQuery = true)
     List<Place> findNearbyPlacesWithinRadius(@Param("lat") double lat, @Param("lng") double lng, @Param("radiusKm") double radiusKm, @Param("limit") int limit);
 }
