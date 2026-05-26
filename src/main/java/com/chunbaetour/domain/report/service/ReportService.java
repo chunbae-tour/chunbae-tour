@@ -5,10 +5,21 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
+import com.chunbaetour.domain.community.free.entity.FreePost;
+import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
+import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.report.type.ReportStatus;
+import com.chunbaetour.domain.report.type.ReportTargetType;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -33,6 +44,9 @@ public class ReportService {
 
     private final ReportRepository reportRepository;
     private final AccountRepository accountRepository;
+    private final CompanionPostRepository companionPostRepository;
+    private final FreePostRepository freePostRepository;
+    private final CommentRepository commentRepository;
 
     // ── KAN-91: 신고 목록 조회 ────────────────────────────────────────────
 
@@ -98,7 +112,172 @@ public class ReportService {
         return ReportResponse.of(report, resolveNickname(report.getReporterId()));
     }
 
+    // ── KAN-92: 신고 처리 ────────────────────────────────────────────────
+
+    /**
+     * 콘텐츠 신고 처리 (POST·COMMENT·REVIEW·USER).
+     * MERCHANT 신고에 이 엔드포인트를 사용하면 REPORT_WRONG_ENDPOINT 에러.
+     *
+     * @param reportId      처리할 신고 ID
+     * @param adminUsername 처리 관리자 (@AuthenticationPrincipal Account의 username/email)
+     * @param request       처리 요청 (action, adminNote)
+     * @throws BusinessException REPORT_NOT_FOUND: 신고 없음
+     * @throws BusinessException REPORT_ALREADY_RESOLVED: 이미 처리된 신고
+     * @throws BusinessException REPORT_WRONG_ENDPOINT: MERCHANT 신고에 이 엔드포인트 사용
+     */
+    @Transactional
+    public ReportResolveResponse resolveReport(Long reportId, Long adminId,
+                                               ReportResolveRequest request) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+
+        if (!report.isPending()) {
+            throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
+        }
+        if (report.getTargetType() == ReportTargetType.MERCHANT) {
+            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
+        }
+
+        ReportAction action = request.action();
+        // MERCHANT 전용 액션은 콘텐츠 신고에서 사용 불가
+        if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        applyContentAction(action, report.getTargetType(), report.getTargetId());
+
+        String adminNickname = resolveNickname(adminId);
+        if (action == ReportAction.DISMISS) {
+            report.dismiss(request.adminNote(), adminNickname);
+        } else {
+            report.resolve(action, request.adminNote(), adminNickname);
+        }
+
+        return ReportResolveResponse.of(report);
+    }
+
+    /**
+     * 가게 신고 처리 (MERCHANT 전용).
+     * 콘텐츠 신고에 이 엔드포인트를 사용하면 REPORT_WRONG_ENDPOINT 에러.
+     *
+     * @param reportId      처리할 신고 ID
+     * @param adminUsername 처리 관리자
+     * @param request       처리 요청 (HIDE_SHOP·REVOKE_MERCHANT·DISMISS, adminNote)
+     * @throws BusinessException REPORT_NOT_FOUND: 신고 없음
+     * @throws BusinessException REPORT_ALREADY_RESOLVED: 이미 처리된 신고
+     * @throws BusinessException REPORT_WRONG_ENDPOINT: 콘텐츠 신고에 이 엔드포인트 사용
+     */
+    @Transactional
+    public ReportResolveResponse resolveMerchantReport(Long reportId, Long adminId,
+                                                       MerchantReportResolveRequest request) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+
+        if (!report.isPending()) {
+            throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
+        }
+        if (report.getTargetType() != ReportTargetType.MERCHANT) {
+            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
+        }
+
+        ReportAction action = request.action();
+        // 콘텐츠 전용 액션은 가게 신고에서 사용 불가
+        if (action == ReportAction.WARNING || action == ReportAction.SUSPEND
+                || action == ReportAction.DELETE) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        applyMerchantAction(action, report.getTargetId());
+
+        String adminNickname = resolveNickname(adminId);
+        if (action == ReportAction.DISMISS) {
+            report.dismiss(request.adminNote(), adminNickname);
+        } else {
+            report.resolve(action, request.adminNote(), adminNickname);
+        }
+
+        return ReportResolveResponse.of(report);
+    }
+
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
+
+    /**
+     * 콘텐츠 신고 액션 적용.
+     * DELETE: 대상 콘텐츠 삭제. SUSPEND: 대상 또는 콘텐츠 작성자 계정 정지. WARNING/DISMISS: 상태만 기록.
+     */
+    private void applyContentAction(ReportAction action, ReportTargetType targetType, Long targetId) {
+        switch (action) {
+            case DELETE -> deleteTargetContent(targetType, targetId);
+            case SUSPEND -> suspendTargetAuthor(targetType, targetId);
+            case WARNING, DISMISS -> { /* MVP: 상태 기록만 */ }
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    /**
+     * 가게 신고 액션 적용.
+     * HIDE_SHOP: 가게 비공개(TODO: Shop 도메인 구현 후 연결). REVOKE_MERCHANT: 상인 인증 취소.
+     */
+    private void applyMerchantAction(ReportAction action, Long targetId) {
+        switch (action) {
+            case HIDE_SHOP -> {
+                // TODO: Shop 도메인 구현 후 ShopRepository.findById(targetId).hide() 연결 (신현민 파트)
+            }
+            case REVOKE_MERCHANT -> {
+                Account merchant = accountRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+                merchant.revokeToUser();
+            }
+            case DISMISS -> { /* 무시, 상태 기록만 */ }
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    /**
+     * 신고 대상 콘텐츠 삭제.
+     * POST: companion 우선 조회 → 없으면 free 조회. REVIEW: TODO.
+     */
+    private void deleteTargetContent(ReportTargetType targetType, Long targetId) {
+        switch (targetType) {
+            case POST -> {
+                companionPostRepository.findById(targetId).ifPresentOrElse(
+                        CompanionPost::delete,
+                        () -> freePostRepository.findById(targetId).ifPresent(FreePost::delete)
+                );
+            }
+            case COMMENT -> commentRepository.findById(targetId).ifPresent(Comment::delete);
+            case USER -> {
+                // 사용자 신고 DELETE: 계정 정지 (계정 완전 삭제는 별도 절차 필요)
+                accountRepository.findById(targetId).ifPresent(Account::suspend);
+            }
+            case REVIEW -> { /* TODO: 리뷰 도메인 구현 후 연결 */ }
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    /**
+     * 콘텐츠 작성자 계정 정지.
+     * POST·COMMENT: 작성자 authorId 조회 후 정지. USER: targetId가 직접 대상 계정.
+     */
+    private void suspendTargetAuthor(ReportTargetType targetType, Long targetId) {
+        Long authorId = switch (targetType) {
+            case POST -> companionPostRepository.findById(targetId)
+                    .map(CompanionPost::getAuthorId)
+                    .orElseGet(() -> freePostRepository.findById(targetId)
+                            .map(FreePost::getAuthorId).orElse(null));
+            case COMMENT -> commentRepository.findById(targetId)
+                    .map(Comment::getAuthorId).orElse(null);
+            case USER -> targetId;
+            case REVIEW -> null; // TODO: 리뷰 도메인 구현 후 연결
+            default -> null;
+        };
+
+        if (authorId != null) {
+            accountRepository.findById(authorId).ifPresent(Account::suspend);
+        }
+    }
+
+
 
     /**
      * reporterId → 닉네임. 탈퇴 계정이면 "탈퇴한 사용자" 반환.

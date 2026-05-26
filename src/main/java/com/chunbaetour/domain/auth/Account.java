@@ -134,4 +134,20 @@ public class Account {
         }
         this.role = Role.MERCHANT;
     }
+
+    /**
+     * 계정 정지 처리 (KAN-92 신고 처리 SUSPEND 액션).
+     * status = SUSPENDED. 해제는 별도 관리자 기능으로 처리.
+     */
+    public void suspend() {
+        this.status = AccountStatus.SUSPENDED;
+    }
+
+    /**
+     * 상인 인증 취소 (KAN-92 신고 처리 REVOKE_MERCHANT 액션).
+     * MERCHANT → USER 권한 하향.
+     */
+    public void revokeToUser() {
+        this.role = Role.USER;
+    }
 }
