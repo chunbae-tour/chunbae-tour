@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.auth.security.SecurityResponseWriter;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitProperties.EndpointPolicy;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -56,6 +57,10 @@ class RateLimitFilterTest {
     /** KAN-104 메트릭 in-memory registry. */
     @Spy
     private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    /** KAN-105 감사 로그 mock. */
+    @Mock
+    private SecurityAuditLogger auditLogger;
 
     @InjectMocks
     private RateLimitFilter filter;

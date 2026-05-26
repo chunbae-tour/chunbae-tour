@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.auth.event.UserRegisteredEvent;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -36,6 +37,10 @@ class SignupServiceTest {
     /** KAN-104 메트릭 in-memory registry. */
     @Spy
     private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    /** KAN-105 감사 로그 mock. */
+    @Mock
+    private SecurityAuditLogger auditLogger;
 
     @InjectMocks
     private SignupService signupService;
