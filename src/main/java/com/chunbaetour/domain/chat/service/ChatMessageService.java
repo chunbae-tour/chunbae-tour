@@ -42,6 +42,7 @@ public class ChatMessageService {
     @Transactional
     public void sendMessage(Long userId, Long chatRoomId, ChatSendMessageRequest request) {
         // rate limit 선검증 — userId 단위 30회/10초, 초과 시 COMMON_006(TOO_MANY_REQUESTS)
+        // 비참여자 메시지 시도도 rate limit slot 소비 — anonymous flood 방지 의도된 동작
         RateLimitDecision decision = rateLimiter.tryConsume("ratelimit:chat-message:" + userId, MESSAGE_RATE_LIMIT);
         if (!decision.allowed()) {
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
