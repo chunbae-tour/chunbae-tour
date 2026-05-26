@@ -11,9 +11,12 @@ import com.chunbaetour.domain.place.repository.UserLikeRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 관광지 찜하기 / 찜 취소 서비스
@@ -26,7 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>찜 미존재 취소 → PLACE_011 (LIKE_NOT_FOUND)</li>
  * </ul>
  *
- * <p>Redis 카운터는 상세 조회 응답의 likeCount 필드로 사용된다.
+ * <p>Redis 카운터/캐시 무효화는 DB 트랜잭션 커밋 이후({@code afterCommit})에 실행된다.
+ * DB 롤백 시 Redis 상태가 어긋나는 것을 방지하기 위한 설계.
  * DB의 places.like_count 컬럼과의 정합성은 배치 동기화(PHASE 5)에서 처리할 예정.
  */
 @Slf4j
@@ -47,6 +51,13 @@ public class PlaceLikeService {
      * 관광지 찜 추가
      * POST /api/v1/places/{placeId}/like
      *
+     * <p>동시성 처리:
+     * <ul>
+     *   <li>exists 체크: 빠른 경로(fast path) — 대부분의 중복 찜을 DB 조회 전에 차단</li>
+     *   <li>DataIntegrityViolationException catch: 경쟁 상태(race condition)에서 UNIQUE 제약
+     *       위반이 500으로 새어나가지 않도록 LIKE_ALREADY_EXISTS로 변환하는 안전망</li>
+     * </ul>
+     *
      * @param userId  인증된 사용자 ID (@AuthenticationPrincipal Long userId)
      * @param placeId 찜할 관광지 ID
      * @throws BusinessException PLACE_010 — 이미 찜한 관광지
@@ -54,7 +65,7 @@ public class PlaceLikeService {
      */
     @Transactional
     public void addLike(Long userId, Long placeId) {
-        // 1. 중복 찜 방지 (UNIQUE 제약보다 먼저 앱 레벨에서 검증해 명확한 에러코드 응답)
+        // 1. 중복 찜 fast-path (UNIQUE 제약보다 먼저 검증해 명확한 에러코드 응답)
         if (userLikeRepository.existsByUserIdAndPlaceId(userId, placeId)) {
             throw new BusinessException(ErrorCode.LIKE_ALREADY_EXISTS);
         }
@@ -73,13 +84,20 @@ public class PlaceLikeService {
         Account user = accountRepository.getReferenceById(userId);
 
         // 4. DB INSERT
-        userLikeRepository.save(UserLike.of(user, place));
+        //    race condition 안전망: exists 체크를 통과한 동시 요청이 UNIQUE 제약을 위반하면
+        //    DataIntegrityViolationException을 LIKE_ALREADY_EXISTS로 변환해 500을 방지한다.
+        try {
+            userLikeRepository.save(UserLike.of(user, place));
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.LIKE_ALREADY_EXISTS);
+        }
 
-        // 5. Redis INCR — 실패해도 비즈니스 로직은 성공 처리 (카운터는 Eventually Consistent)
-        incrementLikeCount(placeId);
-
-        // 6. 상세 캐시 무효화 — likeCount는 PlaceCacheDto에 스냅샷되므로 찜 후 즉시 갱신 필요
-        evictDetailCache(placeId);
+        // 5. Redis INCR + 캐시 무효화 — DB 커밋 이후에만 실행
+        //    트랜잭션 롤백 시 Redis 상태가 어긋나지 않도록 afterCommit으로 이동.
+        registerAfterCommit(() -> {
+            incrementLikeCount(placeId);
+            evictDetailCache(placeId);
+        });
 
         log.info("Place like added: userId={}, placeId={}", userId, placeId);
     }
@@ -102,10 +120,11 @@ public class PlaceLikeService {
             throw new BusinessException(ErrorCode.LIKE_NOT_FOUND);
         }
 
-        decrementLikeCount(placeId);
-
-        // 상세 캐시 무효화 — likeCount 스냅샷 갱신
-        evictDetailCache(placeId);
+        // Redis DECR + 캐시 무효화 — DB 커밋 이후에만 실행
+        registerAfterCommit(() -> {
+            decrementLikeCount(placeId);
+            evictDetailCache(placeId);
+        });
 
         log.info("Place like removed: userId={}, placeId={}", userId, placeId);
     }
@@ -125,6 +144,8 @@ public class PlaceLikeService {
         }
         return userLikeRepository.existsByUserIdAndPlaceId(userId, placeId);
     }
+
+    // ── Redis 헬퍼 ────────────────────────────────────────────────────
 
     private void incrementLikeCount(Long placeId) {
         try {
@@ -163,6 +184,27 @@ public class PlaceLikeService {
             log.debug("Place detail cache evicted: placeId={}", placeId);
         } catch (Exception e) {
             log.warn("Place detail cache eviction failed: placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * DB 트랜잭션 커밋 성공 후 {@code action}을 실행하도록 등록한다.
+     *
+     * <p>Redis 카운터 변경과 캐시 무효화를 {@code afterCommit}으로 분리해
+     * DB 롤백 시 Redis 상태가 어긋나는 것을 방지한다.
+     * 활성 트랜잭션이 없는 경우(테스트 등)에는 즉시 실행한다.
+     */
+    private void registerAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            // 활성 트랜잭션이 없으면 즉시 실행 (테스트 환경 대비)
+            action.run();
         }
     }
 }
