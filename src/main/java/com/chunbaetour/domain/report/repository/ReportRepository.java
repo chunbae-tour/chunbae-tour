@@ -16,4 +16,7 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
 
     List<Report> findByReporterIdAndIdLessThanOrderByIdDesc(
             Long reporterId, Long cursorId, Pageable pageable);
+
+    // ── KAN-93: 자동 숨김용 신고 건수 집계 ──────────────────────────────
+    long countByTargetTypeAndTargetId(ReportTargetType targetType, Long targetId);
 }

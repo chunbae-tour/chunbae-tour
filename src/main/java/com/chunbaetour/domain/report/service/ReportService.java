@@ -38,6 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReportService {
 
     private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
+    /** n건 이상 신고 시 콘텐츠 자동 숨김 임계값 (KAN-93) */
+    private static final int AUTO_HIDE_THRESHOLD = 3;
 
     private final ReportRepository reportRepository;
     private final CompanionPostRepository companionPostRepository;
@@ -68,7 +70,12 @@ public class ReportService {
                     request.reason(), request.description());
             // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
             // save()만 사용하면 flush가 커밋 시점으로 미뤄져 catch 블록 밖에서 터짐
-            return ReportCreateResponse.of(reportRepository.saveAndFlush(report));
+            ReportCreateResponse response = ReportCreateResponse.of(reportRepository.saveAndFlush(report));
+
+            // KAN-93: 누적 신고 수가 임계값 도달 시 콘텐츠 자동 숨김
+            autoHideIfThresholdReached(request.targetType(), request.targetId());
+
+            return response;
         } catch (DataIntegrityViolationException e) {
             // 동시 요청으로 exists 검사를 통과한 중복 신고 → DB 유니크 제약이 원자적으로 차단
             throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
@@ -114,6 +121,34 @@ public class ReportService {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
         return MyReportResponse.of(report);
+    }
+
+    // ── KAN-93: 자동 숨김 ─────────────────────────────────────────────────
+
+    /**
+     * 누적 신고 수가 AUTO_HIDE_THRESHOLD 이상이면 콘텐츠 자동 숨김.
+     * USER·MERCHANT·REVIEW는 자동 조치 생략 — 계정 정지·가게 비공개는 관리자가 직접 판단.
+     * 이미 삭제된 콘텐츠는 ifPresent 조건으로 중복 delete 방지.
+     */
+    private void autoHideIfThresholdReached(ReportTargetType targetType, Long targetId) {
+        long count = reportRepository.countByTargetTypeAndTargetId(targetType, targetId);
+        if (count < AUTO_HIDE_THRESHOLD) return;
+
+        switch (targetType) {
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE
+                            || p.getStatus() == CompanionPostStatus.CLOSED)
+                    .ifPresent(CompanionPost::delete);
+            case POST_FREE -> freePostRepository.findById(targetId)
+                    .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                    .ifPresent(FreePost::delete);
+            case COMMENT -> commentRepository.findById(targetId)
+                    .filter(c -> c.getStatus() != CommentStatus.DELETED)
+                    .ifPresent(Comment::delete);
+            case USER, MERCHANT, REVIEW -> {
+                // 자동 조치 생략 — 관리자 수동 처리 필요
+            }
+        }
     }
 
     // ── 내부 유틸 ──────────────────────────────────────────────────────────
