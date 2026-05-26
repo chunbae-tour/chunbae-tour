@@ -11,12 +11,20 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReportService {
+
+    private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
 
     private final ReportRepository reportRepository;
     private final CompanionPostRepository companionPostRepository;
@@ -51,6 +61,65 @@ public class ReportService {
                 reporterId, request.targetType(), request.targetId(),
                 request.reason(), request.description());
         return ReportCreateResponse.of(reportRepository.save(report));
+    }
+
+    // ── KAN-90: 내 신고 내역 조회 ──────────────────────────────────────────
+
+    /**
+     * 내가 신고한 내역 cursor 페이징 조회.
+     *
+     * @param reporterId 요청자 userId (@AuthenticationPrincipal)
+     * @param cursor     Base64 인코딩된 cursor (null = 첫 페이지)
+     * @param size       페이지 크기
+     */
+    public CursorPageResponse<MyReportResponse> getMyReports(Long reporterId, String cursor, int size) {
+        PageRequest pageable = PageRequest.of(0, size + 1);
+        List<Report> reports = (cursor == null)
+                ? reportRepository.findByReporterIdOrderByIdDesc(reporterId, pageable)
+                : reportRepository.findByReporterIdAndIdLessThanOrderByIdDesc(
+                        reporterId, decodeCursor(cursor), pageable);
+
+        boolean hasNext = reports.size() > size;
+        List<Report> content = hasNext ? reports.subList(0, size) : reports;
+        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
+
+        return new CursorPageResponse<>(
+                content.stream().map(MyReportResponse::of).toList(),
+                nextCursor, hasNext, content.size());
+    }
+
+    /**
+     * 내 신고 단건 조회 — 본인이 신고한 건만 허용.
+     *
+     * @throws BusinessException REPORT_TARGET_NOT_FOUND: 신고 없음
+     * @throws BusinessException ACCESS_DENIED: 본인 신고 아님
+     */
+    public MyReportResponse getMyReport(Long reportId, Long requesterId) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+        if (!report.getReporterId().equals(requesterId)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
+        return MyReportResponse.of(report);
+    }
+
+    // ── 내부 유틸 ──────────────────────────────────────────────────────────
+
+    private String encodeCursor(Long id) {
+        String json = "{\"id\":" + id + "}";
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Long decodeCursor(String cursor) {
+        try {
+            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
+            String json = new String(decoded, StandardCharsets.UTF_8);
+            Matcher matcher = CURSOR_PATTERN.matcher(json);
+            if (!matcher.matches()) throw new IllegalArgumentException("invalid cursor format");
+            return Long.parseLong(matcher.group(1));
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_CURSOR);
+        }
     }
 
     // 신고 대상 존재·활성 상태 검증 — 타입별로 다른 테이블 조회
@@ -85,6 +154,9 @@ public class ReportService {
             }
             case COMMENT -> {
                 // TODO: KAN-61 merge 후 CommentRepository 주입하여 존재 검증 추가
+            }
+            case REVIEW -> {
+                // TODO: 리뷰 도메인 구현 후 ReviewRepository 주입하여 존재 검증 추가
             }
         }
     }
