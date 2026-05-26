@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.shop.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -53,10 +55,10 @@ public class ShopWallet extends BaseEntity {
     /** QR 결제 승인 시 상인 잔액 증가 */
     public void credit(long amount) {
         if (amount <= 0) {
-            throw new IllegalArgumentException("amount must be positive");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         if (Long.MAX_VALUE - this.balance < amount) {
-            throw new IllegalArgumentException("balance overflow");
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
         this.balance += amount;
     }
@@ -64,10 +66,10 @@ public class ShopWallet extends BaseEntity {
     /** 정산 요청 시 잔액 차감 */
     public void debit(long amount) {
         if (amount <= 0) {
-            throw new IllegalArgumentException("amount must be positive");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         if (this.balance < amount) {
-            throw new IllegalArgumentException("insufficient balance");
+            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
         }
         this.balance -= amount;
     }
