@@ -1,8 +1,6 @@
 package com.chunbaetour.domain.chat.service;
 
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +19,7 @@ public class ChatRedisPubSubService {
     private static final String CHANNEL_PREFIX = "chat:";
     private static final String STOMP_TOPIC_PREFIX = "/sub/chat/rooms/";
     private static final String METRIC_BROADCAST_FAILURE = "chat.broadcast.failure.total";
+    private static final String METRIC_SERIALIZE_FAILURE = "chat.serialize.failure.total";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -35,7 +34,9 @@ public class ChatRedisPubSubService {
             String json = objectMapper.writeValueAsString(response);
             stringRedisTemplate.convertAndSend(CHANNEL_PREFIX + chatRoomId, json);
         } catch (JacksonException e) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+            // afterCommit 컨텍스트라 throw해도 클라이언트 도달 불가 — 메트릭 알람으로 처리
+            log.error("ChatMessageResponse 직렬화 실패. chatRoomId={}", chatRoomId, e);
+            meterRegistry.counter(METRIC_SERIALIZE_FAILURE, "chatRoomId", String.valueOf(chatRoomId)).increment();
         }
     }
 
