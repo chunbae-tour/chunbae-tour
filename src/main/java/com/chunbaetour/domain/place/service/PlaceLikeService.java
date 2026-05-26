@@ -7,12 +7,15 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.UserLike;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
+import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.UserLikeRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -173,6 +176,23 @@ public class PlaceLikeService {
             return false;
         }
         return userLikeRepository.existsByUserIdAndPlaceId(userId, placeId);
+    }
+
+    /**
+     * 마이페이지 연동 (PHASE 3-3): 사용자가 찜한 관광지 목록 페이징 조회.
+     * 다른 도메인(예: User/Auth)에서 GET /users/me/likes 구현 시 호출할 수 있는 지원 메서드입니다.
+     *
+     * @param userId   사용자 ID
+     * @param pageable 페이징 정보 (Spring Data Pageable)
+     * @return 찜한 관광지 요약 정보 페이지
+     */
+    @Transactional(readOnly = true)
+    public Page<UserLikedPlaceResponse> getUserLikedPlaces(Long userId, Pageable pageable) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId must not be null");
+        }
+        return userLikeRepository.findByUserId(userId, pageable)
+                .map(UserLikedPlaceResponse::from);
     }
 
     // ── Redis 헬퍼 ────────────────────────────────────────────────────
