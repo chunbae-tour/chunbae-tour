@@ -35,7 +35,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/admin/auth/**} — ADMIN 로그인 (permitAll)</li>
  *   <li>{@code POST /api/v1/auth/logout} — 인증 필요 (S4)</li>
  *   <li>{@code /api/v1/auth/**} — 공통 토큰 API (reissue 등, permitAll)</li>
- *   <li>{@code /actuator/**} — 헬스체크/info (permitAll)</li>
+ *   <li>{@code /actuator/health}, {@code /actuator/info} — permitAll (LB health check).
+ *       {@code /actuator/prometheus}는 IP allowlist (loopback only) + 운영에서는 별도 management port(9090) + loopback 바인딩으로 이중 보호 (#149).
+ *       그 외 {@code /actuator/**}는 denyAll로 차단 (env/beans/mappings 등 정보 노출 방지).</li>
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
@@ -85,11 +87,17 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         // /actuator/prometheus 이중 방어 (#149):
                         // - 운영(application-prod.yml): management.server.port=9090 + address=127.0.0.1 → main 포트 도달 자체 차단
-                        // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용
+                        // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용 → 차단 응답:
+                        //   * 익명 사용자(일반 시나리오): 401 AUTH_006 (RestAuthenticationEntryPoint가 인증 요구로 해석)
+                        //   * 인증된 사용자(role mismatch): 403 (RestAccessDeniedHandler)
+                        // 로컬/테스트(management port 분리 안 됨)에서는 localhost 호출이라 통과. ::1은 IPv6 loopback.
+                        //
                         // ⚠️ LB/Nginx 뒤 배포 시 주의: request.getRemoteAddr()이 프록시 IP를 반환하면 hasIpAddress 매칭이 깨질 수 있다.
+                        // 운영은 management port 분리(옵션 A)가 1차 방어선이라 영향 작지만, X-Forwarded-For 처리(ForwardedHeaderFilter
+                        // 또는 server.forward-headers-strategy)가 활성화된 환경에서는 trusted-proxy CIDR 확인 필수.
                         .requestMatchers("/actuator/prometheus")
-                            .access(new WebExpressionAuthorizationManager(
-                                    "hasIpAddress('127.0.0.1') or hasIpAddress('::1')"))
+                        .access(new WebExpressionAuthorizationManager(
+                                "hasIpAddress('127.0.0.1') or hasIpAddress('::1')"))
                         .requestMatchers("/actuator/**").denyAll()
                         // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
                         .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
