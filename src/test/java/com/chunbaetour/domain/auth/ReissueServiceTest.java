@@ -17,6 +17,7 @@ import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.jwt.TokenWithId;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -66,6 +67,10 @@ class ReissueServiceTest {
 
     @Mock
     private JwtProperties jwtProperties;
+
+    /** KAN-105 감사 로그 mock. */
+    @Mock
+    private SecurityAuditLogger auditLogger;
 
     @InjectMocks
     private ReissueService reissueService;

@@ -160,6 +160,34 @@ curl http://localhost:8080/actuator/prometheus | grep auth_login_attempt_total
 
 `/actuator/prometheus`는 본 PR에서 `permitAll`. 운영 배포 전 IP allowlist 또는 별도 management port 분리 필수. 상세는 [metrics-catalog.md](operations/metrics-catalog.md) § 노출 정책 참조.
 
+## 보안 감사 로그 (KAN-105)
+
+인증 도메인의 보안 이벤트(로그인/로그아웃/토큰 변조/rate limit 거부 등)는 별도 `audit.security` logger로 구조화 출력됩니다. 일반 application 로그와 분리되어 SIEM 수집/포렌식에 활용.
+
+전체 이벤트 카탈로그 + 알람 룰 권장값: [audit-log-catalog.md](operations/audit-log-catalog.md)
+
+### 로컬에서 확인
+
+애플리케이션 실행 시 자동으로 `logs/audit-security.log` 파일 생성 (logstash JSON 포맷):
+
+```bash
+# tail로 실시간 추적
+tail -f logs/audit-security.log
+
+# 특정 eventType 필터
+grep '"audit.eventType":"LOGIN_FAILURE"' logs/audit-security.log
+```
+
+회전 정책: 100MB 단위 + 일 단위 + 최대 365일 보존 + 10GB 전체 cap.
+
+### 운영(prod) 출력 추가
+
+prod 프로파일은 파일 + **stdout JSON** 동시 출력. ECS Task / CloudWatch Logs 수집기가 stdout을 캡처해 별도 인덱스로 수집.
+
+### 민감 정보 금지
+
+`SecurityAuditEvent` 자료형에 비밀번호 / JWT 본문 / Refresh Token 본문 / Cookie 값 필드 자체가 없음 → 컴파일 단계에서 노출 차단. `metadata` 맵에도 절대 넣지 말 것.
+
 ## 실행 방법
 
 ### 방법 1. 스크립트로 실행

@@ -3,6 +3,8 @@ package com.chunbaetour.domain.auth.security;
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
 import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -14,6 +16,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -86,6 +89,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final SecurityResponseWriter responseWriter;
     private final AccessTokenBlacklist accessTokenBlacklist;
     private final MeterRegistry meterRegistry;
+    private final SecurityAuditLogger auditLogger;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -121,12 +125,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } catch (ExpiredJwtException e) {
                 outcome = "expired";
                 meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_002").increment();
+                // KAN-105: 정상적 만료도 감사 로그 — brute force와 구분 + reissue 흐름 확인 가능
+                auditLogger.emitFailure(SecurityAuditEventType.TOKEN_EXPIRED, null,
+                        ErrorCode.ACCESS_TOKEN_EXPIRED.getCode(), Map.of());
                 // exp 클레임 초과: 클라이언트가 reissue로 재발급해야 함
                 responseWriter.write(response, ErrorCode.ACCESS_TOKEN_EXPIRED);
                 return;
             } catch (JwtException | IllegalArgumentException e) {
                 outcome = "tampered";
                 meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_003").increment();
+                // KAN-105: 변조 시도 — 즉시 감사 로그. SIEM 알람 룰 트리거 대상
+                auditLogger.emitFailure(SecurityAuditEventType.TOKEN_TAMPERED, null,
+                        ErrorCode.ACCESS_TOKEN_INVALID.getCode(), Map.of());
                 // 서명 오류/Malformed/잘못된 claim → 변조 가능성 (사유 노출 최소화)
                 responseWriter.write(response, ErrorCode.ACCESS_TOKEN_INVALID);
                 return;
@@ -146,6 +156,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (blacklisted) {
                 outcome = "blacklisted";
                 meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_013").increment();
+                // KAN-105: 블랙리스트 재사용 = 탈취 의심 신호. actorId는 claims에서 추출 가능
+                auditLogger.emitFailure(SecurityAuditEventType.TOKEN_BLACKLISTED, claims.userId(),
+                        ErrorCode.BLACKLISTED_TOKEN.getCode(), Map.of());
                 responseWriter.write(response, ErrorCode.BLACKLISTED_TOKEN);
                 return;
             }
