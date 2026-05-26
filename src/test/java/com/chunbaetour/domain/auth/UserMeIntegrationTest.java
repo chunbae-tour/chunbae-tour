@@ -20,6 +20,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
@@ -289,13 +290,7 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
         Long userId = accountRepository.findByEmail(EMAIL).orElseThrow().getId();
         Wallet existing = walletRepository.findByUserId(userId).orElseGet(() -> walletRepository.save(Wallet.create(userId)));
         // balance 직접 주입 — domain credit은 양수만 받으므로 reflect로 set
-        try {
-            var f = Wallet.class.getDeclaredField("balance");
-            f.setAccessible(true);
-            f.set(existing, 12345L);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
+        ReflectionTestUtils.setField(existing, "balance", 12345L);
         walletRepository.save(existing);
 
         mockMvc.perform(get("/api/v1/users/me/home")

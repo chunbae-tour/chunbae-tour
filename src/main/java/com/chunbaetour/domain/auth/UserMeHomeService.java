@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,8 +50,8 @@ public class UserMeHomeService {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
 
-        // wallet 없는 신규 가입자 fallback — UserMeHomeResponse.of가 null을 balance=0으로 변환.
-        Wallet wallet = walletRepository.findByUserId(userId).orElse(null);
+        // wallet 없는 신규 가입자 fallback — UserMeHomeResponse.of가 빈 Optional을 balance=0으로 변환.
+        Optional<Wallet> wallet = walletRepository.findByUserId(userId);
 
         return UserMeHomeResponse.of(account, wallet);
     }

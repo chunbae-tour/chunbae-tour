@@ -2,6 +2,7 @@ package com.chunbaetour.domain.auth.dto;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import java.util.Optional;
 
 /**
  * 마이페이지 홈 통합 응답 (Epic A S3, KAN-128).
@@ -44,13 +45,15 @@ public record UserMeHomeResponse(
     }
 
     /**
-     * {@link Account}와 {@link Wallet}로부터 통합 응답 생성. wallet이 null이면 잔액 0으로 fallback.
+     * {@link Account}와 {@code Optional<Wallet>}로부터 통합 응답 생성. wallet이 빈 Optional이면 잔액 0으로 fallback.
      *
      * <p>fallback 사유: 회원가입 → UserRegisteredEvent → WalletEventListener가 wallet 생성하는 흐름에서
      * 이벤트 발행 실패 또는 race로 wallet 미생성 시 home 호출이 500 오류로 깨지지 않도록 안전망.
+     *
+     * <p>{@code Optional} 시그니처 채택: null 허용 메서드보다 빈/존재 상태가 호출자 코드에 명시적으로 드러남.
      */
-    public static UserMeHomeResponse of(Account account, Wallet wallet) {
-        WalletInfo walletInfo = wallet != null ? WalletInfo.from(wallet) : WalletInfo.empty();
+    public static UserMeHomeResponse of(Account account, Optional<Wallet> wallet) {
+        WalletInfo walletInfo = wallet.map(WalletInfo::from).orElseGet(WalletInfo::empty);
         return new UserMeHomeResponse(UserMeResponse.from(account), walletInfo);
     }
 }
