@@ -63,11 +63,11 @@ public class ChatRoomController {
 
     // 채팅방 종료 — 방장 전용, room.status만 CLOSED로 전이, 멤버 상태 유지
     @PatchMapping("/{roomId}/close")
-    public ApiResponse<Void> closeRoom(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void closeRoom(
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId) {
         chatRoomService.closeRoom(userId, roomId);
-        return ApiResponse.success(null);
     }
 
     // 참여자 목록 — ACTIVE 멤버만 반환, 비참여자 접근 시 CHAT_NOT_JOINED
@@ -80,20 +80,20 @@ public class ChatRoomController {
 
     // 참여자 강퇴 — 방장 전용, OWNER_ACTIVE 대상 강퇴 불가(CHAT_017), MVP에서 방장 자기 강퇴 불가
     @DeleteMapping("/{roomId}/members/{targetUserId}")
-    public ApiResponse<Void> kickMember(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void kickMember(
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId,
             @Min(1) @PathVariable Long targetUserId) {
         chatRoomService.kickMember(userId, roomId, targetUserId);
-        return ApiResponse.success();
     }
 
     // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
     @DeleteMapping("/{roomId}/members/me")
-    public ApiResponse<Void> leaveRoom(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void leaveRoom(
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId) {
         chatRoomService.leaveRoom(userId, roomId);
-        return ApiResponse.success();
     }
 }
