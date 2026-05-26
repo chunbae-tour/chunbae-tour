@@ -163,7 +163,7 @@ public class JoinRequestService {
 
         // 본인 신청만 취소 가능 — userId 기준 equals 호출 (NPE 방지)
         if (!userId.equals(joinRequest.getUserId())) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+            throw new BusinessException(ErrorCode.CHAT_NOT_APPLICANT);
         }
 
         // WHERE status=PENDING 조건부 원자적 삭제 — approve와 동시 경합 시 이미 처리된 신청으로 차단 (CHAT_012)

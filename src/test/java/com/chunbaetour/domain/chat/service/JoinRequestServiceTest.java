@@ -583,8 +583,8 @@ class JoinRequestServiceTest {
     }
 
     @Test
-    void cancelJoinRequest_notApplicant_throws_ACCESS_DENIED() {
-        // 신청자 본인이 아닌 사용자 취소 시도 — ACCESS_DENIED
+    void cancelJoinRequest_notApplicant_throws_CHAT_NOT_APPLICANT() {
+        // 신청자 본인이 아닌 사용자 취소 시도 — CHAT_NOT_APPLICANT
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         JoinRequest req = mock(JoinRequest.class);
         given(req.getChatRoomId()).willReturn(ROOM_ID);
@@ -594,7 +594,7 @@ class JoinRequestServiceTest {
         assertThatThrownBy(() -> joinRequestService.cancelJoinRequest(USER_ID, ROOM_ID, REQUEST_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(this::extractErrorCode)
-                .isEqualTo(ErrorCode.ACCESS_DENIED);
+                .isEqualTo(ErrorCode.CHAT_NOT_APPLICANT);
     }
 
     @Test
