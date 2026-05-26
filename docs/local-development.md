@@ -77,6 +77,14 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
   - Axios: `axios.create({ withCredentials: true })` 또는 요청별 `{ withCredentials: true }`
 - 재발급은 `POST /api/v1/auth/reissue` 호출 (위 credentials 옵션으로 Cookie 전송 + 새 Access Token 응답).
 
+### SameSite 정책 (KAN-125 S5)
+
+- 기본값 `Lax` — 환경변수 `COOKIE_SAMESITE`로 오버라이드 가능
+- 운영 프론트/백엔드 도메인이 같은 eTLD+1이면 그대로 `Lax` 유지 (CSRF 기본 방어 + 권장)
+- 다른 eTLD+1이면 deploy 환경에서 `COOKIE_SAMESITE=None` 주입 필수 (Secure=true와 정합 필수)
+- **`SameSite=None` + `Secure=false` 조합은 `CookieProperties` compact ctor가 부팅 시 차단** (브라우저 silent 실패 사고 방지)
+- 의사결정 트리 + 환경별 조합 표: [samesite-policy.md](operations/samesite-policy.md)
+
 ## Rate Limit
 
 회원가입/로그인 endpoint에 IP 기반 rate limit이 적용되어 있습니다 (sa-docs/11 운영 보안 정책 §Rate Limit).

@@ -1,11 +1,13 @@
 package com.chunbaetour.domain.auth;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.chunbaetour.domain.auth.dto.LoginRequest;
+import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
@@ -105,6 +107,169 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-valid-jwt"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_003"));
+    }
+
+    // ===== KAN-127 Epic A S2 — PATCH /users/me 통합 시나리오 =====
+
+    @Test
+    void patch_me_with_all_fields_updates_and_returns_new_state() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        PatchUserMeRequest req = new PatchUserMeRequest(
+                "새닉네임", "en", "https://example.com/avatar.png");
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.nickname").value("새닉네임"))
+                .andExpect(jsonPath("$.data.language").value("en"))
+                .andExpect(jsonPath("$.data.profileImageUrl").value("https://example.com/avatar.png"))
+                // 응답 포맷이 GET /me와 동일한지 회귀 가드
+                .andExpect(jsonPath("$.data.email").value(EMAIL))
+                .andExpect(jsonPath("$.data.role").value("USER"))
+                .andExpect(jsonPath("$.data.password").doesNotExist());
+
+        // 후속 GET /me에서도 갱신 상태 영속됨 확인
+        mockMvc.perform(get("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(jsonPath("$.data.nickname").value("새닉네임"))
+                .andExpect(jsonPath("$.data.language").value("en"));
+    }
+
+    @Test
+    void patch_me_partial_only_nickname_keeps_other_fields() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        PatchUserMeRequest req = new PatchUserMeRequest("부분변경", null, null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value("부분변경"))
+                .andExpect(jsonPath("$.data.language").value("ko"))  // 변경 안 됨
+                // 보안 회귀 방지: PATCH 응답에도 password 미노출 (일관성 강화)
+                .andExpect(jsonPath("$.data.password").doesNotExist());
+    }
+
+    @Test
+    void patch_me_with_duplicate_nickname_returns_AUTH_009() throws Exception {
+        // 사용자 A 가입
+        signup(EMAIL, PASSWORD, NICKNAME);
+        // 사용자 B 가입 (별도 이메일/닉네임)
+        String otherEmail = "other@example.com";
+        String otherNickname = "다른유저";
+        signup(otherEmail, PASSWORD, otherNickname);
+
+        // A가 B 닉네임으로 변경 시도
+        String accessTokenA = login(EMAIL, PASSWORD);
+        PatchUserMeRequest req = new PatchUserMeRequest(otherNickname, null, null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessTokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("AUTH_009"));
+    }
+
+    @Test
+    void patch_me_with_own_nickname_passes_without_dup_error() throws Exception {
+        // 본인 닉네임 그대로 보내도 본인 제외 중복 체크 → 통과
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        PatchUserMeRequest req = new PatchUserMeRequest(NICKNAME, "en", null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value(NICKNAME))
+                .andExpect(jsonPath("$.data.language").value("en"));
+    }
+
+    @Test
+    void patch_me_without_token_returns_401_AUTH_006() throws Exception {
+        PatchUserMeRequest req = new PatchUserMeRequest("새닉네임", null, null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    void patch_me_with_invalid_nickname_format_returns_400() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        // 1자(min=2 위반) — Bean Validation @Size 거부
+        PatchUserMeRequest req = new PatchUserMeRequest("a", null, null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    void patch_me_with_invalid_language_returns_400() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        // 화이트리스트 외 언어 코드
+        PatchUserMeRequest req = new PatchUserMeRequest(null, "fr", null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    void patch_me_with_invalid_url_returns_400() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        // http/https 스킴 아님
+        PatchUserMeRequest req = new PatchUserMeRequest(null, null, "ftp://example.com/avatar.png");
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    void patch_me_with_all_null_fields_is_noop_and_returns_current_state() throws Exception {
+        // partial update에서 모든 필드 null은 200 + 현재 상태 응답 (idempotent)
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        PatchUserMeRequest req = new PatchUserMeRequest(null, null, null);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value(NICKNAME))
+                .andExpect(jsonPath("$.data.language").value("ko"));
     }
 
     private void signup(String email, String password, String nickname) throws Exception {
