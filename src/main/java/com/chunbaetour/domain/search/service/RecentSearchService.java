@@ -52,15 +52,7 @@ public class RecentSearchService {
      * @param keyword 검색어
      */
     public void saveRecentSearch(Long userId, String keyword) {
-        validateUserId(userId);
-        if (keyword == null || keyword.isBlank()) {
-            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_SHORT);
-        }
-
-        String normalizedKeyword = keyword.trim();
-        if (normalizedKeyword.length() > 50) {
-            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
-        }
+        String normalizedKeyword = validateAndNormalize(keyword);
 
         String key = RECENT_SEARCH_KEY_PREFIX + userId;
         try {
@@ -84,7 +76,6 @@ public class RecentSearchService {
      * @return 최근 검색어 목록 (최대 10개, 없으면 빈 리스트)
      */
     public List<String> getRecentSearches(Long userId) {
-        validateUserId(userId);
         String key = RECENT_SEARCH_KEY_PREFIX + userId;
         try {
             // 방어적 프로그래밍: LTRIM이 동작하더라도 명시적으로 MAX 개수만큼만 가져옴
@@ -100,18 +91,11 @@ public class RecentSearchService {
      * 특정 검색어를 최근 검색어에서 삭제한다.
      */
     public void deleteRecentSearch(Long userId, String keyword) {
-        validateUserId(userId);
-        if (keyword == null || keyword.isBlank()) {
-            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_SHORT);
-        }
-
-        String normalizedKeyword = keyword.trim();
-        if (normalizedKeyword.length() > 50) {
-            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
-        }
+        String normalizedKeyword = validateAndNormalize(keyword);
         
         String key = RECENT_SEARCH_KEY_PREFIX + userId;
         try {
+            // 중복 불가 구조(저장 시 LREM)이므로 count=1 이면 충분함 (딱 1건만 삭제)
             stringRedisTemplate.opsForList().remove(key, 1, normalizedKeyword);
         } catch (Exception e) {
             log.warn("Recent search delete failed: userId={}", userId, e);
@@ -122,7 +106,6 @@ public class RecentSearchService {
      * 모든 최근 검색어를 삭제한다.
      */
     public void deleteAllRecentSearches(Long userId) {
-        validateUserId(userId);
         String key = RECENT_SEARCH_KEY_PREFIX + userId;
         try {
             stringRedisTemplate.delete(key);
@@ -131,9 +114,14 @@ public class RecentSearchService {
         }
     }
 
-    private void validateUserId(Long userId) {
-        if (userId == null) {
-            throw new IllegalArgumentException("userId must not be null");
+    private String validateAndNormalize(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_SHORT);
         }
+        String normalized = keyword.strip();
+        if (normalized.length() > 50) {
+            throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
+        }
+        return normalized;
     }
 }

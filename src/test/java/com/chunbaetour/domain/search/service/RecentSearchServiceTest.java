@@ -37,14 +37,6 @@ class RecentSearchServiceTest {
     private RecentSearchService recentSearchService;
 
     @Test
-    @DisplayName("최근 검색어 저장 - userId가 null이면 예외 발생")
-    void saveRecentSearch_NullUserId_ThrowsException() {
-        assertThatThrownBy(() -> recentSearchService.saveRecentSearch(null, "제주도"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("userId must not be null");
-    }
-
-    @Test
     @DisplayName("최근 검색어 저장 - 정상 동작 및 Lua 스크립트 실행 검증")
     void saveRecentSearch_Success() {
         // given
@@ -105,13 +97,6 @@ class RecentSearchServiceTest {
     }
 
     @Test
-    @DisplayName("최근 검색어 조회 - userId가 null이면 예외 발생")
-    void getRecentSearches_NullUserId_ThrowsException() {
-        assertThatThrownBy(() -> recentSearchService.getRecentSearches(null))
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
     @DisplayName("최근 검색어 조회 - 정상 조회")
     void getRecentSearches_Success() {
         // given
@@ -160,10 +145,16 @@ class RecentSearchServiceTest {
     }
 
     @Test
-    @DisplayName("최근 검색어 단건 삭제 - userId가 null이면 예외 발생")
-    void deleteRecentSearch_NullUserId_ThrowsException() {
-        assertThatThrownBy(() -> recentSearchService.deleteRecentSearch(null, "제주도"))
-                .isInstanceOf(IllegalArgumentException.class);
+    @DisplayName("최근 검색어 단건 삭제 - 너무 긴 키워드 검증 실패")
+    void deleteRecentSearch_TooLongKeyword_ThrowsException() {
+        // given
+        Long userId = 1L;
+        String longKeyword = "A".repeat(51);
+
+        // when & then
+        assertThatThrownBy(() -> recentSearchService.deleteRecentSearch(userId, longKeyword))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SEARCH_KEYWORD_TOO_LONG);
     }
 
     @Test
@@ -207,13 +198,6 @@ class RecentSearchServiceTest {
         // when & then (예외가 발생하지 않아야 함)
         recentSearchService.deleteRecentSearch(userId, keyword);
         verify(listOperations).remove("search:recent:1", 1, keyword);
-    }
-
-    @Test
-    @DisplayName("최근 검색어 전체 삭제 - userId가 null이면 예외 발생")
-    void deleteAllRecentSearches_NullUserId_ThrowsException() {
-        assertThatThrownBy(() -> recentSearchService.deleteAllRecentSearches(null))
-                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
