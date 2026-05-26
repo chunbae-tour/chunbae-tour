@@ -66,9 +66,11 @@ public class ReportService {
             Report report = Report.create(
                     reporterId, request.targetType(), request.targetId(),
                     request.reason(), request.description());
-            return ReportCreateResponse.of(reportRepository.save(report));
+            // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
+            // save()만 사용하면 flush가 커밋 시점으로 미뤄져 catch 블록 밖에서 터짐
+            return ReportCreateResponse.of(reportRepository.saveAndFlush(report));
         } catch (DataIntegrityViolationException e) {
-            // DB 유니크 제약 위반 — 동시 요청으로 exists 검사를 통과한 중복 신고 차단
+            // 동시 요청으로 exists 검사를 통과한 중복 신고 → DB 유니크 제약이 원자적으로 차단
             throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
         }
     }
@@ -105,8 +107,9 @@ public class ReportService {
      * @throws BusinessException ACCESS_DENIED: 본인 신고 아님
      */
     public MyReportResponse getMyReport(Long reportId, Long requesterId) {
+        // REPORT_TARGET_NOT_FOUND(REPORT_001)는 신고 대상 없음 — 신고 레코드 자체 없음은 RESOURCE_NOT_FOUND
         Report report = reportRepository.findById(reportId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
         if (!report.getReporterId().equals(requesterId)) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
