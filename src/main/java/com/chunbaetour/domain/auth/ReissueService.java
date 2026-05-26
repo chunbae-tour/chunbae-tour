@@ -6,10 +6,13 @@ import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.jwt.TokenWithId;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +50,7 @@ public class ReissueService {
     private final RefreshTokenStore refreshTokenStore;
     private final AccountRepository accountRepository;
     private final JwtProperties jwtProperties;
+    private final SecurityAuditLogger auditLogger;
 
     /**
      * Refresh Token으로 새 Access + Refresh를 발급한다.
@@ -66,11 +70,19 @@ public class ReissueService {
         String oldTokenId = claims.tokenId();
 
         // 2. 사용자 조회 — soft-delete 적용 (@SQLRestriction)이므로 탈퇴자는 자동 제외
-        Account account = accountRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID));
+        Account account = accountRepository.findById(userId).orElse(null);
+        if (account == null) {
+            auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, userId,
+                    ErrorCode.REFRESH_TOKEN_INVALID.getCode(),
+                    Map.of("reasonDetail", "account_not_found"));
+            throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
+        }
 
         // 3. 정지 계정 차단 — Refresh가 있어도 정지 후에는 재발급 금지
         if (account.getStatus() == AccountStatus.SUSPENDED) {
+            auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, userId,
+                    ErrorCode.ACCOUNT_SUSPENDED.getCode(),
+                    Map.of("reasonDetail", "account_suspended"));
             throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
@@ -90,9 +102,15 @@ public class ReissueService {
                 jwtProperties.refreshTokenTtl()
         );
         if (!rotated) {
+            // CAS 실패 = 탈취 의심 또는 동시 reissue race. KAN-105: 별도 감사 분기.
+            auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, userId,
+                    ErrorCode.REFRESH_TOKEN_INVALID.getCode(),
+                    Map.of("reasonDetail", "cas_failure"));
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 
+        auditLogger.emitSuccess(SecurityAuditEventType.REFRESH_ROTATED, account.getId(),
+                Map.of("role", account.getRole().name()));
         return new TokenPair(newAccess, newRefresh.token(), newRefresh.tokenId(), account.getRole());
     }
 
@@ -102,13 +120,21 @@ public class ReissueService {
      * <p>JJWT의 raw 예외를 ErrorCode 매핑으로 통일한다.
      * - {@link ExpiredJwtException}만 AUTH_004로 구분 (UX상 재로그인 안내가 다름)
      * - 그 외 모든 JWT 관련 예외는 AUTH_005로 통합 (사유 노출 최소화)
+     *
+     * <p>KAN-105: 검증 실패도 REFRESH_REJECTED 감사 로그. actorId는 토큰에서 추출 불가 → null.
      */
     private RefreshClaims verifyOrThrow(String refreshToken) {
         try {
             return tokenIssuer.verifyRefresh(refreshToken);
         } catch (ExpiredJwtException e) {
+            auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, null,
+                    ErrorCode.REFRESH_TOKEN_EXPIRED.getCode(),
+                    Map.of("reasonDetail", "jwt_expired"));
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException e) {
+            auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, null,
+                    ErrorCode.REFRESH_TOKEN_INVALID.getCode(),
+                    Map.of("reasonDetail", "jwt_invalid"));
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
     }

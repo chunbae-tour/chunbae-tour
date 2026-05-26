@@ -33,8 +33,21 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException ex) {
-        return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
-                .body(ApiResponse.error(ErrorCode.INVALID_REQUEST.getCode(), ErrorCode.INVALID_REQUEST.getMessage()));
+        ErrorCode code = ex.getConstraintViolations().stream()
+                .findFirst()
+                .map(violation -> {
+                    String propertyPath = violation.getPropertyPath().toString();
+                    if (propertyPath.endsWith("keyword") || propertyPath.endsWith("q")) {
+                        if (violation.getConstraintDescriptor().getAnnotation() instanceof jakarta.validation.constraints.Size) {
+                            return ErrorCode.SEARCH_KEYWORD_TOO_LONG;
+                        }
+                    }
+                    return ErrorCode.INVALID_REQUEST;
+                })
+                .orElse(ErrorCode.INVALID_REQUEST);
+
+        return ResponseEntity.status(code.getStatus())
+                .body(ApiResponse.error(code.getCode(), code.getMessage()));
     }
 
     // 낙관적 잠금 충돌 — 동시 요청이 같은 엔티티를 수정한 경우, 클라이언트 재시도로 해결 가능
@@ -80,6 +93,12 @@ public class GlobalExceptionHandler {
                     case "email" -> ErrorCode.INVALID_EMAIL_FORMAT;
                     case "password" -> ErrorCode.INVALID_PASSWORD_FORMAT;
                     case "originLat", "originLng", "destLat", "destLng" -> ErrorCode.INVALID_LOCATION;
+                    case "keyword" -> {
+                        String code = fieldError.getCode();
+                        if ("NotBlank".equals(code)) yield ErrorCode.SEARCH_KEYWORD_TOO_SHORT;
+                        if ("Size".equals(code)) yield ErrorCode.SEARCH_KEYWORD_TOO_LONG;
+                        yield ErrorCode.INVALID_REQUEST;
+                    }
                     default -> ErrorCode.INVALID_REQUEST;
                 })
                 .orElse(ErrorCode.INVALID_REQUEST);

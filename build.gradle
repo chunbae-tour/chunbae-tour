@@ -23,6 +23,9 @@ dependencies {
 	// Micrometer Prometheus registry — /actuator/prometheus endpoint 노출 (KAN-104).
 	// Spring Boot가 버전 관리. 인증 필터/서비스에 Counter/Timer 추가 시 자동 수집.
 	implementation 'io.micrometer:micrometer-registry-prometheus'
+	// 보안 감사 로그 JSON 인코더 (KAN-105). audit.security logger를 logstash JSON format으로 출력.
+	// 외부 log aggregator(ELK/CloudWatch Logs)가 별도 인덱스로 수집 가능. Spring Boot 4 호환 7.x 사용.
+	implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.apache.httpcomponents.client5:httpclient5'

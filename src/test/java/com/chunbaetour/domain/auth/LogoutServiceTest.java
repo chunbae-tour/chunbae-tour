@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
 import com.chunbaetour.domain.auth.jwt.LogoutTokenStore;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,11 +40,14 @@ class LogoutServiceTest {
     @Mock
     private LogoutTokenStore logoutTokenStore;
 
+    @Mock
+    private SecurityAuditLogger auditLogger;
+
     private LogoutService logoutService;
 
     private void initService() {
         // @InjectMocks 대신 명시적으로 만든다 — Clock을 컨트롤하기 위해.
-        logoutService = new LogoutService(logoutTokenStore, Clock.fixed(FIXED_NOW, ZoneOffset.UTC));
+        logoutService = new LogoutService(logoutTokenStore, Clock.fixed(FIXED_NOW, ZoneOffset.UTC), auditLogger);
     }
 
     @Test
