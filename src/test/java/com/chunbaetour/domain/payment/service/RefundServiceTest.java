@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -24,6 +25,7 @@ import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.common.util.CursorUtils;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +34,7 @@ import org.mockito.Mockito;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -50,8 +53,19 @@ class RefundServiceTest {
     @Mock
     private WalletRepository walletRepository;
 
+    @Mock
+    private Clock clock;
+
     @InjectMocks
     private RefundService refundService;
+
+    @BeforeEach
+    void setUp() {
+        Clock systemClock = Clock.systemUTC();
+        // clock은 requestRefund 경로 테스트에서만 사용 — 미사용 테스트에서 UnnecessaryStubbingException 방지
+        lenient().when(clock.instant()).thenReturn(systemClock.instant());
+        lenient().when(clock.getZone()).thenReturn(systemClock.getZone());
+    }
 
     private static final Long USER_ID = 1L;
     private static final String ORDER_UID = "test-order-uid";
@@ -329,21 +343,4 @@ class RefundServiceTest {
                 .isEqualTo(ErrorCode.INVALID_CURSOR);
     }
 
-    @Test
-    @DisplayName("환불 내역 조회 — size 0 → INVALID_PAGE_SIZE")
-    void getUserRefundHistory_invalidSize_throws() {
-        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, null, 0))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
-    }
-
-    @Test
-    @DisplayName("환불 내역 조회 — size 101 → INVALID_PAGE_SIZE")
-    void getUserRefundHistory_sizeExceeded_throws() {
-        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, null, 101))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
-    }
 }

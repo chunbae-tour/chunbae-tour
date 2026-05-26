@@ -11,6 +11,8 @@ import com.chunbaetour.domain.payment.service.ChargeService;
 import com.chunbaetour.domain.payment.service.RefundService;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,12 +25,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 결제 API: 엽전 충전 요청 및 환불 요청 */
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
+@Validated
 public class PaymentController {
 
     private final ChargeService chargeService;
@@ -77,7 +81,7 @@ public class PaymentController {
             @AuthenticationPrincipal Long userId,
             @RequestParam(required = false) RefundStatus status,
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
         return ApiResponse.success(refundService.getUserRefundHistory(userId, status, cursor, size));
     }

@@ -15,6 +15,7 @@ import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.common.util.CursorUtils;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,7 @@ public class RefundService {
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
     private final WalletRepository walletRepository;
+    private final Clock clock;
 
     /**
      * 환불 요청 생성.
@@ -74,7 +76,7 @@ public class RefundService {
         }
 
         // 4. 환불 기간(7일) 초과 확인 — 충전일 기준 7일 이내만 환불 허용
-        if (order.getCreatedAt().isBefore(LocalDateTime.now().minusDays(REFUND_PERIOD_DAYS))) {
+        if (order.getCreatedAt().isBefore(LocalDateTime.now(clock).minusDays(REFUND_PERIOD_DAYS))) {
             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
         }
 
@@ -124,16 +126,11 @@ public class RefundService {
      */
     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
             Long userId, RefundStatus status, String cursor, int size) {
-        // size가 허용 범위(1~100) 벗어나면 즉시 거부 — 과도한 DB 조회 방지
-        if (size < 1 || size > 100) {
-            throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
-        }
-
         // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
         PageRequest pageable = PageRequest.of(0, size + 1);
         // cursor가 있으면 Base64URL 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
         Long cursorId = CursorUtils.decodeSafe(cursor);
-        // status/cursorId null이면 조건 미적용 — 4가지 조합(필터유무×cursor유무)을 쿼리 1개로 처리
+        // status/cursorId null이면 조건 미적용 (4가지 조합을 쿼리 1개로 처리)
         List<Refund> refunds = refundRepository.findByUserIdWithFilter(userId, status, cursorId, pageable);
 
         // size+1개 왔으면 다음 페이지 존재

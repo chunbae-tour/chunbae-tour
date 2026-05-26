@@ -254,24 +254,6 @@ class AdminRefundServiceTest {
     }
 
     @Test
-    @DisplayName("size가 0이면 INVALID_PAGE_SIZE 예외")
-    void getRefunds_size_zero_throws() {
-        assertThatThrownBy(() -> adminRefundService.getRefunds(null, 0))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
-    }
-
-    @Test
-    @DisplayName("size가 101이면 INVALID_PAGE_SIZE 예외")
-    void getRefunds_size_over_max_throws() {
-        assertThatThrownBy(() -> adminRefundService.getRefunds(null, 101))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_PAGE_SIZE);
-    }
-
-    @Test
     @DisplayName("잘못된 cursor 형식 디코딩 시 INVALID_CURSOR 예외")
     void getRefunds_invalid_cursor_throws() {
         assertThatThrownBy(() -> adminRefundService.getRefunds("!!invalid!!", 10))

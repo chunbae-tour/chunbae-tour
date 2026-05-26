@@ -103,11 +103,6 @@ public class AdminRefundService {
      * cursor: CursorUtils — id를 Base64URL 인코딩 (padding 없음).
      */
     public CursorPageResponse<RefundDetailResponse> getRefunds(String cursor, int size) {
-        // size가 허용 범위(1~100) 벗어나면 즉시 거부 — 과도한 DB 조회 방지
-        if (size < 1 || size > 100) {
-            throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
-        }
-
         // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
         PageRequest pageable = PageRequest.of(0, size + 1);
         // cursor가 있으면 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
