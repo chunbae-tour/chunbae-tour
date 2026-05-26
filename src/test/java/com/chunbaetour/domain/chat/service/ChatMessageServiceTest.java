@@ -16,6 +16,8 @@ import com.chunbaetour.domain.chat.repository.MessageRepository;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
+import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,9 @@ class ChatMessageServiceTest {
     @Mock
     private ChatRedisPubSubService chatRedisPubSubService;
 
+    @Mock
+    private RateLimiter rateLimiter;
+
     @InjectMocks
     private ChatMessageService chatMessageService;
 
@@ -46,7 +51,8 @@ class ChatMessageServiceTest {
 
     @Test
     void sendMessage_success_savesAndPublishes() {
-        // ACTIVE 멤버 → 저장 후 Redis 발행
+        // ACTIVE 멤버 → rate limit 허용 → 저장 후 Redis 발행
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
         Account sender = mock(Account.class);
@@ -67,8 +73,21 @@ class ChatMessageServiceTest {
     }
 
     @Test
+    void sendMessage_rateLimitExceeded_throws_TOO_MANY_REQUESTS() {
+        // rate limit 초과 — 30회/10초 정책 위반 시 COMMON_006
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.denied(java.time.Duration.ofSeconds(5)));
+
+        assertThatThrownBy(() ->
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("hello")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
+    }
+
+    @Test
     void sendMessage_notMember_throws_CHAT_NOT_JOINED() {
         // 비참여자·강퇴·퇴장 모두 ACTIVE_STATES 미포함 → CHAT_NOT_JOINED
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(ROOM_ID), eq(USER_ID), any())).willReturn(false);
 
@@ -82,6 +101,7 @@ class ChatMessageServiceTest {
     @Test
     void sendMessage_emptyContent_throws_INVALID_REQUEST() {
         // 멤버 검증 통과 → Account 조회 → Message 도메인 빌더에서 빈 content → INVALID_REQUEST
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
         given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
@@ -96,6 +116,7 @@ class ChatMessageServiceTest {
     @Test
     void sendMessage_contentTooLong_throws_MESSAGE_TOO_LONG() {
         // 멤버 검증 통과 → Account 조회 → 1001자 content → Message.validateByType에서 MESSAGE_TOO_LONG
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
         given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
