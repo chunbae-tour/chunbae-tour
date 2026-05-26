@@ -38,9 +38,13 @@ public class ChatRedisPubSubService {
 
     // Redis 구독 콜백 — chat:* 패턴 채널 메시지 수신 → STOMP 토픽으로 브로드캐스트
     public void handleMessage(String message, String channel) {
+        if (!channel.startsWith(CHANNEL_PREFIX)) {
+            log.warn("예상하지 못한 Redis 채널입니다. channel={}", channel);
+            return;
+        }
         try {
             ChatMessageResponse response = objectMapper.readValue(message, ChatMessageResponse.class);
-            String chatRoomId = channel.replace(CHANNEL_PREFIX, "");
+            String chatRoomId = channel.substring(CHANNEL_PREFIX.length());
             messagingTemplate.convertAndSend(STOMP_TOPIC_PREFIX + chatRoomId, response);
         } catch (Exception e) {
             log.warn("Redis 메시지 처리 실패. channel={}, error={}", channel, e.getMessage());

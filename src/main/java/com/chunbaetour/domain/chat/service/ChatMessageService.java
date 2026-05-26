@@ -27,6 +27,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -74,7 +76,18 @@ public class ChatMessageService {
                 .build();
 
         Message saved = messageRepository.save(message);
-        chatRedisPubSubService.publish(chatRoomId, ChatMessageResponse.from(saved, sender));
+        ChatMessageResponse response = ChatMessageResponse.from(saved, sender);
+        // 트랜잭션 커밋 후 발행 — 롤백 시 Redis 발행 방지
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    chatRedisPubSubService.publish(chatRoomId, response);
+                }
+            });
+        } else {
+            chatRedisPubSubService.publish(chatRoomId, response);
+        }
     }
 
     // 메시지 내역 조회 — ACTIVE 멤버만 접근, id DESC 커서 페이징, N+1 방지: senderId 일괄 조회

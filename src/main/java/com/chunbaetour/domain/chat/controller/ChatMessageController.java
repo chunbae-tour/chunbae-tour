@@ -2,6 +2,8 @@ package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
 import com.chunbaetour.domain.chat.service.ChatMessageService;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -23,8 +25,16 @@ public class ChatMessageController {
             @DestinationVariable Long chatRoomId,
             @Payload ChatSendMessageRequest request,
             Principal principal) {
+        if (principal == null) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
         // principal.getName() = userId String — StompChannelInterceptor에서 설정
-        Long userId = Long.parseLong(principal.getName());
+        final Long userId;
+        try {
+            userId = Long.parseLong(principal.getName());
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.ACCESS_TOKEN_INVALID);
+        }
         chatMessageService.sendMessage(userId, chatRoomId, request);
     }
 }

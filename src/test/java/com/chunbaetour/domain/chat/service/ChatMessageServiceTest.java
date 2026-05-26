@@ -23,6 +23,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -229,6 +230,48 @@ class ChatMessageServiceTest {
         CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
 
         assertThat(result.content().get(0).senderNickname()).isEqualTo("탈퇴한 사용자");
+    }
+
+    @Test
+    void getMessages_withCursor_returnsMessagesBeforeCursor() {
+        // cursor=100 → id < 100인 메시지만 반환
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message msg = stubMessage(99L);
+        given(messageRepository.findWithCursor(eq(ROOM_ID), eq(100L), any())).willReturn(List.of(msg));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+
+        String cursor = CursorUtils.encode(100L);
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, cursor, 10);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).chatRoomId()).isEqualTo(ROOM_ID);
+        assertThat(result.nextCursor()).isNull();
+    }
+
+    @Test
+    void getMessages_systemMessage_senderNicknameIsNull() {
+        // SYSTEM 메시지(senderId=null) → senderNickname null
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message systemMsg = mock(Message.class);
+        given(systemMsg.getId()).willReturn(20L);
+        given(systemMsg.getChatRoomId()).willReturn(ROOM_ID);
+        given(systemMsg.getSenderId()).willReturn(null);
+        given(systemMsg.getMessageType()).willReturn(MessageType.SYSTEM);
+        given(systemMsg.getContent()).willReturn("채팅방이 생성되었습니다.");
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(systemMsg));
+        given(accountRepository.findAllById(List.of())).willReturn(List.of());
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
+
+        assertThat(result.content().get(0).senderNickname()).isNull();
     }
 
     private Message stubMessage(Long id) {
