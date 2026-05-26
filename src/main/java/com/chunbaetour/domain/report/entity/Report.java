@@ -9,12 +9,21 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "reports")
+@Table(
+        name = "reports",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_reports_reporter_target",
+                        columnNames = {"reporter_id", "target_type", "target_id"}
+                )
+        }
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Report extends BaseEntity {

@@ -7,11 +7,15 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.entity.CommentStatus;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -38,6 +42,7 @@ public class ReportService {
     private final ReportRepository reportRepository;
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
+    private final CommentRepository commentRepository;
     private final AccountRepository accountRepository;
 
     @Transactional
@@ -57,10 +62,15 @@ public class ReportService {
             throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
         }
 
-        Report report = Report.create(
-                reporterId, request.targetType(), request.targetId(),
-                request.reason(), request.description());
-        return ReportCreateResponse.of(reportRepository.save(report));
+        try {
+            Report report = Report.create(
+                    reporterId, request.targetType(), request.targetId(),
+                    request.reason(), request.description());
+            return ReportCreateResponse.of(reportRepository.save(report));
+        } catch (DataIntegrityViolationException e) {
+            // DB 유니크 제약 위반 — 동시 요청으로 exists 검사를 통과한 중복 신고 차단
+            throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
+        }
     }
 
     // ── KAN-90: 내 신고 내역 조회 ──────────────────────────────────────────
@@ -153,10 +163,15 @@ public class ReportService {
                 }
             }
             case COMMENT -> {
-                // TODO: KAN-61 merge 후 CommentRepository 주입하여 존재 검증 추가
+                Comment comment = commentRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (comment.getStatus() == CommentStatus.DELETED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
             }
             case REVIEW -> {
                 // TODO: 리뷰 도메인 구현 후 ReviewRepository 주입하여 존재 검증 추가
+                throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
             }
         }
     }
