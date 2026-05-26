@@ -1,7 +1,10 @@
 package com.chunbaetour.domain.shop.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
+import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,6 +15,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -28,6 +32,7 @@ import lombok.NoArgsConstructor;
         name = "shops",
         uniqueConstraints = {
                 @UniqueConstraint(name = "uk_shops_user_id", columnNames = {"user_id"}),
+                // 동일 신청서로 가게 2개 생성 방지 — 동시 승인 race condition 차단
                 @UniqueConstraint(name = "uk_shops_application_id", columnNames = {"application_id"})
         }
 )
@@ -51,6 +56,7 @@ public class Shop extends BaseEntity {
     @Column(nullable = false, length = 50)
     private String category;
 
+    // 위치 정보 — 수정 불가 (관리자 처리)
     @Column(nullable = false)
     private String address;
 
@@ -84,7 +90,7 @@ public class Shop extends BaseEntity {
 
     // 리뷰 집계 — 리뷰 도메인에서 갱신
     @Column(nullable = false)
-    private float rating = 0f;
+    private double rating = 0.0;
 
     @Column(name = "review_count", nullable = false)
     private int reviewCount = 0;
@@ -92,6 +98,10 @@ public class Shop extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ShopStatus status;
+
+    // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
+    @Version
+    private Long version;
 
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,
@@ -121,5 +131,24 @@ public class Shop extends BaseEntity {
                 .phone(application.getPhone())
                 .description(application.getDescription())
                 .build();
+    }
+
+    /**
+     * 상인이 수정 가능한 필드 업데이트 (STORY-10).
+     * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
+     * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.
+     * SUSPENDED/CLOSED 상태에서 호출 시 SHOP_INACTIVE — 서비스 레이어 검증과 이중 보호.
+     */
+    public void update(ShopUpdateRequest request) {
+        if (this.status != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+        if (request.shopName() != null) this.shopName = request.shopName();
+        if (request.category() != null) this.category = request.category();
+        if (request.phone() != null) this.phone = request.phone();
+        if (request.description() != null) this.description = request.description();
+        if (request.operatingHours() != null) this.operatingHours = request.operatingHours();
+        if (request.closedDays() != null) this.closedDays = request.closedDays();
+        if (request.imageUrls() != null) this.imageUrls = request.imageUrls();
     }
 }
