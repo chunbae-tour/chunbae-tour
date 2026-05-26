@@ -97,7 +97,7 @@ public class ShopService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
-        List<Menu> menus = menuRepository.findByShopId(shopId);
+        List<Menu> menus = menuRepository.findByShopIdOrderByIdAsc(shopId);
 
         return ShopInfoResponse.from(shop, menus);
     }

@@ -214,7 +214,7 @@ class ShopServiceTest {
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         Menu menu = Menu.builder().shopId(SHOP_ID).name("떡볶이").price(5000L).build();
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(menu));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of(menu));
 
         // when
         ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
@@ -222,6 +222,7 @@ class ShopServiceTest {
         // then
         assertThat(response.shopId()).isEqualTo(SHOP_ID);
         assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
+        assertThat(response.status()).isEqualTo(ShopStatus.ACTIVE);
         assertThat(response.menus()).hasSize(1);
         assertThat(response.menus().get(0).name()).isEqualTo("떡볶이");
     }
@@ -235,7 +236,7 @@ class ShopServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
-        verify(menuRepository, never()).findByShopId(any());
+        verify(menuRepository, never()).findByShopIdOrderByIdAsc(any());
     }
 
     @Test
@@ -244,7 +245,7 @@ class ShopServiceTest {
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of());
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
 
         ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
@@ -267,7 +268,7 @@ class ShopServiceTest {
         given(unavailableMenu.getImageUrl()).willReturn(null);
         given(unavailableMenu.isAvailable()).willReturn(false);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(availableMenu, unavailableMenu));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of(availableMenu, unavailableMenu));
 
         ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
