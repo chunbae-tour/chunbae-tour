@@ -80,4 +80,8 @@ public class FreePost extends BaseEntity {
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
     }
+
+    public boolean isVisible() {
+        return status != FreePostStatus.DELETED && status != FreePostStatus.HIDDEN;
+    }
 }
