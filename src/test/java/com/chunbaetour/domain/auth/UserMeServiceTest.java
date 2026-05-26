@@ -14,11 +14,13 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * {@link UserMeService} 단위 테스트.
@@ -102,6 +104,8 @@ class UserMeServiceTest {
         assertThat(response.nickname()).isEqualTo(NICKNAME);
         // 중복 체크는 nickname null이면 호출되지 않아야 (불필요한 query 회피)
         verify(accountRepository, never()).existsByNicknameAndIdNot(any(String.class), any(Long.class));
+        // noop 분기에서는 saveAndFlush가 발생하면 안 됨 (DB write 회피 회귀 가드)
+        verify(accountRepository, never()).saveAndFlush(any(Account.class));
     }
 
     @Test
@@ -165,6 +169,9 @@ class UserMeServiceTest {
         assertThat(response.nickname()).isEqualTo(NICKNAME);
     }
 
+    // 의도된 동작 — UserMeService Javadoc 참조.
+    // 탈퇴자가 토큰만 들고 호출한 케이스를 "탈퇴 사실 노출하지 않음" 보안 원칙에 따라 AUTH_006(인증 요구)으로 응답.
+    // USER_NOT_FOUND를 쓰면 "이 user_id가 탈퇴했다"는 정보가 응답 차이로 추론됨.
     @Test
     void updateMe_with_nonexistent_user_throws_AUTH_006() {
         given(accountRepository.findById(USER_ID)).willReturn(Optional.empty());
@@ -174,6 +181,24 @@ class UserMeServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("existsByNicknameAndIdNot 통과 후 saveAndFlush에서 DataIntegrityViolation 발생 시 AUTH_009로 변환")
+    void updateMe_with_race_data_integrity_violation_throws_DUPLICATE_NICKNAME() {
+        // 동시성 race: pre-check는 통과했지만 flush 시점에 UK 충돌 발생 → AUTH_009 매핑
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(accountRepository.existsByNicknameAndIdNot("새닉네임", USER_ID)).willReturn(false);
+        given(accountRepository.saveAndFlush(any(Account.class)))
+                .willThrow(new DataIntegrityViolationException("uk_account_nickname"));
+
+        PatchUserMeRequest request = new PatchUserMeRequest("새닉네임", null, null);
+
+        assertThatThrownBy(() -> userMeService.updateMe(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_NICKNAME);
     }
 
 

@@ -5,6 +5,7 @@ import com.chunbaetour.domain.auth.dto.UserMeResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,7 +44,7 @@ public class UserMeService {
      * @throws BusinessException AUTH_006 — 탈퇴 또는 강제 삭제된 사용자가 토큰만 들고 호출한 경우
      */
     @Transactional(readOnly = true)
-    public UserMeResponse getMe(long userId) {
+    public UserMeResponse getMe(Long userId) {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
         return UserMeResponse.from(account);
@@ -54,7 +55,8 @@ public class UserMeService {
      *
      * <p>흐름:
      * <ol>
-     *   <li>request가 empty(모든 필드 null)면 현재 상태 그대로 응답 (불필요한 DB write 회피)</li>
+     *   <li>request가 empty(모든 필드 null)면 현재 상태 그대로 응답 (DB write 0회, read 1회 — 응답 데이터 필요로
+     *       getMe()의 findById는 발생. 닉네임 중복 체크 + dirty update + flush는 모두 회피)</li>
      *   <li>userId로 Account 조회 (탈퇴자는 SQLRestriction으로 자동 제외 → AUTH_006)</li>
      *   <li>nickname이 있고 본인 외 중복이면 AUTH_009 거부</li>
      *   <li>{@link Account#updateProfile}로 변경 — null 인자는 도메인 메서드가 무시</li>
@@ -64,16 +66,17 @@ public class UserMeService {
      * <p><b>보안 회귀 가드</b>: userId는 SecurityContext에서 추출되어 호출자가 임의 변조 불가.
      * PathVariable 미사용 → 다른 사용자 정보 변경 시도 원천 차단.
      *
-     * <p>닉네임 중복 race 처리: existsByNicknameAndIdNot 체크와 dirty flush 사이에 동시 가입이 있으면
-     * DB unique constraint가 최종 차단 (DataIntegrityViolationException → GlobalExceptionHandler가 응답 변환).
-     * 본 서비스는 일반 case의 사전 검증만 책임.
+     * <p>닉네임 중복 race 처리: existsByNicknameAndIdNot 체크 통과 후 saveAndFlush 사이에 동시 가입이 있으면
+     * DB unique constraint가 차단해 {@link DataIntegrityViolationException}이 발생. 본 서비스가 직접 catch해
+     * {@link ErrorCode#DUPLICATE_NICKNAME} (AUTH_009)로 변환한다. GlobalExceptionHandler에 전용 매핑을 두지
+     * 않는 이유는 다른 테이블의 unique 위반(예: email)이 같은 응답 코드로 잘못 변환되는 것을 막기 위함.
      *
      * @param userId  SecurityContext userId (본인 외 변조 불가)
      * @param request partial update 요청 (모든 필드 nullable)
      * @return 갱신 후 사용자 정보 (KAN-63 응답 포맷 재사용)
      */
     @Transactional
-    public UserMeResponse updateMe(long userId, PatchUserMeRequest request) {
+    public UserMeResponse updateMe(Long userId, PatchUserMeRequest request) {
         if (request.isEmpty()) {
             // 모든 필드 null → noop. 현재 상태 그대로 응답 (idempotent + 빈 PATCH 응답 200 표준).
             return getMe(userId);
@@ -87,7 +90,17 @@ public class UserMeService {
         }
 
         account.updateProfile(request.nickname(), request.language(), request.profileImageUrl());
-        // 트랜잭션 커밋 시점에 dirty checking으로 자동 update — 명시적 save 불필요.
+
+        try {
+            // saveAndFlush로 트랜잭션 커밋 전 flush 강제 — race 시 DB unique constraint를 catch 가능 시점에서 잡음.
+            accountRepository.saveAndFlush(account);
+        } catch (DataIntegrityViolationException e) {
+            // existsByNicknameAndIdNot 통과 → flush 사이에 동시 가입으로 동일 닉네임 점유된 race.
+            // GlobalExceptionHandler에 전용 매핑이 없어 fallback 500으로 떨어지는 것을 차단 (CR + LH #1).
+            // 다른 unique 위반(예: email)은 catch하지 않아 fallback 알람으로 의도치 않은 케이스 발견 가능.
+            throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+
         return UserMeResponse.from(account);
     }
 }
