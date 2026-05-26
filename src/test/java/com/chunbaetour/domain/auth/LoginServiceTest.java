@@ -17,6 +17,8 @@ import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.jwt.TokenWithId;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Optional;
@@ -25,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -61,6 +64,13 @@ class LoginServiceTest {
     @Mock
     private JwtProperties jwtProperties;
 
+    /**
+     * KAN-104 메트릭 검증을 위해 in-memory {@link SimpleMeterRegistry} 주입.
+     * {@code @Mock}을 쓰면 {@code meterRegistry.counter(...)} 체인이 NPE 발생 — 실제 구현체 사용이 단순/안전.
+     */
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     @InjectMocks
     private LoginService loginService;
 
@@ -89,6 +99,8 @@ class LoginServiceTest {
 
         // Refresh가 Redis에 저장돼야 reissue 흐름에서 조회 가능 (PRD 핵심 동작)
         verify(refreshTokenStore).save(1L, "rid", REFRESH_TTL);
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "success").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -116,6 +128,8 @@ class LoginServiceTest {
 
         // 실패 시 어떤 tokenId/TTL 조합으로도 Redis 저장이 일어나면 안 된다.
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "invalid_password").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -129,6 +143,8 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.LOGIN_FAILED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "invalid_password").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -143,6 +159,8 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "suspended").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -157,6 +175,8 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "role_mismatch").count())
+                .isEqualTo(1.0);
     }
 
     /**
@@ -180,6 +200,10 @@ class LoginServiceTest {
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
 
         verifyRefreshWasNotSaved();
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "role_mismatch").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "suspended").count())
+                .isEqualTo(0.0);
     }
 
     private void verifyRefreshWasNotSaved() {

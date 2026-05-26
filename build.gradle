@@ -20,6 +20,9 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// Micrometer Prometheus registry — /actuator/prometheus endpoint 노출 (KAN-104).
+	// Spring Boot가 버전 관리. 인증 필터/서비스에 Counter/Timer 추가 시 자동 수집.
+	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.apache.httpcomponents.client5:httpclient5'

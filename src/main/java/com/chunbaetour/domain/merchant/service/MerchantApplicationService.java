@@ -60,6 +60,7 @@ public class MerchantApplicationService {
             throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
         }
 
+
         try {
             MerchantApplication application = merchantApplicationRepository.saveAndFlush(
                     MerchantApplication.create(userId, request)
@@ -76,6 +77,10 @@ public class MerchantApplicationService {
         }
     }
 
+    /**
+     * DataIntegrityViolationException 예외 체인에서 특정 제약 이름이 포함된 메시지가 있는지 확인.
+     * MySQL은 중첩 예외 체인으로 제약 이름을 전달하므로 getCause()를 타고 전체 체인을 탐색한다.
+     */
     private boolean containsConstraint(DataIntegrityViolationException e, String constraintName) {
         Throwable cause = e;
         while (cause != null) {
