@@ -102,6 +102,8 @@ public enum ErrorCode {
     MERCHANT_CERT_ALREADY_PENDING(HttpStatus.CONFLICT,      "MERCHANT_001", "이미 상인 인증 신청이 진행 중입니다."),
     INVALID_BUSINESS_NUMBER(HttpStatus.BAD_REQUEST,         "MERCHANT_002", "유효하지 않은 사업자등록번호입니다."),
     MERCHANT_NOT_CERTIFIED(HttpStatus.FORBIDDEN,            "MERCHANT_003", "상인 인증이 필요합니다."),
+    DUPLICATE_BUSINESS_NUMBER(HttpStatus.CONFLICT,          "MERCHANT_004", "이미 등록된 사업자등록번호입니다."),
+    MERCHANT_APPLICATION_STATUS_INVALID(HttpStatus.CONFLICT,"MERCHANT_005", "현재 상태에서는 허용되지 않는 작업입니다."),
 
     // ===== SHOP (담당: 신현민) =====
     SHOP_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_001", "존재하지 않는 가게입니다."),
