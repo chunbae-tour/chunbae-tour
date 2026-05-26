@@ -15,6 +15,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -78,7 +79,18 @@ public class SecurityConfig {
                         // S4: logout만 인증 필요. permitAll(/api/v1/auth/**)보다 먼저 매칭되어야 우선순위가 적용됨.
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         .requestMatchers("/api/v1/auth/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        // Actuator endpoint 권한 — KAN-104 + #149.
+                        // exposure include = health, info, prometheus (application.yml). 그 외 endpoint는 yml exposure로도 차단되지만,
+                        // 방어적으로 SecurityConfig에서도 명시 거부해 향후 exposure가 잘못 확장돼도 노출 방지 (이중 안전).
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        // /actuator/prometheus 이중 방어 (#149):
+                        // - 운영(application-prod.yml): management.server.port=9090 + address=127.0.0.1 → main 포트 도달 자체 차단
+                        // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용
+                        // ⚠️ LB/Nginx 뒤 배포 시 주의: request.getRemoteAddr()이 프록시 IP를 반환하면 hasIpAddress 매칭이 깨질 수 있다.
+                        .requestMatchers("/actuator/prometheus")
+                            .access(new WebExpressionAuthorizationManager(
+                                    "hasIpAddress('127.0.0.1') or hasIpAddress('::1')"))
+                        .requestMatchers("/actuator/**").denyAll()
                         // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
                         .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
@@ -108,7 +120,7 @@ public class SecurityConfig {
                         // 관광지 조회 (근처/상세)는 비인증 허용 — isLiked는 서비스에서 userId null 체크로 처리
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
                         // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
-                        .requestMatchers(HttpMethod.GET, "/api/v1/shops/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
