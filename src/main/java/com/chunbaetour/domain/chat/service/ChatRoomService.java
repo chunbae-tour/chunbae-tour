@@ -17,9 +17,8 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -74,7 +73,7 @@ public class ChatRoomService {
 
     // 내 채팅방 목록 — ACTIVE 멤버 상태 기준 커서 페이지네이션, CLOSED 방도 포함
     public CursorPageResponse<MyChatRoomResponse> getMyRooms(Long userId, String cursor, int size) {
-        Long cursorId = cursor != null ? decodeCursor(cursor) : Long.MAX_VALUE;
+        Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : Long.MAX_VALUE;
         // ACTIVE_STATES(멤버 상태)로 필터링 — close() 이후에도 멤버 상태는 OWNER_ACTIVE/MEMBER_ACTIVE 유지되므로
         // CLOSED 방은 room.status로 구분되며, 기존 멤버의 이력 조회를 위해 목록에 계속 포함됨
         List<ChatRoomMember> members = chatRoomMemberRepository.findMyRoomsWithCursor(
@@ -84,7 +83,7 @@ public class ChatRoomService {
         List<ChatRoomMember> page = hasNext ? members.subList(0, size) : members;
 
         String nextCursor = hasNext
-                ? encodeCursor(page.get(page.size() - 1).getChatRoom().getId())
+                ? CursorUtils.encode(page.get(page.size() - 1).getChatRoom().getId())
                 : null;
 
         return new CursorPageResponse<>(
@@ -235,23 +234,4 @@ public class ChatRoomService {
                 .toList();
     }
 
-    // cursor는 "채팅방 ID를 URL-safe Base64로 인코딩한 문자열"
-    // URL-safe 디코더 사용 — padding 없는 형태(withoutPadding)로 인코딩하므로 표준 디코더와 호환
-    private Long decodeCursor(String cursor) {
-        try {
-            long id = Long.parseLong(
-                    new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
-            // IDENTITY PK는 1 이상 — 0이나 음수는 조작된 커서로 판단
-            if (id <= 0) throw new IllegalArgumentException();
-            return id;
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
-        }
-    }
-
-    // 채팅방 ID를 URL-safe Base64(padding 없음)로 인코딩 — decodeCursor와 대칭
-    private String encodeCursor(Long id) {
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(Long.toString(id).getBytes(StandardCharsets.UTF_8));
-    }
 }
