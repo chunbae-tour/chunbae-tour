@@ -92,6 +92,9 @@ public class StompChannelInterceptor implements ChannelInterceptor {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
+        if (accessor.getUser() == null) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
         Long userId = Long.parseLong(accessor.getUser().getName());
         boolean isMember = chatRoomMemberRepository
                 .existsByChatRoomIdAndUserIdAndMemberStateIn(chatRoomId, userId, ACTIVE_STATES);
