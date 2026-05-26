@@ -11,6 +11,8 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -110,7 +112,13 @@ public class ShopService {
             if (!node.isArray()) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-        } catch (JsonProcessingException e) {
+            // S3 URL 배열이므로 원소는 반드시 문자열이어야 함 — [1, true, null, {...}] 등 거부
+            for (var item : node) {
+                if (!item.isTextual() || item.asText().isBlank()) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+            }
+        } catch (JacksonException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
     }

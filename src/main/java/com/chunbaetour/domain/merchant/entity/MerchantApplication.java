@@ -120,9 +120,6 @@ public class MerchantApplication extends BaseEntity {
                 .build();
     }
 
-    // TODO [STORY-09]: approve() 호출 후 서비스 레이어에서 다음 두 작업을 원자적으로 수행해야 한다.
-    //   1. user.role을 USER → MERCHANT로 변경 (UserRepository.findByIdWithLock 후 user.promoteToMerchant())
-    //   2. Shop 엔티티 생성 (shopName, address, lat, lng, phone, description 이 엔티티에서 복사)
     /** 관리자 승인 시 상태 전이 (PENDING에서만 허용) */
     public void approve() {
         if (this.status != MerchantApplicationStatus.PENDING) {

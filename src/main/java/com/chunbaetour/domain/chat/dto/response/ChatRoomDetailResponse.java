@@ -25,12 +25,10 @@ public record ChatRoomDetailResponse(
             LocalDateTime joinedAt
     ) {
         public static MemberInfo from(ChatRoomMember member) {
-            // joinedAt은 BaseEntity.createdAt 재사용 — 현재 정책상 KICKED 재참여 불가(새 row 생성)이므로
-            // createdAt = 마지막 참여 시점으로 의미가 맞음. 재참여 허용 정책으로 변경 시 별도 컬럼 필요
             return new MemberInfo(
                     member.getUserId(),
                     member.getMemberState(),
-                    member.getCreatedAt()
+                    member.getJoinedAt()
             );
         }
     }

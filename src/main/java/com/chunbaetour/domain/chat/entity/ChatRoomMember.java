@@ -46,6 +46,9 @@ public class ChatRoomMember extends BaseEntity {
     @Column(name = "member_state", nullable = false, length = 20)
     private ChatMemberState memberState;
 
+    @Column(name = "joined_at", nullable = false)
+    private LocalDateTime joinedAt;
+
     @Column(name = "left_at")
     private LocalDateTime leftAt;
 
@@ -58,6 +61,7 @@ public class ChatRoomMember extends BaseEntity {
         this.chatRoom = chatRoom;
         this.userId = userId;
         this.memberState = memberState;
+        this.joinedAt = LocalDateTime.now();
     }
 
     public static ChatRoomMember ofOwner(ChatRoom chatRoom, Long userId) {
@@ -99,6 +103,7 @@ public class ChatRoomMember extends BaseEntity {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         this.memberState = ChatMemberState.MEMBER_ACTIVE;
+        this.joinedAt = LocalDateTime.now();
         this.leftAt = null;
     }
 
