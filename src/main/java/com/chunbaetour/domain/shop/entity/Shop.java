@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.shop.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.type.ShopStatus;
@@ -135,8 +137,12 @@ public class Shop extends BaseEntity {
      * 상인이 수정 가능한 필드 업데이트 (STORY-10).
      * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
      * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.
+     * SUSPENDED/CLOSED 상태에서 호출 시 SHOP_INACTIVE — 서비스 레이어 검증과 이중 보호.
      */
     public void update(ShopUpdateRequest request) {
+        if (this.status != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
         if (request.shopName() != null) this.shopName = request.shopName();
         if (request.category() != null) this.category = request.category();
         if (request.phone() != null) this.phone = request.phone();
