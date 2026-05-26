@@ -65,6 +65,13 @@ public class MenuService {
         // menuId + shopId 조합 조회 — 타 가게 메뉴는 MENU_NOT_FOUND로 처리
         Menu menu = getMenuOfShop(menuId, shop.getId());
 
+        // 이름 변경 시 동일 가게 내 중복 체크 — 자기 자신 이름은 허용
+        if (request.name() != null
+                && !request.name().equals(menu.getName())
+                && menuRepository.existsByShopIdAndName(shop.getId(), request.name())) {
+            throw new BusinessException(ErrorCode.MENU_DUPLICATE);
+        }
+
         menu.update(request);
         return MenuResponse.from(menu);
     }

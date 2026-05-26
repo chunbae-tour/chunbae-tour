@@ -191,6 +191,46 @@ class MenuServiceTest {
     }
 
     @Test
+    @DisplayName("메뉴 수정 — 이름 변경 시 중복 → MENU_DUPLICATE")
+    void updateMenu_duplicateName_throws() {
+        // given
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
+        Menu menu = createMenu(); // name = "떡볶이"
+        MenuUpdateRequest request = new MenuUpdateRequest("순대국밥", null, null, null, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
+        given(menuRepository.existsByShopIdAndName(SHOP_ID, "순대국밥")).willReturn(true);
+
+        // then
+        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.MENU_DUPLICATE);
+    }
+
+    @Test
+    @DisplayName("메뉴 수정 — 같은 이름으로 수정 시 중복 체크 통과")
+    void updateMenu_sameNameAllowed() {
+        // given — 이름 변경 없이 가격만 수정
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
+        Menu menu = createMenu(); // name = "떡볶이"
+        MenuUpdateRequest request = new MenuUpdateRequest("떡볶이", null, 6000L, null, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
+
+        // when — existsByShopIdAndName 호출 안 됨 (자기 이름이므로)
+        MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
+
+        // then
+        assertThat(response.price()).isEqualTo(6000L);
+        then(menuRepository).should(org.mockito.Mockito.never()).existsByShopIdAndName(any(), any());
+    }
+
+    @Test
     @DisplayName("메뉴 수정 — 가게 없음 → SHOP_NOT_FOUND")
     void updateMenu_shopNotFound_throws() {
         // given
