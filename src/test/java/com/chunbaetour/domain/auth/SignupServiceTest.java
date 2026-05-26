@@ -10,11 +10,14 @@ import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.auth.event.UserRegisteredEvent;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -29,6 +32,10 @@ class SignupServiceTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    /** KAN-104 메트릭 in-memory registry. */
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @InjectMocks
     private SignupService signupService;
@@ -59,6 +66,8 @@ class SignupServiceTest {
         assertThat(saved.getRole()).isEqualTo(Role.USER);
         assertThat(saved.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         verify(eventPublisher).publishEvent(any(UserRegisteredEvent.class));
+        assertThat(meterRegistry.counter("auth.signup.attempt.total", "outcome", "success").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -69,6 +78,9 @@ class SignupServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_EMAIL);
+
+        assertThat(meterRegistry.counter("auth.signup.attempt.total", "outcome", "email_dup").count())
+                .isEqualTo(1.0);
     }
 
     @Test
@@ -80,5 +92,8 @@ class SignupServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_NICKNAME);
+
+        assertThat(meterRegistry.counter("auth.signup.attempt.total", "outcome", "nickname_dup").count())
+                .isEqualTo(1.0);
     }
 }
