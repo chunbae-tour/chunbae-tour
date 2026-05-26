@@ -71,7 +71,7 @@ class LogoutIntegrationTest extends AbstractIntegrationTest {
         LoginResult login = login(EMAIL, PASSWORD);
 
         // 1) 로그아웃 전 ping 200
-        mockMvc.perform(get("/api/v1/users/me/ping")
+        mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + login.accessToken()))
                 .andExpect(status().isOk());
 
@@ -87,7 +87,7 @@ class LogoutIntegrationTest extends AbstractIntegrationTest {
                                 org.hamcrest.Matchers.containsString("Path=/api/v1/auth"))));
 
         // 3) 같은 Access Token으로 ping → AUTH_013 (블랙리스트 효과)
-        mockMvc.perform(get("/api/v1/users/me/ping")
+        mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + login.accessToken()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_013"));

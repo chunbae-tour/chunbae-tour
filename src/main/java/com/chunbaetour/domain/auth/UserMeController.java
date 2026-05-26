@@ -7,7 +7,6 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import jakarta.validation.Valid;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,8 +20,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <ul>
  *   <li>{@code GET /api/v1/users/me} — 본인 정보 조회 (Epic A S1, KAN-63)</li>
- *   <li>{@code GET /api/v1/users/me/ping} — 인증 흐름 검증용 임시 endpoint (S2~S5).
- *       Epic A S4 정리 슬라이스에서 제거 예정.</li>
+ *   <li>{@code PATCH /api/v1/users/me} — 닉네임/언어/프로필 partial update (Epic A S2, KAN-127)</li>
+ *   <li>{@code GET /api/v1/users/me/home} — 마이페이지 홈 통합 응답 (Epic A S3, KAN-128)</li>
  * </ul>
  *
  * <p>URL 권한:
@@ -34,6 +33,10 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>본인 식별: URL에 userId를 노출하지 않고 {@code @AuthenticationPrincipal Long userId}로 SecurityContext에서
  * 추출. 타인 정보 조회 차단의 핵심 — URL 조작으로 다른 사용자 정보를 절대 볼 수 없게 한다.
+ *
+ * <p><b>Epic A S4 (KAN-129)</b>: 임시 ping endpoint 제거됨. 인증/role 권한 매핑 검증은
+ * {@code SecurityRoleMappingIntegrationTest}가 정식 endpoint(GET /users/me, ShopController,
+ * AdminRefundController)를 사용해 커버.
  */
 @RestController
 @RequestMapping("/api/v1/users/me")
@@ -89,19 +92,6 @@ public class UserMeController {
     public ApiResponse<UserMeHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
         requireAuthenticated(userId);
         return ApiResponse.success(userMeHomeService.getHome(userId));
-    }
-
-    /**
-     * 인증 흐름 검증용 임시 endpoint. Epic A S4 정리 슬라이스에서 제거 예정.
-     *
-     * <p>S2~S5의 통합 테스트가 본 endpoint를 호출 중이므로 본 슬라이스에서는 유지한다 (회귀 방지).
-     * 모든 통합 테스트가 {@code GET /me}로 마이그레이션 완료된 후 일괄 제거한다.
-     */
-    @GetMapping("/ping")
-    public ApiResponse<Map<String, Long>> ping(@AuthenticationPrincipal Long userId) {
-        // getMe와 동일한 방어 정책 적용 (일관성 + Map.of null key NPE 차단)
-        requireAuthenticated(userId);
-        return ApiResponse.success(Map.of("userId", userId));
     }
 
     /**

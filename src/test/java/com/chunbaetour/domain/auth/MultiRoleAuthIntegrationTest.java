@@ -30,7 +30,9 @@ import tools.jackson.databind.ObjectMapper;
  * <p>PRD AC 핵심 시나리오:
  * <ul>
  *   <li>각 page의 로그인 endpoint는 매칭되는 role만 통과 — 미스매치 시 AUTH_007</li>
- *   <li>발급된 토큰은 매칭되는 me/ping endpoint만 통과 — 다른 page의 me/ping은 AUTH_007</li>
+ *   <li>발급된 토큰은 매칭되는 test-auth-fixture endpoint만 통과 — 다른 page의 fixture는 AUTH_007.
+ *       fixture는 {@link com.chunbaetour.domain.auth.support.TestAuthFixtureController}가 제공 (test scope).
+ *       KAN-129 (Epic A S4) 임시 ping endpoint 제거 후 role 매핑 검증을 도메인 endpoint 의존 없이 수행하기 위함.</li>
  *   <li>reissue/logout은 페이지 무관 공통 endpoint ({@code /api/v1/auth/**})</li>
  * </ul>
  *
@@ -72,7 +74,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         signupUser("user@example.com", "유저닉");
         String accessToken = login("/api/v1/users/auth/login", "user@example.com").accessToken();
 
-        mockMvc.perform(get("/api/v1/users/me/ping")
+        mockMvc.perform(get("/api/v1/users/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk());
     }
@@ -82,7 +84,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         signupUser("user2@example.com", "유저닉2");
         String accessToken = login("/api/v1/users/auth/login", "user2@example.com").accessToken();
 
-        mockMvc.perform(get("/api/v1/merchants/me/ping")
+        mockMvc.perform(get("/api/v1/merchants/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));
@@ -93,7 +95,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         signupUser("user3@example.com", "유저닉3");
         String accessToken = login("/api/v1/users/auth/login", "user3@example.com").accessToken();
 
-        mockMvc.perform(get("/api/v1/admin/me/ping")
+        mockMvc.perform(get("/api/v1/admin/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));
@@ -119,7 +121,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         seedFactory.seedMerchant("merchant@example.com", PASSWORD, "상인닉");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant@example.com").accessToken();
 
-        mockMvc.perform(get("/api/v1/merchants/me/ping")
+        mockMvc.perform(get("/api/v1/merchants/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk());
     }
@@ -129,7 +131,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         seedFactory.seedMerchant("merchant2@example.com", PASSWORD, "상인닉2");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant2@example.com").accessToken();
 
-        mockMvc.perform(get("/api/v1/admin/me/ping")
+        mockMvc.perform(get("/api/v1/admin/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));
@@ -141,7 +143,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         seedFactory.seedMerchant("merchant3@example.com", PASSWORD, "상인닉3");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant3@example.com").accessToken();
 
-        mockMvc.perform(get("/api/v1/users/me/ping")
+        mockMvc.perform(get("/api/v1/users/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));
@@ -170,7 +172,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         assertThat(login.refreshCookie()).isNotNull();
         assertThat(login.refreshCookie().getValue()).isNotBlank();
 
-        mockMvc.perform(get("/api/v1/admin/me/ping")
+        mockMvc.perform(get("/api/v1/admin/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + login.accessToken()))
                 .andExpect(status().isOk());
     }
@@ -201,7 +203,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                         org.hamcrest.Matchers.containsString("Max-Age=0")));
 
         // logout 후 같은 Access로 admin endpoint 호출 → AUTH_013 (블랙리스트)
-        mockMvc.perform(get("/api/v1/admin/me/ping")
+        mockMvc.perform(get("/api/v1/admin/test-auth-fixture")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + login.accessToken()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_013"));
