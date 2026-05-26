@@ -6,6 +6,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.UserLike;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.UserLikeRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
@@ -38,14 +39,29 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @RequiredArgsConstructor
 public class PlaceLikeService {
 
-    private static final String PLACE_LIKE_COUNT_KEY  = "place:like:";
-    /** 찜하기/취소 후 상세 캐시를 즉시 무효화해 stale likeCount 노출 방지 */
-    private static final String PLACE_DETAIL_CACHE_KEY = "place:";
-
     private final UserLikeRepository userLikeRepository;
     private final PlaceRepository placeRepository;
     private final AccountRepository accountRepository;
     private final StringRedisTemplate stringRedisTemplate;
+
+    private static final String SEED_AND_INCR_SCRIPT = 
+            "local key = KEYS[1]\n" +
+            "if redis.call('EXISTS', key) == 0 then\n" +
+            "  redis.call('SET', key, ARGV[1])\n" +
+            "end\n" +
+            "return redis.call('INCR', key)";
+
+    private static final String SEED_AND_DECR_SCRIPT = 
+            "local key = KEYS[1]\n" +
+            "if redis.call('EXISTS', key) == 0 then\n" +
+            "  redis.call('SET', key, ARGV[1])\n" +
+            "end\n" +
+            "local current = redis.call('DECR', key)\n" +
+            "if current < 0 then\n" +
+            "  redis.call('SET', key, 0)\n" +
+            "  return 0\n" +
+            "end\n" +
+            "return current";
 
     /**
      * 관광지 찜 추가
@@ -65,27 +81,23 @@ public class PlaceLikeService {
      */
     @Transactional
     public void addLike(Long userId, Long placeId) {
-        // 1. 중복 찜 fast-path (UNIQUE 제약보다 먼저 검증해 명확한 에러코드 응답)
-        if (userLikeRepository.existsByUserIdAndPlaceId(userId, placeId)) {
-            throw new BusinessException(ErrorCode.LIKE_ALREADY_EXISTS);
-        }
-
-        // 2. 관광지 존재 + ACTIVE 상태 확인 (HIDDEN/DELETED 관광지는 찜 불가)
+        // 1. 관광지 존재 + ACTIVE 상태 확인 (HIDDEN/DELETED 관광지는 찜 불가)
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
         if (place.getStatus() != PlaceStatus.ACTIVE) {
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
 
-        // 3. Account Proxy 조회 — JWT 필터에서 이미 서명 검증이 완료됐으므로 실제 SELECT 없이
-        //    FK 바인딩용 프록시만 가져온다.
-        //    탈퇴 보호는 @SQLRestriction이 아닌 JWT 블랙리스트(로그아웃 시 토큰 무효화)로 처리된다.
-        //    getReferenceById는 DB를 조회하지 않아 @SQLRestriction(deleted_at IS NULL)이 실행되지 않는다.
+        // 2. 중복 찜 fast-path (ACTIVE 상태인 관광지에 대해서만 수행해 명확한 에러 제공)
+        if (userLikeRepository.existsByUserIdAndPlaceId(userId, placeId)) {
+            throw new BusinessException(ErrorCode.LIKE_ALREADY_EXISTS);
+        }
+
+        // 3. Account Proxy 조회 — 실제 SELECT 없이 FK 바인딩
         Account user = accountRepository.getReferenceById(userId);
 
         // 4. DB INSERT
-        //    race condition 안전망: exists 체크를 통과한 동시 요청이 UNIQUE 제약을 위반하면
-        //    DataIntegrityViolationException을 LIKE_ALREADY_EXISTS로 변환해 500을 방지한다.
+        //    race condition 안전망: exists 체크를 통과한 동시 요청이 UNIQUE 제약을 위반하면 500 방지
         try {
             userLikeRepository.save(UserLike.of(user, place));
         } catch (DataIntegrityViolationException e) {
@@ -117,16 +129,16 @@ public class PlaceLikeService {
      */
     @Transactional
     public void removeLike(Long userId, Long placeId) {
+        // Redis 선시드를 위해 현재 DB like_count를 삭제 전에 트랜잭션 내에서 먼저 조회
+        // (관광지가 없으면 PLACE_NOT_FOUND, 삭제된 후면 반영된 값이 없기 때문)
+        int dbLikeCount = placeRepository.findById(placeId)
+                .map(Place::getLikeCount)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
         int deleted = userLikeRepository.deleteByUserIdAndPlaceId(userId, placeId);
         if (deleted == 0) {
             throw new BusinessException(ErrorCode.LIKE_NOT_FOUND);
         }
-
-        // Redis 선시드를 위해 현재 DB like_count를 트랜잭션 내에서 읽어 캡처
-        // (afterCommit에서 별도 DB 조회 없이 클로저로 전달)
-        final int dbLikeCount = placeRepository.findById(placeId)
-                .map(Place::getLikeCount)
-                .orElse(0);
 
         // Redis DECR + 캐시 무효화 — DB 커밋 이후에만 실행
         registerAfterCommit(() -> {
@@ -156,42 +168,33 @@ public class PlaceLikeService {
     // ── Redis 헬퍼 ────────────────────────────────────────────────────
 
     /**
-     * Redis 카운터가 없으면 DB 값으로 선시드(SETNX)한 뒤 INCR.
-     *
-     * <p>동작 시나리오:
-     * <ul>
-     *   <li>키 없음: {@code SETNX key dbLikeCount} 성공 → {@code INCR key} → dbLikeCount + 1</li>
-     *   <li>키 있음: {@code SETNX} 실패(유지) → {@code INCR key} → 현재값 + 1</li>
-     * </ul>
-     * SETNX와 INCR 사이 non-atomic 구간에서 동시 요청이 끌어들어도
-     * 카운터는 Eventually Consistent 정책으로 허용한다.
+     * Redis 카운터가 없으면 DB 값으로 선시드(SETNX)한 뒤 INCR를 Lua 스크립트로 원자적 처리.
      */
     private void seedAndIncrement(Long placeId, int dbLikeCount) {
         try {
-            String key = PLACE_LIKE_COUNT_KEY + placeId;
-            // 키가 없을 때만 DB 값으로 초기화 (SETNX)
-            stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(dbLikeCount));
-            stringRedisTemplate.opsForValue().increment(key);
+            String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
+            stringRedisTemplate.execute(
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(SEED_AND_INCR_SCRIPT, Long.class),
+                    java.util.Collections.singletonList(key),
+                    String.valueOf(dbLikeCount)
+            );
         } catch (Exception e) {
             log.warn("Place like count seed+increment failed: placeId={}", placeId, e);
         }
     }
 
     /**
-     * Redis 카운터가 없으면 DB 값으로 선시드(SETNX)한 뒤 DECR.
+     * Redis 카운터가 없으면 DB 값으로 선시드(SETNX)한 뒤 DECR를 Lua 스크립트로 원자적 처리.
      * 0 미만 방지 로직 포함.
      */
     private void seedAndDecrement(Long placeId, int dbLikeCount) {
         try {
-            String key = PLACE_LIKE_COUNT_KEY + placeId;
-            // 키가 없을 때만 DB 값으로 초기화 (SETNX)
-            stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(dbLikeCount));
-            Long current = stringRedisTemplate.opsForValue().decrement(key);
-            // 0 미만 방지: Eventually Consistent 정책, PHASE 5 배치에서 보정
-            if (current != null && current < 0) {
-                stringRedisTemplate.opsForValue().set(key, "0");
-                log.warn("Place like count was negative, reset to 0: placeId={}", placeId);
-            }
+            String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
+            stringRedisTemplate.execute(
+                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(SEED_AND_DECR_SCRIPT, Long.class),
+                    java.util.Collections.singletonList(key),
+                    String.valueOf(dbLikeCount)
+            );
         } catch (Exception e) {
             log.warn("Place like count seed+decrement failed: placeId={}", placeId, e);
         }
@@ -205,7 +208,7 @@ public class PlaceLikeService {
      */
     private void evictDetailCache(Long placeId) {
         try {
-            stringRedisTemplate.delete(PLACE_DETAIL_CACHE_KEY + placeId);
+            stringRedisTemplate.delete(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId);
             log.debug("Place detail cache evicted: placeId={}", placeId);
         } catch (Exception e) {
             log.warn("Place detail cache eviction failed: placeId={}", placeId, e);

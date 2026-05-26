@@ -3,6 +3,7 @@ package com.chunbaetour.domain.place.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
@@ -33,9 +34,6 @@ public class PlaceService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final String PLACE_DETAIL_CACHE_PREFIX = "place:";
-    private static final String PLACE_VIEW_COUNT_PREFIX   = "place:view:";
-    private static final String PLACE_LIKE_COUNT_PREFIX   = "place:like:";
     private static final Duration PLACE_DETAIL_TTL         = Duration.ofMinutes(10);
 
     @Transactional(readOnly = true)
@@ -108,7 +106,7 @@ public class PlaceService {
             "return redis.call('del', KEYS[1]) else return 0 end";
 
     private PlaceDetailResponse resolveFromCacheOrDb(Long placeId, Long userId) {
-        String cacheKey = PLACE_DETAIL_CACHE_PREFIX + placeId;
+        String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId;
 
         // 1. Redis 캐시 1차 조회
         PlaceCacheDto cached = getFromCache(cacheKey, placeId);
@@ -238,7 +236,7 @@ public class PlaceService {
      */
     private int resolveRedisLikeCount(Long placeId, int dbFallback) {
         try {
-            String val = stringRedisTemplate.opsForValue().get(PLACE_LIKE_COUNT_PREFIX + placeId);
+            String val = stringRedisTemplate.opsForValue().get(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId);
             return (val != null) ? Integer.parseInt(val) : dbFallback;
         } catch (Exception e) {
             log.warn("Redis likeCount 조회 실패, DB 값 사용: placeId={}", placeId, e);
@@ -248,7 +246,7 @@ public class PlaceService {
 
     private void incrementViewCount(Long placeId) {
         try {
-            stringRedisTemplate.opsForValue().increment(PLACE_VIEW_COUNT_PREFIX + placeId);
+            stringRedisTemplate.opsForValue().increment(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + placeId);
         } catch (Exception e) {
             log.warn("Place view count increment failed: placeId={}", placeId, e);
         }

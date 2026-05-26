@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface UserLikeRepository extends JpaRepository<UserLike, Long> {
 
@@ -18,6 +19,7 @@ public interface UserLikeRepository extends JpaRepository<UserLike, Long> {
      * 0이면 LIKE_NOT_FOUND로 처리한다.
      */
     @Modifying
+    @Transactional
     @Query("DELETE FROM UserLike ul WHERE ul.user.id = :userId AND ul.place.id = :placeId")
     int deleteByUserIdAndPlaceId(@Param("userId") Long userId, @Param("placeId") Long placeId);
 

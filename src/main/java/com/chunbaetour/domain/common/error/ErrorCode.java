@@ -67,7 +67,7 @@ public enum ErrorCode {
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
     LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
-    LIKE_NOT_FOUND(HttpStatus.BAD_REQUEST,                  "PLACE_011", "찜하지 않은 관광지입니다."),
+    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),

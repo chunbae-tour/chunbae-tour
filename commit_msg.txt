@@ -1,7 +1,0 @@
-﻿refactor: CodeRabbitAI 책임 분리 피드백 반영 (SearchService 역할 분리)
-
-- SearchService에서 자동완성 전담 로직을 SuggestService로 완전 분리
-- Redis(StringRedisTemplate) 인프라 직접 조작 코드를 SuggestCacheRepository로 캡슐화
-- 자동완성 보완 데이터(ZSet 인기 검색어)를 가져오는 로직은 PopularSearchService로 이동시켜 응집도 개선
-- PlaceQueryRepository.suggestByPrefix() 예약어(_, %) 입력 시 Full Scan을 유발하는 문제를 방어하기 위한 이스케이프 처리 추가
-- 분리된 책임에 맞게 SuggestServiceTest 재작성 및 테스트 성공 확인

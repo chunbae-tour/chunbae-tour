@@ -64,7 +64,6 @@ public class PlaceController {
      * - 중복 찜 시 PLACE_010 에러 응답.
      */
     @PostMapping("/{placeId}/like")
-    @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<Void> addLike(
             @PathVariable Long placeId,
             @AuthenticationPrincipal Long userId) {
@@ -80,6 +79,7 @@ public class PlaceController {
      * - 찜하지 않은 경우 PLACE_011 에러 응답.
      */
     @DeleteMapping("/{placeId}/like")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public ApiResponse<Void> removeLike(
             @PathVariable Long placeId,
             @AuthenticationPrincipal Long userId) {
