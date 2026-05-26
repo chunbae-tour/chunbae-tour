@@ -24,6 +24,7 @@ import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -74,6 +75,7 @@ class ChatMessageServiceTest {
         given(saved.getSenderId()).willReturn(USER_ID);
         given(saved.getMessageType()).willReturn(MessageType.TEXT);
         given(saved.getContent()).willReturn("안녕하세요");
+        given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 26, 12, 0));
         given(messageRepository.save(any())).willReturn(saved);
 
         chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("안녕하세요"));
@@ -106,6 +108,21 @@ class ChatMessageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
+    }
+
+    @Test
+    void sendMessage_userNotFound_throws_USER_NOT_FOUND() {
+        // 멤버 검증 통과 → Account 미조회(탈퇴 등) → USER_NOT_FOUND
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("hello")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
 
     @Test

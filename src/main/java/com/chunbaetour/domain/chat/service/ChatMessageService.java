@@ -52,6 +52,7 @@ public class ChatMessageService {
     @Transactional
     public void sendMessage(Long userId, Long chatRoomId, ChatSendMessageRequest request) {
         // rate limit 선검증 — userId 단위 30회/10초, 초과 시 COMMON_006(TOO_MANY_REQUESTS)
+        // 비참여자 메시지 시도도 rate limit slot 소비 — anonymous flood 방지 의도된 동작
         RateLimitDecision decision = rateLimiter.tryConsume("ratelimit:chat-message:" + userId, MESSAGE_RATE_LIMIT);
         if (!decision.allowed()) {
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS);
@@ -77,7 +78,9 @@ public class ChatMessageService {
 
         Message saved = messageRepository.save(message);
         ChatMessageResponse response = ChatMessageResponse.from(saved, sender);
-        // 트랜잭션 커밋 후 발행 — 롤백 시 Redis 발행 방지
+
+        // DB 커밋 이후 발행 — 커밋 실패·롤백 시 유령 메시지 브로드캐스트 방지
+        // isActualTransactionActive: 실트랜잭션 없는 컨텍스트(단위 테스트 등) → 즉시 발행 fallback
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
