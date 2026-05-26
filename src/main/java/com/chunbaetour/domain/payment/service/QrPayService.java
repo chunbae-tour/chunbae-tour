@@ -2,6 +2,7 @@ package com.chunbaetour.domain.payment.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.payment.dto.request.QrPayConfirmRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayCreateRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayItemRequest;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
@@ -11,11 +12,16 @@ import com.chunbaetour.domain.payment.repository.QrPayRequestRepository;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
+import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -24,9 +30,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,9 +43,9 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * QR 결제 요청 서비스 (STORY-13).
- * 사용자가 결제 요청을 생성하면 상인이 승인/거절할 때까지 PENDING 상태 유지.
- * 동시성 제어(분산 락·비관적 락)는 상인 승인 시(STORY-14)에서 처리.
+ * QR 결제 서비스 (STORY-13, STORY-14).
+ * STORY-13: 사용자가 결제 요청 생성 → PENDING 상태.
+ * STORY-14: 상인이 승인/거절 — 승인 시 분산 락 + 비관적 락으로 잔액 차감·증가.
  */
 @Slf4j
 @Service
@@ -48,10 +57,17 @@ public class QrPayService {
     private final MenuRepository menuRepository;
     private final QrPayRequestRepository qrPayRequestRepository;
     private final WalletRepository walletRepository;
+    private final ShopWalletRepository shopWalletRepository;
+    private final YeopjeonHistoryRepository yeopjeonHistoryRepository;
+    private final RedissonClient redissonClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
+    /** 분산 락 키: qr:lock:{shopId}:{userId} — 동일 사용자·가게 동시 승인 시도 직렬화 */
+    private static final String QR_LOCK_KEY = "qr:lock:%d:%d";
+    private static final int LOCK_WAIT_SECONDS = 3;
+    private static final int LOCK_LEASE_SECONDS = 5;
     // pending_key unique 제약명 — DataIntegrityViolationException 원인 식별에 사용
     private static final String PENDING_KEY_CONSTRAINT = "pending_key";
 
@@ -184,6 +200,87 @@ public class QrPayService {
                 snapshots,
                 expiredAt
         );
+    }
+
+    /**
+     * QR 결제 승인/거절 (STORY-14, MERCHANT 전용).
+     *
+     * <p>APPROVE 흐름:
+     * 1. 결제 요청 조회 및 소유권 확인
+     * 2. 분산 락 획득 (qr:lock:{shopId}:{userId}, 대기 3s, 임대 5s)
+     * 3. 비관적 락으로 사용자 지갑 → 상인 지갑 순서 고정 조회 (데드락 방지)
+     * 4. 잔액 검증 후 차감·증가
+     * 5. 이력 기록 (사용자: PAYMENT, 상인: RECEIVED_PAYMENT)
+     * 6. 상태 COMPLETED 전이
+     *
+     * <p>REJECT 흐름: 분산 락 없이 상태만 REJECTED 전이.
+     */
+    @Transactional
+    public void confirmQrPayRequest(Long merchantUserId, String payRequestId, QrPayConfirmRequest request) {
+        // 결제 요청 조회
+        QrPayRequest qrPayRequest = qrPayRequestRepository.findByPayRequestId(payRequestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
+
+        // 해당 가게가 이 상인의 가게인지 확인
+        Shop shop = shopRepository.findById(qrPayRequest.getShopId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+        if (!shop.getUserId().equals(merchantUserId)) {
+            throw new BusinessException(ErrorCode.QR_PAY_CONFIRM_FORBIDDEN);
+        }
+
+        if (request.action() == QrPayConfirmRequest.Action.REJECT) {
+            // 거절: 분산 락 불필요 — 잔액 조작 없음
+            qrPayRequest.reject(request.rejectReason());
+            return;
+        }
+
+        // 승인: 분산 락 획득 후 비관적 락으로 잔액 처리
+        RLock lock = redissonClient.getLock(
+                QR_LOCK_KEY.formatted(qrPayRequest.getShopId(), qrPayRequest.getUserId()));
+        try {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
+                throw new BusinessException(ErrorCode.PAYMENT_PROCESSING);
+            }
+
+            // 비관적 락 순서 고정: wallets → shop_wallets (데드락 방지)
+            Wallet wallet = walletRepository.findByUserIdWithLock(qrPayRequest.getUserId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+            ShopWallet shopWallet = shopWalletRepository.findByShopIdWithLock(qrPayRequest.getShopId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
+
+            // 잔액 검증 — 요청 시점 이후 잔액이 줄었을 수 있음
+            long amount = qrPayRequest.getAmount();
+            if (wallet.getBalance() < amount) {
+                throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
+            }
+
+            // 잔액 차감·증가
+            wallet.debit(amount);
+            shopWallet.credit(amount);
+
+            // 이력 기록
+            yeopjeonHistoryRepository.save(YeopjeonHistory.create(
+                    qrPayRequest.getUserId(), null, qrPayRequest.getShopId(),
+                    YeopjeonHistoryType.PAYMENT, amount, wallet.getBalance(),
+                    "QR 결제 - " + shop.getShopName()
+            ));
+            yeopjeonHistoryRepository.save(YeopjeonHistory.create(
+                    merchantUserId, null, qrPayRequest.getShopId(),
+                    YeopjeonHistoryType.RECEIVED_PAYMENT, amount, shopWallet.getBalance(),
+                    "QR 결제 수신"
+            ));
+
+            // 상태 COMPLETED 전이
+            qrPayRequest.complete();
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.PAYMENT_PROCESSING);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     private String serializeSnapshots(List<MenuSnapshotItem> snapshots) {
