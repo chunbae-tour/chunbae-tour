@@ -62,7 +62,10 @@ public class Menu extends BaseEntity {
         this.deletedAt = LocalDateTime.now();
     }
 
-    /** null 필드는 기존 값 유지 (부분 수정 지원). */
+    /**
+     * null 필드는 기존 값 유지 (부분 수정 지원).
+     * description: null = 수정 안 함, "" = 소개글 삭제 (선택 필드, 빈 값 허용).
+     */
     public void update(MenuUpdateRequest request) {
         if (request.name() != null) this.name = request.name();
         if (request.description() != null) this.description = request.description();
