@@ -35,8 +35,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 추출. 타인 정보 조회 차단의 핵심 — URL 조작으로 다른 사용자 정보를 절대 볼 수 없게 한다.
  *
  * <p><b>Epic A S4 (KAN-129)</b>: 임시 ping endpoint 제거됨. 인증/role 권한 매핑 검증은
- * {@code SecurityRoleMappingIntegrationTest}가 정식 endpoint(GET /users/me, ShopController,
- * AdminRefundController)를 사용해 커버.
+ * {@link com.chunbaetour.domain.auth.MultiRoleAuthIntegrationTest}가 test scope의
+ * {@code TestAuthFixtureController}를 사용해 커버. 시드 데이터 의존 없이 SecurityConfig 매핑만 검증.
  */
 @RestController
 @RequestMapping("/api/v1/users/me")

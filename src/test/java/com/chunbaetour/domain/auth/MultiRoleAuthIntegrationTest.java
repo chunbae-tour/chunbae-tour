@@ -177,6 +177,30 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void admin_token_calling_users_test_auth_fixture_returns_AUTH_007() throws Exception {
+        // ADMIN 토큰으로 USER endpoint 접근도 차단되어야 한다 (role mismatch 양방향 검증)
+        seedFactory.seedAdmin("admin3@example.com", PASSWORD, "관리자닉3");
+        String accessToken = login("/api/v1/admin/auth/login", "admin3@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/users/test-auth-fixture")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    void admin_token_calling_merchants_test_auth_fixture_returns_AUTH_007() throws Exception {
+        // ADMIN 토큰으로 MERCHANT endpoint 접근도 차단되어야 한다 (role mismatch 양방향 검증)
+        seedFactory.seedAdmin("admin4@example.com", PASSWORD, "관리자닉4");
+        String accessToken = login("/api/v1/admin/auth/login", "admin4@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/merchants/test-auth-fixture")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
     // ===== 공통 reissue/logout (페이지 무관) =====
 
     @Test
@@ -207,6 +231,33 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + login.accessToken()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_013"));
+    }
+
+    // ===== 인증 없이 fixture 호출 시 401 회귀 가드 (HM #2) =====
+    // 향후 누군가 SecurityConfig에 fixture endpoint를 permitAll로 추가하는 실수를 차단.
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 /api/v1/users/test-auth-fixture 호출 시 401 AUTH_006")
+    void anonymous_callingUsersFixture_returns_401_AUTH_006() throws Exception {
+        mockMvc.perform(get("/api/v1/users/test-auth-fixture"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 /api/v1/merchants/test-auth-fixture 호출 시 401 AUTH_006")
+    void anonymous_callingMerchantsFixture_returns_401_AUTH_006() throws Exception {
+        mockMvc.perform(get("/api/v1/merchants/test-auth-fixture"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 /api/v1/admin/test-auth-fixture 호출 시 401 AUTH_006")
+    void anonymous_callingAdminFixture_returns_401_AUTH_006() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/test-auth-fixture"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
 
     // ===== 헬퍼 =====

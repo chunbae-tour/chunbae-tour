@@ -2,6 +2,7 @@ package com.chunbaetour.domain.auth.support;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import java.util.Map;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,7 +21,18 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>응답 본문은 의미 없음 — role 매핑 통과 여부(200 vs AUTH_007 vs AUTH_006)만 검증.
  *
  * <p><b>중요</b>: 본 endpoint를 운영(src/main)으로 옮기지 말 것. 외부 노출 시 dead endpoint + 검증용 정보 노출 위험.
+ *
+ * <p><b>운영 노출 방어 (이중 안전)</b>:
+ * <ul>
+ *   <li>1차: src/test 위치 — Gradle bootJar가 운영 빌드에서 test scope 제외</li>
+ *   <li>2차: {@code @Profile("!prod")} — 운영 profile에서 빈 등록 차단 (local/test/default 활성)</li>
+ * </ul>
+ *
+ * <p><b>userId null 가드 미적용 사유</b>: SecurityConfig가 인증 미통과 시 EntryPoint에서 차단하므로
+ * fixture 메서드 진입 시점에는 userId가 항상 non-null. fixture 목적(role 매핑 검증)에 충실해 가드 생략.
+ * 운영 endpoint(UserMeController)는 동일 패턴 + {@code requireAuthenticated} 가드 유지.
  */
+@Profile("!prod") // 운영(prod) profile만 차단 — local/test/default에서 활성
 @RestController
 public class TestAuthFixtureController {
 
