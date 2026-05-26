@@ -10,6 +10,8 @@ import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import com.chunbaetour.domain.yeopjeon.entity.Wallet;
+import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,10 +56,14 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     private AccountRepository accountRepository;
 
     @Autowired
+    private WalletRepository walletRepository;
+
+    @Autowired
     private StringRedisTemplate redis;
 
     @AfterEach
     void cleanup() {
+        walletRepository.deleteAll();
         accountRepository.deleteAll();
         var refreshKeys = redis.keys("auth:refresh:*");
         if (!refreshKeys.isEmpty()) {
@@ -265,6 +271,63 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.nickname").value(NICKNAME))
                 .andExpect(jsonPath("$.data.language").value("ko"));
+    }
+
+    // ===== KAN-128 Epic A S3 — GET /users/me/home 통합 시나리오 =====
+
+    @Test
+    void get_me_home_returns_profile_and_wallet_balance() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        // wallet 명시 시드 (signup 후 WalletEventListener가 생성하지만 본 테스트는 직접 잔액 set)
+        Long userId = accountRepository.findByEmail(EMAIL).orElseThrow().getId();
+        Wallet existing = walletRepository.findByUserId(userId).orElseGet(() -> walletRepository.save(Wallet.create(userId)));
+        // balance 직접 주입 — domain credit은 양수만 받으므로 reflect로 set
+        try {
+            var f = Wallet.class.getDeclaredField("balance");
+            f.setAccessible(true);
+            f.set(existing, 12345L);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        walletRepository.save(existing);
+
+        mockMvc.perform(get("/api/v1/users/me/home")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                // profile 스키마 KAN-63과 일치
+                .andExpect(jsonPath("$.data.profile.userId").isNumber())
+                .andExpect(jsonPath("$.data.profile.email").value(EMAIL))
+                .andExpect(jsonPath("$.data.profile.nickname").value(NICKNAME))
+                .andExpect(jsonPath("$.data.profile.role").value("USER"))
+                .andExpect(jsonPath("$.data.profile.password").doesNotExist())
+                // wallet
+                .andExpect(jsonPath("$.data.wallet.balance").value(12345));
+    }
+
+    @Test
+    void get_me_home_without_wallet_returns_balance_zero_fallback() throws Exception {
+        // signup 직후 wallet 생성 이벤트가 아직 처리 안 됐다고 가정 — 명시적으로 wallet 삭제 후 호출
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        Long userId = accountRepository.findByEmail(EMAIL).orElseThrow().getId();
+        walletRepository.findByUserId(userId).ifPresent(walletRepository::delete);
+
+        mockMvc.perform(get("/api/v1/users/me/home")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.profile.nickname").value(NICKNAME))
+                .andExpect(jsonPath("$.data.wallet.balance").value(0));
+    }
+
+    @Test
+    void get_me_home_without_token_returns_401_AUTH_006() throws Exception {
+        mockMvc.perform(get("/api/v1/users/me/home"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
 
     private void signup(String email, String password, String nickname) throws Exception {
