@@ -119,6 +119,28 @@ class AdminMerchantApplicationServiceTest {
     }
 
     @Test
+    @DisplayName("승인 실패: 계정이 이미 MERCHANT 역할 → MERCHANT_005")
+    void approve_accountAlreadyMerchant_throws() {
+        MerchantApplication app = pendingApplication();
+        Account merchantAccount = (Account) ReflectionTestUtils.invokeMethod(
+                Account.class, "createForSeed",
+                "merchant@example.com", "hashed", "상인닉",
+                com.chunbaetour.domain.auth.Role.MERCHANT,
+                com.chunbaetour.domain.auth.AccountStatus.ACTIVE);
+        ReflectionTestUtils.setField(merchantAccount, "id", USER_ID);
+
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(merchantAccount));
+        given(shopRepository.existsByUserId(USER_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID.getMessage());
+
+        verify(shopRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("승인 실패: 이미 APPROVED 상태 → MERCHANT_005")
     void approve_alreadyApproved_throws() {
         MerchantApplication app = pendingApplication();
@@ -129,7 +151,7 @@ class AdminMerchantApplicationServiceTest {
         given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
         adminMerchantApplicationService.approve(APPLICATION_ID); // 첫 번째 승인
 
-        // 이미 APPROVED인 상태에서 다시 stub 세팅 — 순서 변경 시 NPE 방지
+        // 첫 번째 승인 후 application=APPROVED, account=MERCHANT — 두 번째 요청은 application.approve() 전에 role 선제 검증에서 차단
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
         given(shopRepository.existsByUserId(USER_ID)).willReturn(false);

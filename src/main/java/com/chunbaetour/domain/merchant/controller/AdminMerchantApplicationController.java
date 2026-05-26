@@ -31,7 +31,12 @@ public class AdminMerchantApplicationController {
 
     private final AdminMerchantApplicationService adminMerchantApplicationService;
 
-    /** 상인 신청 목록 조회 (cursor 페이징, status 필터) */
+    /**
+     * 상인 신청 목록 조회 (cursor 페이징, status 필터).
+     * status=PENDING/APPROVED/REJECTED 모두 허용 — 거절 이력 추적 및 감사로그 목적.
+     * 거절된 신청자 재신청 시 거절 사유 확인, 승인된 상인 중복 신청 감사에 활용.
+     * 기본값 PENDING.
+     */
     @GetMapping
     public ApiResponse<CursorPageResponse<MerchantApplicationDetailResponse>> getApplications(
             @RequestParam(required = false) String cursor,

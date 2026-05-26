@@ -9,11 +9,13 @@ import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
+import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
  * [락 순서 규칙] MerchantApplication → Account → Shop → Wallet (이 순서 고정, 역방향 금지).
  * Account에 SELECT FOR UPDATE를 추가할 경우 반드시 MerchantApplication 락 이후에 획득해야 데드락 방지.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -87,6 +90,11 @@ public class AdminMerchantApplicationService {
             throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
         }
 
+        // USER 이외의 role(MERCHANT/ADMIN)은 승격 불가 — entity 상태 변경 전 선제 검증
+        if (account.getRole() != Role.USER) {
+            throw new BusinessException(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID);
+        }
+
         // 선행 검증 통과 후 상태 전이 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
         application.approve();                                      // 신청 상태 PENDING → APPROVED
         account.promoteToMerchant();                                // 계정 역할 USER → MERCHANT
@@ -99,6 +107,7 @@ public class AdminMerchantApplicationService {
             if (msg != null && (msg.contains("uk_shops_user_id") || msg.contains("uk_shops_application_id"))) {
                 throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
             }
+            log.error("Shop 저장 중 예상치 못한 DB 제약 위반 발생. applicationId={}", application.getId(), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
 
