@@ -134,7 +134,7 @@ public class Shop extends BaseEntity {
     /**
      * 상인이 수정 가능한 필드 업데이트 (STORY-10).
      * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
-     * null = 수정 안 함, "" = 필드 비우기 (operatingHours/closedDays/description 한정).
+     * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.
      */
     public void update(ShopUpdateRequest request) {
         if (request.shopName() != null) this.shopName = request.shopName();
