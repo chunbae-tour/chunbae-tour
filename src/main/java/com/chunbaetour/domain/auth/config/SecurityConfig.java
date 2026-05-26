@@ -116,6 +116,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasRole("USER")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // 검색 관련 보호 API: 최근 검색어 저장/조회는 인증된 USER 전용 (조회 공개 API보다 먼저 선언)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/search").hasRole("USER")
+                        .requestMatchers("/api/v1/search/recent").hasRole("USER")
                         // 검색 조회 API는 와일드카드 대신 화이트리스트 방식으로 명시하여 권한 누수 방지
                         // 2-1 인기 검색어, 2-2 관광지 검색, 2-3 축제 검색, 2-4 자동완성
                         .requestMatchers(HttpMethod.GET, "/api/v1/search/popular", "/api/v1/search/places", "/api/v1/search/festivals", "/api/v1/search/suggest").permitAll()
