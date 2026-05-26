@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.auth;
 
+import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -45,6 +46,48 @@ public class UserMeService {
     public UserMeResponse getMe(long userId) {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+        return UserMeResponse.from(account);
+    }
+
+    /**
+     * 마이페이지 PATCH /users/me — partial update (Epic A S2, KAN-127).
+     *
+     * <p>흐름:
+     * <ol>
+     *   <li>request가 empty(모든 필드 null)면 현재 상태 그대로 응답 (불필요한 DB write 회피)</li>
+     *   <li>userId로 Account 조회 (탈퇴자는 SQLRestriction으로 자동 제외 → AUTH_006)</li>
+     *   <li>nickname이 있고 본인 외 중복이면 AUTH_009 거부</li>
+     *   <li>{@link Account#updateProfile}로 변경 — null 인자는 도메인 메서드가 무시</li>
+     *   <li>JPA dirty checking으로 자동 flush. 변경된 사용자 정보를 응답 DTO로 반환</li>
+     * </ol>
+     *
+     * <p><b>보안 회귀 가드</b>: userId는 SecurityContext에서 추출되어 호출자가 임의 변조 불가.
+     * PathVariable 미사용 → 다른 사용자 정보 변경 시도 원천 차단.
+     *
+     * <p>닉네임 중복 race 처리: existsByNicknameAndIdNot 체크와 dirty flush 사이에 동시 가입이 있으면
+     * DB unique constraint가 최종 차단 (DataIntegrityViolationException → GlobalExceptionHandler가 응답 변환).
+     * 본 서비스는 일반 case의 사전 검증만 책임.
+     *
+     * @param userId  SecurityContext userId (본인 외 변조 불가)
+     * @param request partial update 요청 (모든 필드 nullable)
+     * @return 갱신 후 사용자 정보 (KAN-63 응답 포맷 재사용)
+     */
+    @Transactional
+    public UserMeResponse updateMe(long userId, PatchUserMeRequest request) {
+        if (request.isEmpty()) {
+            // 모든 필드 null → noop. 현재 상태 그대로 응답 (idempotent + 빈 PATCH 응답 200 표준).
+            return getMe(userId);
+        }
+        Account account = accountRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+
+        if (request.nickname() != null
+                && accountRepository.existsByNicknameAndIdNot(request.nickname(), userId)) {
+            throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+
+        account.updateProfile(request.nickname(), request.language(), request.profileImageUrl());
+        // 트랜잭션 커밋 시점에 dirty checking으로 자동 update — 명시적 save 불필요.
         return UserMeResponse.from(account);
     }
 }

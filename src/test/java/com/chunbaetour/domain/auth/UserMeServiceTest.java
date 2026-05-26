@@ -2,8 +2,12 @@ package com.chunbaetour.domain.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
+import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -84,6 +88,94 @@ class UserMeServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED);
     }
+
+    // ===== KAN-127 Epic A S2 — PATCH /users/me =====
+
+    @Test
+    void updateMe_with_all_fields_null_returns_current_state_without_db_write() {
+        // PATCH partial update — 모든 필드 null이면 noop. 도메인 변경 없음 + 응답은 GET /me와 동일.
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+
+        UserMeResponse response = userMeService.updateMe(USER_ID, new PatchUserMeRequest(null, null, null));
+
+        assertThat(response.nickname()).isEqualTo(NICKNAME);
+        // 중복 체크는 nickname null이면 호출되지 않아야 (불필요한 query 회피)
+        verify(accountRepository, never()).existsByNicknameAndIdNot(any(String.class), any(Long.class));
+    }
+
+    @Test
+    void updateMe_with_only_nickname_updates_nickname_and_keeps_others() {
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(accountRepository.existsByNicknameAndIdNot("새닉네임", USER_ID)).willReturn(false);
+
+        UserMeResponse response = userMeService.updateMe(
+                USER_ID, new PatchUserMeRequest("새닉네임", null, null));
+
+        // nickname만 갱신
+        assertThat(response.nickname()).isEqualTo("새닉네임");
+        // language는 변경 안 됨 (Account 기본 "ko" 유지)
+        assertThat(response.language()).isEqualTo("ko");
+        // profileImageUrl도 변경 안 됨
+        assertThat(response.profileImageUrl()).isNull();
+    }
+
+    @Test
+    void updateMe_with_all_fields_updates_all() {
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(accountRepository.existsByNicknameAndIdNot("새닉네임", USER_ID)).willReturn(false);
+
+        UserMeResponse response = userMeService.updateMe(
+                USER_ID, new PatchUserMeRequest("새닉네임", "en", "https://example.com/avatar.png"));
+
+        assertThat(response.nickname()).isEqualTo("새닉네임");
+        assertThat(response.language()).isEqualTo("en");
+        assertThat(response.profileImageUrl()).isEqualTo("https://example.com/avatar.png");
+    }
+
+    @Test
+    void updateMe_with_duplicate_nickname_throws_AUTH_009() {
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        // 다른 사용자가 이미 점유 중
+        given(accountRepository.existsByNicknameAndIdNot("중복닉네임", USER_ID)).willReturn(true);
+
+        assertThatThrownBy(() -> userMeService.updateMe(
+                USER_ID, new PatchUserMeRequest("중복닉네임", null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_NICKNAME);
+
+        // 본인 nickname은 변경되지 않아야 함 (도메인 메서드 호출 전 차단)
+        assertThat(account.getNickname()).isEqualTo(NICKNAME);
+    }
+
+    @Test
+    void updateMe_with_same_own_nickname_does_NOT_trigger_duplicate_error() {
+        // 본인이 자기 자신 nickname 그대로 보내도 본인 제외 중복 체크가 false → 정상 통과.
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(accountRepository.existsByNicknameAndIdNot(NICKNAME, USER_ID)).willReturn(false);
+
+        UserMeResponse response = userMeService.updateMe(
+                USER_ID, new PatchUserMeRequest(NICKNAME, null, null));
+
+        assertThat(response.nickname()).isEqualTo(NICKNAME);
+    }
+
+    @Test
+    void updateMe_with_nonexistent_user_throws_AUTH_006() {
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userMeService.updateMe(
+                USER_ID, new PatchUserMeRequest("새닉네임", null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED);
+    }
+
 
     /**
      * 헬퍼: 영속 상태와 유사한 Account 생성. reflect로 id/createdAt 주입.
