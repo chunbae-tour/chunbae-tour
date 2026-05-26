@@ -48,7 +48,7 @@ class RecommendServiceTest {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         // ID 2, 1 순서로 캐시되어 있다고 가정 (정렬 테스트)
         when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
-                .thenReturn(Set.of("2", "1", "invalid_id")); // invalid_id는 무시되어야 함
+                .thenReturn(new java.util.LinkedHashSet<>(List.of("2", "1", "invalid_id"))); // invalid_id는 무시되어야 함
 
         Place mockPlace1 = mock(Place.class);
         lenient().when(mockPlace1.getId()).thenReturn(1L);

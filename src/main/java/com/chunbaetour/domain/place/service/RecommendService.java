@@ -68,10 +68,14 @@ public class RecommendService {
                         .collect(Collectors.toMap(Place::getId, Function.identity()));
             
                 // Redis 정렬 순서 유지
-                return ids.stream()
+                List<RecommendPlaceResponse> cachedResponses = ids.stream()
                         .filter(placeMap::containsKey)
                         .map(id -> RecommendPlaceResponse.from(placeMap.get(id)))
                         .collect(Collectors.toList());
+
+                if (!cachedResponses.isEmpty()) {
+                    return cachedResponses;
+                }
             }
         }
 
