@@ -99,6 +99,8 @@ public class SecurityConfig {
                         .access(new WebExpressionAuthorizationManager(
                                 "hasIpAddress('127.0.0.1') or hasIpAddress('::1')"))
                         .requestMatchers("/actuator/**").denyAll()
+                        // WebSocket 핸드셰이크 + SockJS 경로 — STOMP 레벨에서 JWT 인증 처리
+                        .requestMatchers("/ws-stomp/**").permitAll()
                         // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
                         .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
