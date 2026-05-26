@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -62,6 +63,12 @@ public class PlaceLikeService {
             "  return 0\n" +
             "end\n" +
             "return current";
+
+    private static final DefaultRedisScript<Long> REDIS_SCRIPT_INCR =
+            new DefaultRedisScript<>(SEED_AND_INCR_SCRIPT, Long.class);
+
+    private static final DefaultRedisScript<Long> REDIS_SCRIPT_DECR =
+            new DefaultRedisScript<>(SEED_AND_DECR_SCRIPT, Long.class);
 
     /**
      * 관광지 찜 추가
@@ -177,7 +184,7 @@ public class PlaceLikeService {
         try {
             String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
             stringRedisTemplate.execute(
-                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(SEED_AND_INCR_SCRIPT, Long.class),
+                    REDIS_SCRIPT_INCR,
                     java.util.Collections.singletonList(key),
                     String.valueOf(dbLikeCount)
             );
@@ -194,7 +201,7 @@ public class PlaceLikeService {
         try {
             String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
             stringRedisTemplate.execute(
-                    new org.springframework.data.redis.core.script.DefaultRedisScript<>(SEED_AND_DECR_SCRIPT, Long.class),
+                    REDIS_SCRIPT_DECR,
                     java.util.Collections.singletonList(key),
                     String.valueOf(dbLikeCount)
             );
