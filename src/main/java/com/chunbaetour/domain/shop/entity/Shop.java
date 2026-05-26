@@ -13,6 +13,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -95,6 +96,10 @@ public class Shop extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ShopStatus status;
+
+    // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
+    @Version
+    private Long version;
 
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,

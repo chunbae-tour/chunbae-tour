@@ -7,8 +7,8 @@ import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,7 +74,7 @@ public class ShopService {
             if (!node.isArray()) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
     }
