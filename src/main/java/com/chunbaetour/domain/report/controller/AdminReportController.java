@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.service.ReportService;
@@ -55,7 +56,7 @@ public class AdminReportController {
      * @param reportId 신고 ID
      */
     @GetMapping("/{reportId}")
-    public ApiResponse<ReportResponse> getReport(@PathVariable Long reportId) {
+    public ApiResponse<ReportDetailResponse> getReport(@PathVariable Long reportId) {
         return ApiResponse.success(reportService.getReport(reportId));
     }
 

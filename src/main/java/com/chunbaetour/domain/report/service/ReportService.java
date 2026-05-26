@@ -13,6 +13,7 @@ import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.entity.Report;
@@ -88,10 +89,11 @@ public class ReportService {
      * 관리자 신고 단건 상세 조회.
      * AdminReportController 전용 — SecurityConfig에서 ADMIN 역할 보장.
      */
-    public ReportResponse getReport(Long reportId) {
+    public ReportDetailResponse getReport(Long reportId) {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
-        return ReportResponse.of(report, resolveNickname(report.getReporterId()));
+        String targetContent = resolveTargetContent(report.getTargetType(), report.getTargetId());
+        return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()), targetContent);
     }
 
     /**
@@ -160,9 +162,9 @@ public class ReportService {
      * 가게 신고 처리 (MERCHANT 전용).
      * 콘텐츠 신고에 이 엔드포인트를 사용하면 REPORT_WRONG_ENDPOINT 에러.
      *
-     * @param reportId      처리할 신고 ID
-     * @param adminUsername 처리 관리자
-     * @param request       처리 요청 (HIDE_SHOP·REVOKE_MERCHANT·DISMISS, adminNote)
+     * @param reportId 처리할 신고 ID
+     * @param adminId  처리 관리자 (@AuthenticationPrincipal)
+     * @param request  처리 요청 (HIDE_SHOP·REVOKE_MERCHANT·DISMISS, adminNote)
      * @throws BusinessException REPORT_NOT_FOUND: 신고 없음
      * @throws BusinessException REPORT_ALREADY_RESOLVED: 이미 처리된 신고
      * @throws BusinessException REPORT_WRONG_ENDPOINT: 콘텐츠 신고에 이 엔드포인트 사용
@@ -278,6 +280,24 @@ public class ReportService {
     }
 
 
+
+    /**
+     * 신고 대상 콘텐츠 미리보기 텍스트 반환.
+     * POST: companion 우선 조회 → 없으면 free 조회. REVIEW: null(TODO). USER·MERCHANT: 닉네임.
+     */
+    private String resolveTargetContent(ReportTargetType targetType, Long targetId) {
+        return switch (targetType) {
+            case POST -> companionPostRepository.findById(targetId)
+                    .map(CompanionPost::getContent)
+                    .orElseGet(() -> freePostRepository.findById(targetId)
+                            .map(FreePost::getContent).orElse(null));
+            case COMMENT -> commentRepository.findById(targetId)
+                    .map(Comment::getContent).orElse(null);
+            case REVIEW -> null; // TODO: 리뷰 도메인 구현 후 연결
+            case USER, MERCHANT -> accountRepository.findById(targetId)
+                    .map(Account::getNickname).orElse(null);
+        };
+    }
 
     /**
      * reporterId → 닉네임. 탈퇴 계정이면 "탈퇴한 사용자" 반환.
