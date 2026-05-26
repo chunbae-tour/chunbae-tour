@@ -3,6 +3,7 @@ package com.chunbaetour.domain.common.ratelimit;
 import com.chunbaetour.domain.auth.security.SecurityResponseWriter;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitProperties.EndpointPolicy;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,9 +55,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** 본 요청 처리 후 남은 허용 횟수. */
     private static final String HEADER_RATE_LIMIT_REMAINING = "X-RateLimit-Remaining";
 
+    /** KAN-104 메트릭 — endpoint별 allowed/denied 빈도. 카탈로그({@code docs/operations/metrics-catalog.md}) 동기. */
+    private static final String METRIC_DECISION = "ratelimit.decision.total";
+
     private final RateLimitProperties properties;
     private final RateLimiter rateLimiter;
     private final SecurityResponseWriter responseWriter;
+    private final MeterRegistry meterRegistry;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -93,6 +98,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         if (decision.allowed()) {
             // 허용 — 안내 헤더 첨부 후 통과. 클라이언트가 한도 가까워졌음을 미리 감지 가능
+            meterRegistry.counter(METRIC_DECISION, "endpoint", endpoint.id(), "decision", "allowed").increment();
             response.setHeader(HEADER_RATE_LIMIT_LIMIT, String.valueOf(endpoint.limit()));
             response.setHeader(HEADER_RATE_LIMIT_REMAINING, String.valueOf(decision.remaining()));
             chain.doFilter(request, response);
@@ -101,6 +107,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         // 거부 — AUTH_014 + Retry-After + 한도 헤더
         // PII 노출 방지: 키 값 자체는 로그 미포함 (endpoint id만 운영 식별용)
+        meterRegistry.counter(METRIC_DECISION, "endpoint", endpoint.id(), "decision", "denied").increment();
         log.warn("Rate limit exceeded. endpoint={}, ip={}", endpoint.id(), maskIp(clientIp));
         Map<String, String> headers = new LinkedHashMap<>();
         // Redis TTL race 등으로 retryAfter가 0초가 될 수 있어도 HTTP Retry-After 헤더는 최소 1초로 응답.
