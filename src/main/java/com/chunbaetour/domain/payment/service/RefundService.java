@@ -81,7 +81,7 @@ public class RefundService {
         // 5. 사용자 지갑 조회 (요청 시점 잔액 1차 검증용)
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
-        // 엽전을 일부라도 사용했으면 balance < amount → 환불 불가
+        // 현재 총 잔액이 환불 금액 미만이면 거부 — 충전 엽전을 일부라도 소비했으면 balance < amount
         // 2차 검증은 관리자 승인 시 WalletService.reclaimForRefund()에서 비관적 락 + 재확인
         if (wallet.getBalance() < order.getAmount()) {
             throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
@@ -102,9 +102,14 @@ public class RefundService {
             return RefundResponse.from(refund);
         } catch (DataIntegrityViolationException e) {
             // UK 제약(uk_refunds_payment_order_id) 위반 시 동시 중복 요청 → DUPLICATE_REFUND_REQUEST로 변환
-            if (e.getCause() instanceof ConstraintViolationException cve
-                    && UK_REFUNDS_PAYMENT_ORDER_ID.equalsIgnoreCase(cve.getConstraintName())) {
-                throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+            // Hibernate/드라이버 버전에 따라 cause depth가 달라질 수 있어 전체 chain 탐색
+            Throwable cause = e;
+            while (cause != null) {
+                if (cause instanceof ConstraintViolationException cve
+                        && UK_REFUNDS_PAYMENT_ORDER_ID.equalsIgnoreCase(cve.getConstraintName())) {
+                    throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+                }
+                cause = cause.getCause();
             }
             // UK 위반 아닌 그 외 DB 예외는 그대로 전파
             throw e;
@@ -114,7 +119,8 @@ public class RefundService {
     /**
      * 사용자 환불 내역 cursor 페이징 조회 (KAN-115).
      * status 파라미터 생략 시 전체 상태 조회.
-     * cursor 형식: id(Long)를 Base64URL 인코딩 (padding 없음).
+     * cursor는 Refund.id를 Base64URL 인코딩한 값이며, id DESC 기준으로 조회한다.
+     * 클라이언트는 nextCursor를 다음 요청의 cursor로 그대로 전달하면 된다.
      */
     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
             Long userId, RefundStatus status, String cursor, int size) {

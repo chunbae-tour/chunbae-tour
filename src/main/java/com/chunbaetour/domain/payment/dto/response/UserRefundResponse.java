@@ -4,7 +4,11 @@ import com.chunbaetour.domain.payment.entity.Refund;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import java.time.LocalDateTime;
 
-/** 사용자 환불 내역 조회 응답 DTO — GET /payments/refunds. RefundDetailResponse(관리자용, userId 포함)와 구분. */
+/**
+ * 사용자 환불 내역 조회 응답 DTO — GET /payments/refunds.
+ * 관리자용 RefundDetailResponse(userId·관리자 처리 필드 포함)와 달리 사용자 노출 최소 필드만 포함.
+ * rejectReason은 REJECTED 상태일 때만 값 존재, 나머지 null — 불필요한 정보 노출 방지.
+ */
 public record UserRefundResponse(
         Long refundId,
         Long paymentOrderId,
