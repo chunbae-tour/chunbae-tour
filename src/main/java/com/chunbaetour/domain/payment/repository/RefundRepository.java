@@ -25,11 +25,18 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     @Query("SELECT r FROM Refund r WHERE r.id = :id")
     Optional<Refund> findByIdWithLock(@Param("id") Long id);
 
-    /** 관리자 환불 목록 cursor 첫 페이지 (cursor 없을 때) */
-    @Query("SELECT r FROM Refund r ORDER BY r.id DESC")
-    List<Refund> findAllOrderByIdDesc(Pageable pageable);
+    /** 관리자 환불 목록 — cursorId null이면 전체 첫 페이지, 값 있으면 해당 id 이전 페이지 */
+    @Query("SELECT r FROM Refund r WHERE (:cursorId IS NULL OR r.id < :cursorId) ORDER BY r.id DESC")
+    List<Refund> findWithCursor(@Param("cursorId") Long cursorId, Pageable pageable);
 
-    /** 관리자 환불 목록 cursor 다음 페이지 */
-    @Query("SELECT r FROM Refund r WHERE r.id < :cursorId ORDER BY r.id DESC")
-    List<Refund> findByIdLessThanOrderByIdDesc(@Param("cursorId") Long cursorId, Pageable pageable);
+    /** 사용자 환불 목록 — status/cursor 모두 선택적 (null이면 조건 미적용) */
+    @Query("SELECT r FROM Refund r WHERE r.userId = :userId " +
+           "AND (:status IS NULL OR r.status = :status) " +
+           "AND (:cursorId IS NULL OR r.id < :cursorId) " +
+           "ORDER BY r.id DESC")
+    List<Refund> findByUserIdWithFilter(
+            @Param("userId") Long userId,
+            @Param("status") RefundStatus status,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable);
 }
