@@ -16,6 +16,7 @@ import com.chunbaetour.domain.chat.repository.MessageRepository;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.time.LocalDateTime;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import java.util.Optional;
@@ -64,6 +65,7 @@ class ChatMessageServiceTest {
         given(saved.getSenderId()).willReturn(USER_ID);
         given(saved.getMessageType()).willReturn(MessageType.TEXT);
         given(saved.getContent()).willReturn("안녕하세요");
+        given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 26, 12, 0));
         given(messageRepository.save(any())).willReturn(saved);
 
         chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("안녕하세요"));
