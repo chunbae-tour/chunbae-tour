@@ -11,6 +11,15 @@ public final class PlaceRedisConstants {
     /** 관광지 조회수 카운터 키 접두사 */
     public static final String PLACE_VIEW_COUNT_PREFIX = "place:view:";
 
+    /** 인기 관광지 추천 리스트 키 (ZSet) */
+    public static final String RECOMMEND_POPULAR_KEY = "recommend:popular";
+
+    /** 위치 기반 추천 관광지 데이터 키 (Geo) */
+    public static final String RECOMMEND_GEO_KEY = "recommend:geo";
+
+    /** 추천 데이터 캐시 TTL (기본 1시간) */
+    public static final long RECOMMEND_CACHE_TTL_MINUTES = 60;
+
     private PlaceRedisConstants() {
         // 인스턴스화 방지
     }
