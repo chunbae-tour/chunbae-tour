@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -110,6 +111,11 @@ public class QrPayService {
             totalAmount += menu.getPrice() * item.quantity();
         }
 
+        // 오버플로우 방어 — price * quantity가 long 범위 초과 시 음수로 wrap-around
+        if (totalAmount < 0) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
         // totalAmount 0원 차단 — 메뉴 가격 데이터 오류(price=0)가 있어도 결제 생성 방지
         if (totalAmount == 0) {
             throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
@@ -142,7 +148,12 @@ public class QrPayService {
                 menuItemsJson,
                 expiredAt
         );
-        qrPayRequestRepository.save(qrPayRequest);
+        // pending_key unique 제약 위반 시 → 동시 요청 레이스 케이스, DUPLICATE로 변환
+        try {
+            qrPayRequestRepository.saveAndFlush(qrPayRequest);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
+        }
 
         return new QrPayCreateResponse(
                 qrPayRequest.getPayRequestId(),

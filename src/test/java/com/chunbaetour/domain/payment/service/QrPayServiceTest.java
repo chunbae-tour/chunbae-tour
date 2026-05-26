@@ -119,8 +119,9 @@ class QrPayServiceTest {
         Wallet wallet = createWallet(50_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1, MENU_ID_2))).willReturn(List.of(menu1, menu2));
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
-        given(qrPayRequestRepository.save(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
+        given(qrPayRequestRepository.saveAndFlush(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
 
         // when
         QrPayCreateResponse response = qrPayService.createQrPayRequest(USER_ID, request);
@@ -150,8 +151,9 @@ class QrPayServiceTest {
         Wallet wallet = createWallet(50_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
-        given(qrPayRequestRepository.save(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
+        given(qrPayRequestRepository.saveAndFlush(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
 
         // when
         QrPayCreateResponse response = qrPayService.createQrPayRequest(USER_ID, request);
@@ -365,6 +367,29 @@ class QrPayServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — price * quantity 오버플로우 → INVALID_REQUEST")
+    void createQrPayRequest_totalAmountOverflow_throws() {
+        // given — Long.MAX_VALUE 가격 메뉴 2개 → 누적 시 long wrap-around → 음수
+        Shop shop = createActiveShop();
+        Menu hugeMenu1 = createMenu(MENU_ID_1, SHOP_ID, "비싼메뉴1", Long.MAX_VALUE / 2 + 1, true);
+        Menu hugeMenu2 = createMenu(MENU_ID_2, SHOP_ID, "비싼메뉴2", Long.MAX_VALUE / 2 + 1, true);
+
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findAllById(List.of(MENU_ID_1, MENU_ID_2))).willReturn(List.of(hugeMenu1, hugeMenu2));
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 1),
+                new QrPayItemRequest(MENU_ID_2, 1)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test

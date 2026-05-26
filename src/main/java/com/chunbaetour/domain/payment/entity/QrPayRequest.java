@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.payment.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -62,6 +64,11 @@ public class QrPayRequest extends BaseEntity {
     @Column(name = "expired_at", nullable = false)
     private LocalDateTime expiredAt;
 
+    // PENDING 상태일 때만 "{userId}_{shopId}" 값을 가짐 — DB unique 제약으로 동시 PENDING 중복 방지
+    // 상태 전이(complete/reject/expire) 시 null 로 초기화 → null 은 unique 제약 대상 외
+    @Column(name = "pending_key", unique = true)
+    private String pendingKey;
+
     @Builder
     private QrPayRequest(String payRequestId, Long userId, Long shopId, Long amount,
             String menuItems, LocalDateTime expiredAt) {
@@ -72,6 +79,7 @@ public class QrPayRequest extends BaseEntity {
         this.menuItems = menuItems;
         this.status = QrPayStatus.PENDING;
         this.expiredAt = expiredAt;
+        this.pendingKey = userId + "_" + shopId;
     }
 
     public static QrPayRequest create(String payRequestId, Long userId, Long shopId, Long amount,
@@ -88,17 +96,29 @@ public class QrPayRequest extends BaseEntity {
 
     /** 상인 승인 — STORY-14에서 호출 */
     public void complete() {
+        if (this.status != QrPayStatus.PENDING) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
         this.status = QrPayStatus.COMPLETED;
+        this.pendingKey = null;
     }
 
     /** 상인 거절 — STORY-14에서 호출 */
     public void reject(String reason) {
+        if (this.status != QrPayStatus.PENDING) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
         this.status = QrPayStatus.REJECTED;
         this.rejectReason = reason;
+        this.pendingKey = null;
     }
 
     /** 5분 타임아웃 만료 — STORY-15 스케줄러에서 호출 */
     public void expire() {
+        if (this.status != QrPayStatus.PENDING) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
         this.status = QrPayStatus.EXPIRED;
+        this.pendingKey = null;
     }
 }
