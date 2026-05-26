@@ -188,8 +188,8 @@ class ChatRoomServiceTest {
     }
 
     @Test
-    void getMembers_accountMissing_throws_USER_NOT_FOUND() {
-        // 탈퇴 등으로 Account가 삭제됐으나 ChatRoomMember 레코드가 남은 경우 — 데이터 정합성 오류
+    void getMembers_deletedAccount_returnsFallback() {
+        // 탈퇴 계정(Account 삭제)은 USER_NOT_FOUND 대신 "탈퇴한 사용자" fallback으로 반환
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         ChatRoomMember member1 = mock(ChatRoomMember.class);
         given(member1.getUserId()).willReturn(USER_ID);
@@ -198,17 +198,25 @@ class ChatRoomServiceTest {
                 .willReturn(Optional.of(member1));
         ChatRoomMember member2 = mock(ChatRoomMember.class);
         given(member2.getUserId()).willReturn(2L);
+        given(member2.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(member2.getCreatedAt()).willReturn(LocalDateTime.of(2025, 1, 2, 0, 0));
         given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByCreatedAtAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of(member1, member2));
         Account account = mock(Account.class);
         given(account.getId()).willReturn(USER_ID);
-        // member2의 Account 누락 — findAllById가 1건만 반환
+        given(account.getNickname()).willReturn("여행자");
+        given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
+        given(account.getCompanionScore()).willReturn(4.5f);
+        // member2의 Account 누락 — findAllById가 1건만 반환 (탈퇴 계정 시나리오)
         given(accountRepository.findAllById(any())).willReturn(List.of(account));
 
-        assertThatThrownBy(() -> chatRoomService.getMembers(USER_ID, ROOM_ID))
-                .isInstanceOf(BusinessException.class)
-                .extracting(this::extractErrorCode)
-                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        List<ChatRoomMemberResponse> result = chatRoomService.getMembers(USER_ID, ROOM_ID);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(1).userId()).isEqualTo(2L);
+        assertThat(result.get(1).nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(result.get(1).profileImageUrl()).isNull();
+        assertThat(result.get(1).companionScore()).isEqualTo(0f);
     }
 
     // ===== decodeCursor — getMyRooms를 통해 간접 검증 =====
