@@ -36,7 +36,7 @@ public class ChatRedisPubSubService {
         } catch (JacksonException e) {
             // afterCommit 컨텍스트라 throw해도 클라이언트 도달 불가 — 메트릭 알람으로 처리
             log.error("ChatMessageResponse 직렬화 실패. chatRoomId={}", chatRoomId, e);
-            meterRegistry.counter(METRIC_SERIALIZE_FAILURE, "chatRoomId", String.valueOf(chatRoomId)).increment();
+            meterRegistry.counter(METRIC_SERIALIZE_FAILURE).increment();
         }
     }
 
@@ -56,7 +56,7 @@ public class ChatRedisPubSubService {
         } catch (Exception e) {
             // STOMP 브로드캐스트 실패 — warn과 달리 error로 운영 알람 대상
             log.error("STOMP 브로드캐스트 실패. chatRoomId={}", chatRoomId, e);
-            meterRegistry.counter(METRIC_BROADCAST_FAILURE, "chatRoomId", chatRoomId).increment();
+            meterRegistry.counter(METRIC_BROADCAST_FAILURE).increment();
         }
     }
 }
