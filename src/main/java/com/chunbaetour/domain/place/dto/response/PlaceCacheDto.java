@@ -47,4 +47,30 @@ public record PlaceCacheDto(
                 place.getLikeCount()
         );
     }
+
+    /**
+     * Redis 카운터 likeCount 오버라이드용 팩토리.
+     * SA 설계: places.like_count는 배치 동기화 전까지 Redis 값이 원천.
+     *
+     * @param likeCount Redis place:like:{placeId} 카운터 값 (없으면 DB 값)
+     */
+    public static PlaceCacheDto of(Place place, List<String> imageUrls, int likeCount) {
+        return new PlaceCacheDto(
+                place.getId(),
+                place.getName(),
+                place.getDescription(),
+                place.getCategory(),
+                place.getAddress(),
+                place.getLat(),
+                place.getLng(),
+                imageUrls,
+                place.getOperatingHours(),
+                place.getClosedDays(),
+                place.getAdmissionFee(),
+                place.getPhone(),
+                place.getRating(),
+                place.getReviewCount(),
+                likeCount
+        );
+    }
 }
