@@ -16,14 +16,17 @@ public record ChatMessageResponse(
         String content,
         LocalDateTime sentAt
 ) {
-    // 저장 후 즉시 브로드캐스트 — sentAt은 DB 저장 시점 기준
+    // sender null: senderId != null → 탈퇴 계정 fallback, senderId == null → SYSTEM 메시지
     public static ChatMessageResponse from(Message message, Account sender) {
+        String nickname = sender != null ? sender.getNickname()
+                : (message.getSenderId() != null ? "탈퇴한 사용자" : null);
+        String profileImageUrl = sender != null ? sender.getProfileImageUrl() : null;
         return new ChatMessageResponse(
                 message.getId(),
                 message.getChatRoomId(),
                 message.getSenderId(),
-                sender.getNickname(),
-                sender.getProfileImageUrl(),
+                nickname,
+                profileImageUrl,
                 message.getMessageType(),
                 message.getContent(),
                 message.getCreatedAt()

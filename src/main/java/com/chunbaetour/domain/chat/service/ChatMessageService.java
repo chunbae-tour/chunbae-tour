@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.entity.Message;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
+import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.MessageRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.MessageType;
@@ -14,9 +15,16 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimitPolicy;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +38,7 @@ public class ChatMessageService {
     private static final List<ChatMemberState> ACTIVE_STATES =
             List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
 
+    private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final AccountRepository accountRepository;
     private final MessageRepository messageRepository;
@@ -65,5 +74,45 @@ public class ChatMessageService {
 
         Message saved = messageRepository.save(message);
         chatRedisPubSubService.publish(chatRoomId, ChatMessageResponse.from(saved, sender));
+    }
+
+    // 메시지 내역 조회 — ACTIVE 멤버만 접근, id DESC 커서 페이징, N+1 방지: senderId 일괄 조회
+    @Transactional(readOnly = true)
+    public CursorPageResponse<ChatMessageResponse> getMessages(Long userId, Long roomId, String cursor, int size) {
+        if (!chatRoomRepository.existsById(roomId)) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
+        }
+
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
+                .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+
+        Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : Long.MAX_VALUE;
+
+        List<Message> messages = messageRepository.findWithCursor(
+                roomId, cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = messages.size() > size;
+        List<Message> page = hasNext ? messages.subList(0, size) : messages;
+
+        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
+
+        // senderId null(SYSTEM 메시지) 제외 후 일괄 조회 — 탈퇴 계정은 from()에서 fallback 처리
+        List<Long> senderIds = page.stream()
+                .map(Message::getSenderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Account> accountMap = accountRepository.findAllById(senderIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+        return new CursorPageResponse<>(
+                page.stream()
+                        .map(m -> ChatMessageResponse.from(m, accountMap.get(m.getSenderId())))
+                        .toList(),
+                nextCursor,
+                hasNext,
+                size
+        );
     }
 }

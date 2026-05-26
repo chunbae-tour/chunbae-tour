@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.chat.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -10,14 +11,19 @@ import static org.mockito.Mockito.mock;
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
+import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.entity.Message;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
+import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.MessageRepository;
+import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +33,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class ChatMessageServiceTest {
+
+    @Mock
+    private ChatRoomRepository chatRoomRepository;
 
     @Mock
     private ChatRoomMemberRepository chatRoomMemberRepository;
@@ -127,5 +136,108 @@ class ChatMessageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MESSAGE_TOO_LONG);
+    }
+
+    // ===== getMessages =====
+
+    @Test
+    void getMessages_success_returns_page_with_account_info() {
+        // ACTIVE 멤버 → 메시지 목록 반환, Account 정보 포함
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message msg = mock(Message.class);
+        given(msg.getId()).willReturn(10L);
+        given(msg.getChatRoomId()).willReturn(ROOM_ID);
+        given(msg.getSenderId()).willReturn(USER_ID);
+        given(msg.getMessageType()).willReturn(MessageType.TEXT);
+        given(msg.getContent()).willReturn("안녕");
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(msg));
+        Account account = mock(Account.class);
+        given(account.getId()).willReturn(USER_ID);
+        given(account.getNickname()).willReturn("여행자");
+        given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of(account));
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).chatRoomId()).isEqualTo(ROOM_ID);
+        assertThat(result.content().get(0).senderNickname()).isEqualTo("여행자");
+        assertThat(result.hasNext()).isFalse();
+    }
+
+    @Test
+    void getMessages_hasNext_true_when_more_exist() {
+        // size=2, 메시지 3개 반환 → hasNext=true, nextCursor 존재
+        // m3는 page에 포함 안 되므로 stub 없이 단순 mock
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message m1 = stubMessage(3L), m2 = stubMessage(2L), m3 = mock(Message.class);
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(m1, m2, m3));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 2);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    void getMessages_roomNotFound_throws_CHAT_ROOM_NOT_FOUND() {
+        // 존재하지 않는 채팅방 → CHAT_ROOM_NOT_FOUND
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(false);
+
+        assertThatThrownBy(() -> chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    void getMessages_notMember_throws_CHAT_NOT_JOINED() {
+        // 비참여자 접근 → CHAT_NOT_JOINED
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
+    }
+
+    @Test
+    void getMessages_deletedSender_returnsFallbackNickname() {
+        // Account 없는 senderId → "탈퇴한 사용자" fallback
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message msg = stubMessage(5L);
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(msg));
+        // Account 조회 결과 없음 — 탈퇴 계정 시나리오
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
+
+        assertThat(result.content().get(0).senderNickname()).isEqualTo("탈퇴한 사용자");
+    }
+
+    private Message stubMessage(Long id) {
+        Message msg = mock(Message.class);
+        given(msg.getId()).willReturn(id);
+        given(msg.getChatRoomId()).willReturn(ROOM_ID);
+        given(msg.getSenderId()).willReturn(USER_ID);
+        given(msg.getMessageType()).willReturn(MessageType.TEXT);
+        given(msg.getContent()).willReturn("메시지" + id);
+        return msg;
     }
 }
