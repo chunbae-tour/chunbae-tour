@@ -3,6 +3,7 @@ package com.chunbaetour.domain.chat.service;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -19,12 +20,14 @@ public class ChatRedisPubSubService {
 
     private static final String CHANNEL_PREFIX = "chat:";
     private static final String STOMP_TOPIC_PREFIX = "/sub/chat/rooms/";
+    private static final String METRIC_BROADCAST_FAILURE = "chat.broadcast.failure.total";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     // SimpMessagingTemplate은 WebSocketConfig 초기화 이후 준비됨 — 순환 의존성 방지
     @Lazy
     private final SimpMessagingTemplate messagingTemplate;
+    private final MeterRegistry meterRegistry;
 
     // 메시지 저장 후 Redis 채널 발행 — 모든 서버 인스턴스가 구독 중
     public void publish(Long chatRoomId, ChatMessageResponse response) {
@@ -52,6 +55,7 @@ public class ChatRedisPubSubService {
         } catch (Exception e) {
             // STOMP 브로드캐스트 실패 — warn과 달리 error로 운영 알람 대상
             log.error("STOMP 브로드캐스트 실패. chatRoomId={}", chatRoomId, e);
+            meterRegistry.counter(METRIC_BROADCAST_FAILURE, "chatRoomId", chatRoomId).increment();
         }
     }
 }
