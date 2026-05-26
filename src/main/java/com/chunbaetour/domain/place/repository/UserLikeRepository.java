@@ -25,4 +25,11 @@ public interface UserLikeRepository extends JpaRepository<UserLike, Long> {
 
     /** 마이페이지 연동용 (3-3): 사용자가 찜한 장소 목록 페이징 조회 */
     Page<UserLike> findByUserId(Long userId, Pageable pageable);
+
+    /** 
+     * 마이페이지 연동용 (3-3): 사용자가 찜한 '활성화된' 관광지 목록 페이징 조회 
+     * N+1 문제를 방지하기 위해 @EntityGraph로 Place를 Fetch Join 처리합니다.
+     */
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = "place")
+    Page<UserLike> findByUserIdAndPlace_Status(Long userId, com.chunbaetour.domain.place.type.PlaceStatus status, Pageable pageable);
 }

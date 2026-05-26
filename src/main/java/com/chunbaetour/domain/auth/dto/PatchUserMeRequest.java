@@ -22,12 +22,13 @@ import jakarta.validation.constraints.Size;
  *                        unique 검증은 서비스 레이어에서 본인 제외 중복 체크로 보강.
  * @param language        새 언어 코드. ISO 639-1 화이트리스트 (현재 ko/en/ja 허용).
  *                        Pattern 정규식으로 형식 + 길이 1차 차단.
- * @param profileImageUrl 새 프로필 이미지 URL. http/https 스킴 + max 500자.
- *                        null이면 변경 안 함 (이미지 제거 요청은 별도 정책 — 빈 문자열 vs null 구분 필요 시 후속).
+ * @param profileImageUrl 새 프로필 이미지 URL. http/https 스킴 + 공백 불가 + max 500자.
+ *                        null이면 변경 안 함. 빈 문자열은 @Pattern 매칭 실패로 400 응답.
+ *                        <b>이미지 삭제는 본 endpoint 미지원</b> — 별도 endpoint(예: DELETE /users/me/profile-image)
+ *                        또는 sentinel 값 정책이 별도 PRD에서 결정되면 후속 슬라이스로 추가.
  */
 public record PatchUserMeRequest(
 
-        @Size(min = 2, max = 20)
         @Pattern(regexp = "^[\\p{L}\\p{N}_-]{2,20}$",
                 message = "닉네임은 한글/영문/숫자/_/-만 가능하며 2~20자여야 합니다.")
         String nickname,
@@ -37,8 +38,8 @@ public record PatchUserMeRequest(
         String language,
 
         @Size(max = 500)
-        @Pattern(regexp = "^https?://.+",
-                message = "profileImageUrl은 http:// 또는 https://로 시작하는 URL이어야 합니다.")
+        @Pattern(regexp = "^https?://\\S+$",
+                message = "profileImageUrl은 http:// 또는 https://로 시작하는 URL이어야 합니다 (공백 불가).")
         String profileImageUrl
 ) {
 

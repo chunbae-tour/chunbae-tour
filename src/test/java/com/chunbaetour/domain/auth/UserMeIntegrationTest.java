@@ -159,7 +159,9 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.nickname").value("부분변경"))
-                .andExpect(jsonPath("$.data.language").value("ko"));  // 변경 안 됨
+                .andExpect(jsonPath("$.data.language").value("ko"))  // 변경 안 됨
+                // 보안 회귀 방지: PATCH 응답에도 password 미노출 (일관성 강화)
+                .andExpect(jsonPath("$.data.password").doesNotExist());
     }
 
     @Test
@@ -223,7 +225,8 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
@@ -238,7 +241,8 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
@@ -253,7 +257,8 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
