@@ -179,19 +179,22 @@ public class PlaceLikeService {
     }
 
     /**
-     * 마이페이지 연동 (PHASE 3-3): 사용자가 찜한 관광지 목록 페이징 조회.
+     * 마이페이지 연동 (PHASE 3-3): 사용자가 찜한 '활성화된(ACTIVE)' 관광지 목록 페이징 조회.
      * 다른 도메인(예: User/Auth)에서 GET /users/me/likes 구현 시 호출할 수 있는 지원 메서드입니다.
      *
-     * @param userId   사용자 ID
+     * <p>호출자(컨트롤러)는 @Min(1) @Max(100) 등으로 size 가드를 적용할 것을 강력히 권장합니다.
+     * (본 서비스 메서드 내부에도 100을 초과하는 요청에 대한 1차 안전망이 있습니다.)
+     *
+     * @param userId   사용자 ID (Spring Security 인증 객체 기반이므로 null이 아님이 보장됨)
      * @param pageable 페이징 정보 (Spring Data Pageable)
-     * @return 찜한 관광지 요약 정보 페이지
+     * @return 찜한 활성 관광지 요약 정보 페이지
      */
     @Transactional(readOnly = true)
     public Page<UserLikedPlaceResponse> getUserLikedPlaces(Long userId, Pageable pageable) {
-        if (userId == null) {
-            throw new IllegalArgumentException("userId must not be null");
+        if (pageable.getPageSize() > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-        return userLikeRepository.findByUserId(userId, pageable)
+        return userLikeRepository.findByUserIdAndPlace_Status(userId, PlaceStatus.ACTIVE, pageable)
                 .map(UserLikedPlaceResponse::from);
     }
 
