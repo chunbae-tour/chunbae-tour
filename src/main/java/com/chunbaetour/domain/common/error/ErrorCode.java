@@ -115,8 +115,7 @@ public enum ErrorCode {
     SHOP_UPDATE_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_002", "본인 가게 정보만 수정할 수 있습니다."),
     SHOP_ALREADY_EXISTS(HttpStatus.CONFLICT,                "SHOP_003", "이미 등록된 가게가 있습니다."),
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
-    INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
-    SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다."),
+    SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게는 수정할 수 없습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
