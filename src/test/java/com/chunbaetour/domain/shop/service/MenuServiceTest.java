@@ -204,6 +204,22 @@ class MenuServiceTest {
                 .isEqualTo(ErrorCode.MENU_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("메뉴 수정 — SUSPENDED 가게 → SHOP_INACTIVE")
+    void updateMenu_shopInactive_throws() {
+        // given
+        Shop shop = mock(Shop.class);
+        MenuUpdateRequest request = new MenuUpdateRequest("새이름", null, null, null, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
+
+        // then
+        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
     // ── DELETE /merchants/me/shop/menus/{menuId} ───────────────────────────
 
     @Test
@@ -222,6 +238,21 @@ class MenuServiceTest {
 
         // then — soft delete: deletedAt 설정 확인
         assertThat(menu.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("메뉴 삭제 — SUSPENDED 가게 → SHOP_INACTIVE")
+    void deleteMenu_shopInactive_throws() {
+        // given
+        Shop shop = mock(Shop.class);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
+
+        // then
+        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, MENU_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
     }
 
     @Test
