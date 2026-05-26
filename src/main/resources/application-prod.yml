@@ -30,3 +30,14 @@ cors:
 # 정책 값은 base application.yml 기본값 사용. 변경 필요 시 운영 yml에 endpoints 블록 오버라이드.
 ratelimit:
   enabled: true
+
+# 운영: Actuator(특히 /actuator/prometheus)는 main 포트와 분리해 외부 LB가 접근 못하도록 격리한다.
+# - port 9090: main 포트(8080)와 다른 포트로 binding → LB는 8080만 노출
+# - address 127.0.0.1: loopback에만 binding → 외부 IP에서 도달 불가
+# Prometheus scraper는 같은 호스트(sidecar) 또는 SSH 터널/VPN을 통해서만 접근 가능.
+# 운영 인프라(별도 호스트의 Prometheus 클러스터)에서 직접 scrape 필요해지면 address를 VPC 내부 IP로 조정.
+# release blocker #149.
+management:
+  server:
+    port: 9090
+    address: 127.0.0.1

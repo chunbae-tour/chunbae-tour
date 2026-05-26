@@ -9,15 +9,22 @@
 |---|---|---|
 | `/actuator/health` | permitAll | LB health check |
 | `/actuator/info` | permitAll | 빌드/배포 정보 |
-| `/actuator/prometheus` | permitAll (prod는 후속 IP allowlist 필수) | Prometheus scrape |
+| `/actuator/prometheus` | IP allowlist (loopback only) + 운영은 별도 management port | Prometheus scrape |
 | `/actuator/**` (그 외) | denyAll | env/beans/mappings 등 정보 노출 차단 |
 
-**운영 배포 전 필수 정비 (release blocker #149에서 추적)**: `/actuator/prometheus` IP allowlist. 옵션:
-1. Spring Security `hasIpAddress` 매핑 (운영 모니터링 인스턴스 IP만 허용)
-2. `management.server.port` 분리 (예: 8081) → LB에서 외부 노출 안 함
-3. ECS Task에서 별도 sidecar로 분리
+**`/actuator/prometheus` 운영 보호 정책 (#149 해결)**:
 
-본 PR(KAN-104)에서는 hook만 마련. 실제 정책은 인프라 결정 의존.
+이중 방어 적용:
+
+1. **`SecurityConfig` IP allowlist (코드 단)**: `hasIpAddress('127.0.0.1') or hasIpAddress('::1')`. 외부 IP 호출 시 403.
+2. **`application-prod.yml` management port 분리 (운영 단)**: `management.server.port: 9090` + `address: 127.0.0.1`. main 포트(8080)에서는 actuator 경로 자체가 존재하지 않음. 9090은 loopback에만 binding되어 외부 도달 불가.
+
+**Prometheus scraper 접근 방식 (운영)**:
+- 같은 호스트의 sidecar 컨테이너
+- SSH 터널 / VPN을 통한 :9090 접근
+- 별도 호스트 클러스터 사용 시 `application-prod.yml`의 `address`를 VPC 내부 IP로 조정 + SecurityConfig IP allowlist에 해당 CIDR 추가
+
+**로컬/테스트 환경**: management port 분리 미적용. localhost(:8080)에서 그대로 호출 가능.
 
 ## 공통 태그
 
