@@ -99,6 +99,21 @@ class ChatMessageServiceTest {
     }
 
     @Test
+    void sendMessage_userNotFound_throws_USER_NOT_FOUND() {
+        // 멤버 검증 통과 → Account 미조회(탈퇴 등) → USER_NOT_FOUND
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("hello")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
     void sendMessage_emptyContent_throws_INVALID_REQUEST() {
         // 멤버 검증 통과 → Account 조회 → Message 도메인 빌더에서 빈 content → INVALID_REQUEST
         given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
