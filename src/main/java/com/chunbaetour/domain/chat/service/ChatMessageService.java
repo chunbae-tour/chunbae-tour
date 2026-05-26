@@ -19,6 +19,8 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -64,6 +66,19 @@ public class ChatMessageService {
                 .build();
 
         Message saved = messageRepository.save(message);
-        chatRedisPubSubService.publish(chatRoomId, ChatMessageResponse.from(saved, sender));
+        ChatMessageResponse response = ChatMessageResponse.from(saved, sender);
+
+        // DB 커밋 이후 발행 — 커밋 실패·롤백 시 유령 메시지 브로드캐스트 방지
+        // isActualTransactionActive: 실트랜잭션 없는 컨텍스트(단위 테스트 등) → 즉시 발행 fallback
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    chatRedisPubSubService.publish(chatRoomId, response);
+                }
+            });
+        } else {
+            chatRedisPubSubService.publish(chatRoomId, response);
+        }
     }
 }
