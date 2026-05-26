@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
+import com.chunbaetour.domain.auth.dto.UserMeHomeResponse;
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserMeController {
 
     private final UserMeService userMeService;
+    private final UserMeHomeService userMeHomeService;
 
     /**
      * 본인 정보 조회 (Epic A S1).
@@ -72,6 +74,21 @@ public class UserMeController {
             @Valid @RequestBody PatchUserMeRequest request) {
         requireAuthenticated(userId);
         return ApiResponse.success(userMeService.updateMe(userId, request));
+    }
+
+    /**
+     * 마이페이지 홈 통합 응답 (Epic A S3, KAN-128).
+     *
+     * <p>프로필 + 엽전 잔액을 한 번에 응답 — 클라이언트가 마이페이지 진입 시 N개 API 호출의 latency 누적 회피.
+     * MVP는 profile + wallet만. 위젯(찜/채팅/동행 등)은 후속 슬라이스에서 응답에 nested로 추가.
+     *
+     * @param userId SecurityContext에 저장된 본인 ID
+     * @return 프로필 + wallet 통합 응답
+     */
+    @GetMapping("/home")
+    public ApiResponse<UserMeHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
+        requireAuthenticated(userId);
+        return ApiResponse.success(userMeHomeService.getHome(userId));
     }
 
     /**
