@@ -29,12 +29,17 @@ public class MenuService {
 
     /**
      * 메뉴 등록.
-     * ACTIVE 가게만 등록 가능.
+     * ACTIVE 가게만 등록 가능. 가게 내 메뉴 이름 중복 불허.
      */
     @Transactional
     public MenuResponse createMenu(Long userId, MenuCreateRequest request) {
         // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
         Shop shop = getActiveShop(userId);
+
+        // 동일 가게 내 중복 메뉴 이름 차단 (@SQLRestriction으로 soft-deleted 메뉴 제외)
+        if (menuRepository.existsByShopIdAndName(shop.getId(), request.name())) {
+            throw new BusinessException(ErrorCode.MENU_DUPLICATE);
+        }
 
         Menu menu = Menu.builder()
                 .shopId(shop.getId())

@@ -85,6 +85,24 @@ class MenuServiceTest {
     }
 
     @Test
+    @DisplayName("메뉴 등록 — 동일 이름 중복 → MENU_DUPLICATE")
+    void createMenu_duplicateName_throws() {
+        // given
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
+        given(shop.getId()).willReturn(SHOP_ID);
+        MenuCreateRequest request = new MenuCreateRequest("떡볶이", null, 5000L, null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.existsByShopIdAndName(SHOP_ID, "떡볶이")).willReturn(true);
+
+        // then
+        assertThatThrownBy(() -> menuService.createMenu(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.MENU_DUPLICATE);
+    }
+
+    @Test
     @DisplayName("메뉴 등록 — 가게 없음 → SHOP_NOT_FOUND")
     void createMenu_shopNotFound_throws() {
         // given
