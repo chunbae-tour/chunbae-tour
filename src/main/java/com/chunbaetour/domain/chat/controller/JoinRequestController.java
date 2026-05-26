@@ -62,13 +62,13 @@ public class JoinRequestController {
     }
 
     // 참여 신청 취소 — 신청자 본인만 가능, PENDING 상태 신청만 취소 허용
-    @DeleteMapping("/{chatRoomId}/join-requests/{joinRequestId}")
+    @DeleteMapping("/{chatRoomId}/join-requests/{requestId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancelJoinRequest(
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long chatRoomId,
-            @Min(1) @PathVariable Long joinRequestId) {
-        joinRequestService.cancelJoinRequest(userId, chatRoomId, joinRequestId);
+            @Min(1) @PathVariable Long requestId) {
+        joinRequestService.cancelJoinRequest(userId, chatRoomId, requestId);
     }
 
     // 참여 신청 거절 — 방장 전용
