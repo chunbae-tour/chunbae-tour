@@ -38,12 +38,20 @@ public class ChatRedisPubSubService {
 
     // Redis 구독 콜백 — chat:* 패턴 채널 메시지 수신 → STOMP 토픽으로 브로드캐스트
     public void handleMessage(String message, String channel) {
+        ChatMessageResponse response;
         try {
-            ChatMessageResponse response = objectMapper.readValue(message, ChatMessageResponse.class);
-            String chatRoomId = channel.replace(CHANNEL_PREFIX, "");
+            response = objectMapper.readValue(message, ChatMessageResponse.class);
+        } catch (JacksonException e) {
+            // corrupted message — 단일 메시지 손실, listener 유지
+            log.warn("Redis 메시지 JSON 파싱 실패. channel={}", channel, e);
+            return;
+        }
+        String chatRoomId = channel.replace(CHANNEL_PREFIX, "");
+        try {
             messagingTemplate.convertAndSend(STOMP_TOPIC_PREFIX + chatRoomId, response);
         } catch (Exception e) {
-            log.warn("Redis 메시지 처리 실패. channel={}, error={}", channel, e.getMessage());
+            // STOMP 브로드캐스트 실패 — warn과 달리 error로 운영 알람 대상
+            log.error("STOMP 브로드캐스트 실패. chatRoomId={}", chatRoomId, e);
         }
     }
 }
