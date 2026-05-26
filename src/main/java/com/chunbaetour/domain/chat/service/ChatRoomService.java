@@ -218,6 +218,12 @@ public class ChatRoomService {
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
                 .findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(roomId, ACTIVE_STATES);
 
+        // TOCTOU 방어 — 단건 조회와 목록 조회 사이에 KICKED/LEFT로 상태 변경된 경우 재차 차단
+        boolean stillActive = activeMembers.stream().anyMatch(m -> m.getUserId().equals(userId));
+        if (!stillActive) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
+
         // 멤버 userId 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
         List<Long> userIds = activeMembers.stream().map(ChatRoomMember::getUserId).toList();
         Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
