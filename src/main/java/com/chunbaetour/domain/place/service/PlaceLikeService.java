@@ -94,8 +94,10 @@ public class PlaceLikeService {
 
         // 5. Redis INCR + 캐시 무효화 — DB 커밋 이후에만 실행
         //    트랜잭션 롤백 시 Redis 상태가 어긋나지 않도록 afterCommit으로 이동.
+        //    place.getLikeCount()는 트랜잭션 내에서 읽어 클로저에 캡처 (afterCommit에서 DB 재조회 없음)
+        final int dbLikeCount = place.getLikeCount();
         registerAfterCommit(() -> {
-            incrementLikeCount(placeId);
+            seedAndIncrement(placeId, dbLikeCount);
             evictDetailCache(placeId);
         });
 
@@ -120,9 +122,15 @@ public class PlaceLikeService {
             throw new BusinessException(ErrorCode.LIKE_NOT_FOUND);
         }
 
+        // Redis 선시드를 위해 현재 DB like_count를 트랜잭션 내에서 읽어 캡처
+        // (afterCommit에서 별도 DB 조회 없이 클로저로 전달)
+        final int dbLikeCount = placeRepository.findById(placeId)
+                .map(Place::getLikeCount)
+                .orElse(0);
+
         // Redis DECR + 캐시 무효화 — DB 커밋 이후에만 실행
         registerAfterCommit(() -> {
-            decrementLikeCount(placeId);
+            seedAndDecrement(placeId, dbLikeCount);
             evictDetailCache(placeId);
         });
 
@@ -147,28 +155,45 @@ public class PlaceLikeService {
 
     // ── Redis 헬퍼 ────────────────────────────────────────────────────
 
-    private void incrementLikeCount(Long placeId) {
+    /**
+     * Redis 카운터가 없으면 DB 값으로 선시드(SETNX)한 뒤 INCR.
+     *
+     * <p>동작 시나리오:
+     * <ul>
+     *   <li>키 없음: {@code SETNX key dbLikeCount} 성공 → {@code INCR key} → dbLikeCount + 1</li>
+     *   <li>키 있음: {@code SETNX} 실패(유지) → {@code INCR key} → 현재값 + 1</li>
+     * </ul>
+     * SETNX와 INCR 사이 non-atomic 구간에서 동시 요청이 끌어들어도
+     * 카운터는 Eventually Consistent 정책으로 허용한다.
+     */
+    private void seedAndIncrement(Long placeId, int dbLikeCount) {
         try {
-            stringRedisTemplate.opsForValue().increment(PLACE_LIKE_COUNT_KEY + placeId);
+            String key = PLACE_LIKE_COUNT_KEY + placeId;
+            // 키가 없을 때만 DB 값으로 초기화 (SETNX)
+            stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(dbLikeCount));
+            stringRedisTemplate.opsForValue().increment(key);
         } catch (Exception e) {
-            log.warn("Place like count increment failed: placeId={}", placeId, e);
+            log.warn("Place like count seed+increment failed: placeId={}", placeId, e);
         }
     }
 
-    private void decrementLikeCount(Long placeId) {
+    /**
+     * Redis 카운터가 없으면 DB 값으로 선시드(SETNX)한 뒤 DECR.
+     * 0 미만 방지 로직 포함.
+     */
+    private void seedAndDecrement(Long placeId, int dbLikeCount) {
         try {
             String key = PLACE_LIKE_COUNT_KEY + placeId;
+            // 키가 없을 때만 DB 값으로 초기화 (SETNX)
+            stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(dbLikeCount));
             Long current = stringRedisTemplate.opsForValue().decrement(key);
-            // 0 미만 방지: DECR 후 SET 0 사이의 non-atomic 구간이 존재하므로
-            // 동시에 INCR이 끼어들면 그 증가분을 덮어쓸 수 있다.
-            // 이 카운터는 Eventually Consistent 정책이므로 허용하며,
-            // 정확한 카운터는 PHASE 5 DB 배치 동기화에서 보정된다.
+            // 0 미만 방지: Eventually Consistent 정책, PHASE 5 배치에서 보정
             if (current != null && current < 0) {
                 stringRedisTemplate.opsForValue().set(key, "0");
                 log.warn("Place like count was negative, reset to 0: placeId={}", placeId);
             }
         } catch (Exception e) {
-            log.warn("Place like count decrement failed: placeId={}", placeId, e);
+            log.warn("Place like count seed+decrement failed: placeId={}", placeId, e);
         }
     }
 
