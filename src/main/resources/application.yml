@@ -33,12 +33,15 @@ jwt:
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P7D}
 
 # Refresh Token 쿠키 정책 공통 기본값.
-# secure는 프로파일별로 오버라이드: local=false (HTTP 허용), prod=true (HTTPS 강제)
+# - secure는 프로파일별로 오버라이드: local=false (HTTP 허용), prod=true (HTTPS 강제).
+# - same-site는 환경변수로 오버라이드 (KAN-125 S5). 운영 프론트엔드/백엔드 도메인 정합에 따라 Lax/None 결정.
+#   default=Lax (same-site 배치 권장). cross-site 운영 시 prod 배포 환경에서 COOKIE_SAMESITE=None 주입.
+#   None 사용 시 secure=true 필수 (CookieProperties compact ctor가 강제). 의사결정: docs/operations/samesite-policy.md
 cookie:
   refresh-token:
     name: refreshToken
     secure: false
-    same-site: Lax
+    same-site: ${COOKIE_SAMESITE:Lax}
     path: /api/v1/auth
 
 # CORS 정책.
