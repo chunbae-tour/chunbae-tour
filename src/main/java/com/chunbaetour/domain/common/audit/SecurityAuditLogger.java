@@ -51,12 +51,33 @@ public class SecurityAuditLogger {
      * 비-HTTP 컨텍스트(스케줄러/이벤트 listener 등)에서 호출 시 둘 다 null로 emit (audit 손실 없음).
      */
     public void emitSuccess(SecurityAuditEventType type, Long actorId, Map<String, String> metadata) {
-        emit(buildEvent(type, SecurityAuditEvent.OUTCOME_SUCCESS, actorId, null, metadata));
+        try {
+            emit(buildEvent(type, SecurityAuditEvent.OUTCOME_SUCCESS, actorId, null, metadata));
+        } catch (RuntimeException e) {
+            // buildEvent 생성자(예: type null) 또는 enrich 실패 시 audit 손실 — 호출자 비즈니스 흐름 보호.
+            internalLog.warn("emitSuccess buildEvent failed — audit event dropped. type={}", type, e);
+        }
     }
 
-    /** 실패 이벤트 emit helper — reason 필수. */
+    /**
+     * 실패 이벤트 emit helper — reason 필수.
+     *
+     * <p>reason이 null/blank이면 contract 위반이지만 audit 누락 방지를 위해 기본값 {@code "AUTH_UNKNOWN"}으로 보정 후
+     * internalLog.warn으로 호출자 검토 신호 emit (SIEM 알람 정확도 보장 + audit 손실 차단의 균형).
+     */
     public void emitFailure(SecurityAuditEventType type, Long actorId, String reason, Map<String, String> metadata) {
-        emit(buildEvent(type, SecurityAuditEvent.OUTCOME_FAILURE, actorId, reason, metadata));
+        try {
+            String normalizedReason;
+            if (reason == null || reason.isBlank()) {
+                internalLog.warn("emitFailure called without reason. Fallback reason=AUTH_UNKNOWN, type={}", type);
+                normalizedReason = "AUTH_UNKNOWN";
+            } else {
+                normalizedReason = reason;
+            }
+            emit(buildEvent(type, SecurityAuditEvent.OUTCOME_FAILURE, actorId, normalizedReason, metadata));
+        } catch (RuntimeException e) {
+            internalLog.warn("emitFailure buildEvent failed — audit event dropped. type={}", type, e);
+        }
     }
 
     private SecurityAuditEvent buildEvent(
@@ -67,7 +88,11 @@ public class SecurityAuditLogger {
             Map<String, String> metadata) {
         HttpServletRequest req = currentRequest();
         String ipMasked = req != null ? IpMaskUtil.mask(req.getRemoteAddr()) : null;
-        String userAgent = req != null ? req.getHeader(HttpHeaders.USER_AGENT) : null;
+        String userAgentRaw = req != null ? req.getHeader(HttpHeaders.USER_AGENT) : null;
+        // truncation은 logback 기본 동작이 아니라 명시적 — audit-log-catalog.md § userAgent 200자 정책과 동기 유지.
+        String userAgent = userAgentRaw != null && userAgentRaw.length() > 200
+                ? userAgentRaw.substring(0, 200)
+                : userAgentRaw;
         return new SecurityAuditEvent(
                 Instant.now(), type, actorId, null, ipMasked, userAgent, outcome, reason, metadata);
     }
@@ -101,21 +126,28 @@ public class SecurityAuditLogger {
             internalLog.warn("SecurityAuditLogger.emit(null) — 호출자 검토 필요. 이벤트 미발행.");
             return;
         }
+        // outer try-catch: log.info / MDC 조작 / async appender 등 어떤 단계에서 throw해도
+        // 호출자(인증 비즈니스 흐름)에게 절대 전파되지 않도록 흡수. SecurityAuditLogger contract.
         try {
-            putMdc("timestamp", event.timestamp().toString());
-            putMdc("eventType", event.eventType().name());
-            putMdc("outcome", event.outcome());
-            putMdcIfPresent("actorId", event.actorId());
-            putMdcIfPresent("targetUserId", event.targetUserId());
-            putMdcIfPresent("ipMasked", event.ipMasked());
-            putMdcIfPresent("userAgent", event.userAgent());
-            putMdcIfPresent("reason", event.reason());
-            event.metadata().forEach((k, v) -> putMdc("meta." + k, v));
+            try {
+                putMdc("timestamp", event.timestamp().toString());
+                putMdc("eventType", event.eventType().name());
+                putMdc("outcome", event.outcome());
+                putMdcIfPresent("actorId", event.actorId());
+                putMdcIfPresent("targetUserId", event.targetUserId());
+                putMdcIfPresent("ipMasked", event.ipMasked());
+                putMdcIfPresent("userAgent", event.userAgent());
+                putMdcIfPresent("reason", event.reason());
+                event.metadata().forEach((k, v) -> putMdc("meta." + k, v));
 
-            // 메시지 본문은 검색 fallback용. 주요 정보는 MDC(JSON 최상위 필드)로 출력.
-            log.info("{} {}", event.eventType().name(), event.outcome());
-        } finally {
-            clearMdc();
+                // 메시지 본문은 검색 fallback용. 주요 정보는 MDC(JSON 최상위 필드)로 출력.
+                log.info("{} {}", event.eventType().name(), event.outcome());
+            } finally {
+                clearMdc();
+            }
+        } catch (RuntimeException e) {
+            internalLog.warn("SecurityAuditLogger.emit failed — audit event dropped. eventType={}",
+                    event.eventType(), e);
         }
     }
 

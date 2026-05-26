@@ -68,10 +68,17 @@ public record SecurityAuditEvent(
         if (userAgent != null && userAgent.length() > USER_AGENT_MAX_LENGTH) {
             userAgent = userAgent.substring(0, USER_AGENT_MAX_LENGTH);
         }
-        if (metadata == null) {
+        if (metadata == null || metadata.isEmpty()) {
             metadata = Collections.emptyMap();
         } else {
-            metadata = Map.copyOf(metadata);
+            // Map.copyOf는 null key/value에서 NPE 발생 — audit 생성 중 예외가 인증 비즈니스 흐름까지 깨지 않도록
+            // null entry는 filter로 제거 (CR #2 회귀 가드).
+            metadata = metadata.entrySet().stream()
+                    .filter(e -> e.getKey() != null && e.getValue() != null)
+                    .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                            Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (a, b) -> b));
         }
     }
 }

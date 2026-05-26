@@ -22,6 +22,10 @@
     <!--
       audit 전용 파일 appender — 모든 프로파일 공통.
       회전 정책: 100MB 단위 + 일 단위. 최대 365일 보존 (운영 정책 조정 가능).
+
+      ⚠️ 두 appender(AUDIT_FILE / AUDIT_JSON_STDOUT)는 동일 encoder 설정(LogstashEncoder + 기본 providers) 사용.
+         설정 변경(customFields, fieldNames 등) 시 양쪽 동기 유지 필수.
+         audit-log-catalog.md § 로그 인코딩 정책 참조.
     -->
     <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit-security.log</file>

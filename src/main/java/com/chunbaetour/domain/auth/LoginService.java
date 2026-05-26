@@ -90,7 +90,9 @@ public class LoginService {
         if (account.getRole() != requiredRole) {
             meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "role_mismatch").increment();
             auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.ACCESS_DENIED.getCode(),
-                    Map.of("requiredRole", requiredRole.name(), "actualRole", account.getRole().name()));
+                    Map.of("requiredRole", requiredRole.name(),
+                            "actualRole", account.getRole().name(),
+                            "reasonDetail", "role_mismatch"));
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
 
@@ -99,7 +101,7 @@ public class LoginService {
         if (account.getStatus() == AccountStatus.SUSPENDED) {
             meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "suspended").increment();
             auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.ACCOUNT_SUSPENDED.getCode(),
-                    Map.of("requiredRole", requiredRole.name()));
+                    Map.of("requiredRole", requiredRole.name(), "reasonDetail", "account_suspended"));
             throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 

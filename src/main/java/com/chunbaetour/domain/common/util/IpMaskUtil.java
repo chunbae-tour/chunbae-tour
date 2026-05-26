@@ -31,10 +31,15 @@ public final class IpMaskUtil {
         if (ip == null || ip.isBlank()) {
             return "***";
         }
+        // loopback / link-local — 운영 모니터링/디버깅 식별성 우선해 원본 보존 (PII 위험 0).
+        if ("127.0.0.1".equals(ip) || "::1".equals(ip) || ip.startsWith("fe80:")) {
+            return ip;
+        }
         int lastDot = ip.lastIndexOf('.');
         if (lastDot > 0) {
             return ip.substring(0, lastDot) + ".***";
         }
+        // IPv6 — 마지막 그룹만 마스킹. `2001:db8::8a2e:370:7334` → `2001:db8::8a2e:370:***`
         int lastColon = ip.lastIndexOf(':');
         if (lastColon > 0) {
             return ip.substring(0, lastColon) + ":***";

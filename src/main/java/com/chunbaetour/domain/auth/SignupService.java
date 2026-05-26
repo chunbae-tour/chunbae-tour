@@ -14,6 +14,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -74,8 +76,22 @@ public class SignupService {
 
         eventPublisher.publishEvent(new UserRegisteredEvent(saved.getId(), saved.getEmail(), saved.getNickname()));
         meterRegistry.counter(METRIC_SIGNUP_ATTEMPT, "outcome", "success").increment();
-        auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, saved.getId(),
-                Map.of("role", saved.getRole().name()));
+        // 트랜잭션 커밋 후에만 SIGNUP_SUCCESS 감사 emit — 커밋 실패 시 잘못된 success 로그 방지 (CR #1).
+        // 비-트랜잭션 컨텍스트(테스트 등)에서는 즉시 emit으로 폴백.
+        Long savedId = saved.getId();
+        String role = saved.getRole().name();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId,
+                            Map.of("role", role));
+                }
+            });
+        } else {
+            auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId,
+                    Map.of("role", role));
+        }
         return saved;
     }
 }
