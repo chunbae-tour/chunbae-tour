@@ -131,9 +131,12 @@ public class PlaceLikeService {
     public void removeLike(Long userId, Long placeId) {
         // Redis 선시드를 위해 현재 DB like_count를 삭제 전에 트랜잭션 내에서 먼저 조회
         // (관광지가 없으면 PLACE_NOT_FOUND, 삭제된 후면 반영된 값이 없기 때문)
-        int dbLikeCount = placeRepository.findById(placeId)
-                .map(Place::getLikeCount)
+        Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+        if (place.getStatus() != PlaceStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
+        int dbLikeCount = place.getLikeCount();
 
         int deleted = userLikeRepository.deleteByUserIdAndPlaceId(userId, placeId);
         if (deleted == 0) {
