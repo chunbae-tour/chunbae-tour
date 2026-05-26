@@ -46,6 +46,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/payments/**} — USER 전용 (webhook POST는 permitAll 선 매칭)</li>
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
  *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
+ *   <li>{@code /api/v1/reports/**} — USER 전용 (신고 생성·내 신고 조회; admin 신고 API는 /admin/** 커버)</li>
  *   <li>그 외 — 인증 필요</li>
  * </ul>
  *
