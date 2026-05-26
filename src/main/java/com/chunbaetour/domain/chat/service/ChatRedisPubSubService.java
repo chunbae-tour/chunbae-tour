@@ -50,7 +50,7 @@ public class ChatRedisPubSubService {
             log.warn("Redis 메시지 JSON 파싱 실패. channel={}", channel, e);
             return;
         }
-        String chatRoomId = channel.replace(CHANNEL_PREFIX, "");
+        String chatRoomId = channel.substring(CHANNEL_PREFIX.length());
         try {
             messagingTemplate.convertAndSend(STOMP_TOPIC_PREFIX + chatRoomId, response);
         } catch (Exception e) {

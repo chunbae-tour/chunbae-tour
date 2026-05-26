@@ -49,6 +49,13 @@ public class StompChannelInterceptor implements ChannelInterceptor {
             return handleSubscribe(message, accessor);
         }
 
+        if (StompCommand.SEND.equals(accessor.getCommand())) {
+            if (accessor.getUser() == null) {
+                throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+            }
+            return message;
+        }
+
         return message;
     }
 
