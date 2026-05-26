@@ -2,8 +2,11 @@ package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
 import com.chunbaetour.domain.auth.jwt.LogoutTokenStore;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +35,7 @@ public class LogoutService {
 
     private final LogoutTokenStore logoutTokenStore;
     private final Clock clock;
+    private final SecurityAuditLogger auditLogger;
 
     /**
      * 로그아웃 처리.
@@ -44,5 +48,9 @@ public class LogoutService {
 
         // Access blacklist 등록 + Refresh 삭제를 Lua script 한 번으로 처리해 부분 로그아웃 상태를 방지한다.
         logoutTokenStore.invalidate(claims.userId(), claims.tokenId(), remainingTtl);
+
+        // KAN-105 감사 로그 — 명시적 로그아웃 추적. Refresh 회수 + blacklist 등록 사실 기록.
+        auditLogger.emitSuccess(SecurityAuditEventType.LOGOUT, claims.userId(),
+                Map.of("role", claims.role().name()));
     }
 }

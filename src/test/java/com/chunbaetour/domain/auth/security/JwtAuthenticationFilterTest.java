@@ -11,6 +11,7 @@ import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
 import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.MalformedJwtException;
@@ -63,6 +64,10 @@ class JwtAuthenticationFilterTest {
     /** KAN-104 메트릭 in-memory registry. */
     @Spy
     private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    /** KAN-105 감사 로그 mock. */
+    @Mock
+    private SecurityAuditLogger auditLogger;
 
     @InjectMocks
     private JwtAuthenticationFilter filter;

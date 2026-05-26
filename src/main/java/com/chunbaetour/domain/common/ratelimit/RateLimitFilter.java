@@ -1,8 +1,11 @@
 package com.chunbaetour.domain.common.ratelimit;
 
 import com.chunbaetour.domain.auth.security.SecurityResponseWriter;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitProperties.EndpointPolicy;
+import com.chunbaetour.domain.common.util.IpMaskUtil;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -62,6 +65,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimiter rateLimiter;
     private final SecurityResponseWriter responseWriter;
     private final MeterRegistry meterRegistry;
+    private final SecurityAuditLogger auditLogger;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -108,7 +112,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
         // 거부 — AUTH_014 + Retry-After + 한도 헤더
         // PII 노출 방지: 키 값 자체는 로그 미포함 (endpoint id만 운영 식별용)
         meterRegistry.counter(METRIC_DECISION, "endpoint", endpoint.id(), "decision", "denied").increment();
-        log.warn("Rate limit exceeded. endpoint={}, ip={}", endpoint.id(), maskIp(clientIp));
+        log.warn("Rate limit exceeded. endpoint={}, ip={}", endpoint.id(), IpMaskUtil.mask(clientIp));
+        // KAN-105: rate limit 거부도 감사 로그 — endpoint별 공격 패턴 추적. actorId 없음(인증 전).
+        auditLogger.emitFailure(SecurityAuditEventType.RATE_LIMIT_DENIED, null,
+                ErrorCode.RATE_LIMITED.getCode(),
+                java.util.Map.of("endpoint", endpoint.id()));
         Map<String, String> headers = new LinkedHashMap<>();
         // Redis TTL race 등으로 retryAfter가 0초가 될 수 있어도 HTTP Retry-After 헤더는 최소 1초로 응답.
         // 0초 응답 시 클라이언트가 즉시 재시도해 무한 루프 위험.
@@ -150,17 +158,5 @@ public class RateLimitFilter extends OncePerRequestFilter {
      */
     private String extractClientIp(HttpServletRequest request) {
         return request.getRemoteAddr().toLowerCase(Locale.ROOT);
-    }
-
-    /**
-     * 로그용 IP 마스킹 — PII 노출 방지. IPv4는 마지막 옥텟, IPv6은 마지막 그룹을 *** 처리.
-     */
-    private String maskIp(String ip) {
-        if (ip == null || ip.isBlank()) return "***";
-        int lastDot = ip.lastIndexOf('.');
-        if (lastDot > 0) return ip.substring(0, lastDot) + ".***";
-        int lastColon = ip.lastIndexOf(':');
-        if (lastColon > 0) return ip.substring(0, lastColon) + ":***";
-        return "***";
     }
 }
