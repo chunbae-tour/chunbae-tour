@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ChatMessageService {
 
     // 운영 보안 정책 설계서 11번 — 채팅 메시지 전송 30회/10초
@@ -77,7 +78,6 @@ public class ChatMessageService {
     }
 
     // 메시지 내역 조회 — ACTIVE 멤버만 접근, id DESC 커서 페이징, N+1 방지: senderId 일괄 조회
-    @Transactional(readOnly = true)
     public CursorPageResponse<ChatMessageResponse> getMessages(Long userId, Long roomId, String cursor, int size) {
         if (!chatRoomRepository.existsById(roomId)) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
