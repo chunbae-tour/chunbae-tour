@@ -149,10 +149,6 @@ public class JoinRequestService {
     // 참여 신청 취소 — 신청자 본인만 가능, WHERE status=PENDING 조건부 원자적 삭제로 approve 경합 차단
     @Transactional
     public void cancelJoinRequest(Long userId, Long chatRoomId, Long joinRequestId) {
-        if (!chatRoomRepository.existsById(chatRoomId)) {
-            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
-        }
-
         JoinRequest joinRequest = joinRequestRepository.findById(joinRequestId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_APPLICATION_NOT_FOUND));
 
@@ -175,10 +171,6 @@ public class JoinRequestService {
     // 거절 — 방장 전용, WHERE status='PENDING' 조건부 UPDATE로 분산 락 없이 이중 거절 원자적 차단
     @Transactional
     public RejectJoinRequestResponse rejectJoinRequest(Long ownerId, Long chatRoomId, Long requestId) {
-        if (!chatRoomRepository.existsById(chatRoomId)) {
-            throw new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND);
-        }
-
         chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, ownerId)
                 .filter(ChatRoomMember::isOwner)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN));
