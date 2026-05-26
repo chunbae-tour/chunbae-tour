@@ -2,6 +2,7 @@ package com.chunbaetour.domain.shop.dto.response;
 
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -25,7 +26,7 @@ public record ShopInfoResponse(
         String description,
         String operatingHours,
         String closedDays,
-        double rating,
+        BigDecimal rating,
         int reviewCount,
         boolean isCertified,
         List<MenuResponse> menus
@@ -41,7 +42,7 @@ public record ShopInfoResponse(
                 shop.getDescription(),
                 shop.getOperatingHours(),
                 shop.getClosedDays(),
-                shop.getRating(),
+                BigDecimal.valueOf(shop.getRating()),
                 shop.getReviewCount(),
                 shop.isCertified(),
                 menus.stream().map(MenuResponse::from).toList()

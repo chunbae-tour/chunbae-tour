@@ -13,8 +13,6 @@ import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
