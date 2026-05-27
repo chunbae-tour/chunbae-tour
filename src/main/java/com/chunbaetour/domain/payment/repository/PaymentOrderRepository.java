@@ -5,6 +5,7 @@ import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -21,4 +22,47 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PaymentOrder p WHERE p.id = :id")
     Optional<PaymentOrder> findByIdWithLock(@Param("id") Long id);
+
+    /**
+     * COMPLETED가 아닌 경우에만 COMPLETED + pgTransactionId 세팅하는 DB-level 조건부 UPDATE.
+     *
+     * <p>Issue #114 release blocker 해소용. 기존 2-phase 조회(findByOrderUid → findByOrderUidWithLock)
+     * 패턴은 Phase 1의 cached PENDING entity가 Phase 2 락 획득 후에도 stale 상태로 반환되어
+     * 동시 webhook 2건이 모두 COMPLETED 전환 분기를 통과 → walletService.charge 중복 실행.
+     *
+     * <p>본 메서드는 DB CAS(Compare-And-Swap)로 멱등성을 보장한다.
+     * <ul>
+     *   <li>동시 2건 호출 시: InnoDB row lock으로 직렬화 → 한쪽만 1 반환, 다른 쪽은 0 반환</li>
+     *   <li>이미 COMPLETED 상태: 0 반환 (조용히 skip)</li>
+     *   <li>PENDING / FAILED → COMPLETED 모두 허용 — handleFail 선점으로 FAILED여도 PG PAID 시 결제 유실 방지</li>
+     * </ul>
+     *
+     * <p>{@code clearAutomatically=true}: UPDATE 실행 후 영속성 컨텍스트 자동 clear → caller가
+     * 후속으로 같은 entity를 조회할 때 stale 캐시가 아닌 DB 최신 row 반환을 보장.
+     *
+     * @return 영향받은 row 수 (1 = 본 호출이 COMPLETED 전환 성공, 0 = 이미 COMPLETED 또는 row 없음)
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE PaymentOrder p "
+            + "SET p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.COMPLETED, "
+            + "    p.pgTransactionId = :pgTransactionId "
+            + "WHERE p.orderUid = :orderUid "
+            + "  AND p.status <> com.chunbaetour.domain.payment.type.PaymentOrderStatus.COMPLETED")
+    int completeIfNotCompleted(@Param("orderUid") String orderUid,
+                                @Param("pgTransactionId") String pgTransactionId);
+
+    /**
+     * PENDING 상태인 경우에만 FAILED로 전환하는 DB-level 조건부 UPDATE.
+     *
+     * <p>이미 COMPLETED/FAILED/REFUNDED 상태이면 0 반환 — 멱등 처리.
+     * 동시 webhook 2건 호출 시 한쪽만 1 반환 → 멱등성 키 해제 중복 방지에 활용.
+     *
+     * @return 영향받은 row 수 (1 = 본 호출이 FAILED 전환 성공, 0 = 이미 PENDING 아님)
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE PaymentOrder p "
+            + "SET p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.FAILED "
+            + "WHERE p.orderUid = :orderUid "
+            + "  AND p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING")
+    int failIfPending(@Param("orderUid") String orderUid);
 }
