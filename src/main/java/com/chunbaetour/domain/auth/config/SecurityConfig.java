@@ -112,6 +112,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/free/**").permitAll()
                         // PortOne 웹훅: 서버→서버 호출이라 JWT 없음 — permitAll 필수
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
+                        // QR 결제 승인/거절은 MERCHANT 전용 — payments/** USER 룰보다 반드시 먼저 선언
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/payments/qr/*/confirm").hasRole("MERCHANT")
                         // 결제/환불은 USER 전용 — webhook permitAll 라인보다 뒤에 위치해야 순서 안전
                         .requestMatchers("/api/v1/payments/**").hasRole("USER")
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답

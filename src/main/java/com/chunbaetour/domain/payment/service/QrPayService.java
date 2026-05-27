@@ -228,6 +228,11 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.QR_PAY_CONFIRM_FORBIDDEN);
         }
 
+        // 만료 체크 — 스케줄러 EXPIRED 처리 전 PENDING 상태여도 expiredAt 초과 시 차단
+        if (LocalDateTime.now(clock).isAfter(qrPayRequest.getExpiredAt())) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
+
         if (request.action() == QrPayConfirmRequest.Action.REJECT) {
             // 거절: 분산 락 불필요 — 잔액 조작 없음
             qrPayRequest.reject(request.rejectReason());
@@ -264,6 +269,7 @@ public class QrPayService {
                     YeopjeonHistoryType.PAYMENT, amount, wallet.getBalance(),
                     "QR 결제 - " + shop.getShopName()
             ));
+            // merchantUserId == shop.getUserId() 는 line 206 소유권 검증으로 보장됨 — 위치 변경 시 재검증 필요
             yeopjeonHistoryRepository.save(YeopjeonHistory.create(
                     merchantUserId, null, qrPayRequest.getShopId(),
                     YeopjeonHistoryType.RECEIVED_PAYMENT, amount, shopWallet.getBalance(),
