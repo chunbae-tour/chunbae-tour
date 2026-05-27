@@ -151,4 +151,8 @@ public class Shop extends BaseEntity {
         if (request.closedDays() != null) this.closedDays = request.closedDays();
         if (request.imageUrls() != null) this.imageUrls = request.imageUrls();
     }
+
+    public void changeStatus(ShopStatus status) {
+        this.status = status;
+    }
 }
