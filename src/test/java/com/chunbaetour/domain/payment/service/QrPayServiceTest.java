@@ -3,11 +3,15 @@ package com.chunbaetour.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -28,8 +32,6 @@ import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
-import org.springframework.dao.DataIntegrityViolationException;
-import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -46,7 +48,9 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class QrPayServiceTest {
@@ -87,6 +91,11 @@ class QrPayServiceTest {
     private static final Long SHOP_ID = 10L;
     private static final Long MENU_ID_1 = 100L;
     private static final Long MENU_ID_2 = 101L;
+    private static final String PAY_REQUEST_ID = "req-001";
+    private static final Long AMOUNT = 5_000L;
+    // 고정 Clock(10:00:00) 기준: NOT_EXPIRED > 10:00, EXPIRED_AT < 10:00
+    private static final LocalDateTime NOT_EXPIRED = LocalDateTime.of(2026, 5, 25, 10, 30, 0);
+    private static final LocalDateTime EXPIRED_AT = LocalDateTime.of(2026, 5, 25, 9, 55, 0);
 
     private Shop createActiveShop() {
         Shop shop = Shop.builder()
@@ -117,6 +126,10 @@ class QrPayServiceTest {
         lenient().when(menu.getPrice()).thenReturn(price);
         lenient().when(menu.isAvailable()).thenReturn(isAvailable);
         return menu;
+    }
+
+    private QrPayRequest createPendingRequest(LocalDateTime expiredAt) {
+        return QrPayRequest.create(PAY_REQUEST_ID, USER_ID, SHOP_ID, AMOUNT, "[]", expiredAt);
     }
 
     // ── POST /payments/qr ─────────────────────────────────────────────────────
@@ -476,161 +489,186 @@ class QrPayServiceTest {
                 .isEqualTo(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
     }
 
-    // ── PATCH /payments/qr/{payRequestId}/confirm ──────────────────────────
-
-    /** 분산 락 mock 세팅 헬퍼 */
-    private RLock mockLockAcquired() throws Exception {
-        RLock lock = mock(RLock.class);
-        given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(3, 5, TimeUnit.SECONDS)).willReturn(true);
-        given(lock.isHeldByCurrentThread()).willReturn(true);
-        return lock;
-    }
-
-    private QrPayRequest createPendingRequest(long amount) {
-        QrPayRequest req = QrPayRequest.create(
-                "pay-uuid-1", USER_ID, SHOP_ID, amount, "[]",
-                LocalDateTime.now(clock).plusMinutes(5)
-        );
-        ReflectionTestUtils.setField(req, "id", 1L);
-        return req;
-    }
+    // ── PATCH /payments/qr/{payRequestId}/confirm ──────────────────────────────
 
     @Test
-    @DisplayName("QR 결제 승인 — 성공: 잔액 차감·증가·이력 기록·COMPLETED 전이")
-    void confirmQrPayRequest_approve_success() throws Exception {
+    @DisplayName("QR 결제 승인 — 성공: 잔액 차감·증가, 이력 2건, COMPLETED 전이")
+    void confirmQrPayRequest_approve_success() throws InterruptedException {
         // given
-        QrPayRequest qrPayRequest = createPendingRequest(5000L);
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
         Shop shop = createActiveShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        Wallet wallet = createWallet(AMOUNT);
+        ShopWallet shopWallet = mock(ShopWallet.class);
+        given(shopWallet.getBalance()).willReturn(0L);
 
-        Wallet wallet = Wallet.create(USER_ID);
-        ReflectionTestUtils.setField(wallet, "balance", 10000L);
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
 
-        ShopWallet shopWallet = ShopWallet.create(SHOP_ID);
-
-        RLock lock = mockLockAcquired();
-
-        given(qrPayRequestRepository.findByPayRequestId("pay-uuid-1")).willReturn(Optional.of(qrPayRequest));
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(shopWallet));
+        given(yeopjeonHistoryRepository.save(any())).willAnswer(i -> i.getArgument(0));
 
         QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
 
         // when
-        qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, "pay-uuid-1", request);
+        qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request);
 
         // then
-        assertThat(wallet.getBalance()).isEqualTo(5000L);  // 10000 - 5000
-        assertThat(shopWallet.getBalance()).isEqualTo(5000L);
-        assertThat(qrPayRequest.getStatus()).isEqualTo(QrPayStatus.COMPLETED);
+        then(wallet).should().debit(AMOUNT);
+        then(shopWallet).should().credit(AMOUNT);
+        then(yeopjeonHistoryRepository).should(times(2)).save(any());
+        assertThat(req.getStatus()).isEqualTo(QrPayStatus.COMPLETED);
+        then(lock).should().unlock();
     }
 
     @Test
-    @DisplayName("QR 결제 거절 — 성공: 분산 락 없이 REJECTED 전이")
+    @DisplayName("QR 결제 거절 — 성공: 잔액 조작 없이 REJECTED 전이, 거절 사유 저장")
     void confirmQrPayRequest_reject_success() {
         // given
-        QrPayRequest qrPayRequest = createPendingRequest(5000L);
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
         Shop shop = createActiveShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
 
-        given(qrPayRequestRepository.findByPayRequestId("pay-uuid-1")).willReturn(Optional.of(qrPayRequest));
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
-        QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.REJECT, "재료 소진");
+        QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.REJECT, "재고 없음");
 
         // when
-        qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, "pay-uuid-1", request);
+        qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request);
 
-        // then
-        assertThat(qrPayRequest.getStatus()).isEqualTo(QrPayStatus.REJECTED);
-        assertThat(qrPayRequest.getRejectReason()).isEqualTo("재료 소진");
+        // then — 분산 락 미획득, 지갑 조회 없음
+        then(redissonClient).should(never()).getLock(anyString());
+        then(walletRepository).should(never()).findByUserIdWithLock(anyLong());
+        assertThat(req.getStatus()).isEqualTo(QrPayStatus.REJECTED);
+        assertThat(req.getRejectReason()).isEqualTo("재고 없음");
     }
 
     @Test
-    @DisplayName("QR 결제 승인 — 잔액 부족 → INSUFFICIENT_BALANCE")
-    void confirmQrPayRequest_approve_insufficientBalance() throws Exception {
+    @DisplayName("QR 결제 승인/거절 — 결제 요청 없음 → QR_PAY_REQUEST_NOT_FOUND")
+    void confirmQrPayRequest_payRequestNotFound_throws() {
         // given
-        QrPayRequest qrPayRequest = createPendingRequest(5000L);
-        Shop shop = createActiveShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-
-        Wallet wallet = Wallet.create(USER_ID);
-        ReflectionTestUtils.setField(wallet, "balance", 3000L); // 잔액 부족
-
-        ShopWallet shopWallet = ShopWallet.create(SHOP_ID);
-
-        mockLockAcquired();
-
-        given(qrPayRequestRepository.findByPayRequestId("pay-uuid-1")).willReturn(Optional.of(qrPayRequest));
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet));
-        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(shopWallet));
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.empty());
 
         QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
 
         // then
-        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, "pay-uuid-1", request))
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
+                .isEqualTo(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
     }
 
     @Test
-    @DisplayName("QR 결제 승인 — 분산 락 획득 실패 → PAYMENT_PROCESSING")
-    void confirmQrPayRequest_approve_lockFailed() throws Exception {
+    @DisplayName("QR 결제 승인/거절 — 가게 없음 → SHOP_NOT_FOUND")
+    void confirmQrPayRequest_shopNotFound_throws() {
         // given
-        QrPayRequest qrPayRequest = createPendingRequest(5000L);
-        Shop shop = createActiveShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-
-        RLock lock = mock(RLock.class);
-        given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(3, 5, TimeUnit.SECONDS)).willReturn(false);
-
-        given(qrPayRequestRepository.findByPayRequestId("pay-uuid-1")).willReturn(Optional.of(qrPayRequest));
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
 
         QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
 
         // then
-        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, "pay-uuid-1", request))
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
     }
 
     @Test
-    @DisplayName("QR 결제 승인 — 타인 가게 요청 → QR_PAY_CONFIRM_FORBIDDEN")
-    void confirmQrPayRequest_approve_forbidden() {
-        // given
-        QrPayRequest qrPayRequest = createPendingRequest(5000L);
-        Shop shop = createActiveShop(); // userId = MERCHANT_USER_ID(99)
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+    @DisplayName("QR 결제 승인/거절 — 타 상인의 가게 → QR_PAY_CONFIRM_FORBIDDEN")
+    void confirmQrPayRequest_forbidden_throws() {
+        // given — 가게 소유자(MERCHANT_USER_ID=99)와 요청자(999)가 다름
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        Shop shop = createActiveShop(); // shop.userId == MERCHANT_USER_ID(99)
 
-        given(qrPayRequestRepository.findByPayRequestId("pay-uuid-1")).willReturn(Optional.of(qrPayRequest));
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
+        Long wrongMerchantId = 999L;
         QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
 
-        // when — 다른 상인(userId=200) 시도
-        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(200L, "pay-uuid-1", request))
+        // then
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(wrongMerchantId, PAY_REQUEST_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.QR_PAY_CONFIRM_FORBIDDEN);
     }
 
     @Test
-    @DisplayName("QR 결제 승인 — 존재하지 않는 요청 → QR_PAY_REQUEST_NOT_FOUND")
-    void confirmQrPayRequest_notFound() {
-        given(qrPayRequestRepository.findByPayRequestId("bad-uuid")).willReturn(Optional.empty());
+    @DisplayName("QR 결제 승인/거절 — 만료된 요청 → QR_PAY_INVALID_STATUS_TRANSITION")
+    void confirmQrPayRequest_expired_throws() {
+        // given — expiredAt(9:55) < clock.now(10:00) → 만료 처리됨
+        QrPayRequest req = createPendingRequest(EXPIRED_AT);
+        Shop shop = createActiveShop();
+
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
         QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
 
-        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, "bad-uuid", request))
+        // then
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+                .isEqualTo(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("QR 결제 승인 — 잔액 부족 → INSUFFICIENT_BALANCE")
+    void confirmQrPayRequest_insufficientBalance_throws() throws InterruptedException {
+        // given — 지갑 잔액(1,000)이 결제 금액(5,000)보다 적음
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        Shop shop = createActiveShop();
+        Wallet lowWallet = createWallet(1_000L);
+        ShopWallet shopWallet = mock(ShopWallet.class);
+
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(lowWallet));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(shopWallet));
+
+        QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
+
+        // then
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
+        then(lock).should().unlock(); // finally 블록에서 반드시 해제
+    }
+
+    @Test
+    @DisplayName("QR 결제 승인 — 분산 락 타임아웃 → PAYMENT_PROCESSING")
+    void confirmQrPayRequest_lockTimeout_throws() throws InterruptedException {
+        // given — lock.tryLock 이 false 반환 → 다른 요청이 락 점유 중
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        Shop shop = createActiveShop();
+
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
+
+        // then
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
+        then(lock).should(never()).unlock(); // 락 미획득 시 unlock 호출 없음
     }
 }
