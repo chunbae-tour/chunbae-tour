@@ -10,6 +10,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
@@ -19,6 +20,7 @@ import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -125,11 +127,76 @@ class NotificationServiceTest {
         verify(notificationRepository).findWithCursor(eq(USER_ID), eq(50L), any(PageRequest.class));
     }
 
-    // 잘못된 cursor 전달 시 BusinessException 발생 — decodeSafe가 INVALID_CURSOR 예외 변환
+    // 잘못된 cursor 전달 시 INVALID_CURSOR BusinessException 발생 — 에러코드까지 고정해 클라이언트 계약 회귀 방지
     @Test
     void getNotifications_withInvalidCursor_throwsBusinessException() {
         assertThatThrownBy(() -> notificationService.getNotifications(USER_ID, "not-valid-cursor!!", 20))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.INVALID_CURSOR));
+    }
+
+    // 단건 읽음 처리 — markAsRead() 호출 검증
+    @Test
+    void markAsRead_success() {
+        Notification notification = buildNotification(10L);
+        given(notificationRepository.findByIdAndUserId(10L, USER_ID)).willReturn(Optional.of(notification));
+
+        notificationService.markAsRead(USER_ID, 10L);
+
+        assertThat(notification.isRead()).isTrue();
+    }
+
+    // 단건 읽음 처리 — 존재하지 않거나 타인 알림이면 NOTIFICATION_NOT_FOUND
+    @Test
+    void markAsRead_notFound_throwsBusinessException() {
+        given(notificationRepository.findByIdAndUserId(99L, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> notificationService.markAsRead(USER_ID, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND));
+    }
+
+    // 전체 읽음 처리 — markAllAsRead() repository 위임 검증
+    @Test
+    void markAllAsRead_delegatesToRepository() {
+        notificationService.markAllAsRead(USER_ID);
+
+        verify(notificationRepository).markAllAsRead(USER_ID);
+    }
+
+    // 알림 삭제 — delete() 호출 후 deletedAt 설정 확인
+    @Test
+    void deleteNotification_success() {
+        Notification notification = buildNotification(10L);
+        given(notificationRepository.findByIdAndUserIdIncludingDeleted(10L, USER_ID)).willReturn(Optional.of(notification));
+
+        notificationService.deleteNotification(USER_ID, 10L);
+
+        assertThat(notification.getDeletedAt()).isNotNull();
+    }
+
+    // 이미 soft-deleted된 알림 재삭제 — 예외 없음 (멱등, 204)
+    @Test
+    void deleteNotification_alreadyDeleted_noException() {
+        Notification notification = buildNotification(10L);
+        notification.delete(); // pre-deleted
+        given(notificationRepository.findByIdAndUserIdIncludingDeleted(10L, USER_ID)).willReturn(Optional.of(notification));
+
+        org.assertj.core.api.Assertions.assertThatNoException()
+                .isThrownBy(() -> notificationService.deleteNotification(USER_ID, 10L));
+    }
+
+    // 알림 삭제 — 존재하지 않거나 타인 알림이면 NOTIFICATION_NOT_FOUND
+    @Test
+    void deleteNotification_notFound_throwsBusinessException() {
+        given(notificationRepository.findByIdAndUserIdIncludingDeleted(99L, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> notificationService.deleteNotification(USER_ID, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND));
     }
 
     private Notification buildNotification(Long id) {

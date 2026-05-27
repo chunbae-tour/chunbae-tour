@@ -134,6 +134,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
                         // 관광지 조회 (근처/상세)는 비인증 허용 — isLiked는 서비스에서 userId null 체크로 처리
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
+                        // 관광지 추천(인기/주변/카테고리)은 비인증 공개 API — KAN-134에서 추가된 RecommendController
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
                         // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
