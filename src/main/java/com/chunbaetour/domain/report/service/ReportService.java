@@ -135,8 +135,11 @@ public class ReportService {
             }
             case USER -> {
                 // Account has @SQLRestriction("deleted_at IS NULL") — deleted accounts return empty
-                accountRepository.findById(targetId)
+                Account account = accountRepository.findById(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (account.getRole() != Role.USER) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
             }
             case MERCHANT -> {
                 // MERCHANT는 별도 테이블 없이 Account.role로 구분 — role 불일치 시 대상 없음으로 처리
