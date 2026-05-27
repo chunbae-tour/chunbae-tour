@@ -40,6 +40,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     /**
      * 4-2. 특정 관광지 기반 추천 (동일 카테고리 + 근거리 TOP N)
      * 파라미터: 1=lat, 2=lng, 3=category(String), 4=excludePlaceId, 5=limit
+     * TODO: 데이터 증가 시 성능 저하(풀스캔) 우려. lat, lng에 대한 BETWEEN(bounding-box) 조건 추가 검토 필요
      */
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
