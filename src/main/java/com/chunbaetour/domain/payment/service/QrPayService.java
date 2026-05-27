@@ -36,6 +36,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +64,7 @@ public class QrPayService {
     private final RedissonClient redissonClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final MessageSource messageSource;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
     /** 분산 락 키: qr:lock:{shopId}:{userId} — 동일 사용자·가게 동시 승인 시도 직렬화 */
@@ -277,13 +280,15 @@ public class QrPayService {
             yeopjeonHistoryRepository.save(YeopjeonHistory.create(
                     lockedRequest.getUserId(), null, lockedRequest.getShopId(),
                     YeopjeonHistoryType.PAYMENT, amount, wallet.getBalance(),
-                    "QR 결제 - " + shop.getShopName()
+                    messageSource.getMessage("history.payment.description",
+                            new Object[]{shop.getShopName()}, LocaleContextHolder.getLocale())
             ));
             // merchantUserId == shop.getUserId() 는 소유권 검증으로 보장됨 — 위치 변경 시 재검증 필요
             yeopjeonHistoryRepository.save(YeopjeonHistory.create(
                     merchantUserId, null, lockedRequest.getShopId(),
                     YeopjeonHistoryType.RECEIVED_PAYMENT, amount, shopWallet.getBalance(),
-                    "QR 결제 수신"
+                    messageSource.getMessage("history.received.description",
+                            null, LocaleContextHolder.getLocale())
             ));
 
             // 상태 COMPLETED 전이

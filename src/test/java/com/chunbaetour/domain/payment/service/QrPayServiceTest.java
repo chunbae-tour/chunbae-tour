@@ -50,6 +50,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.InOrder;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
@@ -77,6 +78,9 @@ class QrPayServiceTest {
 
     @Mock
     private RedissonClient redissonClient;
+
+    @Mock
+    private MessageSource messageSource;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
