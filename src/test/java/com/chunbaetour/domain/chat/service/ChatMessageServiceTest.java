@@ -16,7 +16,6 @@ import com.chunbaetour.domain.chat.entity.Message;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.MessageRepository;
-import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -163,7 +162,7 @@ class ChatMessageServiceTest {
         // ACTIVE 멤버 → 메시지 목록 반환, Account 정보 포함
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
-        given(member.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(member.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
         Message msg = mock(Message.class);
@@ -194,7 +193,7 @@ class ChatMessageServiceTest {
         // m3는 page에 포함 안 되므로 stub 없이 단순 mock
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
-        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(member.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
         Message m1 = stubMessage(3L), m2 = stubMessage(2L), m3 = mock(Message.class);
@@ -237,7 +236,7 @@ class ChatMessageServiceTest {
         // Account 없는 senderId → "탈퇴한 사용자" fallback
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
-        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(member.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
         Message msg = stubMessage(5L);
@@ -255,7 +254,7 @@ class ChatMessageServiceTest {
         // cursor=100 → id < 100인 메시지만 반환
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
-        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(member.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
         Message msg = stubMessage(99L);
@@ -275,7 +274,7 @@ class ChatMessageServiceTest {
         // SYSTEM 메시지(senderId=null) → senderNickname null
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
-        given(member.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(member.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
         Message systemMsg = mock(Message.class);
