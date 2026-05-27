@@ -141,7 +141,7 @@ public class RecommendService {
         // TODO: Redis GeoSearch 로직 (Phase 5 마커 데이터 동기화와 고도화)
         // 시니어 아키텍트 리뷰 반영: DB 쿼리 내 ORDER BY RAND()는 치명적인 성능 저하 유발.
         // 넉넉하게 반경 내 최대 50건을 가져온 뒤 애플리케이션 단에서 셔플 후 슬라이스(Limit) 샘플링 처리
-        int fetchSize = 50;
+        int fetchSize = Math.max(50, limit);
         List<Place> nearbyPlaces = new java.util.ArrayList<>(
             placeRepository.findNearbyPlacesWithinRadius(lat, lng, radius, fetchSize)
         );

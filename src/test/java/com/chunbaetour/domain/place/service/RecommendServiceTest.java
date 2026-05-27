@@ -36,6 +36,9 @@ class RecommendServiceTest {
     private StringRedisTemplate stringRedisTemplate;
 
     @Mock
+    private org.springframework.data.redis.core.RedisOperations<String, String> redisOperations;
+
+    @Mock
     private ZSetOperations<String, String> zSetOperations;
 
     @InjectMocks
@@ -94,7 +97,8 @@ class RecommendServiceTest {
         when(stringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
                 .thenAnswer(invocation -> {
                     org.springframework.data.redis.core.SessionCallback<?> callback = invocation.getArgument(0);
-                    callback.execute(stringRedisTemplate);
+                    when(redisOperations.opsForZSet()).thenReturn(zSetOperations);
+                    callback.execute(redisOperations);
                     return Collections.emptyList();
                 });
 
@@ -104,13 +108,17 @@ class RecommendServiceTest {
         // then
         assertThat(result).hasSize(1);
         assertThat(result.get(0).placeId()).isEqualTo(2L);
-        // ZADD(Bulk) 및 만료시간 세팅 호출 정밀 검증
+        
+        // Pipeline Delete 및 Expire 호출 검증
+        verify(redisOperations).delete(PlaceRedisConstants.RECOMMEND_POPULAR_KEY);
+        verify(redisOperations).expire(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), eq(PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES), eq(TimeUnit.MINUTES));
+        
+        // ZADD(Bulk) 호출 확인
         verify(zSetOperations).add(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), argThat(set -> {
             if (set == null || set.size() != 1) return false;
             ZSetOperations.TypedTuple<String> tuple = (ZSetOperations.TypedTuple<String>) set.iterator().next();
             return tuple.getValue().equals("2") && tuple.getScore() == (10 * 0.7 + 20 * 0.3);
         }));
-        verify(stringRedisTemplate).expire(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), eq(PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES), eq(TimeUnit.MINUTES));
     }
     
     @Test
