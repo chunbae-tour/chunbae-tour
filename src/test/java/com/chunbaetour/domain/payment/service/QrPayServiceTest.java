@@ -373,8 +373,6 @@ class QrPayServiceTest {
 
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(zeroMenu));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING))
-                .willReturn(false);
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
                 new QrPayItemRequest(MENU_ID_1, 3)
