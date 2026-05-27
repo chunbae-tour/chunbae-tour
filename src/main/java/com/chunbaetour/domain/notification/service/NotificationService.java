@@ -55,12 +55,12 @@ public class NotificationService {
         notificationRepository.markAllAsRead(userId);
     }
 
-    // 알림 삭제 — soft delete, 본인 알림 아닌 경우 NOTIFICATION_NOT_FOUND (정보 비노출)
+    // 알림 삭제 — soft delete, 이미 삭제된 경우 204 멱등, 본인 알림 아닌 경우 NOTIFICATION_NOT_FOUND (정보 비노출)
     @Transactional
     public void deleteNotification(Long userId, Long notificationId) {
-        Notification notification = notificationRepository.findByIdAndUserId(notificationId, userId)
+        Notification notification = notificationRepository.findByIdAndUserIdIncludingDeleted(notificationId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOTIFICATION_NOT_FOUND));
-        notification.delete();
+        notification.delete(); // idempotent — deletedAt null 일 때만 설정
     }
 
     // 알림 저장 — NotificationEventHandler에서 REQUIRES_NEW 트랜잭션으로 호출

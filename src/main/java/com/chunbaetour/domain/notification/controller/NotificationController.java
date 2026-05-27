@@ -52,7 +52,7 @@ public class NotificationController {
         notificationService.markAsRead(userId, notificationId);
     }
 
-    // 알림 삭제 — soft delete, 본인 알림 아닌 경우 404 반환 (정보 비노출)
+    // 알림 삭제 — soft delete, 이미 삭제된 경우 204 멱등, 본인 알림 아닌 경우 404 반환 (정보 비노출)
     @DeleteMapping("/{notificationId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteNotification(
