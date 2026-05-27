@@ -20,6 +20,12 @@ public final class PlaceRedisConstants {
     /** 추천 데이터 캐시 TTL (기본 1시간) */
     public static final long RECOMMEND_CACHE_TTL_MINUTES = 60;
 
+    /** 관광지 기반 추천 캐시 키 접두사 */
+    public static final String RECOMMEND_PLACE_BASED_PREFIX = "recommend:place:";
+
+    /** 관광지 기반 추천 캐시 TTL (30분) */
+    public static final long RECOMMEND_PLACE_BASED_TTL_MINUTES = 30;
+
     /** 인기 점수 가중치: 찜(좋아요) */
     public static final double POPULAR_LIKE_WEIGHT = 0.7;
 
