@@ -25,7 +25,14 @@ public class ShopPublicController {
 
     private final ShopService shopService;
 
-    /** 가게 공개 정보 + 메뉴 목록 조회 — 비로그인 접근 가능 */
+    /**
+     * 가게 공개 정보 + 메뉴 목록 조회 — 비로그인 접근 가능.
+     *
+     * <p>QR 스캔 후 결제창 진입 시 가게명·메뉴를 fetch하는 용도.
+     * 로그인 상태에서 토큰이 만료된 경우에도 차단되지 않아야 하므로
+     * {@link com.chunbaetour.domain.auth.security.JwtAuthenticationFilter} PUBLIC_PATH_PATTERNS에
+     * {@code /api/v1/shops/*} 등록 필수 — 누락 시 만료 토큰 보유 유저가 결제창 접근 불가.
+     */
     @GetMapping("/{shopId}")
     public ApiResponse<ShopInfoResponse> getShopInfo(@PathVariable @Positive Long shopId) {
         return ApiResponse.success(shopService.getShopInfo(shopId));

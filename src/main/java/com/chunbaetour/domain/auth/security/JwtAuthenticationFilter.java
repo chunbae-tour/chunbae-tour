@@ -70,6 +70,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/merchants/auth/**",
             "/api/v1/admin/auth/**",
             "/api/v1/auth/**",
+            // QR 스캔 후 결제창 진입 시 가게명·메뉴 fetch 용도. 만료 토큰 보유 유저도 차단되지 않아야 함.
+            "/api/v1/shops/*",
             "/actuator/**"
     );
 
