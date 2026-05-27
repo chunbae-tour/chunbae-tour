@@ -258,7 +258,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(resolveBody("WARNING", null)))
                     .andExpect(status().isConflict())
-                    .andExpect(jsonPath("$.code").value("REPORT_003"));
+                    .andExpect(jsonPath("$.code").value("REPORT_006"));
         }
 
         @Test
@@ -276,7 +276,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(resolveBody("WARNING", null)))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("REPORT_004"));
+                    .andExpect(jsonPath("$.code").value("REPORT_007"));
         }
 
         @Test
@@ -289,7 +289,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(resolveBody("WARNING", null)))
                     .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.code").value("REPORT_002"));
+                    .andExpect(jsonPath("$.code").value("REPORT_005"));
         }
     }
 
@@ -374,7 +374,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(resolveBody("DISMISS", null)))
                     .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("REPORT_004"));
+                    .andExpect(jsonPath("$.code").value("REPORT_007"));
         }
 
         @Test
@@ -394,7 +394,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(resolveBody("DISMISS", null)))
                     .andExpect(status().isConflict())
-                    .andExpect(jsonPath("$.code").value("REPORT_003"));
+                    .andExpect(jsonPath("$.code").value("REPORT_006"));
         }
     }
 

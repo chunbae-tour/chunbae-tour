@@ -319,6 +319,12 @@ public class ReportService {
         }
     }
 
+    /**
+     * 콘텐츠 작성자 계정 정지.
+     *
+     * <p>TODO(KAN-92): 명세 4-3 "ReportService → UserService 호출" — 현재 AccountRepository 직접 접근.
+     * 향후 정지 로직(알림 발송, 로그인 토큰 무효화 등) 추가 시 UserService.suspend()로 위임 필요.
+     */
     private void suspendTargetAuthor(ReportTargetType targetType, Long targetId) {
         Long authorId = switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findById(targetId)

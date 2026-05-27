@@ -58,13 +58,6 @@ public enum ErrorCode {
     COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
     POST_NOT_COMMENTABLE(HttpStatus.FORBIDDEN,          "COMMUNITY_009", "댓글을 작성할 수 없는 게시글입니다."),
 
-    // ===== REPORT (담당: 박경화) =====
-    TARGET_ALREADY_REPORTED(HttpStatus.CONFLICT,        "REPORT_001", "이미 신고한 대상입니다."),
-    REPORT_NOT_FOUND(HttpStatus.NOT_FOUND,              "REPORT_002", "존재하지 않는 신고 내역입니다."),
-    REPORT_ALREADY_RESOLVED(HttpStatus.CONFLICT,        "REPORT_003", "이미 처리된 신고 내역입니다."),
-    // REPORT_004: targetType 불일치 엔드포인트 사용 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시 (명세 4-4 ADMIN_003)
-    REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,       "REPORT_004", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다."),
-
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
     MARKET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_002", "존재하지 않는 전통시장입니다."),
@@ -145,11 +138,20 @@ public enum ErrorCode {
     CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
     CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
 
+    // ===== NOTIFICATION (담당: 임하은) =====
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
+
     // ===== REPORT (담당: 박경화) =====
+    // REPORT_001~004: 신고 접수 유효성 검증 (KAN-90)
     REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND,            "REPORT_001", "신고 대상을 찾을 수 없습니다."),
     DUPLICATE_REPORT(HttpStatus.CONFLICT,                    "REPORT_002", "이미 신고한 대상입니다."),
     REPORT_SELF(HttpStatus.BAD_REQUEST,                      "REPORT_003", "자기 자신을 신고할 수 없습니다."),
-    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다.");
+    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다."),
+    // REPORT_005~007: 관리자 신고 처리 (KAN-91/92)
+    REPORT_NOT_FOUND(HttpStatus.NOT_FOUND,                   "REPORT_005", "존재하지 않는 신고 내역입니다."),
+    REPORT_ALREADY_RESOLVED(HttpStatus.CONFLICT,             "REPORT_006", "이미 처리된 신고 내역입니다."),
+    // REPORT_007: targetType 불일치 엔드포인트 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시
+    REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,            "REPORT_007", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다.");
 
     private final HttpStatus status;
     private final String code;
