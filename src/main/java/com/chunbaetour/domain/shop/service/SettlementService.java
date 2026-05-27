@@ -51,9 +51,9 @@ public class SettlementService {
         ShopWallet wallet = shopWalletRepository.findByShopId(shop.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
-        // 잔액 0 이하 신청 차단
+        // 정산 가능 잔액 없으면 차단
         if (wallet.getBalance() <= 0) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
+            throw new BusinessException(ErrorCode.SETTLEMENT_BALANCE_EMPTY);
         }
 
         // 신청 시점 잔액 + 계좌 정보 스냅샷으로 정산 요청 생성

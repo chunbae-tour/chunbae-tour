@@ -146,7 +146,7 @@ class SettlementServiceTest {
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
+                .isEqualTo(ErrorCode.SETTLEMENT_BALANCE_EMPTY);
 
         then(settlementRepository).should(never()).save(any());
     }
