@@ -54,7 +54,7 @@ public enum ErrorCode {
     POST_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_004", "해당 게시글을 삭제할 권한이 없습니다."),
     COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND,             "COMMUNITY_005", "존재하지 않는 댓글입니다."),
     COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN,             "COMMUNITY_006", "댓글 작성자만 수정·삭제할 수 있습니다."),
-    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,     "COMMUNITY_007", "이미 삭제된 댓글입니다."),
+    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,      "COMMUNITY_007", "이미 삭제된 댓글입니다."),
     COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
     POST_NOT_COMMENTABLE(HttpStatus.FORBIDDEN,          "COMMUNITY_009", "댓글을 작성할 수 없는 게시글입니다."),
 
@@ -150,7 +150,11 @@ public enum ErrorCode {
     REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND,            "REPORT_001", "신고 대상을 찾을 수 없습니다."),
     DUPLICATE_REPORT(HttpStatus.CONFLICT,                    "REPORT_002", "이미 신고한 대상입니다."),
     REPORT_SELF(HttpStatus.BAD_REQUEST,                      "REPORT_003", "자기 자신을 신고할 수 없습니다."),
-    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다.");
+    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다."),
+    REPORT_NOT_FOUND(HttpStatus.NOT_FOUND,                   "REPORT_005", "존재하지 않는 신고 내역입니다."),
+    REPORT_ALREADY_RESOLVED(HttpStatus.CONFLICT,             "REPORT_006", "이미 처리된 신고 내역입니다."),
+    // REPORT_007: targetType 불일치 엔드포인트 사용 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시
+    REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,            "REPORT_007", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다.");
 
     private final HttpStatus status;
     private final String code;
