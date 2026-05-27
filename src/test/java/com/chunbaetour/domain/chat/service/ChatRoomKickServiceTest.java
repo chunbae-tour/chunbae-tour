@@ -50,7 +50,7 @@ class ChatRoomKickServiceTest {
         room = mock(ChatRoom.class);
         // lenient: kickMember_nonExistentRoom에서 findById를 재정의하므로 기본 스텁이 미사용 경고 없이 동작해야 함
         lenient().when(chatRoomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
-        lenient().when(room.getOwnerId()).thenReturn(OWNER_ID);
+        lenient().when(room.isOwnedBy(OWNER_ID)).thenReturn(true);
     }
 
     // 정상 강퇴 — kick() → saveAndFlush(target) → decrementMembers() → saveAndFlush(room) 순서 보장
@@ -83,7 +83,7 @@ class ChatRoomKickServiceTest {
     // 방장이 아닌 사용자가 강퇴 시도 — CHAT_006
     @Test
     void kickMember_notOwner_throws_CHAT_SETTING_FORBIDDEN() {
-        given(room.getOwnerId()).willReturn(999L);
+        given(room.isOwnedBy(OWNER_ID)).willReturn(false);
 
         assertThatThrownBy(() -> chatRoomService.kickMember(OWNER_ID, ROOM_ID, TARGET_ID))
                 .isInstanceOf(BusinessException.class)
