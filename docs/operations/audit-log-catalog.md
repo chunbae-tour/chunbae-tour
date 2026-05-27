@@ -29,6 +29,15 @@ JSON encoder = `net.logstash.logback.encoder.LogstashEncoder`. 외부 log aggreg
 | `REFRESH_ROTATED` | ReissueService | SUCCESS | account.id | role |
 | `REFRESH_REJECTED` | ReissueService | FAILURE | userId 또는 null | reasonDetail (jwt_expired/jwt_invalid/account_not_found/account_suspended/cas_failure) |
 | `RATE_LIMIT_DENIED` | RateLimitFilter | FAILURE | null | endpoint |
+| `ACCOUNT_DELETED` | UserMeService.deleteMe (afterCommit) | SUCCESS only | userId | tokenRole, deletedLikes |
+
+### `ACCOUNT_DELETED` FAILURE 케이스 미발행 정책
+
+본 이벤트는 **SUCCESS만** 기록한다. CAS UPDATE(`markAsDeleted`) race 패배는 `afterCommit` 경로에 도달하지
+않아 audit 자체가 발생하지 않으며, 이는 정상 동작이다. "이미 탈퇴된 계정에 재탈퇴 시도"는 인증 단계에서
+AUTH_006 응답으로 차단되므로 도메인 진입 자체가 불가능.
+
+→ SIEM 룰 작성 시: `ACCOUNT_DELETED` outcome이 SUCCESS 외 값으로 들어오면 코드 회귀 신호로 간주.
 
 ## 표준 필드 (모든 이벤트 공통)
 
@@ -96,7 +105,7 @@ JSON 최상위 필드로 직렬화. MDC prefix `audit.`로 펼침 — Kibana/Clo
 
 - 관리자 권한 변경 / 정지 처리 — admin Epic 도래 시
 - 비밀번호 변경 / 재설정 — 별도 PRD
-- 회원 탈퇴 — 별도 PRD
+- 관리자 강제 탈퇴 — admin Epic 도래 시 (self-withdrawal은 `ACCOUNT_DELETED`로 KAN-144 커버)
 - 결제 도메인 감사 (PortOne webhook 등) — KAN-70 도메인 작업 시 동일 `SecurityAuditLogger` 재사용
 - 감사 로그 무결성 (HMAC 서명) — SIEM 자체 무결성 기능 의존 또는 별도 Story
 
