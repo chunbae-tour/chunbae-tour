@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -299,6 +300,26 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti2@example.com").accessToken();
 
         mockMvc.perform(patch("/api/v1/notifications/1/read")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 DELETE /api/v1/notifications/{id} 호출 시 401 AUTH_006")
+    void anonymous_callingNotificationsDelete_returns_401() throws Exception {
+        mockMvc.perform(delete("/api/v1/notifications/1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 DELETE /api/v1/notifications/{id} 호출 시 403 AUTH_007")
+    void merchantToken_callingNotificationsDelete_returns_403() throws Exception {
+        seedFactory.seedMerchant("merchant-noti-del@example.com", PASSWORD, "상인닉-알림삭제");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti-del@example.com").accessToken();
+
+        mockMvc.perform(delete("/api/v1/notifications/1")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));

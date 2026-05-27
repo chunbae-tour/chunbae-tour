@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.notification.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import com.chunbaetour.domain.notification.entity.Notification;
 import com.chunbaetour.domain.notification.type.NotificationReferenceType;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import com.chunbaetour.domain.notification.service.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +22,9 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private NotificationRepository notificationRepository;
+
+    @Autowired
+    private NotificationService notificationService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -129,6 +134,59 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
         Optional<Notification> result = notificationRepository.findByIdAndUserId(saved.getId(), USER_A);
 
         assertThat(result).isEmpty();
+    }
+
+    // ===== findByIdAndUserIdIncludingDeleted =====
+
+    // soft-deleted 알림도 조회됨 — 멱등 삭제 시 소유권 확인 용도
+    @Test
+    void findByIdAndUserIdIncludingDeleted_returnsSoftDeletedNotification() {
+        Notification saved = notificationRepository.save(buildNotification(USER_A));
+        saved.delete();
+        notificationRepository.save(saved);
+
+        Optional<Notification> result = notificationRepository.findByIdAndUserIdIncludingDeleted(saved.getId(), USER_A);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getDeletedAt()).isNotNull();
+    }
+
+    // 타 userId 알림은 반환하지 않음 — 소유권 검증 유지
+    @Test
+    void findByIdAndUserIdIncludingDeleted_returnsEmptyForOtherUser() {
+        Notification saved = notificationRepository.save(buildNotification(USER_A));
+
+        Optional<Notification> result = notificationRepository.findByIdAndUserIdIncludingDeleted(saved.getId(), USER_B);
+
+        assertThat(result).isEmpty();
+    }
+
+    // ===== deleteNotification 서비스 통합 =====
+
+    // deleteNotification 호출 후 dirty checking으로 DB에 deleted_at 반영되고, 목록 조회에서 제외됨
+    @Test
+    void deleteNotification_persistsSoftDeleteToDb() {
+        Notification saved = notificationRepository.save(buildNotification(USER_A));
+
+        notificationService.deleteNotification(USER_A, saved.getId());
+
+        Integer deletedCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE id = ? AND deleted_at IS NOT NULL",
+                Integer.class, saved.getId());
+        assertThat(deletedCount).isEqualTo(1);
+
+        List<Notification> visible = notificationRepository.findWithCursor(USER_A, null, PageRequest.of(0, 10));
+        assertThat(visible).noneMatch(n -> n.getId().equals(saved.getId()));
+    }
+
+    // 이미 soft-deleted된 알림에 deleteNotification 재호출 — 예외 없음 (멱등 204)
+    @Test
+    void deleteNotification_alreadyDeleted_isIdempotent() {
+        Notification saved = notificationRepository.save(buildNotification(USER_A));
+        notificationService.deleteNotification(USER_A, saved.getId());
+
+        assertThatNoException().isThrownBy(() ->
+                notificationService.deleteNotification(USER_A, saved.getId()));
     }
 
     // ===== markAllAsRead =====

@@ -73,4 +73,14 @@ class NotificationControllerTest {
 
         verify(notificationService).markAllAsRead(USER_ID);
     }
+
+    // 알림 삭제 — service 위임 검증
+    @Test
+    void deleteNotification_delegatesToService() {
+        willDoNothing().given(notificationService).deleteNotification(USER_ID, 10L);
+
+        notificationController.deleteNotification(USER_ID, 10L);
+
+        verify(notificationService).deleteNotification(USER_ID, 10L);
+    }
 }
