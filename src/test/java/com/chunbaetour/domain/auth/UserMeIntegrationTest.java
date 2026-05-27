@@ -9,9 +9,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
+import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.UserLike;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.repository.UserLikeRepository;
+import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,10 +66,18 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     private WalletRepository walletRepository;
 
     @Autowired
+    private PlaceRepository placeRepository;
+
+    @Autowired
+    private UserLikeRepository userLikeRepository;
+
+    @Autowired
     private StringRedisTemplate redis;
 
     @AfterEach
     void cleanup() {
+        userLikeRepository.deleteAll();
+        placeRepository.deleteAll();
         walletRepository.deleteAll();
         accountRepository.deleteAll();
         var refreshKeys = redis.keys("auth:refresh:*");
@@ -347,6 +361,12 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.totalElements").value(0));
     }
 
+    /**
+     * 페이징 메타({@code data.size}, {@code data.number}) 바인딩 검증. 시드 데이터 없이 통과 가능 — 본 케이스는
+     * endpoint wire-up + 페이징 파라미터 전달만 확인.
+     * 실제 content 검증(개수/정렬)은 {@code get_me_likes_with_25_seeds_pages_correctly}와 PR #163의
+     * {@code PlaceLikeServiceTest}가 service 단위로 커버.
+     */
     @Test
     void get_me_likes_respects_page_size_parameter() throws Exception {
         // 페이징 파라미터가 응답 메타데이터에 반영되는지 검증 — 시드 데이터 없이도 페이지 size 메타로 검증 가능
@@ -361,7 +381,7 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void get_me_likes_with_oversized_page_returns_400_INVALID_REQUEST() throws Exception {
+    void get_me_likes_with_oversized_page_returns_400_COMMON_002() throws Exception {
         // PlaceLikeService.getUserLikedPlaces 내부 가드: size > 100이면 INVALID_REQUEST
         signup(EMAIL, PASSWORD, NICKNAME);
         String accessToken = login(EMAIL, PASSWORD);
@@ -377,6 +397,76 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/users/me/likes"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    void get_me_likes_with_25_seeds_pages_correctly() throws Exception {
+        // 25개 UserLike 시드 → size=10 페이징 → 3페이지 (10/10/5)
+        // Place 생성자는 status 파라미터를 빌더에 노출하지 않고 항상 PlaceStatus.ACTIVE로 강제 세팅 (Place.java:150).
+        // 따라서 시드 데이터는 항상 ACTIVE → PlaceLikeService의 ACTIVE 필터 통과 보장.
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+        Account user = accountRepository.findByEmail(EMAIL).orElseThrow();
+
+        for (int i = 0; i < 25; i++) {
+            Place place = placeRepository.save(Place.builder()
+                    .name("place-" + i)
+                    .category(PlaceCategory.TOURIST_SPOT)
+                    .address("addr-" + i)
+                    .lat(new BigDecimal("37.5665"))
+                    .lng(new BigDecimal("126.9780"))
+                    .build());
+            userLikeRepository.save(UserLike.of(user, place));
+        }
+
+        // 1페이지 — 10개 + 메타
+        mockMvc.perform(get("/api/v1/users/me/likes?page=0&size=10")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.size").value(10))
+                .andExpect(jsonPath("$.data.number").value(0))
+                .andExpect(jsonPath("$.data.totalElements").value(25))
+                .andExpect(jsonPath("$.data.totalPages").value(3))
+                .andExpect(jsonPath("$.data.content.length()").value(10));
+
+        // 2페이지 — 10개
+        mockMvc.perform(get("/api/v1/users/me/likes?page=1&size=10")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.size").value(10))
+                .andExpect(jsonPath("$.data.number").value(1))
+                .andExpect(jsonPath("$.data.content.length()").value(10));
+
+        // 3페이지 (last) — 5개
+        mockMvc.perform(get("/api/v1/users/me/likes?page=2&size=10")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.number").value(2))
+                .andExpect(jsonPath("$.data.content.length()").value(5));
+    }
+
+    @Test
+    void get_me_likes_with_disallowed_sort_field_returns_400_COMMON_002() throws Exception {
+        // ALLOWED_LIKES_SORT_FIELDS 화이트리스트 밖 필드 — 의도치 않은 entity 내부 필드 정렬 차단
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        mockMvc.perform(get("/api/v1/users/me/likes?sort=password,DESC")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    void get_me_likes_with_allowed_sort_field_returns_200() throws Exception {
+        // 화이트리스트 허용 필드 (createdAt) — 정상 응답 회귀 가드
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        mockMvc.perform(get("/api/v1/users/me/likes?sort=createdAt,DESC")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"));
     }
 
     private void signup(String email, String password, String nickname) throws Exception {
