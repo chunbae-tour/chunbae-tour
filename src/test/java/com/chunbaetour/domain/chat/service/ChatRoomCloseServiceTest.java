@@ -40,7 +40,7 @@ class ChatRoomCloseServiceTest {
     void closeRoom_owner_succeeds() {
         // 방장만 채팅방 종료 가능 — close() 호출로 상태가 CLOSED로 전이됨
         ChatRoom room = mock(ChatRoom.class);
-        given(room.getOwnerId()).willReturn(OWNER_ID);
+        given(room.isOwnedBy(OWNER_ID)).willReturn(true);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         chatRoomService.closeRoom(OWNER_ID, ROOM_ID);
@@ -54,7 +54,6 @@ class ChatRoomCloseServiceTest {
     void closeRoom_non_owner_throws_CHAT_SETTING_FORBIDDEN() {
         // 방장이 아닌 멤버는 채팅방 종료 불가 — 설정 변경 권한은 방장 전용
         ChatRoom room = mock(ChatRoom.class);
-        given(room.getOwnerId()).willReturn(OWNER_ID);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         assertThatThrownBy(() -> chatRoomService.closeRoom(OTHER_USER_ID, ROOM_ID))
@@ -78,7 +77,7 @@ class ChatRoomCloseServiceTest {
     void closeRoom_already_closed_throws_CHAT_ROOM_CLOSED() {
         // 이미 종료된 방에 close() 재요청 시 ChatRoom 도메인 메서드가 CHAT_013 예외 발생
         ChatRoom room = mock(ChatRoom.class);
-        given(room.getOwnerId()).willReturn(OWNER_ID);
+        given(room.isOwnedBy(OWNER_ID)).willReturn(true);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
         // close() 호출 시 ChatRoom 도메인이 직접 예외를 던지므로 서비스 레벨에서 전파됨
         doThrow(new BusinessException(ErrorCode.CHAT_ROOM_CLOSED)).when(room).close();
@@ -94,7 +93,7 @@ class ChatRoomCloseServiceTest {
         // 동시 close() 경합 — saveAndFlush 시 낙관적 잠금 실패, 재조회 결과 CLOSED이면 CHAT_013
         ChatRoom room = mock(ChatRoom.class);
         ChatRoom refreshed = mock(ChatRoom.class);
-        given(room.getOwnerId()).willReturn(OWNER_ID);
+        given(room.isOwnedBy(OWNER_ID)).willReturn(true);
         given(chatRoomRepository.findById(ROOM_ID))
                 .willReturn(Optional.of(room))
                 .willReturn(Optional.of(refreshed));
@@ -113,7 +112,7 @@ class ChatRoomCloseServiceTest {
         // 동시 다른 필드 수정(멤버 수 등) 경합 — 재조회 결과 OPEN이면 CONCURRENT_UPDATE
         ChatRoom room = mock(ChatRoom.class);
         ChatRoom refreshed = mock(ChatRoom.class);
-        given(room.getOwnerId()).willReturn(OWNER_ID);
+        given(room.isOwnedBy(OWNER_ID)).willReturn(true);
         given(chatRoomRepository.findById(ROOM_ID))
                 .willReturn(Optional.of(room))
                 .willReturn(Optional.of(refreshed));
