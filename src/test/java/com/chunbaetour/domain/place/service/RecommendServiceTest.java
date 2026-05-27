@@ -23,7 +23,6 @@ import java.util.List;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
-import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.math.BigDecimal;
@@ -403,6 +402,21 @@ class RecommendServiceTest {
         // given
         Long placeId = 1L;
         int limit = 51;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (placeId가 null)")
+    void getNearbyShops_Fail_PlaceIdNull() {
+        // given
+        Long placeId = null;
+        int limit = 5;
 
         // when & then
         BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
