@@ -8,6 +8,7 @@ import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse.MenuSnapshotItem;
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.repository.QrPayRequestRepository;
+import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
@@ -15,8 +16,6 @@ import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -27,15 +26,19 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * QR 결제 요청 서비스 (STORY-13).
  * 사용자가 결제 요청을 생성하면 상인이 승인/거절할 때까지 PENDING 상태 유지.
  * 동시성 제어(분산 락·비관적 락)는 상인 승인 시(STORY-14)에서 처리.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -49,6 +52,8 @@ public class QrPayService {
     private final Clock clock;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
+    // pending_key unique 제약명 — DataIntegrityViolationException 원인 식별에 사용
+    private static final String PENDING_KEY_CONSTRAINT = "pending_key";
 
     /**
      * QR 결제 요청 생성.
@@ -105,6 +110,10 @@ public class QrPayService {
             if (!menu.isAvailable()) {
                 throw new BusinessException(ErrorCode.MENU_UNAVAILABLE);
             }
+            // 메뉴 가격 음수/0 방어 — DB 데이터 오류 시 비정상 결제 생성 방지
+            if (menu.getPrice() <= 0) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
 
             snapshots.add(new MenuSnapshotItem(menu.getId(), menu.getName(), menu.getPrice(), item.quantity()));
             try {
@@ -115,12 +124,19 @@ public class QrPayService {
             }
         }
 
-        // totalAmount 0원 차단 — 메뉴 가격 데이터 오류(price=0)가 있어도 결제 생성 방지
-        if (totalAmount == 0) {
+        // totalAmount 0 이하 차단 — price <= 0 방어에도 불구하고 결제 금액 이상 발생 시 최종 방어
+        if (totalAmount <= 0) {
             throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
         }
 
+        // 동일 사용자·가게에 PENDING 요청 사전 차단 — 일반 중복 요청에 명확한 에러 반환
+        // DB unique 제약(pendingKey)은 동시 레이스 케이스 최종 방어용으로 병행 유지
+        if (qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(userId, shop.getId(), QrPayStatus.PENDING)) {
+            throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
+        }
+
         // 결제 요청 시점 잔액 사전 체크 — 명백한 잔액 부족 조기 차단 (실제 차감은 상인 승인 시 STORY-14)
+        // STORY-14에서 wallet row lock + 잔액 재검증 필수 (생성~승인 사이 잔액 변동 가능)
         Wallet wallet = walletRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
         if (wallet.getBalance() < totalAmount) {
@@ -140,11 +156,16 @@ public class QrPayService {
                 menuItemsJson,
                 expiredAt
         );
-        // pending_key unique 제약 위반 시 → 동시 요청 레이스 케이스, DUPLICATE로 변환
+        // pending_key unique 위반 = 동시 요청 레이스 케이스 → DUPLICATE
+        // 그 외 무결성 오류(pay_request_id 충돌 등)는 내부 서버 오류로 처리
         try {
             qrPayRequestRepository.saveAndFlush(qrPayRequest);
         } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
+            if (containsPendingKeyConstraint(e)) {
+                throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
+            }
+            log.error("[QR 결제 요청] 예상치 못한 DB 무결성 오류 발생", e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
 
         return new QrPayCreateResponse(
@@ -160,8 +181,21 @@ public class QrPayService {
     private String serializeSnapshots(List<MenuSnapshotItem> snapshots) {
         try {
             return objectMapper.writeValueAsString(snapshots);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /** DataIntegrityViolationException 예외 체인에 pending_key 제약명이 포함되는지 확인 */
+    private boolean containsPendingKeyConstraint(DataIntegrityViolationException e) {
+        Throwable cause = e;
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(PENDING_KEY_CONSTRAINT)) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 }

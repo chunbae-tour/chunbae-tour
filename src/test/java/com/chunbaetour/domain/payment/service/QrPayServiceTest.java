@@ -19,11 +19,12 @@ import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
-import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.dao.DataIntegrityViolationException;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -347,9 +348,9 @@ class QrPayServiceTest {
     }
 
     @Test
-    @DisplayName("QR 결제 요청 생성 — 모든 메뉴 가격 0원 → ZERO_AMOUNT_NOT_ALLOWED")
-    void createQrPayRequest_zeroTotalAmount_throws() {
-        // given — 메뉴 price=0 데이터가 DB에 존재하는 경우 (데이터 오류)
+    @DisplayName("QR 결제 요청 생성 — 메뉴 가격 0원(DB 데이터 오류) → INVALID_REQUEST")
+    void createQrPayRequest_zeroPriceMenu_throws() {
+        // given — price=0 메뉴가 DB에 존재하는 경우, price <= 0 방어에서 차단
         Shop shop = createActiveShop();
         Menu zeroMenu = createMenu(MENU_ID_1, SHOP_ID, "공짜메뉴", 0L, true);
 
@@ -364,7 +365,30 @@ class QrPayServiceTest {
         assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 생성 — 동일 사용자·가게에 PENDING 존재(사전 체크) → DUPLICATE_QR_PAY_REQUEST")
+    void createQrPayRequest_existingPendingRequest_throws() {
+        // given — existsBy 사전 체크에서 차단 (일반 중복 요청 경로)
+        Shop shop = createActiveShop();
+        Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
+
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING))
+                .willReturn(true);
+
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+                new QrPayItemRequest(MENU_ID_1, 1)
+        ));
+
+        // then
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
     }
 
     @Test
