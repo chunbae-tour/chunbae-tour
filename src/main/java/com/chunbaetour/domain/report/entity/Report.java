@@ -50,7 +50,7 @@ public class Report extends BaseEntity {
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @Column(nullable = false, length = 20)
     private ReportStatus status;
 
     public static Report create(Long reporterId, ReportTargetType targetType, Long targetId,

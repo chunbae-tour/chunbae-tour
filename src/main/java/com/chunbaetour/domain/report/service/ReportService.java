@@ -5,18 +5,17 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.community.companion.entity.CompanionPost;
-import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
-import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.common.util.CursorUtils;
-import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -25,6 +24,7 @@ import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,8 +66,12 @@ public class ReportService {
             // save()만 사용하면 flush가 커밋 시점으로 미뤄져 catch 블록 밖에서 터짐
             return ReportCreateResponse.of(reportRepository.saveAndFlush(report));
         } catch (DataIntegrityViolationException e) {
-            // 동시 요청으로 exists 검사를 통과한 중복 신고 → DB 유니크 제약이 원자적으로 차단
-            throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
+            // uk_reports_reporter_target 제약 위반 = 동시 중복 신고, 그 외는 재throw
+            String msg = e.getMostSpecificCause().getMessage();
+            if (msg != null && msg.contains("uk_reports_reporter_target")) {
+                throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
+            }
+            throw e;
         }
     }
 
