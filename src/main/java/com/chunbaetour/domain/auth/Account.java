@@ -159,4 +159,55 @@ public class Account {
             this.profileImageUrl = profileImageUrl;
         }
     }
+
+    /**
+     * 회원 탈퇴 — soft delete (Epic C S1, KAN-143).
+     *
+     * <p>{@code deletedAt}과 {@code status=DELETED}를 같은 트랜잭션에서 동시에 세팅한다.
+     * <ul>
+     *   <li>{@code deletedAt}은 {@code @SQLRestriction("deleted_at IS NULL")}과 짝을 이뤄 후속 조회에서 자동 제외.</li>
+     *   <li>{@code status=DELETED}는 응답 직렬화/관리자 화면에서 탈퇴 상태를 명시적으로 표현할 때 사용.</li>
+     * </ul>
+     * 둘 중 하나만 세팅되면 "조회는 되는데 상태는 ACTIVE", 혹은 그 반대의 불일치 상태가 만들어진다.
+     * 도메인 메서드로 묶어 분기 누락을 컴파일 단계에서 막는다.
+     *
+     * <p><b>멱등 정책</b>: 이미 {@code DELETED} 상태인 Account에 다시 호출하면 {@link IllegalStateException}.
+     * 순차 호출에서는 첫 탈퇴 직후 access blacklist 등록으로 두 번째 호출이 인증 단계에서 AUTH_013으로 차단된다.
+     *
+     * <p><b>알려진 제약 — 동시 요청 race</b>: 두 요청이 거의 동시에 인증 필터를 통과하면 둘 다 ACTIVE
+     * 상태를 읽고 softDelete를 시도할 수 있다. 본 슬라이스에는 row lock/{@code @Version}/CAS UPDATE가
+     * 없어 두 번째 호출이 본 가드에 도달해 {@link IllegalStateException}을 throw한다 (PR #207 hyeonmin02
+     * 🟡 review). 첫 호출은 정상 204, 두 번째 호출은 500이 된다.
+     * <ul>
+     *   <li>현재 영향: 사용자 본인이 동일 토큰으로 동시 호출하는 시나리오 자체가 비정상 (UX/스크립트 결함).</li>
+     *   <li>S2 (KAN-144) 정식 처리: ACCOUNT_DELETED audit event 발행 시점 중복 차단 위해 lock/version/CAS
+     *       UPDATE 도입 + 멱등(204) 정책 채택 결정. 본 슬라이스는 변경 최소화 위해 도메인 가드만 유지.</li>
+     * </ul>
+     *
+     * <p>호출자(UserMeService.deleteMe)는 결정에 따라 가드 도달 시 silent return으로 멱등 처리하거나
+     * 본 예외를 그대로 전파할 수 있다.
+     *
+     * <p>본 메서드는 도메인 상태 전이만 담당. 토큰 무효화 cascade(Redis refresh 삭제 + access blacklist
+     * 등록) + audit log는 호출자(UserMeService.deleteMe) 책임이며 트랜잭션 commit 후에 실행된다.
+     *
+     * @param now 탈퇴 시각. 호출자가 {@link java.time.Clock}으로 주입 — 테스트 결정성 확보. null 금지.
+     * @throws IllegalArgumentException {@code now}가 null인 경우 — soft-delete 불변식
+     *         ({@code deletedAt != null} ⇔ {@code status == DELETED}) 보호.
+     * @throws IllegalStateException 이미 {@code DELETED} 상태인 경우.
+     */
+    public void softDelete(LocalDateTime now) {
+        // 도메인 불변식 가드 — now가 null이면 status=DELETED인데 deletedAt=null인 partial 상태가
+        // 만들어져 @SQLRestriction("deleted_at IS NULL")이 행을 살아있는 것으로 잘못 인식.
+        // 호출자(UserMeService.deleteMe)는 항상 LocalDateTime.now(clock)으로 호출하지만,
+        // 외부 호출자/테스트가 우회하지 못하도록 도메인 자체에서 방어. PR #207 CodeRabbit 리뷰 반영.
+        if (now == null) {
+            throw new IllegalArgumentException("탈퇴 시각(now)은 null일 수 없습니다.");
+        }
+        if (this.status == AccountStatus.DELETED) {
+            throw new IllegalStateException(
+                    "이미 탈퇴 처리된 계정입니다. accountId=" + this.id);
+        }
+        this.status = AccountStatus.DELETED;
+        this.deletedAt = now;
+    }
 }
