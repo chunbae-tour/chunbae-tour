@@ -100,7 +100,7 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        if (!chatRoom.getOwnerId().equals(userId)) {
+        if (!chatRoom.isOwnedBy(userId)) {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
@@ -129,8 +129,7 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(chatRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        // ownerId는 @AuthenticationPrincipal 보장 — NPE 방지를 위해 ownerId 기준으로 equals 호출
-        if (!ownerId.equals(chatRoom.getOwnerId())) {
+        if (!chatRoom.isOwnedBy(ownerId)) {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
@@ -210,7 +209,7 @@ public class ChatRoomService {
 
         // 참여 여부 먼저 확인 — 전체 멤버 로드 전에 단건 조회로 비용 최소화
         chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
-                .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
+                .filter(ChatRoomMember::isActiveMember)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
 
         // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(joinedAt ASC, id ASC) 정렬

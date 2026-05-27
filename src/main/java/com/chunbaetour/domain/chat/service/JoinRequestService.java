@@ -13,7 +13,6 @@ import com.chunbaetour.domain.chat.entity.JoinRequest;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
-import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -37,8 +36,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Transactional(readOnly = true)
 public class JoinRequestService {
 
-    private static final List<ChatMemberState> ACTIVE_STATES =
-            List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
     private static final String LOCK_KEY_FORMAT = "chatroom:lock:%d";
     private static final long LOCK_WAIT_SECONDS = 3L;
     // DB 작업 지연 시 watchdog 무한 점유 방지 — 정상 작업은 수백 ms 이내 완료
@@ -204,10 +201,10 @@ public class JoinRequestService {
         // 멤버 이력 단일 조회 — 강퇴 이력·활성 참여 여부를 쿼리 1번으로 확인
         chatRoomMemberRepository.findByChatRoomIdAndUserId(chatRoomId, userId)
                 .ifPresent(member -> {
-                    if (member.getMemberState() == ChatMemberState.MEMBER_KICKED) {
+                    if (member.isKicked()) {
                         throw new BusinessException(ErrorCode.CHAT_MEMBER_KICKED_REJOIN);
                     }
-                    if (ACTIVE_STATES.contains(member.getMemberState())) {
+                    if (member.isActiveMember()) {
                         throw new BusinessException(ErrorCode.ALREADY_JOINED_CHAT);
                     }
                 });

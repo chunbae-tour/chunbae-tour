@@ -4,6 +4,7 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.Message;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
@@ -100,7 +101,7 @@ public class ChatMessageService {
         }
 
         chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
-                .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
+                .filter(ChatRoomMember::isActiveMember)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
 
         Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : null;
