@@ -67,7 +67,14 @@ class ShopRepositoryIntegrationTest extends AbstractIntegrationTest {
                 .description("테스트 상점 설명")
                 .build();
         
-        shop.changeStatus(status);
+        // Reflection이나 엔티티 내부 메서드를 사용해 status 변경 (여기서는 테스트 편의상 reflection 사용)
+        try {
+            java.lang.reflect.Field statusField = Shop.class.getDeclaredField("status");
+            statusField.setAccessible(true);
+            statusField.set(shop, status);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
         return shop;
     }
 }
