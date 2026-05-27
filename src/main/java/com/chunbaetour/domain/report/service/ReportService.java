@@ -414,6 +414,8 @@ public class ReportService {
                     throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
+            // REVIEW: 리뷰 도메인 구현(KAN-152) 완료 후 case 추가 필요
+            default -> throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
         }
     }
 

@@ -270,9 +270,12 @@ Response 200:
   - `USER`: accounts 테이블 (탈퇴 계정 제외)
   - `MERCHANT`: accounts 테이블, role = MERCHANT
 - 신고 처리 시 `action`에 따른 후속 처리:
-  - `DELETE`: 신고 대상 콘텐츠 비공개 처리 (status = `BLOCKED` 또는 `DELETED`)
-  - `SUSPEND`: 작성자 계정 정지 처리 (`ReportService` → `UserService` 호출)
-  - `WARNING`: 경고 기록 (MVP에서 실질 처리 없음, 상태 기록만)
+  - `DELETE`: 신고 대상 콘텐츠 비공개 처리
+    - `POST_COMPANION`·`POST_FREE`: status = `HIDDEN` (게시글 비공개, 완전 삭제 아님)
+    - `COMMENT`: status = `DELETED`
+    - `USER`: 계정 정지 (`SUSPENDED`) — 법적 의무·복구 가능성을 위해 Soft 정지
+  - `SUSPEND`: 콘텐츠 작성자 계정 정지. MVP에서 `AccountRepository` 직접 접근. 향후 알림 발송·토큰 무효화 추가 시 `UserService.suspend()` 위임 예정.
+  - `WARNING`: 경고 기록 (MVP에서 실질 처리 없음, 상태 기록만. 알림 발송 미구현)
   - `DISMISS`: 무시, 신고 종결
 - `targetType`별 처리 흐름:
   - `POST_COMPANION`, `POST_FREE`, `COMMENT`, `REVIEW`, `USER` → `POST /admin/reports/{id}/resolve` 사용 (`ReportResolveRequest`)
