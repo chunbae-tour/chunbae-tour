@@ -127,11 +127,13 @@ class NotificationServiceTest {
         verify(notificationRepository).findWithCursor(eq(USER_ID), eq(50L), any(PageRequest.class));
     }
 
-    // 잘못된 cursor 전달 시 BusinessException 발생 — decodeSafe가 INVALID_CURSOR 예외 변환
+    // 잘못된 cursor 전달 시 INVALID_CURSOR BusinessException 발생 — 에러코드까지 고정해 클라이언트 계약 회귀 방지
     @Test
     void getNotifications_withInvalidCursor_throwsBusinessException() {
         assertThatThrownBy(() -> notificationService.getNotifications(USER_ID, "not-valid-cursor!!", 20))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.INVALID_CURSOR));
     }
 
     // 단건 읽음 처리 — markAsRead() 호출 검증

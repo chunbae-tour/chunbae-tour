@@ -2,6 +2,7 @@ package com.chunbaetour.domain.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -258,6 +259,49 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/test-auth-fixture"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    // ===== /api/v1/notifications/** Security 회귀 가드 =====
+    // notifications는 USER 전용 개인 데이터 — 비로그인/타 역할 차단 검증 (GET + PATCH 엔드포인트 커버)
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 GET /api/v1/notifications 호출 시 401 AUTH_006")
+    void anonymous_callingNotifications_returns_401() throws Exception {
+        mockMvc.perform(get("/api/v1/notifications"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/notifications 호출 시 403 AUTH_007")
+    void merchantToken_callingNotifications_returns_403() throws Exception {
+        seedFactory.seedMerchant("merchant-noti@example.com", PASSWORD, "상인닉-알림");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 PATCH /api/v1/notifications/read-all 호출 시 401 AUTH_006")
+    void anonymous_callingNotificationsReadAll_returns_401() throws Exception {
+        mockMvc.perform(patch("/api/v1/notifications/read-all"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 PATCH /api/v1/notifications/{id}/read 호출 시 403 AUTH_007")
+    void merchantToken_callingNotificationsRead_returns_403() throws Exception {
+        seedFactory.seedMerchant("merchant-noti2@example.com", PASSWORD, "상인닉-알림2");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti2@example.com").accessToken();
+
+        mockMvc.perform(patch("/api/v1/notifications/1/read")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
     }
 
     // ===== 헬퍼 =====
