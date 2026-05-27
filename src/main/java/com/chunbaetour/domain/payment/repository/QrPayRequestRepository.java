@@ -3,6 +3,7 @@ package com.chunbaetour.domain.payment.repository;
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -20,4 +21,8 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
 
     /** 동일 사용자·가게에 PENDING 요청이 이미 존재하는지 확인 — 중복 결제 요청 방지 */
     boolean existsByUserIdAndShopIdAndStatus(Long userId, Long shopId, QrPayStatus status);
+
+    /** 만료되지 않은 PENDING 요청 존재 여부 — expiredAt > now 조건으로 만료 건 제외 (스케줄러 지연 대응) */
+    boolean existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
+            Long userId, Long shopId, QrPayStatus status, LocalDateTime now);
 }

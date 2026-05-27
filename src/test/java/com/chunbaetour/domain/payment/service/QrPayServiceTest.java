@@ -413,7 +413,8 @@ class QrPayServiceTest {
 
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING))
+        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
+                eq(USER_ID), eq(SHOP_ID), eq(QrPayStatus.PENDING), any(LocalDateTime.class)))
                 .willReturn(true);
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
@@ -509,7 +510,7 @@ class QrPayServiceTest {
 
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
@@ -545,7 +546,7 @@ class QrPayServiceTest {
 
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
@@ -618,6 +619,27 @@ class QrPayServiceTest {
     }
 
     @Test
+    @DisplayName("QR 결제 승인/거절 — 승인 시점 가게 영업 정지 → SHOP_INACTIVE, 락 미획득")
+    void confirmQrPayRequest_shopInactive_throws() {
+        // given — 소유권은 맞지만 가게가 SUSPENDED 상태
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        Shop shop = createActiveShop();
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.SUSPENDED);
+
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
+
+        // then
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+        then(redissonClient).should(never()).getLock(anyString());
+    }
+
+    @Test
     @DisplayName("QR 결제 승인/거절 — 만료된 요청 → QR_PAY_INVALID_STATUS_TRANSITION")
     void confirmQrPayRequest_expired_throws() {
         // given — expiredAt(9:55) < clock.now(10:00) → 만료 처리됨
@@ -648,7 +670,7 @@ class QrPayServiceTest {
 
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
@@ -677,7 +699,7 @@ class QrPayServiceTest {
 
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
@@ -705,7 +727,7 @@ class QrPayServiceTest {
 
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(anyString())).willReturn(lock);
-        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(false);
         given(lock.isHeldByCurrentThread()).willReturn(false);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
