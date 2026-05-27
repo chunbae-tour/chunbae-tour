@@ -104,4 +104,16 @@ public class PlaceController {
             @PathVariable Long placeId) {
         return ApiResponse.success(recommendService.getPlaceBasedRecommendations(placeId));
     }
+    /**
+     * 4-3. 특정 관광지 기반 주변 상점 조회
+     * GET /api/v1/places/{placeId}/nearby-shops
+     * <p>
+     * - 비로그인 허용 (permitAll)
+     */
+    @GetMapping("/{placeId}/nearby-shops")
+    public ApiResponse<List<com.chunbaetour.domain.place.dto.response.NearbyShopResponse>> getNearbyShops(
+            @PathVariable Long placeId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "5") int limit) {
+        return ApiResponse.success(recommendService.getNearbyShops(placeId, limit));
+    }
 }

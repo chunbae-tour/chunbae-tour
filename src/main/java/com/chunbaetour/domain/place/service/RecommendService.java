@@ -4,10 +4,13 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
+import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
 import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.ShopRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -38,6 +41,7 @@ import org.springframework.data.redis.core.DefaultTypedTuple;
 public class RecommendService {
 
     private final PlaceRepository placeRepository;
+    private final ShopRepository shopRepository;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -269,5 +273,39 @@ public class RecommendService {
         }
 
         return responses;
+    }
+
+    /**
+     * 4-3. 특정 관광지 기반 주변 상점 조회
+     */
+    @Transactional(readOnly = true)
+    public List<NearbyShopResponse> getNearbyShops(Long placeId, int limit) {
+        if (placeId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        // 1. 기준 관광지 조회 및 상태 검증
+        Place basePlace = placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
+        // 2. DB 조회 (가까운 상점 limit개)
+        List<Shop> nearbyShops = shopRepository.findNearbyShops(
+                basePlace.getLat().doubleValue(),
+                basePlace.getLng().doubleValue(),
+                limit
+        );
+
+        // 3. DTO 변환 (거리 계산 포함)
+        return nearbyShops.stream()
+                .map(shop -> NearbyShopResponse.fromWithDistance(
+                        shop,
+                        calculateDistance(
+                                basePlace.getLat().doubleValue(),
+                                basePlace.getLng().doubleValue(),
+                                shop.getLat().doubleValue(),
+                                shop.getLng().doubleValue()
+                        )
+                ))
+                .toList();
     }
 }
