@@ -65,10 +65,6 @@ class ProductServiceTest {
                 .build();
         // 리플렉션으로 id 설정
         try {
-            var field = Product.class.getSuperclass().getDeclaredField("id");
-            field.setAccessible(true);
-        } catch (Exception ignored) {}
-        try {
             var field = Product.class.getDeclaredField("id");
             field.setAccessible(true);
             field.set(p, id);

@@ -9,5 +9,6 @@ public record ProductSummaryResponse(
         String imageUrl,
         String merchantName,
         int stock,
-        int soldCount
+        int soldCount,
+        String status
 ) {}

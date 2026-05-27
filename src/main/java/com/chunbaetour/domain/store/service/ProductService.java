@@ -46,11 +46,12 @@ public class ProductService {
      * HIDDEN 상품 제외. category 없으면 전체. cursor 없으면 첫 페이지.
      */
     public CursorPageResponse<ProductSummaryResponse> getProducts(String category, String cursor, int size) {
+        String normalizedCategory = (category == null || category.isBlank()) ? null : category.trim();
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
         // size+1 조회 → 다음 페이지 존재 여부 판별
         List<Product> products = productRepository.findVisibleProducts(
-                ProductStatus.HIDDEN, category, cursorId, PageRequest.of(0, size + 1));
+                ProductStatus.HIDDEN, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = products.size() > size;
         List<Product> page = hasNext ? products.subList(0, size) : products;
@@ -76,7 +77,7 @@ public class ProductService {
             if (cached != null) {
                 try {
                     ProductDetailResponse cachedResponse = objectMapper.readValue(cached, ProductDetailResponse.class);
-                    // 캐시 히트 후 상태 재검증 — 상품이 HIDDEN으로 변경됐으나 캐시에 잔류하는 경우 클라이언트 노출 차단
+                    // 캐시된 status 확인 — HIDDEN이면 노출 차단 (DB 재조회 없이 캐시 내 status 기준)
                     if ("HIDDEN".equals(cachedResponse.status())) {
                         throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
                     }
@@ -119,7 +120,8 @@ public class ProductService {
         return new ProductSummaryResponse(
                 p.getId(), p.getName(), p.getCategory(), p.getPrice(), p.getOriginalPrice(),
                 urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
-                p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()));
+                p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()),
+                p.getStatus().name());
     }
 
     /** 상세 조회용 풀 DTO 변환 — 이미지 전체 목록, description/validityDays/status 포함 */
@@ -136,7 +138,10 @@ public class ProductService {
     private List<String> parseImageUrls(String imageUrlsJson) {
         if (imageUrlsJson == null || imageUrlsJson.isBlank()) return List.of();
         try {
-            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {});
+            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {})
+                    .stream()
+                    .filter(url -> url != null && !url.isBlank())
+                    .toList();
         } catch (JacksonException e) {
             log.warn("[상품] imageUrls 파싱 실패: {}", imageUrlsJson);
             return List.of();
