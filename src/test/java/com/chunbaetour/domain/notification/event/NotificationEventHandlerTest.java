@@ -1,6 +1,5 @@
 package com.chunbaetour.domain.notification.event;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
@@ -41,8 +40,8 @@ class NotificationEventHandlerTest {
         verify(notificationService).createNotification(
                 eq(OWNER_USER_ID),
                 eq(NotificationType.CHAT_JOIN_REQUEST),
-                any(String.class),
-                any(String.class),
+                eq("참여 신청 도착"),
+                eq("채팅방 참여 신청이 도착했어요."),
                 eq(NotificationReferenceType.JOIN_REQUEST),
                 eq(JOIN_REQUEST_ID));
     }
@@ -56,8 +55,8 @@ class NotificationEventHandlerTest {
         verify(notificationService).createNotification(
                 eq(APPLICANT_USER_ID),
                 eq(NotificationType.CHAT_JOIN_APPROVED),
-                any(String.class),
-                any(String.class),
+                eq("참여 신청 승인"),
+                eq("참여 신청이 승인됐어요."),
                 eq(NotificationReferenceType.JOIN_REQUEST),
                 eq(JOIN_REQUEST_ID));
     }
@@ -71,8 +70,8 @@ class NotificationEventHandlerTest {
         verify(notificationService).createNotification(
                 eq(APPLICANT_USER_ID),
                 eq(NotificationType.CHAT_JOIN_REJECTED),
-                any(String.class),
-                any(String.class),
+                eq("참여 신청 거절"),
+                eq("참여 신청이 거절됐어요."),
                 eq(NotificationReferenceType.JOIN_REQUEST),
                 eq(JOIN_REQUEST_ID));
     }
@@ -86,8 +85,8 @@ class NotificationEventHandlerTest {
         verify(notificationService).createNotification(
                 eq(KICKED_USER_ID),
                 eq(NotificationType.CHAT_MEMBER_KICKED),
-                any(String.class),
-                any(String.class),
+                eq("채팅방 강퇴"),
+                eq("채팅방에서 강퇴됐어요."),
                 eq(NotificationReferenceType.CHAT_ROOM),
                 eq(CHAT_ROOM_ID));
     }
