@@ -29,7 +29,15 @@ JSON encoder = `net.logstash.logback.encoder.LogstashEncoder`. 외부 log aggreg
 | `REFRESH_ROTATED` | ReissueService | SUCCESS | account.id | role |
 | `REFRESH_REJECTED` | ReissueService | FAILURE | userId 또는 null | reasonDetail (jwt_expired/jwt_invalid/account_not_found/account_suspended/cas_failure) |
 | `RATE_LIMIT_DENIED` | RateLimitFilter | FAILURE | null | endpoint |
-| `ACCOUNT_DELETED` | UserMeService.deleteMe (afterCommit) | SUCCESS | userId | tokenRole, deletedLikes |
+| `ACCOUNT_DELETED` | UserMeService.deleteMe (afterCommit) | SUCCESS only | userId | tokenRole, deletedLikes |
+
+### `ACCOUNT_DELETED` FAILURE 케이스 미발행 정책
+
+본 이벤트는 **SUCCESS만** 기록한다. CAS UPDATE(`markAsDeleted`) race 패배는 `afterCommit` 경로에 도달하지
+않아 audit 자체가 발생하지 않으며, 이는 정상 동작이다. "이미 탈퇴된 계정에 재탈퇴 시도"는 인증 단계에서
+AUTH_006 응답으로 차단되므로 도메인 진입 자체가 불가능.
+
+→ SIEM 룰 작성 시: `ACCOUNT_DELETED` outcome이 SUCCESS 외 값으로 들어오면 코드 회귀 신호로 간주.
 
 ## 표준 필드 (모든 이벤트 공통)
 

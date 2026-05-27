@@ -175,7 +175,7 @@ public class UserMeService {
         // Hibernate 버전/방언에 따라 tx2가 락 해제 후에도 stale snapshot으로 ACTIVE 엔티티를 반환하는 케이스가
         // 실측됨 (testcontainers MySQL 8.4). CAS UPDATE는 단일 SQL 명령이라 race-window 자체가 존재하지 않아
         // ACCOUNT_DELETED audit이 1건당 정확히 1번 발행되는 invariant를 DB가 직접 보장.
-        int updated = accountRepository.markAsDeleted(userId, LocalDateTime.now(clock));
+        int updated = accountRepository.markAsDeleted(userId, LocalDateTime.now(clock), AccountStatus.DELETED);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }

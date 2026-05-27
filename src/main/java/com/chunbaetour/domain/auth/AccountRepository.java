@@ -42,11 +42,22 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
      *
      * <p>ADR ({@code docs/operations/account-withdrawal-policy.md}) §3 — 동일 email 재가입 차단(c안)의 회귀 가드.
      *
-     * @param email 검사할 이메일 (호출자가 lowercase 정규화)
+     * <p><b>collation-safe 비교</b>: 호출자({@code SignupService.signup})가 이미 {@code toLowerCase(Locale.ROOT)}로
+     * 정규화해 전달하지만, 본 쿼리도 {@code LOWER(email) = LOWER(:email)}로 양방향 정규화한다. DB column collation이
+     * {@code utf8mb4_bin}(case-sensitive) 같은 설정으로 변경돼도 "User@example.com"으로 탈퇴한 사람이
+     * "user@example.com"으로 재가입하는 우회 케이스를 차단. (PR #217 lim-haeun review)
+     * 성능: 본 메서드는 회원가입 race recheck 분기 한 곳에서만 호출되어 호출 빈도 낮음 — LOWER 함수로 인한
+     * 인덱스 미적용 오버헤드는 운영상 무시 가능.
+     *
+     * <p><b>테이블명 {@code users} 하드코딩</b>: native query라 {@code Account} 엔티티의 {@code @Table(name="users")}
+     * 변경 시 런타임 오류 발생. {@code @SQLRestriction} 우회 목적으로 JPQL 파생 쿼리가 불가능해 native 사용은 불가피.
+     * Account 테이블명 변경 시 본 쿼리도 함께 갱신 — ADR §6 운영 체크리스트의 회귀 가드 항목으로 추적.
+     *
+     * @param email 검사할 이메일 (호출자에서 lowercase 정규화 + 본 쿼리에서 LOWER 재정규화로 이중 안전)
      * @return soft-deleted를 포함해 동일 email row 수 (1 이상이면 존재). MySQL은 EXISTS(...)를 BIGINT 1/0으로
      *         리턴하므로 Java boolean 자동 매핑이 깨지는 케이스가 있어 {@code long}으로 받아 호출자가 비교.
      */
-    @Query(value = "SELECT COUNT(*) FROM users WHERE email = :email", nativeQuery = true)
+    @Query(value = "SELECT COUNT(*) FROM users WHERE LOWER(email) = LOWER(:email)", nativeQuery = true)
     long countByEmailIncludingDeleted(@Param("email") String email);
 
     /**
@@ -76,13 +87,20 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
      * 않아 {@code @LastModifiedDate} 컬럼이 자동 갱신되지 않는다. "최근 변경 계정" 기준 조회/배치가 탈퇴 시점을
      * 누락하지 않도록 본 쿼리에서 {@code updated_at}을 명시적으로 동일 시각으로 세팅. (PR #217 hyeonmin02 review)
      *
-     * @param userId 탈퇴 대상 사용자 ID
-     * @param now    탈퇴 시각 (호출자가 {@link java.time.Clock}으로 주입)
+     * <p><b>enum 파라미터 바인딩</b>: 기존 JPQL에 {@code AccountStatus.DELETED} FQCN을 박았으나 패키지 이동 시
+     * 런타임 오류 위험이 있어 파라미터로 분리. 호출자({@code UserMeService.deleteMe})가
+     * {@link AccountStatus#DELETED} 상수를 전달. (PR #217 lim-haeun review)
+     *
+     * @param userId        탈퇴 대상 사용자 ID
+     * @param now           탈퇴 시각 (호출자가 {@link java.time.Clock}으로 주입)
+     * @param deletedStatus 항상 {@link AccountStatus#DELETED} — enum FQCN을 JPQL에 박지 않기 위한 분리
      * @return UPDATE된 row 수. {@code 1} = 탈퇴 성공 (호출자 책임), {@code 0} = 이미 탈퇴됨(또는 존재하지 않음)
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("UPDATE Account a SET a.status = com.chunbaetour.domain.auth.AccountStatus.DELETED, "
+    @Query("UPDATE Account a SET a.status = :deletedStatus, "
             + "a.deletedAt = :now, a.updatedAt = :now "
             + "WHERE a.id = :userId AND a.deletedAt IS NULL")
-    int markAsDeleted(@Param("userId") Long userId, @Param("now") LocalDateTime now);
+    int markAsDeleted(@Param("userId") Long userId,
+                       @Param("now") LocalDateTime now,
+                       @Param("deletedStatus") AccountStatus deletedStatus);
 }

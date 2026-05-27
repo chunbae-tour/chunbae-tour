@@ -52,11 +52,12 @@ public enum SecurityAuditEventType {
     /**
      * 회원 탈퇴 — soft delete + UserLike cascade + 토큰 무효화 완료 시 발행 (Epic C S2, KAN-144).
      *
-     * <p>actorId = 탈퇴한 사용자 본인 (self-withdrawal MVP). metadata = {@code role}, {@code deletedLikes}
-     * (삭제된 UserLike row 수). 관리자 강제 탈퇴는 admin 도메인 Epic에서 별도 eventType 추가.
+     * <p>actorId = 탈퇴한 사용자 본인 (self-withdrawal MVP). metadata = {@code tokenRole} (Access Token claim 기준),
+     * {@code deletedLikes} (삭제된 UserLike row 수). 관리자 강제 탈퇴는 admin 도메인 Epic에서 별도 eventType 추가.
      *
      * <p>발행 시점 = 탈퇴 트랜잭션 commit 직후({@code afterCommit}) — DB rollback 시 audit 발행 차단.
-     * PESSIMISTIC_WRITE 락이 동시 호출을 직렬화하므로 본 이벤트는 실제 탈퇴 1건당 정확히 1번 발행.
+     * CAS UPDATE({@code AccountRepository.markAsDeleted})가 동시 호출 중 1행 영향을 받은 호출자만 afterCommit
+     * 경로로 진입시켜 본 이벤트는 실제 탈퇴 1건당 정확히 1번 발행 (ADR §5).
      */
     ACCOUNT_DELETED
 }

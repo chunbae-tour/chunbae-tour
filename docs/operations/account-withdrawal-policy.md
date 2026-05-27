@@ -66,6 +66,12 @@
   - **표준 메시지**: "이미 사용 중인 이메일입니다." (탈퇴 사실 비노출 — 보안 정책)
   - 운영 CS에 "탈퇴 후 동일 email 재가입 문의"가 누적되면 (a) 또는 (b) 도입 슬라이스 trigger.
 
+### CS 대응 스크립트 (초안)
+운영 CS가 "탈퇴 후 동일 email 재가입이 안 됩니다" 문의 수신 시 표준 응답:
+> "탈퇴하신 이메일은 보안 정책상 재사용이 제한됩니다. 다른 이메일(Gmail 별칭 `+suffix`, 보조 메일 등)로 신규 가입 부탁드립니다. 동일 이메일 복구 요청은 운영팀 검토 후 처리됩니다."
+
+- 운영팀 수동 복구 절차: DBA가 `wallets`/`payments` 데이터 보존 확인 → `users.deleted_at = NULL` 복구 — 본 슬라이스 범위 외 (별도 admin 도메인 Epic).
+
 ### 구현 결과
 - 회원가입 흐름의 `existsByEmail` + DB UNIQUE 제약이 자연 차단. 첫 체크는 `@SQLRestriction` 필터로 false 반환 → flush → DB unique 위반 → `DataIntegrityViolationException` catch.
 - catch 블록의 race recheck를 `accountRepository.countByEmailIncludingDeleted`(native SQL, `@SQLRestriction` 우회) 호출로 보강 — soft-deleted row까지 보고 정확히 `AUTH_008`로 변환. 본 보강 전에는 catch 블록이 falls through해 raw 500을 던지던 잠재 버그가 있었음 (S1까지 미발현, S2 통합 테스트가 노출).
@@ -85,11 +91,11 @@
 ### 근거
 - **운영 추적성**: CS 대응 ("내가 언제 탈퇴했나요?"), 컴플라이언스 ("탈퇴 처리가 정상 발생했나?"), SIEM (대량 탈퇴 = 침해 사고 후 정리 작업 의심) 모두 audit 필요.
 - **KAN-105 표준 채널 재사용**: 별도 logger / 별도 sink 추가 없이 `audit.security` 채널로 통합.
-- **metadata**: `role` (권한 추적), `deletedLikes` (cascade 효과 가시성).
+- **metadata**: `tokenRole` (Access Token claim 기준 권한 추적), `deletedLikes` (cascade 효과 가시성).
 
 ### 구현 결과
 - `SecurityAuditEventType.ACCOUNT_DELETED` enum 추가.
-- `audit-log-catalog.md`에 entry 추가 (UserMeService.deleteMe, SUCCESS, userId, role/deletedLikes).
+- `audit-log-catalog.md`에 entry 추가 (UserMeService.deleteMe, SUCCESS, userId, tokenRole/deletedLikes).
 - 발행 시점 = `afterCommit` (DB rollback 시 발행 차단).
 - 동시 호출 race로 인한 중복 발행은 §5의 CAS UPDATE(`markAsDeleted`)가 차단 — 영향 row 1을 받은 호출자만 audit emit 경로 진입.
 - metadata `tokenRole` — Access Token claim 기준 (DB 현재 role 아님). 토큰 발급 후 role 변경(USER → MERCHANT 승격 등) 시 발급 시점 role이 기록됨을 명시.
@@ -141,6 +147,7 @@ S1(KAN-143)의 `UserMeService.deleteMe`는 `findById` + `account.softDelete` 구
 - [ ] `afterCommit` 안에서 audit emit + 토큰 invalidate 둘 다 발행 — 누락 시 운영 가시성 손실
 - [ ] `audit-log-catalog.md`와 `SecurityAuditEventType` 동기 — 신규 eventType 추가 시 양쪽 업데이트
 - [ ] `ACCOUNT_DELETED` metadata key가 `tokenRole`(`role` 아님) — DB 현재 role과 구분
+- [ ] `countByEmailIncludingDeleted` native query의 테이블명 `users`가 `Account.@Table(name=...)`와 동기 — 테이블명 변경 시 함께 갱신
 - [ ] `wallets` 테이블 row가 탈퇴 후에도 살아있는지 통합 테스트 회귀 가드
 - [ ] 동일 email 재가입이 `AUTH_008`로 차단되는지 회귀 가드 (정책 변경 시 본 ADR 갱신)
 

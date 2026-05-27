@@ -51,7 +51,7 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>Wallet 보존 (ADR §1 A안)</li>
  *   <li>{@code ACCOUNT_DELETED} audit event 발행 + metadata (tokenRole/deletedLikes)</li>
  *   <li>동일 email 재가입 차단 (ADR §3 c안) — {@code AUTH_008}</li>
- *   <li>동시 탈퇴 race 가드 (ADR §5 PESSIMISTIC_WRITE) — 한 쪽 204, 다른 쪽 4xx</li>
+ *   <li>동시 탈퇴 race 가드 (ADR §5 CAS UPDATE) — 한 쪽 204, 다른 쪽 4xx</li>
  * </ul>
  *
  * <p>본 클래스가 S2 ADR ({@code docs/operations/account-withdrawal-policy.md})의 회귀 가드 역할.
@@ -232,10 +232,10 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTH_008"));
     }
 
-    // ===== ADR §5 — 동시 탈퇴 race 가드 (PESSIMISTIC_WRITE) =====
+    // ===== ADR §5 — 동시 탈퇴 race 가드 (CAS UPDATE) =====
 
     @Test
-    void concurrent_withdrawal_serializes_via_pessimistic_lock() throws Exception {
+    void concurrent_withdrawal_allows_only_one_success_via_cas_update() throws Exception {
         // 두 스레드가 동일 access token으로 동시에 DELETE /me 호출.
         // 기대 결과: 한 요청은 204, 다른 요청은 4xx (AUTH_006 락 race 또는 AUTH_013 blacklist race —
         //          둘 다 동시성 가드 작동 시그널이라 응답 셋이 {204, 4xx}임을 검증).
