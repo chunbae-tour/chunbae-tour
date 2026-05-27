@@ -9,6 +9,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
 import jakarta.validation.Valid;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +50,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/users/me")
 @RequiredArgsConstructor
 public class UserMeController {
+
+    /**
+     * GET /likes에서 클라이언트가 {@code ?sort=}로 지정 가능한 필드 화이트리스트.
+     * 비허용 필드(예: password, id 이외 entity 내부 필드)는 INVALID_REQUEST로 거부 — 의도치 않은
+     * 정렬 노출 방지.
+     */
+    private static final Set<String> ALLOWED_LIKES_SORT_FIELDS = Set.of("createdAt", "id");
 
     private final UserMeService userMeService;
     private final UserMeHomeService userMeHomeService;
@@ -113,7 +121,8 @@ public class UserMeController {
      * <ul>
      *   <li>default size = 20</li>
      *   <li>max size = 100 (운영 부하 방지 — {@code PlaceLikeService.getUserLikedPlaces} 내부 가드)</li>
-     *   <li>default sort = {@code createdAt DESC} — 최근 찜 순. 클라이언트가 {@code ?sort=}로 오버라이드 가능</li>
+     *   <li>default sort = {@code createdAt DESC} — 최근 찜 순. 클라이언트가 {@code ?sort=}로 오버라이드 가능.
+     *       허용 필드: {@code createdAt}, {@code id}. 그 외 필드 지정 시 {@link ErrorCode#INVALID_REQUEST} (COMMON_002) 응답.</li>
      * </ul>
      *
      * <p><b>보안 회귀 가드</b>: PathVariable {@code userId} 미사용 — SecurityContext userId만 사용해
@@ -128,6 +137,12 @@ public class UserMeController {
             @AuthenticationPrincipal Long userId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
+        pageable.getSort().forEach(order -> {
+            if (!ALLOWED_LIKES_SORT_FIELDS.contains(order.getProperty())) {
+                // 화이트리스트 외 필드(예: ?sort=password) — 의도치 않은 entity 내부 필드 정렬 차단
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+        });
         return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
     }
 
