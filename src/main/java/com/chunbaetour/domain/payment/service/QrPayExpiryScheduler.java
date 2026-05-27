@@ -29,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class QrPayExpiryScheduler {
 
-    private static final long EXPIRY_CHECK_INTERVAL_MS = 60_000;
+    private static final long EXPIRY_CHECK_INTERVAL_MS = 60_000L;
 
     private final QrPayRequestRepository qrPayRequestRepository;
     private final Clock clock;
