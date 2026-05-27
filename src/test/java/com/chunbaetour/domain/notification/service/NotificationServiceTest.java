@@ -166,6 +166,39 @@ class NotificationServiceTest {
         verify(notificationRepository).markAllAsRead(USER_ID);
     }
 
+    // 알림 삭제 — delete() 호출 후 deletedAt 설정 확인
+    @Test
+    void deleteNotification_success() {
+        Notification notification = buildNotification(10L);
+        given(notificationRepository.findByIdAndUserIdIncludingDeleted(10L, USER_ID)).willReturn(Optional.of(notification));
+
+        notificationService.deleteNotification(USER_ID, 10L);
+
+        assertThat(notification.getDeletedAt()).isNotNull();
+    }
+
+    // 이미 soft-deleted된 알림 재삭제 — 예외 없음 (멱등, 204)
+    @Test
+    void deleteNotification_alreadyDeleted_noException() {
+        Notification notification = buildNotification(10L);
+        notification.delete(); // pre-deleted
+        given(notificationRepository.findByIdAndUserIdIncludingDeleted(10L, USER_ID)).willReturn(Optional.of(notification));
+
+        org.assertj.core.api.Assertions.assertThatNoException()
+                .isThrownBy(() -> notificationService.deleteNotification(USER_ID, 10L));
+    }
+
+    // 알림 삭제 — 존재하지 않거나 타인 알림이면 NOTIFICATION_NOT_FOUND
+    @Test
+    void deleteNotification_notFound_throwsBusinessException() {
+        given(notificationRepository.findByIdAndUserIdIncludingDeleted(99L, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> notificationService.deleteNotification(USER_ID, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND));
+    }
+
     private Notification buildNotification(Long id) {
         Notification n = Notification.builder()
                 .userId(USER_ID)
