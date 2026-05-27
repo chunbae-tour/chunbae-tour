@@ -5,6 +5,7 @@ import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,8 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.List;
@@ -216,6 +217,9 @@ class RecommendServiceTest {
 
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(cacheKey)).thenReturn(cachedJson);
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
         
         List<RecommendPlaceResponse> mockResponse = List.of(
             RecommendPlaceResponse.builder().placeId(2L).build()
@@ -228,7 +232,7 @@ class RecommendServiceTest {
         // then
         assertThat(result).hasSize(1);
         assertThat(result.get(0).placeId()).isEqualTo(2L);
-        verify(placeRepository, never()).findById(anyLong());
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
     }
 
     @Test
@@ -242,10 +246,10 @@ class RecommendServiceTest {
         when(valueOperations.get(cacheKey)).thenReturn(null);
 
         Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
-        when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.of(basePlace));
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq(PlaceCategory.TOURIST_SPOT), eq(placeId), eq(5)))
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
             .thenReturn(List.of(nearbyPlace));
 
         String jsonResult = "[{}]";
@@ -261,13 +265,12 @@ class RecommendServiceTest {
     }
 
     @Test
-    @DisplayName("특정 관광지 기반 추천 - 존재하지 않는 장소일 때 예외 발생")
-    void getPlaceBasedRecommendations_NotFound() {
+    @DisplayName("특정 관광지 기반 추천 - 존재하지 않는 장소이거나 ACTIVE가 아닐 때 예외 발생")
+    void getPlaceBasedRecommendations_NotFoundOrInactive() {
         // given
         Long placeId = 1L;
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn(null);
-        when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.empty());
+        // 캐시 확인 전에 예외가 터지므로 캐시 모킹은 필요 없음
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.empty());
 
         // when & then
         com.chunbaetour.domain.common.error.BusinessException ex =
@@ -287,10 +290,10 @@ class RecommendServiceTest {
         when(stringRedisTemplate.opsForValue()).thenThrow(new RuntimeException("Redis get error"));
 
         Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
-        when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.of(basePlace));
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq(PlaceCategory.TOURIST_SPOT), eq(placeId), eq(5)))
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
             .thenReturn(List.of(nearbyPlace));
 
         // when
@@ -299,11 +302,11 @@ class RecommendServiceTest {
         // then
         assertThat(result).hasSize(1);
         assertThat(result.get(0).placeId()).isEqualTo(2L);
-        verify(placeRepository).findById(placeId);
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
         verify(placeRepository).findNearbyPlacesByCategory(
                 anyDouble(),
                 anyDouble(),
-                eq(PlaceCategory.TOURIST_SPOT),
+                eq("TOURIST_SPOT"),
                 eq(placeId),
                 eq(5)
         );

@@ -2,6 +2,7 @@ package com.chunbaetour.domain.place.repository;
 
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -31,8 +32,8 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' " +
-                   "AND (6371 * acos(cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))) <= ?3 " +
-                   "ORDER BY (6371 * acos(cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))) ASC " +
+                   "AND (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) <= ?3 " +
+                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) ASC " +
                    "LIMIT ?4", nativeQuery = true)
     List<Place> findNearbyPlacesWithinRadius(double lat, double lng, double radiusKm, int limit);
 
@@ -42,7 +43,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
-                   "ORDER BY (6371 * acos(cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))) ASC " +
+                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) ASC " +
                    "LIMIT ?5", nativeQuery = true)
-    List<Place> findNearbyPlacesByCategory(double lat, double lng, PlaceCategory category, Long excludePlaceId, int limit);
+    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, int limit);
+
+    /**
+     * 상태 기반 단건 관광지 조회
+     */
+    java.util.Optional<Place> findByIdAndStatus(Long id, PlaceStatus status);
 }

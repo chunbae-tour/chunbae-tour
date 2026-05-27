@@ -7,6 +7,7 @@ import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -17,8 +18,8 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -39,6 +40,8 @@ public class RecommendService {
     private final PlaceRepository placeRepository;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+
+    private static final int PLACE_BASED_RECOMMEND_LIMIT = 5;
 
     /**
      * 인기 관광지 추천 (Top 10)
@@ -197,11 +200,16 @@ public class RecommendService {
     @Transactional(readOnly = true)
     public List<RecommendPlaceResponse> getPlaceBasedRecommendations(Long placeId) {
         if (placeId == null) {
-            throw new IllegalArgumentException("placeId는 null일 수 없습니다.");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
+        
+        // 1. 기준 관광지 조회 및 상태 검증 (캐시 확인보다 먼저 수행)
+        Place basePlace = placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
         String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
         
-        // 1. 캐시 조회
+        // 2. 캐시 조회
         try {
             String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
             if (cachedData != null) {
@@ -211,17 +219,13 @@ public class RecommendService {
             log.error("관광지 기반 추천 캐시 조회 중 오류 발생: placeId={}", placeId, e);
         }
 
-        // 2. 기준 관광지 조회
-        Place basePlace = placeRepository.findById(placeId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
-
         // 3. DB 조회 (동일 카테고리, 가까운 순 5개)
         List<Place> nearbyPlaces = placeRepository.findNearbyPlacesByCategory(
                 basePlace.getLat().doubleValue(),
                 basePlace.getLng().doubleValue(),
-                basePlace.getCategory(),
+                basePlace.getCategory().name(),
                 placeId,
-                5
+                PLACE_BASED_RECOMMEND_LIMIT
         );
 
         // 4. DTO 변환 (거리 계산 포함)
@@ -237,7 +241,7 @@ public class RecommendService {
                 ))
                 .toList();
 
-        // 5. 캐시 저장 (빈 배열도 캐싱)
+        // 5. 캐시 저장 (빈 배열([])도 캐싱하여 Cache Penetration 방어)
         try {
             String jsonData = objectMapper.writeValueAsString(responses);
             stringRedisTemplate.opsForValue().set(
