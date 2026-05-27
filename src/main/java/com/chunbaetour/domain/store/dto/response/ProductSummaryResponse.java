@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.store.dto.response;
 
+import com.chunbaetour.domain.store.type.ProductStatus;
+
 public record ProductSummaryResponse(
         Long productId,
         String name,
@@ -10,5 +12,5 @@ public record ProductSummaryResponse(
         String merchantName,
         int stock,
         int soldCount,
-        String status
+        ProductStatus status
 ) {}

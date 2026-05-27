@@ -19,6 +19,7 @@ import com.chunbaetour.domain.store.type.ProductStatus;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
@@ -63,14 +65,7 @@ class ProductServiceTest {
                 .validityDays(30)
                 .status(status)
                 .build();
-        // 리플렉션으로 id 설정
-        try {
-            var field = Product.class.getDeclaredField("id");
-            field.setAccessible(true);
-            field.set(p, id);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        ReflectionTestUtils.setField(p, "id", id);
         return p;
     }
 
@@ -80,7 +75,7 @@ class ProductServiceTest {
         Product p1 = createProduct(10L, ProductStatus.ON_SALE);
         Product p2 = createProduct(9L, ProductStatus.ON_SALE);
         given(productRepository.findVisibleProducts(
-                eq(ProductStatus.HIDDEN), eq(null), eq(null), any(Pageable.class)))
+                eq(Set.of(ProductStatus.ON_SALE, ProductStatus.SOLD_OUT)), eq(null), eq(null), any(Pageable.class)))
                 .willReturn(List.of(p1, p2));
 
         CursorPageResponse<ProductSummaryResponse> result =
@@ -143,7 +138,7 @@ class ProductServiceTest {
     void getProduct_cacheHit_skipsDb() throws Exception {
         String cachedJson = new ObjectMapper().writeValueAsString(
                 new ProductDetailResponse(PRODUCT_ID, "캐시 상품", null, "COUPON",
-                        2000L, null, List.of(), null, 50, 50, null, "ON_SALE"));
+                        2000L, null, List.of(), null, 50, 50, null, ProductStatus.ON_SALE));
 
         given(redisTemplate.opsForValue()).willReturn(valueOps);
         given(valueOps.get("product:10")).willReturn(cachedJson);
@@ -192,6 +187,30 @@ class ProductServiceTest {
 
         ProductDetailResponse result = productService.getProduct(PRODUCT_ID);
 
-        assertThat(result.status()).isEqualTo("SOLD_OUT");
+        assertThat(result.status()).isEqualTo(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("상품 목록 조회 — stock=0 이어도 ON_SALE 상태면 목록 노출 (정책: STORY-17에서 명시적 전이)")
+    void getProducts_onSaleWithZeroStock_visibleInList() {
+        Product p = Product.builder()
+                .name("재고 소진 쿠폰")
+                .category("COUPON")
+                .price(1000L)
+                .stock(0)
+                .originalStock(10)
+                .status(ProductStatus.ON_SALE)
+                .build();
+        ReflectionTestUtils.setField(p, "id", 20L);
+
+        given(productRepository.findVisibleProducts(any(), any(), any(), any()))
+                .willReturn(List.of(p));
+
+        CursorPageResponse<ProductSummaryResponse> result =
+                productService.getProducts(null, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).stock()).isZero();
+        assertThat(result.content().get(0).status()).isEqualTo(ProductStatus.ON_SALE);
     }
 }

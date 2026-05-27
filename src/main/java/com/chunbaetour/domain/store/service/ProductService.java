@@ -11,6 +11,7 @@ import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -41,9 +42,14 @@ public class ProductService {
 
     // TODO(cache): 상품 목록도 TTL 5분 캐싱 필요 — category+cursorId+size 복합 키로 구현
     //   캐시 무효화 시점: 상품 상태 변경(STORY-17 구매 후 SOLD_OUT 전환) 시 관련 키 전체 삭제 고려
+    // ON_SALE·SOLD_OUT만 공개 — 신규 status 추가 시 여기서 의도적으로 추가해야 노출됨
+    private static final Set<ProductStatus> VISIBLE_STATUSES =
+            Set.of(ProductStatus.ON_SALE, ProductStatus.SOLD_OUT);
+
     /**
      * 상품 목록 조회.
-     * HIDDEN 상품 제외. category 없으면 전체. cursor 없으면 첫 페이지.
+     * VISIBLE_STATUSES(ON_SALE·SOLD_OUT) 화이트리스트. category 없으면 전체. cursor 없으면 첫 페이지.
+     * stock=0이어도 status=ON_SALE 이면 목록에 노출 — 품절 상태 전이는 STORY-17(구매 흐름)에서 처리.
      */
     public CursorPageResponse<ProductSummaryResponse> getProducts(String category, String cursor, int size) {
         String normalizedCategory = (category == null || category.isBlank()) ? null : category.trim();
@@ -51,7 +57,7 @@ public class ProductService {
 
         // size+1 조회 → 다음 페이지 존재 여부 판별
         List<Product> products = productRepository.findVisibleProducts(
-                ProductStatus.HIDDEN, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
+                VISIBLE_STATUSES, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = products.size() > size;
         List<Product> page = hasNext ? products.subList(0, size) : products;
@@ -78,7 +84,7 @@ public class ProductService {
                 try {
                     ProductDetailResponse cachedResponse = objectMapper.readValue(cached, ProductDetailResponse.class);
                     // 캐시된 status 확인 — HIDDEN이면 노출 차단 (DB 재조회 없이 캐시 내 status 기준)
-                    if ("HIDDEN".equals(cachedResponse.status())) {
+                    if (cachedResponse.status() == ProductStatus.HIDDEN) {
                         throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
                     }
                     return cachedResponse;
@@ -104,11 +110,11 @@ public class ProductService {
 
         ProductDetailResponse response = toDetail(product);
 
-        // 캐시 저장 (TTL 5분)
+        // 캐시 저장 (TTL 5분) — best-effort, 저장 실패가 DB 응답에 영향 주지 않음
         try {
             redisTemplate.opsForValue().set(cacheKey, objectMapper.writeValueAsString(response), CACHE_TTL);
-        } catch (JacksonException e) {
-            log.warn("[상품 상세] 캐시 직렬화 실패 (productId: {})", productId);
+        } catch (Exception e) {
+            log.warn("[상품 상세] 캐시 저장 실패 — DB 응답은 정상 (productId: {})", productId, e);
         }
 
         return response;
@@ -121,7 +127,7 @@ public class ProductService {
                 p.getId(), p.getName(), p.getCategory(), p.getPrice(), p.getOriginalPrice(),
                 urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
                 p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()),
-                p.getStatus().name());
+                p.getStatus());
     }
 
     /** 상세 조회용 풀 DTO 변환 — 이미지 전체 목록, description/validityDays/status 포함 */
@@ -131,7 +137,7 @@ public class ProductService {
                 p.getPrice(), p.getOriginalPrice(), parseImageUrls(p.getImageUrls()),
                 p.getMerchantName(), p.getStock(),
                 Math.max(0, p.getOriginalStock() - p.getStock()),
-                p.getValidityDays(), p.getStatus().name());
+                p.getValidityDays(), p.getStatus());
     }
 
     /** imageUrls JSON 배열 문자열 → List<String> 파싱 (실패 시 빈 리스트 반환) */

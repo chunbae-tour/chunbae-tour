@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.store.dto.response;
 
+import com.chunbaetour.domain.store.type.ProductStatus;
 import java.util.List;
 
 public record ProductDetailResponse(
@@ -14,5 +15,5 @@ public record ProductDetailResponse(
         int stock,
         int soldCount,
         Integer validityDays,
-        String status
+        ProductStatus status
 ) {}
