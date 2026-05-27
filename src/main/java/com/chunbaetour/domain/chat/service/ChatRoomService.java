@@ -9,6 +9,7 @@ import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
+import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -39,6 +41,7 @@ public class ChatRoomService {
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final CompanionPostRepository companionPostRepository;
     private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복은 DB 제약으로 원자적 차단
     @Transactional
@@ -150,6 +153,9 @@ public class ChatRoomService {
         } catch (ObjectOptimisticLockingFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
+
+        // 트랜잭션 커밋 후 강퇴 대상에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        eventPublisher.publishEvent(new ChatMemberKickedEvent(chatRoomId, targetUserId));
     }
 
     // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
