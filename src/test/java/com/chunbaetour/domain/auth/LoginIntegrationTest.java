@@ -70,11 +70,13 @@ class LoginIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void signup_then_login_then_ping_returns_200_with_userId() throws Exception {
+    void signup_then_login_then_get_me_returns_200_with_userId() throws Exception {
         signup(EMAIL, PASSWORD, NICKNAME);
         LoginResult login = login(EMAIL, PASSWORD);
 
-        mockMvc.perform(get("/api/v1/users/me/ping")
+        // KAN-129 Epic A S4: 임시 ping endpoint 제거 → 정식 GET /users/me로 마이그.
+        // GET /me 응답 포맷은 다르므로 userId 필드 위치 갱신.
+        mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + login.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
@@ -139,15 +141,16 @@ class LoginIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void ping_without_token_returns_401_AUTH_006() throws Exception {
-        mockMvc.perform(get("/api/v1/users/me/ping"))
+    void protected_endpoint_without_token_returns_401_AUTH_006() throws Exception {
+        // KAN-129: ping 제거 후 정식 GET /me로 마이그. 미인증 호출 시 동일 AUTH_006.
+        mockMvc.perform(get("/api/v1/users/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
 
     @Test
-    void ping_with_invalid_token_returns_401_AUTH_003() throws Exception {
-        mockMvc.perform(get("/api/v1/users/me/ping")
+    void protected_endpoint_with_invalid_token_returns_401_AUTH_003() throws Exception {
+        mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-valid-jwt"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_003"));
@@ -164,7 +167,7 @@ class LoginIntegrationTest extends AbstractIntegrationTest {
 
     /**
      * 로그인 헬퍼. Body의 accessToken + Set-Cookie의 refreshToken을 함께 반환해
-     * reissue/ping 후속 호출에서 둘 다 사용할 수 있다.
+     * reissue/me 후속 호출에서 둘 다 사용할 수 있다.
      */
     private LoginResult login(String email, String password) throws Exception {
         LoginRequest request = new LoginRequest(email, password);
