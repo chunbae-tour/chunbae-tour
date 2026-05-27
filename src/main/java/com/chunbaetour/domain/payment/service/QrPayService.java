@@ -190,6 +190,7 @@ public class QrPayService {
         try {
             return objectMapper.writeValueAsString(snapshots);
         } catch (JacksonException e) {
+            log.error("[QR 결제 요청] 메뉴 스냅샷 직렬화 실패", e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
