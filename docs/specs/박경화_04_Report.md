@@ -32,7 +32,7 @@ domain/report
 ├── entity
 │   ├── Report.java
 │   ├── ReportTargetType.java   (POST_COMPANION, POST_FREE, COMMENT, REVIEW, USER, MERCHANT)
-│   ├── ReportReason.java       (SPAM, OBSCENE, ABUSE, FALSE_INFO, OTHER)
+│   ├── ReportReason.java       (SPAM, OBSCENE, ILLEGAL, HARASSMENT, MISINFORMATION, OTHER)
 │   └── ReportStatus.java       (PENDING, RESOLVED, DISMISSED)
 └── dto
     ├── ReportCreateRequest.java
@@ -70,7 +70,7 @@ Request:
 ```
 
 > `targetType`: `POST_COMPANION`, `POST_FREE`, `COMMENT`, `REVIEW`, `USER`, `MERCHANT` 중 하나  
-> `reason`: `SPAM`, `OBSCENE`, `ABUSE`, `FALSE_INFO`, `OTHER` 중 하나
+> `reason`: `SPAM`(스팸/도배), `OBSCENE`(음란/성적), `ILLEGAL`(불법 정보), `HARASSMENT`(욕설/혐오/괴롭힘), `MISINFORMATION`(허위 정보), `OTHER`(기타) 중 하나
 
 Response 201:
 ```json
@@ -151,7 +151,11 @@ Response 200:
         "reason": "SPAM",
         "description": "광고성 댓글입니다.",
         "status": "PENDING",
+        "action": null,
         "reporterNickname": "여행자지수",
+        "adminNote": null,
+        "resolvedBy": null,
+        "resolvedAt": null,
         "createdAt": "2026-07-15T12:00:00Z"
       }
     ],
@@ -161,6 +165,9 @@ Response 200:
   }
 }
 ```
+
+> `action`: PENDING 상태이면 `null`. 처리 완료 시 `WARNING`·`SUSPEND`·`DELETE`·`DISMISS`·`HIDE_SHOP`·`REVOKE_MERCHANT` 중 하나.  
+> `adminNote`, `resolvedBy`, `resolvedAt`: PENDING 상태이면 `null`. 처리 완료 시 채워짐.
 
 **GET `/admin/reports/{reportId}`**
 
@@ -176,13 +183,20 @@ Response 200:
     "reason": "SPAM",
     "description": "광고성 댓글입니다.",
     "status": "PENDING",
+    "action": null,
     "reporterNickname": "여행자지수",
     "reporterId": 1003,
     "targetContent": "지금 바로 클릭하세요! 엄청난 혜택...",
+    "adminNote": null,
+    "resolvedBy": null,
+    "resolvedAt": null,
     "createdAt": "2026-07-15T12:00:00Z"
   }
 }
 ```
+
+> 목록 응답(`ReportResponse`)에 `reporterId`·`targetContent` 추가된 확장 응답.  
+> `action`·`adminNote`·`resolvedBy`·`resolvedAt`: 처리 완료 신고 조회 시 채워짐. PENDING이면 `null`.
 
 **POST `/admin/reports/{id}/resolve`**
 
@@ -268,24 +282,17 @@ Response 200:
 
 ### 4-4. 에러 코드 (신고 관련)
 
-**사용자 신고 접수 에러 (KAN-90)**
+| 에러코드 enum | HTTP | code 문자열 | 메시지 | 발생 상황 | KAN |
+|-------------|------|-----------|--------|----------|-----|
+| `REPORT_TARGET_NOT_FOUND` | 404 | `REPORT_001` | 신고 대상을 찾을 수 없습니다. | 대상 ID 없음 또는 탈퇴 계정 | KAN-90 |
+| `DUPLICATE_REPORT` | 409 | `REPORT_002` | 이미 신고한 대상입니다. | 동일 대상 중복 신고 | KAN-90 |
+| `REPORT_SELF` | 400 | `REPORT_003` | 자기 자신을 신고할 수 없습니다. | USER·MERCHANT 자기신고 | KAN-90 |
+| `REPORT_TARGET_INACTIVE` | 400 | `REPORT_004` | 신고할 수 없는 대상입니다. | 비활성 게시글/댓글 신고 시도 | KAN-90 |
+| `REPORT_NOT_FOUND` | 404 | `REPORT_005` | 존재하지 않는 신고 내역입니다. | 신고 ID 조회 시 없을 때 | KAN-91/92 |
+| `REPORT_ALREADY_RESOLVED` | 409 | `REPORT_006` | 이미 처리된 신고 내역입니다. | 중복 처리 시도 | KAN-91/92 |
+| `REPORT_WRONG_ENDPOINT` | 400 | `REPORT_007` | 해당 신고 유형에 맞지 않는 처리 엔드포인트입니다. | MERCHANT 신고에 `/resolve` 또는 콘텐츠 신고에 `/resolve/merchant` 사용 시 | KAN-92 |
 
-| 에러코드 enum | HTTP | code 문자열 | 메시지 | 발생 상황 |
-|-------------|------|-----------|--------|----------|
-| `REPORT_TARGET_NOT_FOUND` | 404 | `REPORT_001` | 신고 대상을 찾을 수 없습니다. | 대상 ID 없음 또는 탈퇴 계정 |
-| `DUPLICATE_REPORT` | 409 | `REPORT_002` | 이미 신고한 대상입니다. | 동일 대상 중복 신고 |
-| `REPORT_SELF` | 400 | `REPORT_003` | 자기 자신을 신고할 수 없습니다. | USER·MERCHANT 자기신고 |
-| `REPORT_TARGET_INACTIVE` | 400 | `REPORT_004` | 신고할 수 없는 대상입니다. | 비활성 게시글/댓글 신고 시도 |
-
-**관리자 신고 처리 에러 (KAN-91/92) — KAN-91 merge 시 REPORT_005+ 번호 부여 예정**
-
-| 에러코드 enum | HTTP | 메시지 | 발생 상황 |
-|-------------|------|--------|----------|
-| `REPORT_NOT_FOUND` | 404 | 존재하지 않는 신고 내역입니다. | 신고 ID 조회 시 없을 때 |
-| `REPORT_ALREADY_RESOLVED` | 409 | 이미 처리된 신고 내역입니다. | 중복 처리 시도 |
-| `REPORT_WRONG_ENDPOINT` | 400 | 해당 신고 유형에 맞지 않는 처리 엔드포인트입니다. | MERCHANT 신고에 `/resolve` 사용 또는 콘텐츠 신고에 `/resolve/merchant` 사용 시 |
-
-> ⚠️ KAN-90과 KAN-91 브랜치가 REPORT_001~004를 서로 다르게 사용함. 브랜치 merge 시 admin 에러코드 번호 재조정 필요.
+> KAN-90·91 브랜치 병합 시 에러코드 번호 충돌 해소 완료 (KAN-92). REPORT_001~004 사용자 신고, REPORT_005~007 관리자 처리.
 
 ### 4-5. 화면 연결
 
