@@ -7,9 +7,11 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
@@ -19,6 +21,7 @@ import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -130,6 +133,36 @@ class NotificationServiceTest {
     void getNotifications_withInvalidCursor_throwsBusinessException() {
         assertThatThrownBy(() -> notificationService.getNotifications(USER_ID, "not-valid-cursor!!", 20))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    // 단건 읽음 처리 — markAsRead() 호출 검증
+    @Test
+    void markAsRead_success() {
+        Notification notification = buildNotification(10L);
+        given(notificationRepository.findByIdAndUserId(10L, USER_ID)).willReturn(Optional.of(notification));
+
+        notificationService.markAsRead(USER_ID, 10L);
+
+        assertThat(notification.isRead()).isTrue();
+    }
+
+    // 단건 읽음 처리 — 존재하지 않거나 타인 알림이면 NOTIFICATION_NOT_FOUND
+    @Test
+    void markAsRead_notFound_throwsBusinessException() {
+        given(notificationRepository.findByIdAndUserId(99L, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> notificationService.markAsRead(USER_ID, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND));
+    }
+
+    // 전체 읽음 처리 — markAllAsRead() repository 위임 검증
+    @Test
+    void markAllAsRead_delegatesToRepository() {
+        notificationService.markAllAsRead(USER_ID);
+
+        verify(notificationRepository).markAllAsRead(USER_ID);
     }
 
     private Notification buildNotification(Long id) {

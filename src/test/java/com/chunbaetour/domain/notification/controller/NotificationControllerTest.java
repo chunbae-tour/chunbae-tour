@@ -3,6 +3,7 @@ package com.chunbaetour.domain.notification.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.willDoNothing;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -51,5 +52,25 @@ class NotificationControllerTest {
         notificationController.getNotifications(USER_ID, cursor, 10);
 
         verify(notificationService).getNotifications(USER_ID, cursor, 10);
+    }
+
+    // 단건 읽음 처리 — service 위임 검증
+    @Test
+    void markAsRead_delegatesToService() {
+        willDoNothing().given(notificationService).markAsRead(USER_ID, 10L);
+
+        notificationController.markAsRead(USER_ID, 10L);
+
+        verify(notificationService).markAsRead(USER_ID, 10L);
+    }
+
+    // 전체 읽음 처리 — service 위임 검증
+    @Test
+    void markAllAsRead_delegatesToService() {
+        willDoNothing().given(notificationService).markAllAsRead(USER_ID);
+
+        notificationController.markAllAsRead(USER_ID);
+
+        verify(notificationService).markAllAsRead(USER_ID);
     }
 }
