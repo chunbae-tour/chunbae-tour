@@ -22,7 +22,7 @@ public class NotificationService {
 
     // 알림 목록 조회 — userId 기준 id DESC 커서 페이징, soft delete 제외(@SQLRestriction)
     public CursorPageResponse<NotificationResponse> getNotifications(Long userId, String cursor, int size) {
-        Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : null;
+        Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Notification> notifications = notificationRepository.findWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 

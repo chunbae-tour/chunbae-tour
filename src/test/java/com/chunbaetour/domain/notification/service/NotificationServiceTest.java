@@ -75,7 +75,7 @@ class NotificationServiceTest {
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isTrue();
-        assertThat(result.nextCursor()).isNotNull();
+        assertThat(result.nextCursor()).isEqualTo(CursorUtils.encode(2L)); // page 마지막 id 기준 인코딩
     }
 
     // 알림 저장 — 서비스가 파라미터를 올바르게 빌드해 save()에 전달하는지 argThat으로 검증
