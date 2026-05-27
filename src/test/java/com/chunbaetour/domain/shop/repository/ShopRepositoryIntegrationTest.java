@@ -3,20 +3,28 @@ package com.chunbaetour.domain.shop.repository;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@SpringBootTest
 @DisplayName("ShopRepository 통합 테스트")
 class ShopRepositoryIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ShopRepository shopRepository;
+
+    @AfterEach
+    void cleanup() {
+        shopRepository.deleteAll();
+    }
 
     @Test
     @DisplayName("주변 상점 조회 (findNearbyShops) - 정상 동작 검증")
