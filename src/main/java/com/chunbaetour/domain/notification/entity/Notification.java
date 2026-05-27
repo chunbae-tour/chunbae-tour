@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -22,7 +23,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 // ERD: notifications — updatedAt 없음, soft delete(deleted_at) 구조
 @Entity
-@Table(name = "notifications")
+@Table(name = "notifications", indexes = {
+        @Index(name = "idx_notifications_user_id_id", columnList = "user_id, id")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @EntityListeners(AuditingEntityListener.class)
@@ -66,6 +69,12 @@ public class Notification {
     @Builder
     private Notification(Long userId, NotificationType type, String title, String message,
                          NotificationReferenceType referenceType, Long referenceId) {
+        if (userId == null) throw new IllegalArgumentException("userId is required");
+        if (type == null) throw new IllegalArgumentException("type is required");
+        if (title == null || title.isBlank()) throw new IllegalArgumentException("title is required");
+        if (message == null || message.isBlank()) throw new IllegalArgumentException("message is required");
+        if (referenceType == null) throw new IllegalArgumentException("referenceType is required");
+        if (referenceId == null) throw new IllegalArgumentException("referenceId is required");
         this.userId = userId;
         this.type = type;
         this.title = title;
@@ -79,8 +88,10 @@ public class Notification {
         this.isRead = true;
     }
 
-    // soft delete
+    // soft delete — 최초 1회만 설정, 재호출 시 최초 삭제 시점 보존
     public void delete() {
-        this.deletedAt = LocalDateTime.now();
+        if (this.deletedAt == null) {
+            this.deletedAt = LocalDateTime.now();
+        }
     }
 }
