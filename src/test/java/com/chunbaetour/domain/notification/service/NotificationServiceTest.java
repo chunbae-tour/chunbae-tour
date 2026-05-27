@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.notification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -8,7 +9,9 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
 import com.chunbaetour.domain.notification.entity.Notification;
 import com.chunbaetour.domain.notification.repository.NotificationRepository;
@@ -108,6 +111,25 @@ class NotificationServiceTest {
         assertThat(result.getType()).isEqualTo(NotificationType.CHAT_JOIN_REQUEST);
         assertThat(result.getReferenceType()).isEqualTo(NotificationReferenceType.JOIN_REQUEST);
         assertThat(result.getReferenceId()).isEqualTo(10L);
+    }
+
+    // cursor 전달 시 decodeSafe → cursorId가 repository에 전달되는지 검증 (2페이지 요청)
+    @Test
+    void getNotifications_withValidCursor_passesDecodedIdToRepo() {
+        String cursor = CursorUtils.encode(50L);
+        given(notificationRepository.findWithCursor(eq(USER_ID), eq(50L), any(PageRequest.class)))
+                .willReturn(List.of());
+
+        notificationService.getNotifications(USER_ID, cursor, 20);
+
+        verify(notificationRepository).findWithCursor(eq(USER_ID), eq(50L), any(PageRequest.class));
+    }
+
+    // 잘못된 cursor 전달 시 BusinessException 발생 — decodeSafe가 INVALID_CURSOR 예외 변환
+    @Test
+    void getNotifications_withInvalidCursor_throwsBusinessException() {
+        assertThatThrownBy(() -> notificationService.getNotifications(USER_ID, "not-valid-cursor!!", 20))
+                .isInstanceOf(BusinessException.class);
     }
 
     private Notification buildNotification(Long id) {
