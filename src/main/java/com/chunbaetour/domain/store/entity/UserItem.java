@@ -13,6 +13,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -47,17 +48,28 @@ public class UserItem extends BaseEntity {
     @Column
     private LocalDate expiresAt;
 
+    @Builder
+    private UserItem(Long userId, Long orderId, Long productId, String productName,
+                     UserItemStatus status, LocalDate expiresAt) {
+        this.userId = userId;
+        this.orderId = orderId;
+        this.productId = productId;
+        this.productName = productName;
+        this.status = status;
+        this.expiresAt = expiresAt;
+    }
+
     /** today — 서비스에서 Clock 기반으로 계산해 전달 (테스트 시 고정 날짜 주입 가능) */
     public static UserItem create(Long userId, Long orderId, Product product, LocalDate today) {
-        UserItem item = new UserItem();
-        item.userId = userId;
-        item.orderId = orderId;
-        item.productId = product.getId();
-        item.productName = product.getName();
-        item.status = UserItemStatus.AVAILABLE;
-        item.expiresAt = product.getValidityDays() != null
-                ? today.plusDays(product.getValidityDays())
-                : null;
-        return item;
+        return UserItem.builder()
+                .userId(userId)
+                .orderId(orderId)
+                .productId(product.getId())
+                .productName(product.getName())
+                .status(UserItemStatus.AVAILABLE)
+                .expiresAt(product.getValidityDays() != null
+                        ? today.plusDays(product.getValidityDays())
+                        : null)
+                .build();
     }
 }

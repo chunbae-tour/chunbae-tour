@@ -92,6 +92,7 @@ class StorePurchaseServiceTest {
         given(product.getStock()).willReturn(stock);
         given(product.getStatus()).willReturn(status);
         lenient().when(product.getValidityDays()).thenReturn(30);
+        lenient().when(product.getMaxPerPerson()).thenReturn(10); // 기본 10 > QUANTITY(2)
         return product;
     }
 
@@ -146,6 +147,7 @@ class StorePurchaseServiceTest {
                 .merchantName("테스트 상인")
                 .validityDays(30)
                 .status(ProductStatus.ON_SALE)
+                .maxPerPerson(10)
                 .build();
         ReflectionTestUtils.setField(realProduct, "id", PRODUCT_ID);
 
@@ -160,6 +162,25 @@ class StorePurchaseServiceTest {
         // then — 재고 0 → SOLD_OUT 자동 전환
         assertThat(realProduct.getStock()).isZero();
         assertThat(realProduct.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("1인 구매 한도 초과 — PURCHASE_QUANTITY_EXCEEDED 반환, Redis 복구")
+    void purchase_fail_maxPerPersonExceeded() {
+        // given: maxPerPerson=1 < QUANTITY=2
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(8L);
+        Product product = createProduct(10, ProductStatus.ON_SALE);
+        given(product.getMaxPerPerson()).willReturn(1);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        // when & then
+        assertThatThrownBy(() -> storePurchaseService.purchase(
+                USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PURCHASE_QUANTITY_EXCEEDED);
+
+        then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
     }
 
     @Test
@@ -339,7 +360,7 @@ class StorePurchaseServiceTest {
         // given
         StoreOrder order1 = createOrder(2L);
         StoreOrder order2 = createOrder(1L);
-        given(storeOrderRepository.findByUserId(eq(USER_ID), eq(null), any()))
+        given(storeOrderRepository.findOrdersByUserIdWithCursor(eq(USER_ID), eq(null), any()))
                 .willReturn(List.of(order1, order2));
 
         // when
@@ -359,7 +380,7 @@ class StorePurchaseServiceTest {
         StoreOrder order1 = createOrder(3L);
         StoreOrder order2 = createOrder(2L);
         StoreOrder order3 = createOrder(1L);
-        given(storeOrderRepository.findByUserId(eq(USER_ID), eq(null), any()))
+        given(storeOrderRepository.findOrdersByUserIdWithCursor(eq(USER_ID), eq(null), any()))
                 .willReturn(List.of(order1, order2, order3));
 
         // when

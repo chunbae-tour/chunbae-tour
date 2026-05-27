@@ -117,6 +117,10 @@ public class StorePurchaseService {
             if (product.getStatus() == ProductStatus.HIDDEN) {
                 throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
             }
+            // 1인당 최대 구매 수량 검증 — 상품마다 다른 이벤트 정책 적용
+            if (quantity > product.getMaxPerPerson()) {
+                throw new BusinessException(ErrorCode.PURCHASE_QUANTITY_EXCEEDED);
+            }
             // SOLD_OUT 상품 명시적 차단 — Redis·DB 재고 드리프트 방어
             if (product.getStatus() == ProductStatus.SOLD_OUT) {
                 throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
@@ -180,7 +184,7 @@ public class StorePurchaseService {
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
         // size+1 조회로 다음 페이지 존재 여부 판별
-        List<StoreOrder> orders = storeOrderRepository.findByUserId(
+        List<StoreOrder> orders = storeOrderRepository.findOrdersByUserIdWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = orders.size() > size;

@@ -23,6 +23,7 @@ class ProductTest {
                 .merchantName("상인")
                 .validityDays(30)
                 .status(ProductStatus.ON_SALE)
+                .maxPerPerson(5)
                 .build();
     }
 

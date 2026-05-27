@@ -83,6 +83,7 @@ class ProductControllerTest extends AbstractIntegrationTest {
                 .stock(5)
                 .originalStock(10)
                 .status(ProductStatus.ON_SALE)
+                .maxPerPerson(5)
                 .build());
 
         mockMvc.perform(get(DETAIL_ENDPOINT + product.getId()))

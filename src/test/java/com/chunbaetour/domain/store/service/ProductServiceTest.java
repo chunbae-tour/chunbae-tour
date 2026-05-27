@@ -64,6 +64,7 @@ class ProductServiceTest {
                 .merchantName("광화문 떡볶이")
                 .validityDays(30)
                 .status(status)
+                .maxPerPerson(5)
                 .build();
         ReflectionTestUtils.setField(p, "id", id);
         return p;

@@ -16,7 +16,7 @@ public interface StoreOrderRepository extends JpaRepository<StoreOrder, Long> {
             AND (:cursorId IS NULL OR o.id < :cursorId)
             ORDER BY o.id DESC
             """)
-    List<StoreOrder> findByUserId(
+    List<StoreOrder> findOrdersByUserIdWithCursor(
             @Param("userId") Long userId,
             @Param("cursorId") Long cursorId,
             Pageable pageable);

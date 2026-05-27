@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -49,15 +50,27 @@ public class StoreOrder extends BaseEntity {
     @Column(nullable = false, length = 20)
     private StoreOrderStatus status;
 
+    @Builder
+    private StoreOrder(Long userId, Long productId, String productName, long productPrice,
+                       int quantity, long totalPrice, StoreOrderStatus status) {
+        this.userId = userId;
+        this.productId = productId;
+        this.productName = productName;
+        this.productPrice = productPrice;
+        this.quantity = quantity;
+        this.totalPrice = totalPrice;
+        this.status = status;
+    }
+
     public static StoreOrder create(Long userId, Product product, int quantity, long totalPrice) {
-        StoreOrder order = new StoreOrder();
-        order.userId = userId;
-        order.productId = product.getId();
-        order.productName = product.getName();
-        order.productPrice = product.getPrice();
-        order.quantity = quantity;
-        order.totalPrice = totalPrice;
-        order.status = StoreOrderStatus.COMPLETED;
-        return order;
+        return StoreOrder.builder()
+                .userId(userId)
+                .productId(product.getId())
+                .productName(product.getName())
+                .productPrice(product.getPrice())
+                .quantity(quantity)
+                .totalPrice(totalPrice)
+                .status(StoreOrderStatus.COMPLETED)
+                .build();
     }
 }
