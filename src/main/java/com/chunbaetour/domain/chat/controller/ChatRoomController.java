@@ -1,10 +1,12 @@
 package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
+import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomMemberResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
+import com.chunbaetour.domain.chat.service.ChatMessageService;
 import com.chunbaetour.domain.chat.service.ChatRoomService;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -34,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
+    private final ChatMessageService chatMessageService;
 
     // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복 시 CHAT_ROOM_DUPLICATE
     @PostMapping
@@ -95,5 +98,15 @@ public class ChatRoomController {
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId) {
         chatRoomService.leaveRoom(userId, roomId);
+    }
+
+    // 메시지 내역 조회 — ACTIVE 멤버만 접근, id DESC 커서 페이징(최신순)
+    @GetMapping("/{roomId}/messages")
+    public ApiResponse<CursorPageResponse<ChatMessageResponse>> getMessages(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId,
+            @RequestParam(required = false) String cursor,
+            @Min(1) @Max(100) @RequestParam(defaultValue = "50") int size) {
+        return ApiResponse.success(chatMessageService.getMessages(userId, roomId, cursor, size));
     }
 }
