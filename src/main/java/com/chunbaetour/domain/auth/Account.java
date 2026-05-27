@@ -150,4 +150,29 @@ public class Account {
     public void revokeToUser() {
         this.role = Role.USER;
     }
+
+    /**
+     * 마이페이지 PATCH /users/me에서 호출되는 partial update 도메인 메서드 (Epic A S2, KAN-127).
+     *
+     * <p>null 인자는 변경 미요청으로 간주해 무시 (PATCH partial update semantics).
+     * 닉네임 unique/형식 검증은 호출자(Service)가 책임 — 본 메서드는 도메인 상태 갱신만.
+     *
+     * <p>변경 불가 필드(email/password/role/status/companionScore/companionReviewCount)는 본 메서드의
+     * 시그니처에 부재 → 컴파일 단계에서 우발적 노출 차단. 비밀번호 변경/이메일 변경은 별도 도메인 흐름.
+     *
+     * @param nickname        새 닉네임 (null = 변경 안 함). 호출자가 unique/형식 검증 후 전달.
+     * @param language        새 언어 코드 (null = 변경 안 함). 호출자가 화이트리스트 검증.
+     * @param profileImageUrl 새 프로필 이미지 URL (null = 변경 안 함). 호출자가 URL 형식 검증.
+     */
+    public void updateProfile(String nickname, String language, String profileImageUrl) {
+        if (nickname != null) {
+            this.nickname = nickname;
+        }
+        if (language != null) {
+            this.language = language;
+        }
+        if (profileImageUrl != null) {
+            this.profileImageUrl = profileImageUrl;
+        }
+    }
 }

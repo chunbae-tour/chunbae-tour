@@ -40,7 +40,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 class AuthTokenControllerTest {
 
     private static final CookieProperties COOKIE_PROPS = new CookieProperties(
-            "customRefreshToken", false, "Lax", "/api/v1/auth");
+            "customRefreshToken", false, CookieProperties.SameSite.LAX, "/api/v1/auth");
 
     @Mock
     private ReissueService reissueService;

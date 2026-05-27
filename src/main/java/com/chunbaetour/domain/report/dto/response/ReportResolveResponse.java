@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.report.dto.response;
 
 import com.chunbaetour.domain.report.entity.Report;
-import com.chunbaetour.domain.report.type.ReportStatus;
+import com.chunbaetour.domain.report.entity.ReportStatus;
 import java.time.LocalDateTime;
 
 /**

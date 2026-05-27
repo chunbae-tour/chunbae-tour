@@ -1,10 +1,10 @@
 package com.chunbaetour.domain.report.dto.response;
 
 import com.chunbaetour.domain.report.entity.Report;
+import com.chunbaetour.domain.report.entity.ReportReason;
+import com.chunbaetour.domain.report.entity.ReportStatus;
+import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.type.ReportAction;
-import com.chunbaetour.domain.report.type.ReportReason;
-import com.chunbaetour.domain.report.type.ReportStatus;
-import com.chunbaetour.domain.report.type.ReportTargetType;
 import java.time.LocalDateTime;
 
 /**
