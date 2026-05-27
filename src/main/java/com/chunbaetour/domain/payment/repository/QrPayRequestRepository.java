@@ -34,7 +34,7 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
      * pendingKey null 처리로 unique 제약 해제 → 이후 동일 사용자·가게 재결제 가능.
      */
     @Modifying
-    @Query("UPDATE QrPayRequest q SET q.status = :expiredStatus, q.pendingKey = null WHERE q.status = :pendingStatus AND q.expiredAt < :now")
+    @Query("UPDATE QrPayRequest q SET q.status = :expiredStatus, q.pendingKey = null WHERE q.status = :pendingStatus AND q.expiredAt <= :now")
     int bulkExpireOverdue(@Param("pendingStatus") QrPayStatus pendingStatus,
                           @Param("expiredStatus") QrPayStatus expiredStatus,
                           @Param("now") LocalDateTime now);
