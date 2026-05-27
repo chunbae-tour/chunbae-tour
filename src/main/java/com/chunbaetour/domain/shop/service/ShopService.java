@@ -48,7 +48,7 @@ public class ShopService {
 
     /**
      * 내 가게 정보 수정.
-     * ACTIVE 상태 가게만 수정 가능 — SUSPENDED/CLOSED 시 SHOP_007.
+     * ACTIVE 상태 가게만 수정 가능 — SUSPENDED/CLOSED 시 SHOP_005.
      * null 필드는 기존 값 유지 (부분 수정 지원).
      * 위치(address/lat/lng)는 수정 불가 — 관리자에게 문의.
      */
@@ -58,7 +58,7 @@ public class ShopService {
         Shop shop = shopRepository.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // ACTIVE 상태 가드 — SUSPENDED/CLOSED 가게는 수정 불가 (SHOP_007)
+        // ACTIVE 상태 가드 — SUSPENDED/CLOSED 가게는 수정 불가 (SHOP_005)
         if (shop.getStatus() != ShopStatus.ACTIVE) {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
