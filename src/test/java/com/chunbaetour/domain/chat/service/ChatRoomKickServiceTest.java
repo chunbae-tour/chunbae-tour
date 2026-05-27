@@ -12,11 +12,13 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
+import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import org.springframework.context.ApplicationEventPublisher;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,9 @@ class ChatRoomKickServiceTest {
     @Mock
     private ChatRoomMemberRepository chatRoomMemberRepository;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private ChatRoomService chatRoomService;
 
@@ -53,7 +58,7 @@ class ChatRoomKickServiceTest {
         lenient().when(room.getOwnerId()).thenReturn(OWNER_ID);
     }
 
-    // 정상 강퇴 — kick() → saveAndFlush(target) → decrementMembers() → saveAndFlush(room) 순서 보장
+    // 정상 강퇴 — kick() → saveAndFlush(target) → decrementMembers() → saveAndFlush(room) 순서 보장, 이벤트 발행 확인
     @Test
     void kickMember_success() {
         ChatRoomMember target = mock(ChatRoomMember.class);
@@ -67,6 +72,7 @@ class ChatRoomKickServiceTest {
         inOrder.verify(chatRoomMemberRepository).saveAndFlush(target);
         inOrder.verify(room).decrementMembers();
         inOrder.verify(chatRoomRepository).saveAndFlush(room);
+        verify(eventPublisher).publishEvent(new ChatMemberKickedEvent(ROOM_ID, TARGET_ID));
     }
 
     // 존재하지 않는 채팅방 — CHAT_001

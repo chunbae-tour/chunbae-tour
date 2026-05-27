@@ -10,6 +10,9 @@ import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
+import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
+import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
+import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
@@ -26,6 +29,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -50,6 +54,7 @@ public class JoinRequestService {
     private final AccountRepository accountRepository;
     private final RedissonClient redissonClient;
     private final PlatformTransactionManager transactionManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     // NOT_SUPPORTED로 외부 readOnly 트랜잭션 중단 — TransactionTemplate이 새 쓰기 트랜잭션 생성
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -189,6 +194,11 @@ public class JoinRequestService {
         }
 
         joinRequest.reject();
+
+        // 트랜잭션 커밋 후 신청자에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        eventPublisher.publishEvent(
+                new JoinRequestRejectedEvent(chatRoomId, requestId, joinRequest.getUserId()));
+
         return RejectJoinRequestResponse.from(joinRequest);
     }
 
@@ -226,6 +236,10 @@ public class JoinRequestService {
         // save() 반환값 사용 — JPA가 DB 생성 ID를 채운 managed 엔티티 반환
         JoinRequest saved = joinRequestRepository.save(joinRequest);
 
+        // 트랜잭션 커밋 후 방장에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        eventPublisher.publishEvent(
+                new JoinRequestCreatedEvent(chatRoomId, saved.getId(), chatRoom.getOwnerId()));
+
         return CreateJoinRequestResponse.from(saved, account);
     }
 
@@ -260,6 +274,10 @@ public class JoinRequestService {
                         ChatRoomMember::reactivate,
                         () -> chatRoomMemberRepository.save(
                                 ChatRoomMember.ofMember(chatRoom, joinRequest.getUserId())));
+
+        // 트랜잭션 커밋 후 신청자에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        eventPublisher.publishEvent(
+                new JoinRequestApprovedEvent(chatRoomId, requestId, joinRequest.getUserId()));
 
         return ApproveJoinRequestResponse.from(joinRequest, chatRoom.getCurrentMembers());
     }
