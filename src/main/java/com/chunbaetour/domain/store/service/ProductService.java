@@ -69,15 +69,27 @@ public class ProductService {
      * HIDDEN 상품은 존재하지 않는 것으로 처리(PRODUCT_NOT_FOUND).
      */
     public ProductDetailResponse getProduct(Long productId) {
-        // Redis 캐시 확인
+        // Redis 캐시 확인 — 연결 실패/타임아웃 시 Exception catch 후 DB 폴백으로 서비스 지속
         String cacheKey = CACHE_KEY_PREFIX + productId;
-        String cached = redisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) {
-            try {
-                return objectMapper.readValue(cached, ProductDetailResponse.class);
-            } catch (JacksonException e) {
-                log.warn("[상품 상세] 캐시 역직렬화 실패, DB 폴백 (productId: {})", productId);
+        try {
+            String cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
+                try {
+                    ProductDetailResponse cachedResponse = objectMapper.readValue(cached, ProductDetailResponse.class);
+                    // 캐시 히트 후 상태 재검증 — 상품이 HIDDEN으로 변경됐으나 캐시에 잔류하는 경우 클라이언트 노출 차단
+                    if ("HIDDEN".equals(cachedResponse.status())) {
+                        throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
+                    }
+                    return cachedResponse;
+                } catch (JacksonException e) {
+                    log.warn("[상품 상세] 캐시 역직렬화 실패, DB 폴백 (productId: {})", productId);
+                }
             }
+        } catch (BusinessException e) {
+            // HIDDEN 상태 차단 예외는 그대로 전파 — DB 폴백 대상 아님
+            throw e;
+        } catch (Exception e) {
+            log.warn("[상품 상세] Redis 연결 실패, DB 폴백 (productId: {})", productId, e);
         }
 
         // DB 조회
@@ -101,6 +113,7 @@ public class ProductService {
         return response;
     }
 
+    /** 목록 조회용 경량 DTO 변환 — 이미지는 첫 번째 URL만, soldCount = originalStock - stock */
     private ProductSummaryResponse toSummary(Product p) {
         List<String> urls = parseImageUrls(p.getImageUrls());
         return new ProductSummaryResponse(
@@ -109,6 +122,7 @@ public class ProductService {
                 p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()));
     }
 
+    /** 상세 조회용 풀 DTO 변환 — 이미지 전체 목록, description/validityDays/status 포함 */
     private ProductDetailResponse toDetail(Product p) {
         return new ProductDetailResponse(
                 p.getId(), p.getName(), p.getDescription(), p.getCategory(),
