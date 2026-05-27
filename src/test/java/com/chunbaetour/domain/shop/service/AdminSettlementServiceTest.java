@@ -123,6 +123,18 @@ class AdminSettlementServiceTest {
     }
 
     @Test
+    @DisplayName("정산 거절 사유 없음 — INVALID_INPUT_VALUE")
+    void rejectSettlement_blankReason() {
+        Settlement settlement = createSettlement(SettlementStatus.PENDING);
+        given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
+
+        assertThatThrownBy(() -> adminSettlementService.rejectSettlement(SETTLEMENT_ID, " "))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
     @DisplayName("이미 처리된 정산 거절 시도 — SETTLEMENT_INVALID_STATUS")
     void rejectSettlement_alreadyRejected() {
         Settlement settlement = createSettlement(SettlementStatus.REJECTED);

@@ -16,6 +16,7 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.util.StringUtils;
 
 @Entity
 @Table(name = "settlements", indexes = @Index(name = "idx_settlements_shop_id", columnList = "shop_id"))
@@ -42,13 +43,13 @@ public class Settlement extends BaseEntity {
     private String rejectReason;
 
     /** 신청 시점 계좌 스냅샷 */
-    @Column(name = "bank_name", length = 50)
+    @Column(name = "bank_name", nullable = false, length = 50)
     private String bankName;
 
-    @Column(name = "account_number", length = 30)
+    @Column(name = "account_number", nullable = false, length = 30)
     private String accountNumber;
 
-    @Column(name = "account_holder", length = 50)
+    @Column(name = "account_holder", nullable = false, length = 50)
     private String accountHolder;
 
     public static Settlement create(Long shopId, long amount,
@@ -73,6 +74,9 @@ public class Settlement extends BaseEntity {
     public void reject(String reason) {
         if (this.status != SettlementStatus.PENDING) {
             throw new BusinessException(ErrorCode.SETTLEMENT_INVALID_STATUS);
+        }
+        if (!StringUtils.hasText(reason)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         this.status = SettlementStatus.REJECTED;
         this.rejectReason = reason;

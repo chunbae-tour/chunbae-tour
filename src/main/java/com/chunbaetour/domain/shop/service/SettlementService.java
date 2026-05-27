@@ -45,13 +45,14 @@ public class SettlementService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // 이미 PENDING 정산 신청 존재 시 중복 차단
+
+        // ShopWallet 조회 — 잔액 및 계좌 정보 스냅샷용
+        ShopWallet wallet = shopWalletRepository.findByShopIdWithLock(shop.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
+
         if (settlementRepository.existsByShopIdAndStatus(shop.getId(), SettlementStatus.PENDING)) {
             throw new BusinessException(ErrorCode.DUPLICATE_SETTLEMENT_REQUEST);
         }
-
-        // ShopWallet 조회 — 잔액 및 계좌 정보 스냅샷용
-        ShopWallet wallet = shopWalletRepository.findByShopId(shop.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
         // 정산 가능 잔액 없으면 차단
         if (wallet.getBalance() <= 0) {

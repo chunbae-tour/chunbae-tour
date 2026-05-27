@@ -79,7 +79,7 @@ class SettlementServiceTest {
 
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
-        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.save(any(Settlement.class))).willReturn(settlement);
 
         // when
@@ -108,7 +108,9 @@ class SettlementServiceTest {
     @DisplayName("중복 PENDING 신청 — DUPLICATE_SETTLEMENT_REQUEST")
     void requestSettlement_duplicatePending() {
         Shop shop = createShop();
+        ShopWallet wallet = createWallet(BALANCE);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(true);
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
@@ -124,8 +126,7 @@ class SettlementServiceTest {
     void requestSettlement_walletNotFound() {
         Shop shop = createShop();
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
-        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.empty());
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
                 .isInstanceOf(BusinessException.class)
@@ -134,14 +135,14 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("잔액 0 신청 — INSUFFICIENT_BALANCE")
+    @DisplayName("잔액 0 신청 — SETTLEMENT_BALANCE_EMPTY")
     void requestSettlement_zeroBalance() {
         Shop shop = createShop();
         ShopWallet wallet = createWallet(0L);
 
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
-        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
                 .isInstanceOf(BusinessException.class)
@@ -159,7 +160,7 @@ class SettlementServiceTest {
 
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
-        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
                 .isInstanceOf(BusinessException.class)
