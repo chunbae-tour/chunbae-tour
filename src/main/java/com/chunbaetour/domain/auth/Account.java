@@ -172,10 +172,20 @@ public class Account {
      * 도메인 메서드로 묶어 분기 누락을 컴파일 단계에서 막는다.
      *
      * <p><b>멱등 정책</b>: 이미 {@code DELETED} 상태인 Account에 다시 호출하면 {@link IllegalStateException}.
-     * 중복 탈퇴 호출은 정상 흐름에서 발생할 수 없다 (UserMeService.deleteMe → 토큰 cascade 무효화로
-     * 두 번째 호출은 인증 단계에서 AUTH_013으로 차단). 따라서 도달했다면 호출자 코드 결함 또는
-     * 우회된 호출이므로 silent skip 대신 명시적 에러로 알린다. S2에서 audit event 발행 시점도
-     * 본 분기를 신호로 사용 가능.
+     * 순차 호출에서는 첫 탈퇴 직후 access blacklist 등록으로 두 번째 호출이 인증 단계에서 AUTH_013으로 차단된다.
+     *
+     * <p><b>알려진 제약 — 동시 요청 race</b>: 두 요청이 거의 동시에 인증 필터를 통과하면 둘 다 ACTIVE
+     * 상태를 읽고 softDelete를 시도할 수 있다. 본 슬라이스에는 row lock/{@code @Version}/CAS UPDATE가
+     * 없어 두 번째 호출이 본 가드에 도달해 {@link IllegalStateException}을 throw한다 (PR #207 hyeonmin02
+     * 🟡 review). 첫 호출은 정상 204, 두 번째 호출은 500이 된다.
+     * <ul>
+     *   <li>현재 영향: 사용자 본인이 동일 토큰으로 동시 호출하는 시나리오 자체가 비정상 (UX/스크립트 결함).</li>
+     *   <li>S2 (KAN-144) 정식 처리: ACCOUNT_DELETED audit event 발행 시점 중복 차단 위해 lock/version/CAS
+     *       UPDATE 도입 + 멱등(204) 정책 채택 결정. 본 슬라이스는 변경 최소화 위해 도메인 가드만 유지.</li>
+     * </ul>
+     *
+     * <p>호출자(UserMeService.deleteMe)는 결정에 따라 가드 도달 시 silent return으로 멱등 처리하거나
+     * 본 예외를 그대로 전파할 수 있다.
      *
      * <p>본 메서드는 도메인 상태 전이만 담당. 토큰 무효화 cascade(Redis refresh 삭제 + access blacklist
      * 등록) + audit log는 호출자(UserMeService.deleteMe) 책임이며 트랜잭션 commit 후에 실행된다.

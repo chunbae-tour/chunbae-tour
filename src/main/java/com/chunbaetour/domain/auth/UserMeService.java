@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserMeService {
 
     private final AccountRepository accountRepository;
@@ -167,8 +169,19 @@ public class UserMeService {
             public void afterCommit() {
                 // 잔여 TTL = exp - now. 음수면 LogoutTokenStore가 SET(blacklist)을 스킵하고 Refresh DEL만 실행.
                 // LogoutService.logout과 같은 계산식 (KAN-23 S4 패턴 재사용).
-                Duration remainingTtl = Duration.between(clock.instant(), expiresAt);
-                logoutTokenStore.invalidate(uid, tokenId, remainingTtl);
+                //
+                // try-catch 사유 (PR #207 hyeonmin02 🔴 review):
+                // afterCommit에서 발생한 예외는 TransactionSynchronizationUtils가 caller(컨트롤러)로 전파한다.
+                // DB commit은 이미 끝난 상태에서 Redis 장애 등으로 throw하면 클라이언트는 500 + Set-Cookie 미수신
+                // → 사용자 시각 "탈퇴 실패" + 실제 DB는 DELETED 완료 = 데이터 ↔ UX 불일치.
+                // 흡수 + log.error로 운영 가시성 확보. 잔여 Access 토큰은 자연 만료(보통 < 1h)까지 짧은 window
+                // 동안만 유효. 재시도/outbox는 후속 슬라이스(KAN-144 또는 별도 KAN)에서 정식 처리.
+                try {
+                    Duration remainingTtl = Duration.between(clock.instant(), expiresAt);
+                    logoutTokenStore.invalidate(uid, tokenId, remainingTtl);
+                } catch (RuntimeException e) {
+                    log.error("회원 탈퇴 후 토큰 무효화 실패 — DB 탈퇴 완료, Redis 미반영. userId={}", uid, e);
+                }
             }
         });
     }

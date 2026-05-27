@@ -36,30 +36,23 @@ class AccountTest {
     }
 
     @Test
-    void softDelete_called_twice_throws_IllegalStateException() {
-        // 정책: 멱등 skip 아닌 명시적 에러. 중복 호출은 정상 흐름에서 발생할 수 없으므로
-        // 도달했다면 호출자 결함 또는 토큰 cascade 우회 → silent로 넘기지 않는다.
-        Account account = Account.createForSeed(
-                "already@example.com", "hash", "이미탈퇴", Role.USER, AccountStatus.DELETED);
+    void softDelete_called_twice_throws_IllegalStateException_and_preserves_first_deletedAt() {
+        // 정책: 멱등 skip 아닌 명시적 에러. 도메인 상태 가드.
+        // 픽스처: 실제 정상 탈퇴 흐름 재현 — ACTIVE에서 출발 → 첫 softDelete로 status=DELETED + deletedAt 세팅
+        // → 두 번째 softDelete가 IllegalStateException throw + 첫 deletedAt 값이 덮어써지지 않음을 검증
+        // (PR #207 hyeonmin02 🔵 review — DELETED + deletedAt=null 픽스처는 실제 운영 상태와 다름).
+        LocalDateTime firstDeletedAt = LocalDateTime.of(2026, 5, 27, 10, 0, 0);
+        LocalDateTime secondAttemptAt = LocalDateTime.of(2026, 5, 27, 11, 0, 0);
+        Account account = Account.registerUser("already@example.com", "hash", "이미탈퇴");
+        account.softDelete(firstDeletedAt);
 
-        assertThatThrownBy(() -> account.softDelete(NOW))
+        assertThatThrownBy(() -> account.softDelete(secondAttemptAt))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("이미 탈퇴");
-    }
 
-    @Test
-    void softDelete_does_not_mutate_state_when_already_deleted() {
-        // 가드 분기는 status 세팅보다 먼저 실행돼야 한다 — 즉 예외 던진 직후 partial 상태가 남으면 안 된다.
-        // (status는 이미 DELETED라 의미가 없지만 deletedAt이 NOW로 덮어써지지 않는지 확인.)
-        Account account = Account.createForSeed(
-                "already@example.com", "hash", "이미탈퇴", Role.USER, AccountStatus.DELETED);
-
-        assertThatThrownBy(() -> account.softDelete(NOW))
-                .isInstanceOf(IllegalStateException.class);
-
+        // 가드가 status/deletedAt 세팅보다 먼저 실행되어 첫 호출 값이 보존되어야 함 — partial 전이 방지.
         assertThat(account.getStatus()).isEqualTo(AccountStatus.DELETED);
-        // createForSeed는 deletedAt을 세팅하지 않으므로 null 유지가 곧 NOW로 덮어쓰지 않았다는 증거.
-        assertThat(account.getDeletedAt()).isNull();
+        assertThat(account.getDeletedAt()).isEqualTo(firstDeletedAt);
     }
 
     @Test
