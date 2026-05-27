@@ -131,5 +131,6 @@ public abstract class AbstractIntegrationTest {
         registry.add("portone.channel.kakao-pay", () -> "test-channel-kakao-pay");
         registry.add("portone.channel.toss-pay", () -> "test-channel-toss-pay");
         registry.add("portone.channel.foreign-card", () -> "test-channel-foreign-card");
+        registry.add("portone.webhook-secret", () -> "test-only-webhook-secret");
     }
 }
