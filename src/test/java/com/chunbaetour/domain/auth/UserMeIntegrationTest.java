@@ -402,6 +402,8 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     @Test
     void get_me_likes_with_25_seeds_pages_correctly() throws Exception {
         // 25개 UserLike 시드 → size=10 페이징 → 3페이지 (10/10/5)
+        // Place 생성자는 status 파라미터를 빌더에 노출하지 않고 항상 PlaceStatus.ACTIVE로 강제 세팅 (Place.java:150).
+        // 따라서 시드 데이터는 항상 ACTIVE → PlaceLikeService의 ACTIVE 필터 통과 보장.
         signup(EMAIL, PASSWORD, NICKNAME);
         String accessToken = login(EMAIL, PASSWORD);
         Account user = accountRepository.findByEmail(EMAIL).orElseThrow();
