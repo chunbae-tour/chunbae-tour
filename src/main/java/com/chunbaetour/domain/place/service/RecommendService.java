@@ -196,6 +196,9 @@ public class RecommendService {
      */
     @Transactional(readOnly = true)
     public List<RecommendPlaceResponse> getPlaceBasedRecommendations(Long placeId) {
+        if (placeId == null) {
+            throw new IllegalArgumentException("placeId는 null일 수 없습니다.");
+        }
         String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
         
         // 1. 캐시 조회
@@ -216,7 +219,7 @@ public class RecommendService {
         List<Place> nearbyPlaces = placeRepository.findNearbyPlacesByCategory(
                 basePlace.getLat().doubleValue(),
                 basePlace.getLng().doubleValue(),
-                basePlace.getCategory().name(),
+                basePlace.getCategory(),
                 placeId,
                 5
         );

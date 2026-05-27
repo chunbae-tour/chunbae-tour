@@ -44,5 +44,5 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
                    "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
                    "ORDER BY (6371 * acos(cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))) ASC " +
                    "LIMIT ?5", nativeQuery = true)
-    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, int limit);
+    List<Place> findNearbyPlacesByCategory(double lat, double lng, PlaceCategory category, Long excludePlaceId, int limit);
 }

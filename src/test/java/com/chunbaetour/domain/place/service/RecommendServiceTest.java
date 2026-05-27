@@ -245,7 +245,7 @@ class RecommendServiceTest {
         when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq(PlaceCategory.TOURIST_SPOT), eq(placeId), eq(5)))
             .thenReturn(List.of(nearbyPlace));
 
         String jsonResult = "[{}]";
@@ -258,5 +258,42 @@ class RecommendServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).placeId()).isEqualTo(2L);
         verify(valueOperations).set(eq(cacheKey), eq(jsonResult), eq(PlaceRedisConstants.RECOMMEND_PLACE_BASED_TTL_MINUTES), eq(TimeUnit.MINUTES));
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - 존재하지 않는 장소일 때 예외 발생")
+    void getPlaceBasedRecommendations_NotFound() {
+        // given
+        Long placeId = 1L;
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(null);
+        when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.empty());
+
+        // when & then
+        org.junit.jupiter.api.Assertions.assertThrows(com.chunbaetour.domain.common.error.BusinessException.class, () -> {
+            recommendService.getPlaceBasedRecommendations(placeId);
+        });
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Redis 장애 시 DB Fallback 정상 동작")
+    void getPlaceBasedRecommendations_RedisFailure() throws Exception {
+        // given
+        Long placeId = 1L;
+        when(stringRedisTemplate.opsForValue()).thenThrow(new RuntimeException("Redis get error"));
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.of(basePlace));
+
+        Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq(PlaceCategory.TOURIST_SPOT), eq(placeId), eq(5)))
+            .thenReturn(List.of(nearbyPlace));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
     }
 }
