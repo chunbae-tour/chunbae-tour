@@ -228,18 +228,12 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.QR_PAY_CONFIRM_FORBIDDEN);
         }
 
-        // 만료 체크 — 스케줄러 EXPIRED 처리 전 PENDING 상태여도 expiredAt 초과 시 차단
+        // 빠른 실패 — 락 대기 전 명백한 만료는 조기 차단 (최종 검증은 락 이후 재조회 기준)
         if (LocalDateTime.now(clock).isAfter(qrPayRequest.getExpiredAt())) {
             throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
         }
 
-        if (request.action() == QrPayConfirmRequest.Action.REJECT) {
-            // 거절: 분산 락 불필요 — 잔액 조작 없음
-            qrPayRequest.reject(request.rejectReason());
-            return;
-        }
-
-        // 승인: 분산 락 획득 후 비관적 락으로 잔액 처리
+        // 승인·거절 모두 분산 락 이후 처리 — 동시 호출 직렬화 및 stale 상태 재처리 방지
         RLock lock = redissonClient.getLock(
                 QR_LOCK_KEY.formatted(qrPayRequest.getShopId(), qrPayRequest.getUserId()));
         try {
@@ -247,14 +241,26 @@ public class QrPayService {
                 throw new BusinessException(ErrorCode.PAYMENT_PROCESSING);
             }
 
+            // 락 획득 후 재조회 — 대기 중 다른 요청이 이미 처리했을 수 있음
+            QrPayRequest lockedRequest = qrPayRequestRepository.findByPayRequestIdWithLock(payRequestId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
+            if (LocalDateTime.now(clock).isAfter(lockedRequest.getExpiredAt())) {
+                throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+            }
+
+            if (request.action() == QrPayConfirmRequest.Action.REJECT) {
+                lockedRequest.reject(request.rejectReason());
+                return;
+            }
+
             // 비관적 락 순서 고정: wallets → shop_wallets (데드락 방지)
-            Wallet wallet = walletRepository.findByUserIdWithLock(qrPayRequest.getUserId())
+            Wallet wallet = walletRepository.findByUserIdWithLock(lockedRequest.getUserId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
-            ShopWallet shopWallet = shopWalletRepository.findByShopIdWithLock(qrPayRequest.getShopId())
+            ShopWallet shopWallet = shopWalletRepository.findByShopIdWithLock(lockedRequest.getShopId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
             // 잔액 검증 — 요청 시점 이후 잔액이 줄었을 수 있음
-            long amount = qrPayRequest.getAmount();
+            long amount = lockedRequest.getAmount();
             if (wallet.getBalance() < amount) {
                 throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
             }
@@ -265,19 +271,19 @@ public class QrPayService {
 
             // 이력 기록
             yeopjeonHistoryRepository.save(YeopjeonHistory.create(
-                    qrPayRequest.getUserId(), null, qrPayRequest.getShopId(),
+                    lockedRequest.getUserId(), null, lockedRequest.getShopId(),
                     YeopjeonHistoryType.PAYMENT, amount, wallet.getBalance(),
                     "QR 결제 - " + shop.getShopName()
             ));
-            // merchantUserId == shop.getUserId() 는 line 206 소유권 검증으로 보장됨 — 위치 변경 시 재검증 필요
+            // merchantUserId == shop.getUserId() 는 소유권 검증으로 보장됨 — 위치 변경 시 재검증 필요
             yeopjeonHistoryRepository.save(YeopjeonHistory.create(
-                    merchantUserId, null, qrPayRequest.getShopId(),
+                    merchantUserId, null, lockedRequest.getShopId(),
                     YeopjeonHistoryType.RECEIVED_PAYMENT, amount, shopWallet.getBalance(),
                     "QR 결제 수신"
             ));
 
             // 상태 COMPLETED 전이
-            qrPayRequest.complete();
+            lockedRequest.complete();
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

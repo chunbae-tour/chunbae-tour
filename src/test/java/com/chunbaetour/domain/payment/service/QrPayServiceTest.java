@@ -10,6 +10,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
@@ -46,6 +47,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.InOrder;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -113,7 +115,7 @@ class QrPayServiceTest {
 
     private Wallet createWallet(long balance) {
         Wallet wallet = mock(Wallet.class);
-        given(wallet.getBalance()).willReturn(balance);
+        lenient().when(wallet.getBalance()).thenReturn(balance);
         return wallet;
     }
 
@@ -507,6 +509,7 @@ class QrPayServiceTest {
         given(lock.isHeldByCurrentThread()).willReturn(true);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(qrPayRequestRepository.findByPayRequestIdWithLock(PAY_REQUEST_ID)).willReturn(Optional.of(req));
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(shopWallet));
@@ -523,16 +526,26 @@ class QrPayServiceTest {
         then(yeopjeonHistoryRepository).should(times(2)).save(any());
         assertThat(req.getStatus()).isEqualTo(QrPayStatus.COMPLETED);
         then(lock).should().unlock();
+        // 데드락 방지 락 순서 고정: wallets → shop_wallets
+        InOrder order = inOrder(walletRepository, shopWalletRepository);
+        order.verify(walletRepository).findByUserIdWithLock(USER_ID);
+        order.verify(shopWalletRepository).findByShopIdWithLock(SHOP_ID);
     }
 
     @Test
-    @DisplayName("QR 결제 거절 — 성공: 잔액 조작 없이 REJECTED 전이, 거절 사유 저장")
-    void confirmQrPayRequest_reject_success() {
+    @DisplayName("QR 결제 거절 — 성공: 락 이후 REJECTED 전이, 잔액 조작 없음, 거절 사유 저장")
+    void confirmQrPayRequest_reject_success() throws InterruptedException {
         // given
         QrPayRequest req = createPendingRequest(NOT_EXPIRED);
         Shop shop = createActiveShop();
 
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(qrPayRequestRepository.findByPayRequestIdWithLock(PAY_REQUEST_ID)).willReturn(Optional.of(req));
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
         QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.REJECT, "재고 없음");
@@ -540,9 +553,9 @@ class QrPayServiceTest {
         // when
         qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request);
 
-        // then — 분산 락 미획득, 지갑 조회 없음
-        then(redissonClient).should(never()).getLock(anyString());
+        // then — 잔액 조작 없음, 락은 획득 후 해제
         then(walletRepository).should(never()).findByUserIdWithLock(anyLong());
+        then(lock).should().unlock();
         assertThat(req.getStatus()).isEqualTo(QrPayStatus.REJECTED);
         assertThat(req.getRejectReason()).isEqualTo("재고 없음");
     }
@@ -633,6 +646,7 @@ class QrPayServiceTest {
         given(lock.isHeldByCurrentThread()).willReturn(true);
 
         given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(qrPayRequestRepository.findByPayRequestIdWithLock(PAY_REQUEST_ID)).willReturn(Optional.of(req));
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(lowWallet));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(shopWallet));
@@ -645,6 +659,35 @@ class QrPayServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
         then(lock).should().unlock(); // finally 블록에서 반드시 해제
+    }
+
+    @Test
+    @DisplayName("QR 결제 승인 — 상인 지갑 없음 → SHOP_WALLET_NOT_FOUND, 락 해제")
+    void confirmQrPayRequest_shopWalletNotFound_throws() throws InterruptedException {
+        // given
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        Shop shop = createActiveShop();
+        Wallet wallet = createWallet(AMOUNT);
+
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(qrPayRequestRepository.findByPayRequestIdWithLock(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.empty());
+
+        QrPayConfirmRequest request = new QrPayConfirmRequest(QrPayConfirmRequest.Action.APPROVE, null);
+
+        // then
+        assertThatThrownBy(() -> qrPayService.confirmQrPayRequest(MERCHANT_USER_ID, PAY_REQUEST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_WALLET_NOT_FOUND);
+        then(lock).should().unlock();
     }
 
     @Test
