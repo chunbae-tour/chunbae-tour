@@ -233,7 +233,9 @@ public class JoinRequestService {
         // save() 반환값 사용 — JPA가 DB 생성 ID를 채운 managed 엔티티 반환
         JoinRequest saved = joinRequestRepository.save(joinRequest);
 
-        // 트랜잭션 커밋 후 방장에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        // publishEvent는 TransactionTemplate 트랜잭션에 바인딩 — 이 메서드는 NOT_SUPPORTED 경계 내
+        // TransactionTemplate.execute()로 호출되므로 AFTER_COMMIT이 TransactionTemplate TX 커밋 후 발화 (의도된 동작)
+        // 향후 외부 트랜잭션이 추가되면 이벤트가 잘못된 TX에 바인딩될 수 있으므로 호출 구조 변경 시 재검토 필요
         eventPublisher.publishEvent(
                 new JoinRequestCreatedEvent(chatRoomId, saved.getId(), chatRoom.getOwnerId()));
 
@@ -272,7 +274,8 @@ public class JoinRequestService {
                         () -> chatRoomMemberRepository.save(
                                 ChatRoomMember.ofMember(chatRoom, joinRequest.getUserId())));
 
-        // 트랜잭션 커밋 후 신청자에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        // publishEvent는 TransactionTemplate 트랜잭션에 바인딩 — doCreateJoinRequest와 동일한 구조
+        // 향후 외부 트랜잭션 추가 시 바인딩 대상 재검토 필요
         eventPublisher.publishEvent(
                 new JoinRequestApprovedEvent(chatRoomId, requestId, joinRequest.getUserId()));
 
