@@ -48,7 +48,7 @@ class RecommendServiceTest {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
         // ID 2, 1 순서로 캐시되어 있다고 가정 (정렬 테스트)
         when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
-                .thenReturn(new java.util.LinkedHashSet<>(List.of("2", "1", "invalid_id"))); // invalid_id는 무시되어야 함
+                .thenReturn(new java.util.LinkedHashSet<>(List.of("2", "1")));
 
         Place mockPlace1 = mock(Place.class);
         lenient().when(mockPlace1.getId()).thenReturn(1L);
@@ -64,7 +64,7 @@ class RecommendServiceTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(0).placeId()).isEqualTo(2L); // 순서 보장
         assertThat(result.get(1).placeId()).isEqualTo(1L);
-        verify(placeRepository, never()).findTopPopularPlaces(any());
+        verify(placeRepository, never()).findTopPopularPlaces(anyDouble(), anyDouble(), any());
     }
 
     @Test
@@ -81,7 +81,7 @@ class RecommendServiceTest {
         when(mockPlace.getLikeCount()).thenReturn(10);
         when(mockPlace.getViewCount()).thenReturn(20);
 
-        when(placeRepository.findTopPopularPlaces(any())).thenReturn(List.of(mockPlace));
+        when(placeRepository.findTopPopularPlaces(anyDouble(), anyDouble(), any())).thenReturn(List.of(mockPlace));
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
@@ -99,18 +99,42 @@ class RecommendServiceTest {
     }
     
     @Test
+    @DisplayName("인기 추천 - Redis 캐시 중 유효하지 않은 ID 파싱 실패 시 해당 항목 무시")
+    void getPopularRecommendations_InvalidIdIgnored() {
+        // given
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
+                .thenReturn(new java.util.LinkedHashSet<>(List.of("1", "invalid_id", "2")));
+
+        Place mockPlace1 = mock(Place.class);
+        lenient().when(mockPlace1.getId()).thenReturn(1L);
+        Place mockPlace2 = mock(Place.class);
+        lenient().when(mockPlace2.getId()).thenReturn(2L);
+        
+        when(placeRepository.findAllById(any())).thenReturn(List.of(mockPlace1, mockPlace2));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
+
+        // then
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).placeId()).isEqualTo(1L);
+        assertThat(result.get(1).placeId()).isEqualTo(2L);
+    }
+
+    @Test
     @DisplayName("인기 추천 - Redis 조회 실패 시 DB Fallback 정상 수행")
     void getPopularRecommendations_RedisFailureFallback() {
         // given
         when(stringRedisTemplate.opsForZSet()).thenThrow(new RuntimeException("Redis down"));
-        when(placeRepository.findTopPopularPlaces(any())).thenReturn(Collections.emptyList());
+        when(placeRepository.findTopPopularPlaces(anyDouble(), anyDouble(), any())).thenReturn(Collections.emptyList());
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
 
         // then
         assertThat(result).isEmpty();
-        verify(placeRepository).findTopPopularPlaces(any());
+        verify(placeRepository).findTopPopularPlaces(anyDouble(), anyDouble(), any());
     }
 
     @Test
@@ -144,5 +168,13 @@ class RecommendServiceTest {
         // then
         assertThat(result).isEmpty();
         verify(placeRepository).findTopByCategory(eq(PlaceCategory.TOURIST_SPOT), any());
+    }
+    @Test
+    @DisplayName("카테고리 추천 - 카테고리가 null일 경우 예외 발생")
+    void getCategoryRecommendations_NullCategory() {
+        // given & when & then
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            recommendService.getCategoryRecommendations(null);
+        });
     }
 }

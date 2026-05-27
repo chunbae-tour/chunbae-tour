@@ -17,6 +17,7 @@ public record RecommendPlaceResponse(
         String thumbnailUrl,
         BigDecimal latitude,
         BigDecimal longitude,
+        // TODO: IEEE 754 부동소수점 예외(NaN/Infinity) 방지 및 일관성을 위해 추후 float -> BigDecimal 로 타입 변경 (Cleanup 티켓)
         float rating,
         int reviewCount,
         Double distanceMeters // 주변 추천인 경우에만 값 설정 (그 외 null)
@@ -31,6 +32,20 @@ public record RecommendPlaceResponse(
                 .longitude(place.getLng())
                 .rating(place.getRating())
                 .reviewCount(place.getReviewCount())
+                .build();
+    }
+
+    public static RecommendPlaceResponse fromWithDistance(Place place, double distanceMeters) {
+        return RecommendPlaceResponse.builder()
+                .placeId(place.getId())
+                .name(place.getName())
+                .category(place.getCategory())
+                .thumbnailUrl(place.getThumbnailUrl())
+                .latitude(place.getLat())
+                .longitude(place.getLng())
+                .rating(place.getRating())
+                .reviewCount(place.getReviewCount())
+                .distanceMeters(distanceMeters)
                 .build();
     }
 }

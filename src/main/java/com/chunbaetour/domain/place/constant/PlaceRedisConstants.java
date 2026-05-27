@@ -20,6 +20,12 @@ public final class PlaceRedisConstants {
     /** 추천 데이터 캐시 TTL (기본 1시간) */
     public static final long RECOMMEND_CACHE_TTL_MINUTES = 60;
 
+    /** 인기 점수 가중치: 찜(좋아요) */
+    public static final double POPULAR_LIKE_WEIGHT = 0.7;
+
+    /** 인기 점수 가중치: 조회수 */
+    public static final double POPULAR_VIEW_WEIGHT = 0.3;
+
     private PlaceRedisConstants() {
         // 인스턴스화 방지
     }

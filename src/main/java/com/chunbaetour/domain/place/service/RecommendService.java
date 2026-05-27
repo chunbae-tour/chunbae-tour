@@ -41,66 +41,79 @@ public class RecommendService {
     @Transactional(readOnly = true)
     public List<RecommendPlaceResponse> getPopularRecommendations() {
         String key = PlaceRedisConstants.RECOMMEND_POPULAR_KEY;
-        Set<String> cachedPlaceIds = null;
         
+        List<RecommendPlaceResponse> cachedResponses = getFromCache(key);
+        if (!cachedResponses.isEmpty()) {
+            return cachedResponses;
+        }
+
+        List<Place> popularPlaces = getFromDb();
+        saveToCache(key, popularPlaces);
+
+        return popularPlaces.stream()
+                .map(RecommendPlaceResponse::from)
+                .toList();
+    }
+
+    private List<RecommendPlaceResponse> getFromCache(String key) {
+        Set<String> cachedPlaceIds = null;
         try {
             cachedPlaceIds = stringRedisTemplate.opsForZSet().reverseRange(key, 0, 9);
         } catch (Exception e) {
             log.error("Redis 인기 추천 조회 실패. DB Fallback 진행", e);
         }
 
-        // Redis 캐시 히트
-        if (cachedPlaceIds != null && !cachedPlaceIds.isEmpty()) {
-            List<Long> ids = cachedPlaceIds.stream()
-                    .map(idStr -> {
-                        try {
-                            return Long.valueOf(idStr);
-                        } catch (NumberFormatException e) {
-                            log.warn("캐시된 관광지 ID 파싱 실패: {}", idStr);
-                            return null;
-                        }
-                    })
-                    .filter(java.util.Objects::nonNull)
-                    .collect(Collectors.toList());
-            
-            if (!ids.isEmpty()) {
-                Map<Long, Place> placeMap = placeRepository.findAllById(ids).stream()
-                        .collect(Collectors.toMap(Place::getId, Function.identity()));
-            
-                // Redis 정렬 순서 유지
-                List<RecommendPlaceResponse> cachedResponses = ids.stream()
-                        .filter(placeMap::containsKey)
-                        .map(id -> RecommendPlaceResponse.from(placeMap.get(id)))
-                        .collect(Collectors.toList());
-
-                if (!cachedResponses.isEmpty()) {
-                    return cachedResponses;
-                }
-            }
+        if (cachedPlaceIds == null || cachedPlaceIds.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        // DB Fallback 쿼리
+        List<Long> ids = cachedPlaceIds.stream()
+                .map(idStr -> {
+                    try {
+                        return Long.valueOf(idStr);
+                    } catch (NumberFormatException e) {
+                        log.warn("캐시된 관광지 ID 파싱 실패: {}", idStr);
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        
+        if (ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<Long, Place> placeMap = placeRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Place::getId, Function.identity()));
+        
+        return ids.stream()
+                .filter(placeMap::containsKey)
+                .map(id -> RecommendPlaceResponse.from(placeMap.get(id)))
+                .toList();
+    }
+
+    private List<Place> getFromDb() {
         Pageable top10 = PageRequest.of(0, 10);
-        List<Place> popularPlaces = placeRepository.findTopPopularPlaces(top10);
+        return placeRepository.findTopPopularPlaces(PlaceRedisConstants.POPULAR_LIKE_WEIGHT, PlaceRedisConstants.POPULAR_VIEW_WEIGHT, top10);
+    }
 
-        // Redis 캐싱 (ZADD Bulk Insert) - 시니어 아키텍트 리뷰: forEach 단건 삽입 대신 한 번의 네트워크 I/O로 최적화
-        if (!popularPlaces.isEmpty()) {
-            try {
-                Set<TypedTuple<String>> tuples = new HashSet<>();
-                popularPlaces.forEach(place -> {
-                    double score = (place.getLikeCount() * 0.7) + (place.getViewCount() * 0.3);
-                    tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
-                });
-                stringRedisTemplate.opsForZSet().add(key, tuples);
-                stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
-            } catch (Exception e) {
-                log.error("Redis 인기 추천 데이터 캐싱 실패", e);
-            }
+    private void saveToCache(String key, List<Place> popularPlaces) {
+        if (popularPlaces.isEmpty()) {
+            return;
         }
-
-        return popularPlaces.stream()
-                .map(RecommendPlaceResponse::from)
-                .collect(Collectors.toList());
+        
+        try {
+            Set<TypedTuple<String>> tuples = new HashSet<>();
+            popularPlaces.forEach(place -> {
+                double score = (place.getLikeCount() * PlaceRedisConstants.POPULAR_LIKE_WEIGHT) + 
+                               (place.getViewCount() * PlaceRedisConstants.POPULAR_VIEW_WEIGHT);
+                tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
+            });
+            stringRedisTemplate.opsForZSet().add(key, tuples);
+            stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+        } catch (Exception e) {
+            log.error("Redis 인기 추천 데이터 캐싱 실패", e);
+        }
     }
 
     /**
@@ -114,18 +127,20 @@ public class RecommendService {
      */
     @Transactional(readOnly = true)
     public List<RecommendPlaceResponse> getNearbyRecommendations(double lat, double lng, double radius, int limit) {
-        // TODO: Redis GeoSearch 로직 (Phase 5 마커 데이터 동기화 시 고도화)
+        // TODO: Redis GeoSearch 로직 (Phase 5 마커 데이터 동기화와 고도화)
         // 시니어 아키텍트 리뷰 반영: DB 쿼리 내 ORDER BY RAND()는 치명적인 성능 저하 유발.
-        // 넉넉하게 반경 내 최대 50건을 가져온 뒤 애플리케이션 단에서 셔플 및 잘라내어(Limit) 샘플링 처리
+        // 넉넉하게 반경 내 최대 50건을 가져온 뒤 애플리케이션 단에서 셔플 후 슬라이스(Limit) 샘플링 처리
         int fetchSize = 50;
-        List<Place> nearbyPlaces = placeRepository.findNearbyPlacesWithinRadius(lat, lng, radius, fetchSize);
+        List<Place> nearbyPlaces = new java.util.ArrayList<>(
+            placeRepository.findNearbyPlacesWithinRadius(lat, lng, radius, fetchSize)
+        );
         
         Collections.shuffle(nearbyPlaces);
         
         return nearbyPlaces.stream()
                 .limit(limit)
                 .map(RecommendPlaceResponse::from)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
@@ -133,9 +148,13 @@ public class RecommendService {
      */
     @Transactional(readOnly = true)
     public List<RecommendPlaceResponse> getCategoryRecommendations(PlaceCategory category) {
+        if (category == null) {
+            throw new IllegalArgumentException("카테고리는 null일 수 없습니다.");
+        }
+        
         Pageable top10 = PageRequest.of(0, 10);
         return placeRepository.findTopByCategory(category, top10).stream()
                 .map(RecommendPlaceResponse::from)
-                .collect(Collectors.toList());
+                .toList();
     }
 }
