@@ -260,6 +260,29 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
 
+    // ===== /api/v1/notifications/** Security 회귀 가드 =====
+    // notifications는 USER 전용 개인 데이터 — 비로그인/타 역할 차단 검증
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("인증 없이 /api/v1/notifications 호출 시 401 AUTH_006")
+    void anonymous_callingNotifications_returns_401() throws Exception {
+        mockMvc.perform(get("/api/v1/notifications"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 /api/v1/notifications 호출 시 403 AUTH_007")
+    void merchantToken_callingNotifications_returns_403() throws Exception {
+        seedFactory.seedMerchant("merchant-noti@example.com", PASSWORD, "상인닉-알림");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/notifications")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
     // ===== 헬퍼 =====
 
     /**
