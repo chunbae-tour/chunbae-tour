@@ -12,13 +12,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "user_items", indexes = @Index(name = "idx_user_item_user_id", columnList = "user_id"))
+@Table(name = "user_items", indexes = @Index(name = "idx_user_item_user_id_id", columnList = "user_id, id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserItem extends BaseEntity {
@@ -48,7 +47,8 @@ public class UserItem extends BaseEntity {
     @Column
     private LocalDate expiresAt;
 
-    public static UserItem create(Long userId, Long orderId, Product product) {
+    /** today — 서비스에서 Clock 기반으로 계산해 전달 (테스트 시 고정 날짜 주입 가능) */
+    public static UserItem create(Long userId, Long orderId, Product product, LocalDate today) {
         UserItem item = new UserItem();
         item.userId = userId;
         item.orderId = orderId;
@@ -56,7 +56,7 @@ public class UserItem extends BaseEntity {
         item.productName = product.getName();
         item.status = UserItemStatus.AVAILABLE;
         item.expiresAt = product.getValidityDays() != null
-                ? LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(product.getValidityDays())
+                ? today.plusDays(product.getValidityDays())
                 : null;
         return item;
     }

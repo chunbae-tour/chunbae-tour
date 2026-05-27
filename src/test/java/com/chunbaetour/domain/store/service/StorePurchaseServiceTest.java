@@ -26,6 +26,9 @@ import com.chunbaetour.domain.store.repository.UserItemRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.store.type.StoreOrderStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -56,6 +59,7 @@ class StorePurchaseServiceTest {
     @Mock private RedissonClient redissonClient;
     @Mock private ValueOperations<String, String> valueOps;
     @Mock private RLock lock;
+    @Mock private Clock clock;
 
     @InjectMocks
     private StorePurchaseService storePurchaseService;
@@ -75,6 +79,9 @@ class StorePurchaseServiceTest {
         lenient().when(redisTemplate.hasKey(STOCK_KEY)).thenReturn(true);
         lenient().when(lock.tryLock(3, 5, TimeUnit.SECONDS)).thenReturn(true);
         lenient().when(lock.isHeldByCurrentThread()).thenReturn(true);
+        // Clock 고정 — 2024-01-15 UTC
+        lenient().when(clock.instant()).thenReturn(Instant.parse("2024-01-15T00:00:00Z"));
+        lenient().when(clock.getZone()).thenReturn(ZoneOffset.UTC);
     }
 
     private Product createProduct(int stock, ProductStatus status) {
@@ -303,6 +310,27 @@ class StorePurchaseServiceTest {
 
         then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
         then(storeOrderRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("UserItem 저장 실패 — 예외 전파, Redis 복구")
+    void purchase_fail_userItemSaveFailed() {
+        // given
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(8L);
+        Product product = createProduct(10, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+        StoreOrder order = createOrder(1L);
+        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+        willThrow(new RuntimeException("DB 오류"))
+                .given(userItemRepository).saveAll(any());
+
+        // when & then — 예외 전파 (트랜잭션 롤백 대상)
+        assertThatThrownBy(() -> storePurchaseService.purchase(
+                USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY)))
+                .isInstanceOf(RuntimeException.class);
+
+        // 트랜잭션 동기화 미활성(단위테스트) 환경에서 finally fallback으로 Redis 복구
+        then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
     }
 
     @Test

@@ -14,6 +14,8 @@ import com.chunbaetour.domain.store.repository.StoreOrderRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -50,6 +52,7 @@ public class StorePurchaseService {
     private final WalletService walletService;
     private final StringRedisTemplate redisTemplate;
     private final RedissonClient redissonClient;
+    private final Clock clock;
 
     /**
      * 상품 구매.
@@ -138,9 +141,10 @@ public class StorePurchaseService {
                     StoreOrder.create(userId, product, quantity, totalPrice));
 
             // 사용자 보유 아이템 생성 — 수량만큼 각각 1개씩 (saveAll로 batch INSERT)
+            LocalDate today = LocalDate.now(clock);
             List<UserItem> items = new ArrayList<>();
             for (int i = 0; i < quantity; i++) {
-                items.add(UserItem.create(userId, order.getId(), product));
+                items.add(UserItem.create(userId, order.getId(), product, today));
             }
             userItemRepository.saveAll(items);
 
