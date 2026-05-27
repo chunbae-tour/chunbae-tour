@@ -7,6 +7,8 @@ import java.math.BigDecimal;
 import java.util.List;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.core.type.TypeReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Builder
 public record NearbyShopResponse(
@@ -21,6 +23,7 @@ public record NearbyShopResponse(
         int reviewCount,
         List<String> imageUrls
 ) {
+    private static final Logger log = LoggerFactory.getLogger(NearbyShopResponse.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static NearbyShopResponse fromWithDistance(Shop shop, double distanceMeters) {
@@ -29,7 +32,7 @@ public record NearbyShopResponse(
             try {
                 parsedImages = MAPPER.readValue(shop.getImageUrls(), new TypeReference<List<String>>() {});
             } catch (Exception e) {
-                // 파싱 실패 시 빈 배열 유지
+                log.warn("상점 이미지 URL 파싱 실패. shopId={}", shop.getId(), e);
             }
         }
         return NearbyShopResponse.builder()
