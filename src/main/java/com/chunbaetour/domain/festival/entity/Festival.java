@@ -1,36 +1,29 @@
 package com.chunbaetour.domain.festival.entity;
 
+import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.LocalDate;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.regex.Pattern;
-
-import com.chunbaetour.domain.common.converter.StringListConverter;
-import com.chunbaetour.domain.common.entity.BaseEntity;
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
-
+/**
+ * 축제 엔티티.
+ * progressStatus는 startDate/endDate 기준 동적 계산 — DB 저장 X.
+ */
 @Entity
 @Table(name = "festivals")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Festival extends BaseEntity {
-
-    private static final BigDecimal LAT_MIN = new BigDecimal("-90");
-    private static final BigDecimal LAT_MAX = new BigDecimal("90");
-    private static final BigDecimal LNG_MIN = new BigDecimal("-180");
-    private static final BigDecimal LNG_MAX = new BigDecimal("180");
-    private static final Pattern URL_PATTERN = Pattern.compile("^(https?|ftp)://[^\\s/$.?#].[^\\s]*$");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,15 +39,7 @@ public class Festival extends BaseEntity {
     private String region;
 
     @Column(nullable = false, length = 255)
-    private String location;
-
-    // 위도는 -90 ~ 90이므로 정수부 최대 3자리 (부호 포함) -> precision 10, scale 7
-    @Column(nullable = false, precision = 10, scale = 7)
-    private BigDecimal lat;
-
-    // 경도는 -180 ~ 180이므로 정수부 최대 4자리 (부호 포함) -> precision 11, scale 7
-    @Column(nullable = false, precision = 11, scale = 7)
-    private BigDecimal lng;
+    private String address;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -62,52 +47,59 @@ public class Festival extends BaseEntity {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
-    @Column(name = "thumbnail_url", length = 512)
-    private String thumbnailUrl;
+    @Column(name = "image_url", length = 512)
+    private String imageUrl;
 
-    @Convert(converter = StringListConverter.class)
-    @Column(name = "image_urls", columnDefinition = "JSON")
-    private List<String> imageUrls;
+    @Column(name = "related_url", length = 512)
+    private String relatedUrl;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private FestivalStatus status = FestivalStatus.ACTIVE;
+    @Column(nullable = false, length = 10)
+    private FestivalStatus status;
 
-    @Builder
-    private Festival(String name, String description, String region, String location,
-                     BigDecimal lat, BigDecimal lng, LocalDate startDate, LocalDate endDate,
-                     String thumbnailUrl, List<String> imageUrls) {
-        if (name == null || name.isBlank() || name.length() > 255) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (region == null || region.isBlank() || region.length() > 100) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (location == null || location.isBlank() || location.length() > 255) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (lat == null || lat.compareTo(LAT_MIN) < 0 || lat.compareTo(LAT_MAX) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (lng == null || lng.compareTo(LNG_MIN) < 0 || lng.compareTo(LNG_MAX) > 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (thumbnailUrl != null && !thumbnailUrl.isBlank() && !URL_PATTERN.matcher(thumbnailUrl).matches()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
+    // ── 팩토리 메서드 ──────────────────────────────────────────────────────
 
+    public static Festival create(String name, String description, String region,
+            String address, LocalDate startDate, LocalDate endDate,
+            String imageUrl, String relatedUrl, FestivalStatus status) {
+        Festival f = new Festival();
+        f.name = name;
+        f.description = description;
+        f.region = region;
+        f.address = address;
+        f.startDate = startDate;
+        f.endDate = endDate;
+        f.imageUrl = imageUrl;
+        f.relatedUrl = relatedUrl;
+        f.status = status != null ? status : FestivalStatus.ACTIVE;
+        return f;
+    }
+
+    // ── 도메인 메서드 ─────────────────────────────────────────────────────
+
+    public void update(String name, String description, String region,
+            String address, LocalDate startDate, LocalDate endDate,
+            String imageUrl, String relatedUrl, FestivalStatus status) {
         this.name = name;
         this.description = description;
         this.region = region;
-        this.location = location;
-        this.lat = lat;
-        this.lng = lng;
+        this.address = address;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.thumbnailUrl = thumbnailUrl;
-        this.imageUrls = imageUrls;
+        this.imageUrl = imageUrl;
+        this.relatedUrl = relatedUrl;
+        if (status != null) {
+            this.status = status;
+        }
+    }
+
+    /** Soft delete — status = DELETED. */
+    public void delete() {
+        this.status = FestivalStatus.DELETED;
+    }
+
+    /** 활성 상태 여부. */
+    public boolean isActive() {
+        return status == FestivalStatus.ACTIVE;
     }
 }
