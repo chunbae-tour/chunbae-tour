@@ -213,7 +213,21 @@ public class RecommendService {
         try {
             String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
             if (cachedData != null) {
-                return objectMapper.readValue(cachedData, new TypeReference<List<RecommendPlaceResponse>>() {});
+                List<RecommendPlaceResponse> cachedResponses = objectMapper.readValue(cachedData, new TypeReference<List<RecommendPlaceResponse>>() {});
+                if (cachedResponses.isEmpty()) {
+                    return cachedResponses;
+                }
+                
+                // 캐시된 장소 중 현재 ACTIVE 상태인 것만 필터링 (최대 5건 IN 쿼리)
+                List<Long> cachedIds = cachedResponses.stream().map(RecommendPlaceResponse::placeId).toList();
+                List<Long> activeIds = placeRepository.findAllById(cachedIds).stream()
+                        .filter(p -> p.getStatus() == PlaceStatus.ACTIVE)
+                        .map(Place::getId)
+                        .toList();
+                        
+                return cachedResponses.stream()
+                        .filter(r -> activeIds.contains(r.placeId()))
+                        .toList();
             }
         } catch (Exception e) {
             log.error("관광지 기반 추천 캐시 조회 중 오류 발생: placeId={}", placeId, e);

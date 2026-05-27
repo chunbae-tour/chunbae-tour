@@ -226,6 +226,9 @@ class RecommendServiceTest {
         );
         when(objectMapper.readValue(eq(cachedJson), any(TypeReference.class))).thenReturn(mockResponse);
 
+        Place cachedNearbyPlace = createTestPlace(2L, "Cached Nearby", 37.5, 127.0);
+        when(placeRepository.findAllById(List.of(2L))).thenReturn(List.of(cachedNearbyPlace));
+
         // when
         List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
 
