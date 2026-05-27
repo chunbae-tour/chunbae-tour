@@ -12,8 +12,6 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import org.mockito.quality.Strictness;
-import org.mockito.junit.jupiter.MockitoSettings;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -22,7 +20,6 @@ import com.chunbaetour.domain.store.dto.request.StorePurchaseRequest;
 import com.chunbaetour.domain.store.dto.response.StoreOrderResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.entity.StoreOrder;
-import com.chunbaetour.domain.store.entity.UserItem;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.repository.StoreOrderRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
@@ -39,6 +36,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -72,6 +71,8 @@ class StorePurchaseServiceTest {
     void setUp() throws InterruptedException {
         given(redisTemplate.opsForValue()).willReturn(valueOps);
         given(redissonClient.getLock(LOCK_KEY)).willReturn(lock);
+        // Redis 키 존재 기본값 — 개별 테스트에서 override 가능
+        lenient().when(redisTemplate.hasKey(STOCK_KEY)).thenReturn(true);
         lenient().when(lock.tryLock(3, 5, TimeUnit.SECONDS)).thenReturn(true);
         lenient().when(lock.isHeldByCurrentThread()).thenReturn(true);
     }
@@ -116,10 +117,42 @@ class StorePurchaseServiceTest {
         // then
         assertThat(response.orderId()).isEqualTo(1L);
         assertThat(response.totalPrice()).isEqualTo(UNIT_PRICE * QUANTITY);
-        then(walletService).should().spendForPurchase(USER_ID, UNIT_PRICE * QUANTITY, "테스트 상품");
+        // 락 순서: decreaseStock 먼저, spendForPurchase 나중
         then(product).should().decreaseStock(QUANTITY);
-        then(userItemRepository).should(org.mockito.Mockito.times(QUANTITY)).save(any(UserItem.class));
+        then(walletService).should().spendForPurchase(USER_ID, UNIT_PRICE * QUANTITY, "테스트 상품");
+        then(userItemRepository).should().saveAll(any());
         then(lock).should().unlock();
+    }
+
+    @Test
+    @DisplayName("구매 성공 재고 소진 — Product.status SOLD_OUT 전환 검증 (실 인스턴스)")
+    void purchase_success_stockDepleted_soldOut() {
+        // given — 실제 Product 인스턴스 사용 (decreaseStock 내부 로직 직접 검증)
+        Product realProduct = Product.builder()
+                .name("재고 소진 상품")
+                .description("테스트")
+                .category("TEST")
+                .price(UNIT_PRICE)
+                .originalPrice(null)
+                .stock(QUANTITY)       // 정확히 quantity만큼 — 구매 후 stock=0
+                .originalStock(QUANTITY)
+                .merchantName("테스트 상인")
+                .validityDays(30)
+                .status(ProductStatus.ON_SALE)
+                .build();
+        ReflectionTestUtils.setField(realProduct, "id", PRODUCT_ID);
+
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(0L);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(realProduct));
+        StoreOrder order = createOrder(1L);
+        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+
+        // when
+        storePurchaseService.purchase(USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY));
+
+        // then — 재고 0 → SOLD_OUT 자동 전환
+        assertThat(realProduct.getStock()).isZero();
+        assertThat(realProduct.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
     }
 
     @Test
@@ -142,6 +175,44 @@ class StorePurchaseServiceTest {
     }
 
     @Test
+    @DisplayName("Redis 키 미세팅 — DB 단독 처리 (1단계 건너뜀)")
+    void purchase_redis_key_missing() {
+        // given: Redis 키 없음 → hasKey = false
+        given(redisTemplate.hasKey(STOCK_KEY)).willReturn(false);
+        Product product = createProduct(10, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+        StoreOrder order = createOrder(1L);
+        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+
+        // when — 예외 없이 구매 성공
+        StoreOrderResponse response = storePurchaseService.purchase(
+                USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY));
+
+        // then — Redis DECR 호출 안 함, DB로 정상 처리
+        assertThat(response.orderId()).isEqualTo(1L);
+        then(valueOps).should(never()).decrement(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("SOLD_OUT 상품 — PRODUCT_SOLD_OUT 반환, Redis 복구")
+    void purchase_fail_soldOutProduct() {
+        // given
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(8L);
+        Product product = createProduct(0, ProductStatus.SOLD_OUT);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        // when & then
+        assertThatThrownBy(() -> storePurchaseService.purchase(
+                USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PRODUCT_SOLD_OUT);
+
+        then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
+        then(walletService).should(never()).spendForPurchase(anyLong(), anyLong(), anyString());
+    }
+
+    @Test
     @DisplayName("분산 락 획득 실패 — PURCHASE_PROCESSING 반환, Redis 복구")
     void purchase_fail_lockAcquisitionFailed() throws InterruptedException {
         // given
@@ -156,7 +227,6 @@ class StorePurchaseServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.PURCHASE_PROCESSING);
 
-        // Redis 복구 확인
         then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
     }
 
@@ -236,8 +306,8 @@ class StorePurchaseServiceTest {
     }
 
     @Test
-    @DisplayName("내 주문 내역 조회 — cursor 페이징")
-    void getMyOrders_success() {
+    @DisplayName("내 주문 내역 조회 — 첫 페이지 (hasNext=false)")
+    void getMyOrders_firstPage() {
         // given
         StoreOrder order1 = createOrder(2L);
         StoreOrder order2 = createOrder(1L);
@@ -251,5 +321,26 @@ class StorePurchaseServiceTest {
         // then
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("내 주문 내역 조회 — 다음 페이지 존재 (hasNext=true, cursor 반환)")
+    void getMyOrders_hasNext() {
+        // given: size=2 요청, size+1=3개 반환 → hasNext=true
+        StoreOrder order1 = createOrder(3L);
+        StoreOrder order2 = createOrder(2L);
+        StoreOrder order3 = createOrder(1L);
+        given(storeOrderRepository.findByUserId(eq(USER_ID), eq(null), any()))
+                .willReturn(List.of(order1, order2, order3));
+
+        // when
+        CursorPageResponse<StoreOrderResponse> result =
+                storePurchaseService.getMyOrders(USER_ID, null, 2);
+
+        // then — size=2만 반환, hasNext=true, nextCursor는 마지막 항목(order2) ID 기반
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
     }
 }

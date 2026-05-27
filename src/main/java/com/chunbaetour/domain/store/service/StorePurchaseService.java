@@ -14,6 +14,7 @@ import com.chunbaetour.domain.store.repository.StoreOrderRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
@@ -49,10 +50,11 @@ public class StorePurchaseService {
 
     /**
      * 상품 구매.
-     * [1단계] Redis DECR — 빠른 품절 거부 (DB 진입 전 필터).
-     * [2단계] Redisson 분산 락 — 동일 사용자 중복 구매 방지.
+     * [1단계] Redis DECR — 빠른 품절 거부 (키 없으면 DB 단독 처리로 폴백).
+     * [2단계] Redisson 분산 락 — 동일 사용자 중복 구매 방지 (per-userId 직렬화).
      * [3단계] DB SELECT FOR UPDATE — 실제 재고 재검증 + 차감.
      * 예외 발생 시 Redis 재고 복구 보장 (finally 블록).
+     * 락 순서: Product(findByIdWithLock) → Wallet(spendForPurchase) — 데드락 방지.
      */
     @Transactional
     public StoreOrderResponse purchase(Long userId, StorePurchaseRequest request) {
@@ -65,16 +67,21 @@ public class StorePurchaseService {
         RLock lock = redissonClient.getLock(PURCHASE_LOCK_PREFIX + userId);
 
         try {
-            // [1단계] Redis 재고 선점 — DB 조회 없이 품절 빠른 거부
-            Long remaining = redisTemplate.opsForValue().decrement(stockKey, (long) quantity);
-            redisDecremented = true;
-            // remaining < 0이면 재고 초과 — 즉시 품절 처리
-            if (remaining != null && remaining < 0) {
-                throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
+            // [1단계] Redis 재고 선점 — 키 없으면 DB 단독 처리로 폴백 (상품 활성화 시 Redis 키 사전 세팅 필요)
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(stockKey))) {
+                Long remaining = redisTemplate.opsForValue().decrement(stockKey, (long) quantity);
+                redisDecremented = true;
+                // remaining < 0이면 재고 초과 — 즉시 품절 처리
+                if (remaining != null && remaining < 0) {
+                    throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
+                }
+            } else {
+                // Redis 키 미세팅 상태 — DB 재검증(3단계)에서 재고 확인
+                log.warn("[구매] Redis 재고 키 미세팅 (productId: {}) — DB 단독 처리", productId);
             }
 
             // [2단계] Redisson 분산 락 획득 (3초 대기, 5초 보유)
-            // 동일 사용자 동시 구매 요청 중 하나만 통과
+            // 동일 사용자 동시 구매 요청 중 하나만 통과 — per-userId 직렬화
             if (!lock.tryLock(3, 5, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.PURCHASE_PROCESSING);
             }
@@ -87,6 +94,10 @@ public class StorePurchaseService {
             if (product.getStatus() == ProductStatus.HIDDEN) {
                 throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
             }
+            // SOLD_OUT 상품 명시적 차단 — Redis·DB 재고 드리프트 방어
+            if (product.getStatus() == ProductStatus.SOLD_OUT) {
+                throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
+            }
             // DB 실제 재고 재검증 — Redis와 DB 사이 불일치 보정
             if (product.getStock() < quantity) {
                 throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
@@ -95,20 +106,23 @@ public class StorePurchaseService {
             // 총 결제 금액 계산 (단가 × 수량)
             long totalPrice = product.getPrice() * quantity;
 
+            // DB 재고 차감 먼저 — 락 순서 Product(이미 획득) → Wallet 준수
+            // 재고 0 도달 시 Product.status → SOLD_OUT 자동 전환
+            product.decreaseStock(quantity);
+
             // 엽전 차감 — SELECT FOR UPDATE on wallet, 잔액 부족 시 INSUFFICIENT_BALANCE
             walletService.spendForPurchase(userId, totalPrice, product.getName());
-
-            // DB 재고 차감 — 재고 0 도달 시 Product.status → SOLD_OUT 자동 전환
-            product.decreaseStock(quantity);
 
             // 주문 레코드 저장
             StoreOrder order = storeOrderRepository.save(
                     StoreOrder.create(userId, product, quantity, totalPrice));
 
-            // 사용자 보유 아이템 생성 — 수량만큼 각각 1개씩 (개별 사용/만료 관리)
+            // 사용자 보유 아이템 생성 — 수량만큼 각각 1개씩 (saveAll로 batch INSERT)
+            List<UserItem> items = new ArrayList<>();
             for (int i = 0; i < quantity; i++) {
-                userItemRepository.save(UserItem.create(userId, order.getId(), product));
+                items.add(UserItem.create(userId, order.getId(), product));
             }
+            userItemRepository.saveAll(items);
 
             // 상품 상세 캐시 무효화 — 재고·상태 변경이 다음 조회에 반영되도록
             try {

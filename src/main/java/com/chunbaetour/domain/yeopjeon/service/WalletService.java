@@ -86,7 +86,7 @@ public class WalletService {
      * 락 획득 순서: Product → Wallet (StorePurchaseService에서 Product 락 먼저 획득).
      */
     @Transactional
-    public void spendForPurchase(Long userId, Long amount, String productName) {
+    public void spendForPurchase(Long userId, long amount, String productName) {
         // SELECT FOR UPDATE로 지갑 행 락 획득
         Wallet wallet = walletRepository.findByUserIdWithLock(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));

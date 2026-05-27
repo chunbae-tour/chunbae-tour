@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -55,7 +56,7 @@ public class UserItem extends BaseEntity {
         item.productName = product.getName();
         item.status = UserItemStatus.AVAILABLE;
         item.expiresAt = product.getValidityDays() != null
-                ? LocalDate.now().plusDays(product.getValidityDays())
+                ? LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(product.getValidityDays())
                 : null;
         return item;
     }
