@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.shop.dto.request.SettlementRejectRequest;
 import com.chunbaetour.domain.shop.dto.response.AdminSettlementResponse;
 import com.chunbaetour.domain.shop.service.AdminSettlementService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -44,13 +45,12 @@ public class AdminSettlementController {
         return ApiResponse.success(null);
     }
 
-    /** PATCH /api/v1/admin/settlements/{settlementId}/reject — 정산 거절 */
+    /** PATCH /api/v1/admin/settlements/{settlementId}/reject — 정산 거절 (사유 필수) */
     @PatchMapping("/{settlementId}/reject")
     public ApiResponse<Void> rejectSettlement(
             @PathVariable Long settlementId,
-            @RequestBody(required = false) SettlementRejectRequest request) {
-        String reason = request != null ? request.reason() : null;
-        adminSettlementService.rejectSettlement(settlementId, reason);
+            @RequestBody @Valid SettlementRejectRequest request) {
+        adminSettlementService.rejectSettlement(settlementId, request.reason());
         return ApiResponse.success(null);
     }
 }
