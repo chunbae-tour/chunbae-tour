@@ -29,6 +29,7 @@ JSON encoder = `net.logstash.logback.encoder.LogstashEncoder`. 외부 log aggreg
 | `REFRESH_ROTATED` | ReissueService | SUCCESS | account.id | role |
 | `REFRESH_REJECTED` | ReissueService | FAILURE | userId 또는 null | reasonDetail (jwt_expired/jwt_invalid/account_not_found/account_suspended/cas_failure) |
 | `RATE_LIMIT_DENIED` | RateLimitFilter | FAILURE | null | endpoint |
+| `ACCOUNT_DELETED` | UserMeService.deleteMe (afterCommit) | SUCCESS | userId | role, deletedLikes |
 
 ## 표준 필드 (모든 이벤트 공통)
 
@@ -96,7 +97,7 @@ JSON 최상위 필드로 직렬화. MDC prefix `audit.`로 펼침 — Kibana/Clo
 
 - 관리자 권한 변경 / 정지 처리 — admin Epic 도래 시
 - 비밀번호 변경 / 재설정 — 별도 PRD
-- 회원 탈퇴 — 별도 PRD
+- 관리자 강제 탈퇴 — admin Epic 도래 시 (self-withdrawal은 `ACCOUNT_DELETED`로 KAN-144 커버)
 - 결제 도메인 감사 (PortOne webhook 등) — KAN-70 도메인 작업 시 동일 `SecurityAuditLogger` 재사용
 - 감사 로그 무결성 (HMAC 서명) — SIEM 자체 무결성 기능 의존 또는 별도 Story
 

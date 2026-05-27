@@ -7,6 +7,8 @@ import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,14 @@ public class SignupService {
     private final ApplicationEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
     private final SecurityAuditLogger auditLogger;
+
+    /**
+     * 영속성 컨텍스트 직접 제어 — DataIntegrityViolationException catch 후 broken 엔티티가
+     * 세션에 남아있을 때 {@link EntityManager#clear()}로 분리한 뒤 후속 query 실행.
+     * (Hibernate auto-flush가 broken entity를 flush 시도해 AssertionFailure를 일으키는 패턴 회피.)
+     */
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Transactional
     public Account signup(SignupRequest request) {
@@ -55,8 +65,18 @@ public class SignupService {
             saved = accountRepository.save(account);
             accountRepository.flush();
         } catch (DataIntegrityViolationException e) {
+            // 영속성 컨텍스트 정리 — flush 실패한 Account 엔티티가 세션에 남아있어 후속 query가 auto-flush를
+            // 시도하면 "null identifier" AssertionFailure가 발생. clear()로 분리한 뒤 재검사 query 실행.
+            entityManager.clear();
+
             // race로 unique 충돌 — 동일 이메일/닉네임 재확인. 어떤 컬럼이 충돌했는지 메트릭에 분기 기록.
-            if (accountRepository.existsByEmail(email)) {
+            //
+            // existsByEmailIncludingDeleted (KAN-144 ADR §3) 사용 이유:
+            // existsByEmail은 @SQLRestriction으로 soft-deleted row를 필터해 "탈퇴자가 점유한 email" 충돌을
+            // 감지하지 못한다. 그러면 본 catch는 falls through해 raw DataIntegrityViolationException이 500으로
+            // 떨어지는 잠재 버그가 있었음. 본 메서드가 탈퇴 row까지 포함해 검사하므로 ADR §3(c안 — 동일 email
+            // 재가입 차단)이 AUTH_008로 정확히 응답.
+            if (accountRepository.countByEmailIncludingDeleted(email) > 0) {
                 meterRegistry.counter(METRIC_SIGNUP_ATTEMPT, "outcome", "email_dup").increment();
                 auditLogger.emitFailure(SecurityAuditEventType.SIGNUP_FAILURE, null, ErrorCode.DUPLICATE_EMAIL.getCode(),
                         Map.of("reasonDetail", "email_dup_race"));
