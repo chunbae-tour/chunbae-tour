@@ -1,14 +1,17 @@
 package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
+import com.chunbaetour.domain.chat.dto.response.StompErrorResponse;
 import com.chunbaetour.domain.chat.service.ChatMessageService;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 
 @Controller
@@ -38,5 +41,22 @@ public class ChatMessageController {
             throw new BusinessException(ErrorCode.ACCESS_TOKEN_INVALID);
         }
         chatMessageService.sendMessage(userId, chatRoomId, request);
+    }
+
+    // @MessageMapping 처리 중 BusinessException — 발신자에게만 에러 응답 전송
+    // 클라이언트 구독 경로: /user/queue/errors
+    @MessageExceptionHandler(BusinessException.class)
+    @SendToUser("/queue/errors")
+    public StompErrorResponse handleBusinessException(BusinessException e) {
+        return new StompErrorResponse(e.getErrorCode().getCode(), e.getMessage());
+    }
+
+    // 예상치 못한 예외 — 내부 에러로 치환해 상세 정보 노출 차단
+    @MessageExceptionHandler(Exception.class)
+    @SendToUser("/queue/errors")
+    public StompErrorResponse handleException(Exception e) {
+        return new StompErrorResponse(
+                ErrorCode.INTERNAL_SERVER_ERROR.getCode(),
+                ErrorCode.INTERNAL_SERVER_ERROR.getMessage());
     }
 }
