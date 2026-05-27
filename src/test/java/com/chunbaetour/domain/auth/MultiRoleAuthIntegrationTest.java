@@ -304,6 +304,16 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTH_007"));
     }
 
+    // ===== /api/v1/recommend/** Security 회귀 가드 =====
+    // recommend는 비인증 공개 API — 향후 SecurityConfig에서 실수로 인증 요구를 추가하는 회귀 방지 (KAN-134 누락 사례 재발 방어)
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("비인증으로 GET /api/v1/recommend/popular 호출 시 200 — permitAll 회귀 가드")
+    void anonymous_callingRecommendPopular_returns_200() throws Exception {
+        mockMvc.perform(get("/api/v1/recommend/popular"))
+                .andExpect(status().isOk());
+    }
+
     // ===== 헬퍼 =====
 
     /**
