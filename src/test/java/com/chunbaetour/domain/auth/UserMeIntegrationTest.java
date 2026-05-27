@@ -330,6 +330,55 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
 
+    // ===== KAN-130 Epic A S5 — GET /users/me/likes 통합 시나리오 =====
+
+    @Test
+    void get_me_likes_with_no_likes_returns_empty_page() throws Exception {
+        // 찜 없는 사용자도 200 + 빈 페이지 응답해야 함 (404 아님)
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        mockMvc.perform(get("/api/v1/users/me/likes")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.content").isArray())
+                .andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+    }
+
+    @Test
+    void get_me_likes_respects_page_size_parameter() throws Exception {
+        // 페이징 파라미터가 응답 메타데이터에 반영되는지 검증 — 시드 데이터 없이도 페이지 size 메타로 검증 가능
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        mockMvc.perform(get("/api/v1/users/me/likes?page=0&size=10")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.size").value(10))
+                .andExpect(jsonPath("$.data.number").value(0));
+    }
+
+    @Test
+    void get_me_likes_with_oversized_page_returns_400_INVALID_REQUEST() throws Exception {
+        // PlaceLikeService.getUserLikedPlaces 내부 가드: size > 100이면 INVALID_REQUEST
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+
+        mockMvc.perform(get("/api/v1/users/me/likes?size=200")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    void get_me_likes_without_token_returns_401_AUTH_006() throws Exception {
+        mockMvc.perform(get("/api/v1/users/me/likes"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
     private void signup(String email, String password, String nickname) throws Exception {
         SignupRequest request = new SignupRequest(email, password, nickname);
         mockMvc.perform(post("/api/v1/users/auth/signup")
