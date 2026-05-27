@@ -610,6 +610,7 @@ class QrPayServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.QR_PAY_CONFIRM_FORBIDDEN);
+        then(redissonClient).should(never()).getLock(anyString());
     }
 
     @Test
@@ -629,6 +630,7 @@ class QrPayServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        then(redissonClient).should(never()).getLock(anyString());
     }
 
     @Test

@@ -244,6 +244,10 @@ public class QrPayService {
             // 락 획득 후 재조회 — 대기 중 다른 요청이 이미 처리했을 수 있음
             QrPayRequest lockedRequest = qrPayRequestRepository.findByPayRequestIdWithLock(payRequestId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
+            // fast-fail: 이미 완료/거절된 요청은 불필요한 락·IO 낭비 없이 즉시 차단
+            if (lockedRequest.getStatus() != QrPayStatus.PENDING) {
+                throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+            }
             if (LocalDateTime.now(clock).isAfter(lockedRequest.getExpiredAt())) {
                 throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
             }
