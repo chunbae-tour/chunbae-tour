@@ -172,6 +172,7 @@ class ChatMessageServiceTest {
         given(msg.getSenderId()).willReturn(USER_ID);
         given(msg.getMessageType()).willReturn(MessageType.TEXT);
         given(msg.getContent()).willReturn("안녕");
+        given(msg.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 27, 12, 0));
         given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(msg));
         Account account = mock(Account.class);
         given(account.getId()).willReturn(USER_ID);
@@ -283,6 +284,7 @@ class ChatMessageServiceTest {
         given(systemMsg.getSenderId()).willReturn(null);
         given(systemMsg.getMessageType()).willReturn(MessageType.SYSTEM);
         given(systemMsg.getContent()).willReturn("채팅방이 생성되었습니다.");
+        given(systemMsg.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 27, 12, 0));
         given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(systemMsg));
         given(accountRepository.findAllById(List.of())).willReturn(List.of());
 
