@@ -77,6 +77,11 @@ public class FreePost extends BaseEntity {
         this.deletedAt = LocalDateTime.now();
     }
 
+    /** 관리자 신고 처리 비공개 (status = HIDDEN). 사용자 삭제(DELETED)와 구분. */
+    public void hide() {
+        this.status = FreePostStatus.HIDDEN;
+    }
+
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
     }
