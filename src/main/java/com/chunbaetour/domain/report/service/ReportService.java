@@ -340,8 +340,12 @@ public class ReportService {
             default -> null;
         };
 
-        if (authorId != null) {
-            accountRepository.findById(authorId).ifPresent(Account::suspend);
+        if (authorId == null) {
+            log.warn("suspendTargetAuthor: authorId 조회 실패, targetType={}, targetId={}", targetType, targetId);
+            return;
+        }
+        if (accountRepository.findById(authorId).map(acc -> { acc.suspend(); return true; }).isEmpty()) {
+            log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId);
         }
     }
 
