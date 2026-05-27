@@ -5,6 +5,7 @@ import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.List;
@@ -39,7 +42,13 @@ class RecommendServiceTest {
     private org.springframework.data.redis.core.RedisOperations<String, String> redisOperations;
 
     @Mock
+    private org.springframework.data.redis.core.ValueOperations<String, String> valueOperations;
+
+    @Mock
     private ZSetOperations<String, String> zSetOperations;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private RecommendService recommendService;
@@ -196,5 +205,113 @@ class RecommendServiceTest {
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
             recommendService.getCategoryRecommendations(null);
         });
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Cache Hit")
+    void getPlaceBasedRecommendations_CacheHit() throws Exception {
+        // given
+        Long placeId = 1L;
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+        String cachedJson = "[{\"placeId\":2}]";
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(cachedJson);
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
+        
+        List<RecommendPlaceResponse> mockResponse = List.of(
+            RecommendPlaceResponse.builder().placeId(2L).build()
+        );
+        when(objectMapper.readValue(eq(cachedJson), any(TypeReference.class))).thenReturn(mockResponse);
+
+        Place cachedNearbyPlace = createTestPlace(2L, "Cached Nearby", 37.5, 127.0);
+        when(placeRepository.findAllById(List.of(2L))).thenReturn(List.of(cachedNearbyPlace));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Cache Miss & DB 조회")
+    void getPlaceBasedRecommendations_CacheMiss() throws Exception {
+        // given
+        Long placeId = 1L;
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(null);
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
+
+        Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
+            .thenReturn(List.of(nearbyPlace));
+
+        String jsonResult = "[{}]";
+        when(objectMapper.writeValueAsString(any())).thenReturn(jsonResult);
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(valueOperations).set(eq(cacheKey), eq(jsonResult), eq(PlaceRedisConstants.RECOMMEND_PLACE_BASED_TTL_MINUTES), eq(TimeUnit.MINUTES));
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - 존재하지 않는 장소이거나 ACTIVE가 아닐 때 예외 발생")
+    void getPlaceBasedRecommendations_NotFoundOrInactive() {
+        // given
+        Long placeId = 1L;
+        // 캐시 확인 전에 예외가 터지므로 캐시 모킹은 필요 없음
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.empty());
+
+        // when & then
+        com.chunbaetour.domain.common.error.BusinessException ex =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        com.chunbaetour.domain.common.error.BusinessException.class,
+                        () -> recommendService.getPlaceBasedRecommendations(placeId)
+                );
+        assertThat(ex.getErrorCode())
+                .isEqualTo(com.chunbaetour.domain.common.error.ErrorCode.PLACE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Redis 장애 시 DB Fallback 정상 동작")
+    void getPlaceBasedRecommendations_RedisFailure() throws Exception {
+        // given
+        Long placeId = 1L;
+        when(stringRedisTemplate.opsForValue()).thenThrow(new RuntimeException("Redis get error"));
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
+
+        Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
+            .thenReturn(List.of(nearbyPlace));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
+        verify(placeRepository).findNearbyPlacesByCategory(
+                anyDouble(),
+                anyDouble(),
+                eq("TOURIST_SPOT"),
+                eq(placeId),
+                eq(5)
+        );
     }
 }
