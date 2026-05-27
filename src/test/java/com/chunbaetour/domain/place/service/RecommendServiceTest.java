@@ -19,7 +19,13 @@ import tools.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
+
+import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import java.math.BigDecimal;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +40,9 @@ class RecommendServiceTest {
 
     @Mock
     private PlaceRepository placeRepository;
+
+    @Mock
+    private ShopRepository shopRepository;
 
     @Mock
     private StringRedisTemplate stringRedisTemplate;
@@ -313,5 +322,107 @@ class RecommendServiceTest {
                 eq(placeId),
                 eq(5)
         );
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 성공")
+    void getNearbyShops_Success() {
+        // given
+        Long placeId = 1L;
+        int limit = 5;
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE))
+            .thenReturn(java.util.Optional.of(basePlace));
+
+        // Shop 모킹: Shop.builder는 address 필수 (Integration 테스트 참조)
+        Shop shop1 = Shop.builder()
+            .userId(1L)
+            .applicationId(1L)
+            .shopName("상점 1")
+            .category("식당")
+            .address("테스트 상점 1번지")
+            .lat(BigDecimal.valueOf(37.501))
+            .lng(BigDecimal.valueOf(127.001))
+            .description("맛있는 식당")
+            .build();
+            
+        when(shopRepository.findNearbyShops(anyDouble(), anyDouble(), eq(5.0), eq(limit)))
+            .thenReturn(List.of(shop1));
+
+        // when
+        List<NearbyShopResponse> result = recommendService.getNearbyShops(placeId, limit);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).shopName()).isEqualTo("상점 1");
+        // 거리가 계산되었는지 확인 (대략 0은 아님)
+        assertThat(result.get(0).distanceMeters()).isGreaterThan(0.0);
+        
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
+        verify(shopRepository).findNearbyShops(basePlace.getLat().doubleValue(), basePlace.getLng().doubleValue(), 5.0, limit);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (관광지를 찾을 수 없음)")
+    void getNearbyShops_Fail_PlaceNotFound() {
+        // given
+        Long placeId = 999L;
+        int limit = 5;
+
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE))
+            .thenReturn(java.util.Optional.empty());
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PLACE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (limit이 1 미만)")
+    void getNearbyShops_Fail_InvalidLimit_TooSmall() {
+        // given
+        Long placeId = 1L;
+        int limit = 0;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (limit이 50 초과)")
+    void getNearbyShops_Fail_InvalidLimit_TooLarge() {
+        // given
+        Long placeId = 1L;
+        int limit = 51;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (placeId가 null)")
+    void getNearbyShops_Fail_PlaceIdNull() {
+        // given
+        Long placeId = null;
+        int limit = 5;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 }
