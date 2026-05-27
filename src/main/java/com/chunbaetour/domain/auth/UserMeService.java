@@ -12,8 +12,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 마이페이지 본인 정보 조회 서비스 (Epic A S1).
  *
- * <p>S2~S5에서 인증 흐름 검증용으로 추가한 {@code /api/v1/users/me/ping} 임시 endpoint를 본 서비스가 호출하는
- * {@code GET /api/v1/users/me}로 대체할 준비를 한다. (임시 ping은 Epic A S4 정리 슬라이스에서 일괄 제거.)
+ * <p>KAN-23 S2~S5의 인증 흐름 검증용 임시 ping endpoint는 본 서비스의 {@code GET /api/v1/users/me}로 대체.
+ * 임시 ping은 KAN-129 (Epic A S4)에서 일괄 제거됨.
  *
  * <p>호출 흐름:
  * <ol>
