@@ -29,7 +29,7 @@ JSON encoder = `net.logstash.logback.encoder.LogstashEncoder`. 외부 log aggreg
 | `REFRESH_ROTATED` | ReissueService | SUCCESS | account.id | role |
 | `REFRESH_REJECTED` | ReissueService | FAILURE | userId 또는 null | reasonDetail (jwt_expired/jwt_invalid/account_not_found/account_suspended/cas_failure) |
 | `RATE_LIMIT_DENIED` | RateLimitFilter | FAILURE | null | endpoint |
-| `ACCOUNT_DELETED` | UserMeService.deleteMe (afterCommit) | SUCCESS | userId | role, deletedLikes |
+| `ACCOUNT_DELETED` | UserMeService.deleteMe (afterCommit) | SUCCESS | userId | tokenRole, deletedLikes |
 
 ## 표준 필드 (모든 이벤트 공통)
 

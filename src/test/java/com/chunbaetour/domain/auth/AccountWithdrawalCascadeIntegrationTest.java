@@ -49,7 +49,7 @@ import tools.jackson.databind.ObjectMapper;
  * <ul>
  *   <li>UserLike cascade 즉시 hard delete (ADR §2 B안)</li>
  *   <li>Wallet 보존 (ADR §1 A안)</li>
- *   <li>{@code ACCOUNT_DELETED} audit event 발행 + metadata (role/deletedLikes)</li>
+ *   <li>{@code ACCOUNT_DELETED} audit event 발행 + metadata (tokenRole/deletedLikes)</li>
  *   <li>동일 email 재가입 차단 (ADR §3 c안) — {@code AUTH_008}</li>
  *   <li>동시 탈퇴 race 가드 (ADR §5 PESSIMISTIC_WRITE) — 한 쪽 204, 다른 쪽 4xx</li>
  * </ul>
@@ -180,7 +180,7 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
     // ===== ADR §4 — ACCOUNT_DELETED audit event =====
 
     @Test
-    void ACCOUNT_DELETED_audit_event_is_emitted_with_role_and_deletedLikes() throws Exception {
+    void ACCOUNT_DELETED_audit_event_is_emitted_with_tokenRole_and_deletedLikes() throws Exception {
         signup(EMAIL, PASSWORD, NICKNAME);
         Long userId = accountRepository.findByEmail(EMAIL).orElseThrow().getId();
         Account account = accountRepository.findById(userId).orElseThrow();
@@ -199,13 +199,14 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
                 .filter(e -> "ACCOUNT_DELETED".equals(e.getMDCPropertyMap().get("audit.eventType")))
                 .toList();
         assertThat(accountDeletedEvents)
-                .as("PESSIMISTIC_WRITE 락이 race를 직렬화 → ACCOUNT_DELETED는 1건당 정확히 1번 발행")
+                .as("ADR §5 CAS UPDATE — markAsDeleted 영향 row 1을 받은 호출자만 audit 발행 경로 진입 → 1건당 정확히 1번")
                 .hasSize(1);
 
         var mdc = accountDeletedEvents.get(0).getMDCPropertyMap();
         assertThat(mdc).containsEntry("audit.outcome", "SUCCESS");
         assertThat(mdc).containsEntry("audit.actorId", String.valueOf(userId));
-        assertThat(mdc).containsEntry("audit.meta.role", "USER");
+        // tokenRole — Access Token claim 기준 (DB 현재값 아님, PR #217 hyeonmin02 review 반영)
+        assertThat(mdc).containsEntry("audit.meta.tokenRole", "USER");
         assertThat(mdc)
                 .as("audit-log-catalog.md ACCOUNT_DELETED row의 deletedLikes 컬럼")
                 .containsEntry("audit.meta.deletedLikes", "1");
@@ -247,6 +248,7 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
         ExecutorService pool = Executors.newFixedThreadPool(threadCount);
         AtomicInteger success204 = new AtomicInteger();
         AtomicInteger failure4xx = new AtomicInteger();
+        AtomicInteger unexpectedErrors = new AtomicInteger();
 
         try {
             for (int i = 0; i < threadCount; i++) {
@@ -262,8 +264,12 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
                         } else if (sc >= 400 && sc < 500) {
                             failure4xx.incrementAndGet();
                         }
-                    } catch (Exception ignored) {
-                        // 본 테스트는 응답 코드 분포만 검증 — 예외 케이스는 fail 카운트에서 자동 누락.
+                    } catch (Exception e) {
+                        // 디버깅 편의 — 카운터 + 로그로 노출 (PR #217 hyeonmin02 🔵 review).
+                        // 정상 race 시나리오는 4xx 응답이라 본 분기에 도달하지 않음. 도달 시 회귀 신호.
+                        unexpectedErrors.incrementAndGet();
+                        org.slf4j.LoggerFactory.getLogger(AccountWithdrawalCascadeIntegrationTest.class)
+                                .error("동시 탈퇴 race 테스트에서 예외 발생 — 회귀 신호", e);
                     } finally {
                         done.countDown();
                     }
@@ -277,11 +283,14 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
             pool.shutdownNow();
         }
 
+        assertThat(unexpectedErrors.get())
+                .as("예상 외 예외 0 — 둘 다 정상적인 4xx/204 응답 흐름이어야 함")
+                .isZero();
         assertThat(success204.get())
-                .as("ADR §5 — PESSIMISTIC_WRITE가 두 요청 중 하나만 204로 통과시켜야 함")
+                .as("ADR §5 CAS UPDATE — markAsDeleted가 두 요청 중 하나만 영향 row 1로 통과시켜야 함")
                 .isEqualTo(1);
         assertThat(failure4xx.get())
-                .as("ADR §5 — 두 번째 요청은 4xx (AUTH_006 락 race 또는 AUTH_013 blacklist race)")
+                .as("ADR §5 — 두 번째 요청은 4xx (AUTH_006 CAS 0 race 또는 AUTH_013 blacklist race)")
                 .isEqualTo(1);
 
         // 추가 검증: ACCOUNT_DELETED audit도 정확히 1건만 발행됐는지 — race로 인한 중복 발행 회귀 가드

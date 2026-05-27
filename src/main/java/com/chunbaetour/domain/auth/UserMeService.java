@@ -130,11 +130,9 @@ public class UserMeService {
      *
      * <p>흐름:
      * <ol>
-     *   <li>{@link AccountRepository#findByIdWithLock}로 PESSIMISTIC_WRITE 락 획득. 이미 탈퇴된 계정은
-     *       {@code @SQLRestriction}으로 빈 결과 → AUTH_006.</li>
+     *   <li>{@link AccountRepository#markAsDeleted}로 CAS UPDATE 시도. 영향 row 0이면 이미 탈퇴됨 → AUTH_006.</li>
      *   <li>{@link UserLikeRepository#deleteByUserId}로 사용자 찜 데이터 hard delete (ADR §2 B안).
      *       삭제된 row 수를 audit metadata로 기록.</li>
-     *   <li>{@link Account#softDelete}로 도메인 상태 전이 — {@code deletedAt} + {@code status=DELETED} 동시 세팅.</li>
      *   <li>트랜잭션 commit 후({@link TransactionSynchronization#afterCommit}) 사이드이펙트 등록:
      *       <ul>
      *         <li>토큰 cascade 무효화 — {@link LogoutTokenStore#invalidate} (Refresh DEL + Access blacklist SET 원자 처리)</li>
@@ -143,14 +141,15 @@ public class UserMeService {
      *   </li>
      * </ol>
      *
-     * <p><b>동시성 정책 결정 (S2 KAN-144 ADR §5)</b>: PESSIMISTIC_WRITE 락 채택.
+     * <p><b>동시성 정책 결정 (S2 KAN-144 ADR §5)</b>: CAS UPDATE 채택.
      * <ul>
-     *   <li>tx1: SELECT FOR UPDATE → ACTIVE 반환 → softDelete + UserLike cascade → COMMIT → afterCommit (audit + 토큰)</li>
-     *   <li>tx2: SELECT FOR UPDATE 대기 → tx1 commit 후 진입 → {@code @SQLRestriction} 필터로 빈 결과 → AUTH_006</li>
+     *   <li>tx1: {@code UPDATE ... WHERE deleted_at IS NULL} 1행 영향 → UserLike cascade → COMMIT → afterCommit</li>
+     *   <li>tx2: 동일 UPDATE가 0행 영향 (이미 deleted_at SET) → AUTH_006 즉시 응답</li>
      * </ul>
-     * → ACCOUNT_DELETED audit은 실제 탈퇴 1건당 정확히 1번 발행. {@code @Version} optimistic lock 대안은
-     * Account에 version 컬럼 추가가 필요해 schema migration 발생(ddl-auto=validate 운영에서 위험) — 본
-     * 슬라이스에서는 도입 비용 회피. {@code findByIdWithLock}은 STORY-09 상인 승인 흐름에서 이미 검증됨.
+     * → ACCOUNT_DELETED audit은 실제 탈퇴 1건당 정확히 1번 발행. PESSIMISTIC_WRITE 대안은 Hibernate +
+     * {@code @SQLRestriction}이 결합할 때 stale snapshot 실측 이슈로 기각. {@code @Version} optimistic 대안은
+     * Account에 version 컬럼 schema migration이 필요해 prod ddl-auto=validate 위험 → 본 슬라이스 회피.
+     * CAS UPDATE는 단일 SQL 명령이라 race-window 자체가 없다 (ADR §5 (d) 채택).
      *
      * <p><b>afterCommit 사용 이유</b>: DB rollback 시 Redis/audit 사이드이펙트가 남으면 "DB는 ACTIVE인데 토큰만
      * 무효화 + audit은 탈퇴 발행" 상태가 만들어진다. commit 성공이 확정된 뒤에만 외부 부작용을 발행해
@@ -209,11 +208,15 @@ public class UserMeService {
                 // ACCOUNT_DELETED audit emit — KAN-105 audit-log-catalog.md 표준 채널 (audit.security logger).
                 // SecurityAuditLogger.emitSuccess는 내부에서 try-catch로 audit 손실을 흡수하므로 본 호출은
                 // 호출자(비즈니스 흐름)에 예외를 전파하지 않는다 — 추가 try-catch 불필요. (KAN-105 contract)
-                // metadata: role(권한 추적), deletedLikes(cascade 효과 가시성).
+                //
+                // metadata key 명명 — `tokenRole` (DB 현재 role 아닌 Access Token claim 기준).
+                // 토큰 발급 후 사용자가 USER → MERCHANT 승격된 뒤 탈퇴 시 audit 값은 발급 시점 role이므로
+                // SIEM/감사에서 혼동되지 않도록 키 이름으로 출처를 명시. DB 현재 role 캡처는 별도 SELECT 비용 발생.
+                // (PR #217 hyeonmin02 review — audit 출처 명확화)
                 auditLogger.emitSuccess(
                         SecurityAuditEventType.ACCOUNT_DELETED,
                         uid,
-                        Map.of("role", roleName, "deletedLikes", String.valueOf(likesRemoved)));
+                        Map.of("tokenRole", roleName, "deletedLikes", String.valueOf(likesRemoved)));
             }
         });
     }

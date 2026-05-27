@@ -72,12 +72,17 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
      * <p><b>도메인 메서드와 관계</b>: {@link Account#softDelete}는 비-동시성 컨텍스트 + 도메인 단위 테스트를
      * 위해 유지. 운영 흐름({@code UserMeService.deleteMe})은 본 CAS UPDATE를 사용해 race-safe하게 처리.
      *
+     * <p><b>{@code updatedAt} 수동 세팅</b>: JPQL bulk update는 JPA Auditing {@code EntityListener}를 거치지
+     * 않아 {@code @LastModifiedDate} 컬럼이 자동 갱신되지 않는다. "최근 변경 계정" 기준 조회/배치가 탈퇴 시점을
+     * 누락하지 않도록 본 쿼리에서 {@code updated_at}을 명시적으로 동일 시각으로 세팅. (PR #217 hyeonmin02 review)
+     *
      * @param userId 탈퇴 대상 사용자 ID
      * @param now    탈퇴 시각 (호출자가 {@link java.time.Clock}으로 주입)
      * @return UPDATE된 row 수. {@code 1} = 탈퇴 성공 (호출자 책임), {@code 0} = 이미 탈퇴됨(또는 존재하지 않음)
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE Account a SET a.status = com.chunbaetour.domain.auth.AccountStatus.DELETED, "
-            + "a.deletedAt = :now WHERE a.id = :userId AND a.deletedAt IS NULL")
+            + "a.deletedAt = :now, a.updatedAt = :now "
+            + "WHERE a.id = :userId AND a.deletedAt IS NULL")
     int markAsDeleted(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 }

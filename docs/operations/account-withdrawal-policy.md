@@ -41,7 +41,7 @@
 
 ### 구현 결과
 - `UserLikeRepository.deleteByUserId(Long)` 신규 — `@Modifying(flushAutomatically=true, clearAutomatically=true)`.
-- `UserMeService.deleteMe`가 softDelete **직전**에 호출. 같은 트랜잭션이므로 DB rollback 시 둘 다 원복.
+- `UserMeService.deleteMe`가 `AccountRepository.markAsDeleted` CAS UPDATE 성공(영향 row=1) **직후**에 호출. 같은 트랜잭션이므로 DB rollback 시 둘 다 원복.
 - 삭제 row 수는 `ACCOUNT_DELETED` audit metadata `deletedLikes` 필드로 기록.
 
 ### 대안 (기각)
@@ -91,7 +91,8 @@
 - `SecurityAuditEventType.ACCOUNT_DELETED` enum 추가.
 - `audit-log-catalog.md`에 entry 추가 (UserMeService.deleteMe, SUCCESS, userId, role/deletedLikes).
 - 발행 시점 = `afterCommit` (DB rollback 시 발행 차단).
-- 동시 호출 race로 인한 중복 발행은 §5의 PESSIMISTIC_WRITE 락이 차단.
+- 동시 호출 race로 인한 중복 발행은 §5의 CAS UPDATE(`markAsDeleted`)가 차단 — 영향 row 1을 받은 호출자만 audit emit 경로 진입.
+- metadata `tokenRole` — Access Token claim 기준 (DB 현재 role 아님). 토큰 발급 후 role 변경(USER → MERCHANT 승격 등) 시 발급 시점 role이 기록됨을 명시.
 
 ### 범위 외
 - **관리자 강제 탈퇴 audit**: admin Epic 도래 시 별도 eventType (예: `ACCOUNT_FORCE_DELETED` + adminUserId metadata).
@@ -134,10 +135,12 @@ S1(KAN-143)의 `UserMeService.deleteMe`는 `findById` + `account.softDelete` 구
 
 탈퇴 흐름 변경/리뷰 시 검토:
 
-- [ ] `UserMeService.deleteMe`가 `findByIdWithLock` 사용 — 변경 시 동시 race 회귀 가능
-- [ ] `UserLikeRepository.deleteByUserId`가 `softDelete` 직전 호출 — 순서 변경 시 영속성 컨텍스트 상태 점검
+- [ ] `UserMeService.deleteMe`가 `AccountRepository.markAsDeleted` CAS UPDATE 사용 — 변경 시 동시 race 회귀 가능
+- [ ] `markAsDeleted` JPQL에 `updatedAt = :now` 포함 — JPA Auditing이 bulk update를 거치지 않으므로 누락 시 "최근 변경 계정" 조회/배치 회귀
+- [ ] `UserLikeRepository.deleteByUserId`가 `markAsDeleted` 성공 직후 호출 — 순서 변경 시 영속성 컨텍스트 상태 점검
 - [ ] `afterCommit` 안에서 audit emit + 토큰 invalidate 둘 다 발행 — 누락 시 운영 가시성 손실
 - [ ] `audit-log-catalog.md`와 `SecurityAuditEventType` 동기 — 신규 eventType 추가 시 양쪽 업데이트
+- [ ] `ACCOUNT_DELETED` metadata key가 `tokenRole`(`role` 아님) — DB 현재 role과 구분
 - [ ] `wallets` 테이블 row가 탈퇴 후에도 살아있는지 통합 테스트 회귀 가드
 - [ ] 동일 email 재가입이 `AUTH_008`로 차단되는지 회귀 가드 (정책 변경 시 본 ADR 갱신)
 
