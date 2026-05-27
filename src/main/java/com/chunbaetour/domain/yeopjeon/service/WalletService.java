@@ -94,9 +94,7 @@ public class WalletService {
         wallet.debit(amount);
         // 구매 이력 저장
         yeopjeonHistoryRepository.save(
-                YeopjeonHistory.create(userId, null, null,
-                        com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType.PAYMENT,
-                        amount, wallet.getBalance(), "스토어 구매 - " + productName)
+                YeopjeonHistory.ofStorePurchase(userId, amount, wallet.getBalance(), productName)
         );
     }
 

@@ -46,6 +46,8 @@ import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -69,6 +71,7 @@ class StorePurchaseServiceTest {
     private static final int QUANTITY = 2;
     private static final long UNIT_PRICE = 5_000L;
     private static final String STOCK_KEY = "stock:" + PRODUCT_ID;
+    private static final String PRODUCT_CACHE_KEY = "product:" + PRODUCT_ID;
     private static final String LOCK_KEY = "purchase:lock:" + USER_ID;
 
     @BeforeEach
@@ -77,7 +80,7 @@ class StorePurchaseServiceTest {
         given(redissonClient.getLock(LOCK_KEY)).willReturn(lock);
         // Redis 키 존재 기본값 — 개별 테스트에서 override 가능
         lenient().when(redisTemplate.hasKey(STOCK_KEY)).thenReturn(true);
-        lenient().when(lock.tryLock(3, 5, TimeUnit.SECONDS)).thenReturn(true);
+        lenient().when(lock.tryLock(3, TimeUnit.SECONDS)).thenReturn(true);
         lenient().when(lock.isHeldByCurrentThread()).thenReturn(true);
         // Clock 고정 — 2024-01-15 UTC
         lenient().when(clock.instant()).thenReturn(Instant.parse("2024-01-15T00:00:00Z"));
@@ -116,7 +119,7 @@ class StorePurchaseServiceTest {
         Product product = createProduct(10, ProductStatus.ON_SALE);
         given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
         StoreOrder order = createOrder(1L);
-        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+        given(storeOrderRepository.saveAndFlush(any(StoreOrder.class))).willReturn(order);
 
         // when
         StoreOrderResponse response = storePurchaseService.purchase(
@@ -154,7 +157,7 @@ class StorePurchaseServiceTest {
         given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(0L);
         given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(realProduct));
         StoreOrder order = createOrder(1L);
-        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+        given(storeOrderRepository.saveAndFlush(any(StoreOrder.class))).willReturn(order);
 
         // when
         storePurchaseService.purchase(USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY));
@@ -210,7 +213,7 @@ class StorePurchaseServiceTest {
         Product product = createProduct(10, ProductStatus.ON_SALE);
         given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
         StoreOrder order = createOrder(1L);
-        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+        given(storeOrderRepository.saveAndFlush(any(StoreOrder.class))).willReturn(order);
 
         // when — 예외 없이 구매 성공
         StoreOrderResponse response = storePurchaseService.purchase(
@@ -245,7 +248,7 @@ class StorePurchaseServiceTest {
     void purchase_fail_lockAcquisitionFailed() throws InterruptedException {
         // given
         given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(8L);
-        given(lock.tryLock(3, 5, TimeUnit.SECONDS)).willReturn(false);
+        given(lock.tryLock(3, TimeUnit.SECONDS)).willReturn(false);
         given(lock.isHeldByCurrentThread()).willReturn(false);
 
         // when & then
@@ -330,7 +333,7 @@ class StorePurchaseServiceTest {
                 .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
 
         then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
-        then(storeOrderRepository).should(never()).save(any());
+        then(storeOrderRepository).should(never()).saveAndFlush(any());
     }
 
     @Test
@@ -341,7 +344,7 @@ class StorePurchaseServiceTest {
         Product product = createProduct(10, ProductStatus.ON_SALE);
         given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
         StoreOrder order = createOrder(1L);
-        given(storeOrderRepository.save(any(StoreOrder.class))).willReturn(order);
+        given(storeOrderRepository.saveAndFlush(any(StoreOrder.class))).willReturn(order);
         willThrow(new RuntimeException("DB 오류"))
                 .given(userItemRepository).saveAll(any());
 
@@ -352,6 +355,68 @@ class StorePurchaseServiceTest {
 
         // 트랜잭션 동기화 미활성(단위테스트) 환경에서 finally fallback으로 Redis 복구
         then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
+    }
+
+    @Test
+    @DisplayName("트랜잭션 롤백 시 afterCompletion에서 Redis 재고를 복구")
+    void purchase_fail_transactionRollback_recoversRedisStockAfterCompletion() {
+        // given
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(8L);
+        Product product = createProduct(10, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+        StoreOrder order = createOrder(1L);
+        given(storeOrderRepository.saveAndFlush(any(StoreOrder.class))).willReturn(order);
+        willThrow(new RuntimeException("DB 오류"))
+                .given(userItemRepository).saveAll(any());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            // when & then
+            assertThatThrownBy(() -> storePurchaseService.purchase(
+                    USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY)))
+                    .isInstanceOf(RuntimeException.class);
+
+            then(valueOps).should(never()).increment(STOCK_KEY, (long) QUANTITY);
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+            assertThat(synchronizations).hasSize(1);
+
+            synchronizations.get(0).afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("트랜잭션 커밋 후 상품 상세 캐시를 무효화하고 Redis 재고는 복구하지 않음")
+    void purchase_success_transactionCommit_deletesProductCacheAfterCommit() {
+        // given
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(8L);
+        Product product = createProduct(10, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+        StoreOrder order = createOrder(1L);
+        given(storeOrderRepository.saveAndFlush(any(StoreOrder.class))).willReturn(order);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            // when
+            storePurchaseService.purchase(USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY));
+
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+            assertThat(synchronizations).hasSize(1);
+
+            synchronizations.get(0).afterCommit();
+            synchronizations.get(0).afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+
+            // then
+            then(redisTemplate).should().delete(PRODUCT_CACHE_KEY);
+            then(valueOps).should(never()).increment(STOCK_KEY, (long) QUANTITY);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test

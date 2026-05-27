@@ -104,4 +104,16 @@ public class YeopjeonHistory extends BaseEntity {
                 .paymentOrderId(paymentOrderId)
                 .build();
     }
+
+    /** 스토어 상품 구매 차감 이력. paymentOrderId/shopId는 스토어 구매와 직접 연결되지 않아 비워둔다. */
+    public static YeopjeonHistory ofStorePurchase(
+            Long userId, Long amount, Long balanceSnapshot, String productName) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.PAYMENT)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .description("스토어 구매 - " + productName)
+                .build();
+    }
 }
