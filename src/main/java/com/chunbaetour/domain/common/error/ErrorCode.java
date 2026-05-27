@@ -129,6 +129,7 @@ public enum ErrorCode {
     DUPLICATE_SETTLEMENT_REQUEST(HttpStatus.CONFLICT,       "SHOP_009", "이미 처리 대기 중인 정산 요청이 있습니다."),
     SETTLEMENT_INVALID_STATUS(HttpStatus.CONFLICT,          "SHOP_010", "현재 상태에서는 처리할 수 없는 정산 요청입니다."),
     SETTLEMENT_BALANCE_EMPTY(HttpStatus.BAD_REQUEST,        "SHOP_011", "정산 가능한 잔액이 없습니다."),
+    SETTLEMENT_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,       "SHOP_012", "정산 신청 최소 금액은 5,000엽전입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

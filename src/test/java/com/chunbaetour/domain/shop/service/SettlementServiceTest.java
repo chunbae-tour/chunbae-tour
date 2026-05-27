@@ -152,6 +152,24 @@ class SettlementServiceTest {
     }
 
     @Test
+    @DisplayName("최소 금액 미달 신청 — SETTLEMENT_AMOUNT_TOO_LOW")
+    void requestSettlement_belowMinimum() {
+        Shop shop = createShop();
+        ShopWallet wallet = createWallet(4_999L); // 5,000 미만
+
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
+        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.of(wallet));
+
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SETTLEMENT_AMOUNT_TOO_LOW);
+
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
     @DisplayName("내 정산 내역 조회 — 첫 페이지 (hasNext=false)")
     void getMySettlements_firstPage() {
         Shop shop = createShop();

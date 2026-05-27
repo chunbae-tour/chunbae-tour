@@ -27,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SettlementService {
 
+    private static final long MIN_SETTLEMENT_AMOUNT = 5_000L;
+
     private final SettlementRepository settlementRepository;
     private final ShopRepository shopRepository;
     private final ShopWalletRepository shopWalletRepository;
@@ -54,6 +56,10 @@ public class SettlementService {
         // 정산 가능 잔액 없으면 차단
         if (wallet.getBalance() <= 0) {
             throw new BusinessException(ErrorCode.SETTLEMENT_BALANCE_EMPTY);
+        }
+        // 최소 정산 금액(5,000엽전) 미달 차단
+        if (wallet.getBalance() < MIN_SETTLEMENT_AMOUNT) {
+            throw new BusinessException(ErrorCode.SETTLEMENT_AMOUNT_TOO_LOW);
         }
 
         // 신청 시점 잔액 + 계좌 정보 스냅샷으로 정산 요청 생성
