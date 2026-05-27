@@ -42,10 +42,10 @@ public class ReportService {
 
     @Transactional
     public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
-        // USER·MERCHANT 자기신고 — DB 없이 즉시 차단 (ID 일치 비교)
+        // USER 자기신고 — DB 없이 즉시 차단 (ID 일치 비교)
+        // MERCHANT는 role 검증 후 판정 (자기 ID라도 Role.USER면 REPORT_TARGET_NOT_FOUND가 맞음)
         // 게시글·댓글 자기신고 — validateTargetExists 내부에서 authorId 비교 후 차단
-        if ((request.targetType() == ReportTargetType.USER
-                || request.targetType() == ReportTargetType.MERCHANT)
+        if (request.targetType() == ReportTargetType.USER
                 && request.targetId().equals(reporterId)) {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
