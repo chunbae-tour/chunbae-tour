@@ -2,6 +2,7 @@ package com.chunbaetour.domain.notification.repository;
 
 import com.chunbaetour.domain.notification.entity.Notification;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -10,6 +11,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
+
+    // 단건 읽음 처리용 — userId 일치 검증 포함 (타인 알림 접근 시 empty 반환)
+    Optional<Notification> findByIdAndUserId(Long id, Long userId);
 
     // 알림 목록 커서 페이징 — id DESC(최신순), cursorId null 시 첫 페이지(상한 없음)
     @Query("SELECT n FROM Notification n WHERE n.userId = :userId AND (:cursorId IS NULL OR n.id < :cursorId) ORDER BY n.id DESC")

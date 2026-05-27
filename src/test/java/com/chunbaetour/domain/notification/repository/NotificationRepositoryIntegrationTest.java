@@ -7,6 +7,7 @@ import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,8 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
     void tearDown() {
         jdbcTemplate.execute("DELETE FROM notifications");
     }
+
+    // ===== findWithCursor =====
 
     // userId가 다른 알림은 조회되지 않음
     @Test
@@ -76,7 +79,7 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
         assertThat(result.get(1).getId()).isGreaterThan(result.get(2).getId());
     }
 
-    // cursorId 미만 id만 반환됨 — 커서 이후 페이지 조회 정확성 검증
+    // cursorId 미만 id만 반환됨
     @Test
     void findWithCursor_returnsOnlyIdsBelowCursor() {
         List<Notification> saved = notificationRepository.saveAll(List.of(
@@ -84,7 +87,7 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
                 buildNotification(USER_A),
                 buildNotification(USER_A)
         ));
-        Long cursorId = saved.get(1).getId(); // 3개 중 중간 id를 cursor로 설정
+        Long cursorId = saved.get(1).getId();
 
         List<Notification> result = notificationRepository.findWithCursor(USER_A, cursorId, PageRequest.of(0, 10));
 
@@ -92,7 +95,7 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
         assertThat(result).allMatch(n -> n.getId() < cursorId);
     }
 
-    // size+1 조회 시 Pageable 제한이 정확히 적용됨 — 서비스의 hasNext 계산 전제 조건
+    // Pageable size 제한 적용 — size+1 요청으로 hasNext 계산 가능
     @Test
     void findWithCursor_respectsPageableLimit() {
         for (int i = 0; i < 5; i++) {
@@ -102,6 +105,72 @@ class NotificationRepositoryIntegrationTest extends AbstractIntegrationTest {
         List<Notification> result = notificationRepository.findWithCursor(USER_A, null, PageRequest.of(0, 3));
 
         assertThat(result).hasSize(3);
+    }
+
+    // ===== findByIdAndUserId =====
+
+    // 타 userId의 알림은 반환하지 않음 — 소유권 검증
+    @Test
+    void findByIdAndUserId_returnsEmptyForOtherUserId() {
+        Notification saved = notificationRepository.save(buildNotification(USER_A));
+
+        Optional<Notification> result = notificationRepository.findByIdAndUserId(saved.getId(), USER_B);
+
+        assertThat(result).isEmpty();
+    }
+
+    // soft-deleted 알림은 단건 조회 대상 아님 — @SQLRestriction 적용
+    @Test
+    void findByIdAndUserId_returnsEmptyForSoftDeletedNotification() {
+        Notification saved = notificationRepository.save(buildNotification(USER_A));
+        saved.delete();
+        notificationRepository.save(saved);
+
+        Optional<Notification> result = notificationRepository.findByIdAndUserId(saved.getId(), USER_A);
+
+        assertThat(result).isEmpty();
+    }
+
+    // ===== markAllAsRead =====
+
+    // 요청 userId의 unread 알림만 isRead=true로 변경됨
+    @Test
+    void markAllAsRead_updatesOnlyUnreadForUserId() {
+        notificationRepository.saveAll(List.of(
+                buildNotification(USER_A),
+                buildNotification(USER_A),
+                buildNotification(USER_A)
+        ));
+
+        notificationRepository.markAllAsRead(USER_A);
+
+        int unreadCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = false AND deleted_at IS NULL",
+                Integer.class, USER_A);
+        assertThat(unreadCount).isZero();
+    }
+
+    // 타 userId 알림과 soft-deleted 알림은 변경되지 않음
+    @Test
+    void markAllAsRead_doesNotUpdateOtherUserOrDeletedNotifications() {
+        Notification otherUserNotif = notificationRepository.save(buildNotification(USER_B));
+        Notification deletedNotif = notificationRepository.save(buildNotification(USER_A));
+        deletedNotif.delete();
+        notificationRepository.save(deletedNotif);
+
+        notificationRepository.markAllAsRead(USER_A);
+
+        // USER_B 알림은 변경되지 않음
+        int otherUserUnread = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE id = ? AND is_read = false",
+                Integer.class, otherUserNotif.getId());
+        assertThat(otherUserUnread).isEqualTo(1);
+
+        // soft-deleted 알림은 변경되지 않음
+        int deletedUnread = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notifications WHERE id = ? AND is_read = false",
+                Integer.class, deletedNotif.getId());
+        assertThat(deletedUnread).isEqualTo(1);
     }
 
     private Notification buildNotification(Long userId) {
