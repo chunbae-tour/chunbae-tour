@@ -159,4 +159,36 @@ public class Account {
             this.profileImageUrl = profileImageUrl;
         }
     }
+
+    /**
+     * 회원 탈퇴 — soft delete (Epic C S1, KAN-143).
+     *
+     * <p>{@code deletedAt}과 {@code status=DELETED}를 같은 트랜잭션에서 동시에 세팅한다.
+     * <ul>
+     *   <li>{@code deletedAt}은 {@code @SQLRestriction("deleted_at IS NULL")}과 짝을 이뤄 후속 조회에서 자동 제외.</li>
+     *   <li>{@code status=DELETED}는 응답 직렬화/관리자 화면에서 탈퇴 상태를 명시적으로 표현할 때 사용.</li>
+     * </ul>
+     * 둘 중 하나만 세팅되면 "조회는 되는데 상태는 ACTIVE", 혹은 그 반대의 불일치 상태가 만들어진다.
+     * 도메인 메서드로 묶어 분기 누락을 컴파일 단계에서 막는다.
+     *
+     * <p><b>멱등 정책</b>: 이미 {@code DELETED} 상태인 Account에 다시 호출하면 {@link IllegalStateException}.
+     * 중복 탈퇴 호출은 정상 흐름에서 발생할 수 없다 (UserMeService.deleteMe → 토큰 cascade 무효화로
+     * 두 번째 호출은 인증 단계에서 AUTH_013으로 차단). 따라서 도달했다면 호출자 코드 결함 또는
+     * 우회된 호출이므로 silent skip 대신 명시적 에러로 알린다. S2에서 audit event 발행 시점도
+     * 본 분기를 신호로 사용 가능.
+     *
+     * <p>본 메서드는 도메인 상태 전이만 담당. 토큰 무효화 cascade(Redis refresh 삭제 + access blacklist
+     * 등록) + audit log는 호출자(UserMeService.deleteMe) 책임이며 트랜잭션 commit 후에 실행된다.
+     *
+     * @param now 탈퇴 시각. 호출자가 {@link java.time.Clock}으로 주입 — 테스트 결정성 확보.
+     * @throws IllegalStateException 이미 {@code DELETED} 상태인 경우.
+     */
+    public void softDelete(LocalDateTime now) {
+        if (this.status == AccountStatus.DELETED) {
+            throw new IllegalStateException(
+                    "이미 탈퇴 처리된 계정입니다. accountId=" + this.id);
+        }
+        this.status = AccountStatus.DELETED;
+        this.deletedAt = now;
+    }
 }

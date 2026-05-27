@@ -2,12 +2,19 @@ package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
+import com.chunbaetour.domain.auth.jwt.AccessClaims;
+import com.chunbaetour.domain.auth.jwt.LogoutTokenStore;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 마이페이지 본인 정보 조회 서비스 (Epic A S1).
@@ -32,6 +39,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserMeService {
 
     private final AccountRepository accountRepository;
+    private final LogoutTokenStore logoutTokenStore;
+    private final Clock clock;
 
     /**
      * 본인 정보 조회.
@@ -102,5 +111,64 @@ public class UserMeService {
         }
 
         return UserMeResponse.from(account);
+    }
+
+    /**
+     * 회원 탈퇴 (Epic C S1, KAN-143).
+     *
+     * <p>흐름:
+     * <ol>
+     *   <li>userId로 Account 조회. 이미 탈퇴된 계정은 {@code @SQLRestriction}으로 빈 결과 → AUTH_006.</li>
+     *   <li>{@link Account#softDelete}로 도메인 상태 전이 — {@code deletedAt} + {@code status=DELETED} 동시 세팅.</li>
+     *   <li>트랜잭션 commit 후({@link TransactionSynchronization#afterCommit}) 토큰 cascade 무효화 등록.
+     *       <ul>
+     *         <li>Refresh Redis 키 삭제: {@code auth:refresh:{userId}}</li>
+     *         <li>Access blacklist 등록: {@code auth:blacklist:{accessJti}} (TTL = access 잔여 만료까지)</li>
+     *       </ul>
+     *       두 작업은 {@link LogoutTokenStore#invalidate}의 Lua script가 원자적으로 처리 (로그아웃 흐름과 공유).
+     *   </li>
+     * </ol>
+     *
+     * <p><b>afterCommit 사용 이유</b>: DB rollback 시 Redis 무효화가 남으면 사용자가 토큰을 잃은 채 계정이
+     * 그대로 활성화돼 있어 재로그인을 강제로 요구받는다(=실제 탈퇴되지 않았는데 로그아웃됨). commit
+     * 성공이 확정된 뒤에만 Redis를 건드려 "DB 탈퇴 ↔ 토큰 무효화"의 일관성을 보장한다. 반대 방향
+     * (Redis 성공 + DB 실패)도 같은 분기에서 회피.
+     *
+     * <p><b>LogoutService.logout과 분리한 이유</b>: 로그아웃은 {@code SecurityAuditEventType.LOGOUT} 감사
+     * 이벤트를 발행하지만, 탈퇴는 별도 {@code ACCOUNT_DELETED} 이벤트(S2 KAN-144 범위)로 처리한다.
+     * 동일한 audit event를 잘못 emit하지 않도록 service 레벨에서 직접 {@link LogoutTokenStore}만 호출.
+     * 토큰 무효화 데이터 저장소는 같은 컴포넌트를 공유 → 로직 복붙 아님.
+     *
+     * <p><b>UserLike/Wallet cascade는 S2 범위</b>: 본 슬라이스는 인증 흐름 차단까지만. 부속 데이터
+     * 정책(보존 vs 삭제)은 S2에서 ADR과 함께 처리.
+     *
+     * @param userId      SecurityContext에서 추출한 본인 ID (PathVariable 미사용 — PK 변조 차단)
+     * @param accessClaims 인증 필터가 검증을 마친 현재 Access Token 클레임 — tokenId/expiresAt만 사용.
+     *                     호출자(Controller)가 {@code request.getAttribute(REQUEST_ATTR_ACCESS_CLAIMS)}로 획득.
+     * @throws BusinessException AUTH_006 — 이미 탈퇴되었거나 존재하지 않는 사용자.
+     */
+    @Transactional
+    public void deleteMe(Long userId, AccessClaims accessClaims) {
+        Account account = accountRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+
+        // 도메인 상태 전이. 이미 DELETED면 IllegalStateException — @SQLRestriction이 차단하므로 정상
+        // 흐름에서는 도달 불가지만 도메인 가드는 유지.
+        account.softDelete(LocalDateTime.now(clock));
+
+        // afterCommit에서 사용할 값은 final로 캡처. accessClaims는 record라 immutable이라 안전.
+        final long uid = userId;
+        final String tokenId = accessClaims.tokenId();
+        final java.time.Instant expiresAt = accessClaims.expiresAt();
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // 잔여 TTL = exp - now. 음수면 LogoutTokenStore가 SET(blacklist)을 스킵하고 Refresh DEL만 실행.
+                // LogoutService.logout과 같은 계산식 (KAN-23 S4 패턴 재사용).
+                Duration remainingTtl = Duration.between(clock.instant(), expiresAt);
+                logoutTokenStore.invalidate(uid, tokenId, remainingTtl);
+            }
+        });
     }
 }
