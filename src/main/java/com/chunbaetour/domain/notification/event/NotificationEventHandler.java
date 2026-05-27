@@ -6,12 +6,12 @@ import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
 import com.chunbaetour.domain.notification.entity.Notification;
+import com.chunbaetour.domain.notification.service.NotificationRedisPubSubService;
 import com.chunbaetour.domain.notification.service.NotificationService;
 import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +24,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class NotificationEventHandler {
 
     private final NotificationService notificationService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationRedisPubSubService notificationRedisPubSubService;
 
     // 참여 신청 생성 — 방장에게 CHAT_JOIN_REQUEST 알림, 원본 트랜잭션 커밋 후 새 트랜잭션에서 저장
     // REQUIRES_NEW 트랜잭션 실패 시 원본 비즈니스 흐름 영향 없음 — log.error로 silent loss 추적
@@ -47,7 +47,7 @@ public class NotificationEventHandler {
         }
     }
 
-    // 참여 신청 수락 — 신청자에게 CHAT_JOIN_APPROVED 알림
+    // 참여 신청 수락 — 신청자에게 CHAT_JOIN_APPROVED 알림, referenceType=CHAT_ROOM (채팅방 이동용)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleJoinRequestApproved(JoinRequestApprovedEvent event) {
@@ -57,8 +57,8 @@ public class NotificationEventHandler {
                     NotificationType.CHAT_JOIN_APPROVED,
                     "참여 신청 승인",
                     "참여 신청이 승인됐어요.",
-                    NotificationReferenceType.JOIN_REQUEST,
-                    event.joinRequestId());
+                    NotificationReferenceType.CHAT_ROOM,
+                    event.chatRoomId());
             pushNotification(notification);
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — chatRoomId={}, joinRequestId={}, applicantUserId={}",
@@ -66,7 +66,7 @@ public class NotificationEventHandler {
         }
     }
 
-    // 참여 신청 거절 — 신청자에게 CHAT_JOIN_REJECTED 알림
+    // 참여 신청 거절 — 신청자에게 CHAT_JOIN_REJECTED 알림, referenceType=CHAT_ROOM (거절된 방 확인용)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleJoinRequestRejected(JoinRequestRejectedEvent event) {
@@ -76,8 +76,8 @@ public class NotificationEventHandler {
                     NotificationType.CHAT_JOIN_REJECTED,
                     "참여 신청 거절",
                     "참여 신청이 거절됐어요.",
-                    NotificationReferenceType.JOIN_REQUEST,
-                    event.joinRequestId());
+                    NotificationReferenceType.CHAT_ROOM,
+                    event.chatRoomId());
             pushNotification(notification);
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — chatRoomId={}, joinRequestId={}, applicantUserId={}",
@@ -104,16 +104,10 @@ public class NotificationEventHandler {
         }
     }
 
-    // WebSocket 실시간 알림 Push — 전송 실패가 알림 저장 롤백에 영향 없도록 별도 try-catch
+    // Redis Pub/Sub으로 Push — 다중 서버 환경에서 모든 인스턴스에 전달, 전송 실패는 저장 롤백 없음
     private void pushNotification(Notification notification) {
-        try {
-            messagingTemplate.convertAndSendToUser(
-                    String.valueOf(notification.getUserId()),
-                    "/queue/notifications",
-                    NotificationResponse.from(notification));
-        } catch (Exception e) {
-            log.warn("WebSocket 알림 Push 실패 — userId={}, notificationId={}",
-                    notification.getUserId(), notification.getId(), e);
-        }
+        notificationRedisPubSubService.publish(
+                notification.getUserId(),
+                NotificationResponse.from(notification));
     }
 }
