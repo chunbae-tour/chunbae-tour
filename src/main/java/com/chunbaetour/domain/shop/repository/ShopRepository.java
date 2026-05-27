@@ -13,13 +13,19 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     boolean existsByUserId(Long userId);
 
     /**
-     * 특정 관광지 기반 주변 상점 조회
-     * 파라미터: 1=lat, 2=lng, 3=limit
-     * TODO: 데이터 증가 시 성능 저하(풀스캔) 우려. lat, lng에 대한 BETWEEN(bounding-box) 조건 추가 검토 필요
+     * 특정 관광지 기반 주변 상점 조회 (Bounding Box + Haversine 최적화)
+     * 파라미터: 1=lat, 2=lng, 3=radiusKm, 4=limit
+     * Bounding box 근사치: 위도 1도는 약 111km, 경도는 대략 111km * cos(lat) 
+     * 1km = 약 0.009도
      */
-    @org.springframework.data.jpa.repository.Query(value = "SELECT * FROM shops s " +
+    @org.springframework.data.jpa.repository.Query(value = "SELECT *, " +
+                   "(6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(s.lat)) * cos(radians(s.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(s.lat)))))) AS distance " +
+                   "FROM shops s " +
                    "WHERE s.status = 'ACTIVE' AND s.lat IS NOT NULL AND s.lng IS NOT NULL " +
-                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(s.lat)) * cos(radians(s.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(s.lat)))))) ASC " +
-                   "LIMIT ?3", nativeQuery = true)
-    java.util.List<Shop> findNearbyShops(double lat, double lng, int limit);
+                   "AND s.lat BETWEEN ?1 - (?3 * 0.009) AND ?1 + (?3 * 0.009) " +
+                   "AND s.lng BETWEEN ?2 - (?3 * 0.011) AND ?2 + (?3 * 0.011) " +
+                   "HAVING distance <= ?3 " +
+                   "ORDER BY distance ASC " +
+                   "LIMIT ?4", nativeQuery = true)
+    java.util.List<Shop> findNearbyShops(double lat, double lng, double radiusKm, int limit);
 }

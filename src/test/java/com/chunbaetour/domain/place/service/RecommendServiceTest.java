@@ -347,7 +347,7 @@ class RecommendServiceTest {
             .description("맛있는 식당")
             .build();
             
-        when(shopRepository.findNearbyShops(anyDouble(), anyDouble(), eq(limit)))
+        when(shopRepository.findNearbyShops(anyDouble(), anyDouble(), eq(5.0), eq(limit)))
             .thenReturn(List.of(shop1));
 
         // when
@@ -360,7 +360,7 @@ class RecommendServiceTest {
         assertThat(result.get(0).distanceMeters()).isGreaterThan(0.0);
         
         verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
-        verify(shopRepository).findNearbyShops(basePlace.getLat().doubleValue(), basePlace.getLng().doubleValue(), limit);
+        verify(shopRepository).findNearbyShops(basePlace.getLat().doubleValue(), basePlace.getLng().doubleValue(), 5.0, limit);
     }
 
     @Test

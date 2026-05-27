@@ -3,6 +3,7 @@ package com.chunbaetour.domain.place.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
+import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
@@ -18,14 +19,19 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/places")
 @RequiredArgsConstructor
+@Validated
 public class PlaceController {
 
     private final PlaceService placeService;
@@ -111,9 +117,9 @@ public class PlaceController {
      * - 비로그인 허용 (permitAll)
      */
     @GetMapping("/{placeId}/nearby-shops")
-    public ApiResponse<List<com.chunbaetour.domain.place.dto.response.NearbyShopResponse>> getNearbyShops(
+    public ApiResponse<List<NearbyShopResponse>> getNearbyShops(
             @PathVariable Long placeId,
-            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "5") int limit) {
+            @RequestParam(defaultValue = "5") @Min(1) @Max(50) int limit) {
         return ApiResponse.success(recommendService.getNearbyShops(placeId, limit));
     }
 }

@@ -288,10 +288,12 @@ public class RecommendService {
         Place basePlace = placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
 
-        // 2. DB 조회 (가까운 상점 limit개)
+        // 2. DB 조회 (가까운 상점 limit개, 반경 5km 이내)
+        double radiusKm = 5.0;
         List<Shop> nearbyShops = shopRepository.findNearbyShops(
                 basePlace.getLat().doubleValue(),
                 basePlace.getLng().doubleValue(),
+                radiusKm,
                 limit
         );
 
