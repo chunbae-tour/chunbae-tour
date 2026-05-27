@@ -139,7 +139,13 @@ public enum ErrorCode {
     CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
 
     // ===== NOTIFICATION (담당: 임하은) =====
-    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다.");
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
+
+    // ===== REPORT (담당: 박경화) =====
+    REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND,            "REPORT_001", "신고 대상을 찾을 수 없습니다."),
+    DUPLICATE_REPORT(HttpStatus.CONFLICT,                    "REPORT_002", "이미 신고한 대상입니다."),
+    REPORT_SELF(HttpStatus.BAD_REQUEST,                      "REPORT_003", "자기 자신을 신고할 수 없습니다."),
+    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다.");
 
     private final HttpStatus status;
     private final String code;
