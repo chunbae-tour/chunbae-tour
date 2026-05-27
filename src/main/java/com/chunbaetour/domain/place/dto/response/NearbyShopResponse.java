@@ -24,12 +24,12 @@ public record NearbyShopResponse(
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public static NearbyShopResponse fromWithDistance(Shop shop, double distanceMeters) {
-        List<String> parsedImages = null;
+        List<String> parsedImages = List.of();
         if (shop.getImageUrls() != null && !shop.getImageUrls().isBlank()) {
             try {
                 parsedImages = MAPPER.readValue(shop.getImageUrls(), new TypeReference<List<String>>() {});
             } catch (Exception e) {
-                parsedImages = List.of();
+                // 파싱 실패 시 빈 배열 유지
             }
         }
         return NearbyShopResponse.builder()

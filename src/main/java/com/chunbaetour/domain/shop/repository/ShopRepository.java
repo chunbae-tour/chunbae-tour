@@ -22,8 +22,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
                    "(6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(s.lat)) * cos(radians(s.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(s.lat)))))) AS distance " +
                    "FROM shops s " +
                    "WHERE s.status = 'ACTIVE' AND s.lat IS NOT NULL AND s.lng IS NOT NULL " +
-                   "AND s.lat BETWEEN ?1 - (?3 * 0.009) AND ?1 + (?3 * 0.009) " +
-                   "AND s.lng BETWEEN ?2 - (?3 * 0.011) AND ?2 + (?3 * 0.011) " +
+                   "AND s.lat BETWEEN ?1 - (?3 / 111.0) AND ?1 + (?3 / 111.0) " +
+                   "AND s.lng BETWEEN ?2 - (?3 / (111.0 * cos(radians(?1)))) AND ?2 + (?3 / (111.0 * cos(radians(?1)))) " +
                    "HAVING distance <= ?3 " +
                    "ORDER BY distance ASC " +
                    "LIMIT ?4", nativeQuery = true)
