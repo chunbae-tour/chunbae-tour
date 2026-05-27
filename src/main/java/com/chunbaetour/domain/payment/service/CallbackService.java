@@ -65,37 +65,46 @@ public class CallbackService {
     @Transactional(noRollbackFor = PaymentException.class)
     public void handleSuccess(String paymentId, String txId) {
         // 1단계: 락 없이 조회 — 정보 추출(userId/amount/idempotencyKey) + COMPLETED 조기 리턴
-        //   기존 2-phase(findByOrderUid → findByOrderUidWithLock)는 Phase 1의 cached PENDING entity가
+        //   기존 2-phase(findByOrderUid → 락 조회)는 Phase 1의 cached PENDING entity가
         //   Phase 2 락 획득 후에도 stale 상태로 반환되어 동시 webhook 2건이 모두 charge() 분기 통과 → 중복 적립.
         //   본 구조는 status 분기를 service가 아닌 DB-level CAS UPDATE에 위임하여 cached entity와 무관하게 멱등성 보장.
         //   userId/amount/idempotencyKey는 immutable 필드이므로 stale 캐시여도 안전.
         PaymentOrder order = paymentOrderRepository.findByOrderUid(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        // COMPLETED만 조기 리턴: FAILED는 handleFail 선점 경합일 수 있으므로 계속 진행 (PG PAID 시 결제 복구)
+        // COMPLETED 조기 리턴: 도메인 상태 전이상 COMPLETED는 단방향 종착 (이후 REFUNDED는 별도 환불 경로).
+        //   cached COMPLETED entity는 DB 현재 상태와 항상 일치 — stale 위험 0이므로 PG 검증 생략 안전.
+        //   FAILED는 handleFail 선점 경합일 수 있으므로 계속 진행 (PG PAID 시 CAS UPDATE로 결제 복구).
         if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
             return;
         }
 
         // 2단계: PG 검증 (외부 네트워크 호출, 락 미점유)
+        // amountValid에 txId 비어있지 않음을 포함 — PG webhook이 비정상 payload(txId null/blank) 전송 시
+        // walletService.charge가 빈 transaction id로 실행되어 결제 추적성 손실 차단. CodeRabbit 지적 반영.
         PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(paymentId);
         boolean amountValid = info.isPaid()
                 && info.totalAmount() != null
-                && info.totalAmount().equals(order.getAmount());
+                && info.totalAmount().equals(order.getAmount())
+                && txId != null && !txId.isBlank();
 
         if (!amountValid) {
-            // 3a) PENDING → FAILED 조건부 CAS. 이미 FAILED/COMPLETED면 0 반환 (중복 unmark 방지).
+            // 3a) PENDING → FAILED 조건부 CAS. 이미 FAILED/COMPLETED/REFUNDED/CANCELLED면 0 반환.
             //     동시 호출 시 한쪽만 1 반환 → idempotencyKey 정확히 1회 해제.
             int failed = paymentOrderRepository.failIfPending(paymentId);
-            if (failed > 0) {
-                scheduleUnmark(order.getIdempotencyKey());
+            if (failed == 0) {
+                // 다른 스레드/이전 호출이 이미 종착 상태로 전환 완료 — 본 호출은 중복 처리.
+                // throw 시 운영 에러 로그만 누적되고 PortOne은 동일 webhook을 재시도 → 무한 noise.
+                // 조용히 return으로 멱등 처리. lim-haeun 지적 반영 (handleSuccess의 amountValid==false + CAS=0 시나리오).
+                return;
             }
+            scheduleUnmark(order.getIdempotencyKey());
             throw new PaymentException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
         }
 
-        // 3b) COMPLETED 아니면 COMPLETED 전환 (PENDING + FAILED 모두 허용 — handleFail 선점 후 PG PAID 시 결제 복구).
+        // 3b) PENDING/FAILED → COMPLETED 전환 (REFUNDED/CANCELLED는 차단 — Repository WHERE 화이트리스트).
         //     DB-level CAS — 동시 webhook 2건 호출 시 InnoDB row lock 직렬화 → 한쪽만 1 반환.
-        //     0 반환 시 다른 스레드/이전 호출이 먼저 COMPLETED 전환 — walletService.charge 중복 실행 차단.
+        //     0 반환 시 다른 스레드/이전 호출이 먼저 종착 전환 — walletService.charge 중복 실행 차단.
         int completed = paymentOrderRepository.completeIfNotCompleted(paymentId, txId);
         if (completed == 0) {
             return;

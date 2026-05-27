@@ -20,7 +20,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -113,6 +112,31 @@ class CallbackServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.FAILED);
 
         assertThat(redis.hasKey("idempotency:" + IDEM_KEY)).isFalse();
+    }
+
+    @Test
+    @DisplayName("[REFUNDED 회귀 가드] 환불 완료된 주문에 PAID webhook 재전송 → 재완료 차단 + wallet 잔액 미증가")
+    void handleSuccess_refunded_order_rejects_recompletion() {
+        // PR #198 코드 리뷰 (CodeRabbit + lim-haeun) 반영:
+        // 기존 WHERE 절(status <> COMPLETED)은 REFUNDED 상태에서도 CAS UPDATE를 허용해 재완료 위험.
+        // WHERE 절을 IN (PENDING, FAILED)로 명시적 화이트리스트 적용 — REFUNDED는 차단.
+        PaymentOrder order = PaymentOrder.create(ORDER_UID, USER_ID, AMOUNT, IDEM_KEY, PaymentMethod.CARD, "pg-1");
+        order.complete("tx-original");
+        order.refund();
+        paymentOrderRepository.save(order);
+        given(paymentGatewayClient.verifyPayment(ORDER_UID))
+                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT));
+
+        // 1단계 조기 리턴(COMPLETED)에서 차단되지 않도록 REFUNDED 상태로 직접 진입 — CAS UPDATE 차단 검증이 본 테스트 목적.
+        callbackService.handleSuccess(ORDER_UID, "tx-resend");
+
+        PaymentOrder reloaded = paymentOrderRepository.findByOrderUid(ORDER_UID).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
+        assertThat(reloaded.getPgTransactionId()).isEqualTo("tx-original");
+
+        Wallet wallet = walletRepository.findByUserId(USER_ID).orElseThrow();
+        assertThat(wallet.getBalance()).isZero();
+        assertThat(yeopjeonHistoryRepository.findAll()).isEmpty();
     }
 
     @Test

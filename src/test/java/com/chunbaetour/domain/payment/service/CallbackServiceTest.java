@@ -139,20 +139,60 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("금액 불일치 + failIfPending CAS=0 (이미 FAILED) → 중복 unmark 차단")
-    void handleSuccess_amount_mismatch_with_already_failed_does_not_unmark_again() {
+    @DisplayName("금액 불일치 + failIfPending CAS=0 (이미 종착 상태) → 조용히 return (중복 unmark + 불필요 throw 차단)")
+    void handleSuccess_amount_mismatch_with_already_failed_returns_silently() {
+        // 시나리오: 1단계 조기 리턴이 stale 캐시로 skip된 상태에서 amountValid=false 진입.
+        // failIfPending이 0 반환 = 다른 스레드가 이미 종착 상태(COMPLETED/FAILED/REFUNDED) 전환 완료.
+        // 본 호출은 중복 처리이므로 throw 시 PortOne 재시도 + 운영 에러 로그 누적 noise — 조용히 return.
+        // PR #198 lim-haeun 리뷰 반영.
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("PAID", 99_000L));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(0);
 
-        assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", "tx-1"))
+        callbackService.handleSuccess("order-uid-1", "tx-1");
+
+        verify(idempotencyService, never()).unmark(anyString());
+        verify(walletService, never()).charge(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("txId null → amountValid=false → PAY_013 (failIfPending=1 시 정상 unmark)")
+    void handleSuccess_null_txId_fails_order_and_throws_PAY_013() {
+        // CodeRabbit 지적 반영: PG webhook이 txId 누락한 비정상 payload 전송 시,
+        // walletService.charge가 빈 transaction id로 실행되는 것을 차단.
+        PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+        given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
+
+        assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", null))
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
 
-        verify(idempotencyService, never()).unmark(anyString());
+        verify(paymentOrderRepository, never()).completeIfNotCompleted(anyString(), anyString());
+        verify(walletService, never()).charge(anyLong(), anyLong(), any());
+        verify(idempotencyService).unmark("idem-key-1");
+    }
+
+    @Test
+    @DisplayName("txId blank(빈 문자열) → amountValid=false → PAY_013")
+    void handleSuccess_blank_txId_fails_order_and_throws_PAY_013() {
+        PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+        given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
+
+        assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", "   "))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+
+        verify(paymentOrderRepository, never()).completeIfNotCompleted(anyString(), anyString());
         verify(walletService, never()).charge(anyLong(), anyLong(), any());
     }
 
