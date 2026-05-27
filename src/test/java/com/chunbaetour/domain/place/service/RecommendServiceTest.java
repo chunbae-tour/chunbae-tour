@@ -41,6 +41,18 @@ class RecommendServiceTest {
     @InjectMocks
     private RecommendService recommendService;
 
+    private Place createTestPlace(Long id, String name, double lat, double lng) {
+        Place place = Place.builder()
+                .name(name)
+                .category(PlaceCategory.TOURIST_SPOT)
+                .address("Test Address")
+                .lat(java.math.BigDecimal.valueOf(lat))
+                .lng(java.math.BigDecimal.valueOf(lng))
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(place, "id", id);
+        return place;
+    }
+
     @Test
     @DisplayName("인기 추천 - Redis 캐시에 값이 있을 때 (Cache Hit, 정렬 유지 확인)")
     void getPopularRecommendations_CacheHit() {
@@ -50,12 +62,10 @@ class RecommendServiceTest {
         when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
                 .thenReturn(new java.util.LinkedHashSet<>(List.of("2", "1")));
 
-        Place mockPlace1 = mock(Place.class);
-        lenient().when(mockPlace1.getId()).thenReturn(1L);
-        Place mockPlace2 = mock(Place.class);
-        lenient().when(mockPlace2.getId()).thenReturn(2L);
+        Place place1 = createTestPlace(1L, "Place 1", 37.5, 127.0);
+        Place place2 = createTestPlace(2L, "Place 2", 37.5, 127.0);
         
-        when(placeRepository.findAllById(any())).thenReturn(List.of(mockPlace1, mockPlace2));
+        when(placeRepository.findAllById(any())).thenReturn(List.of(place1, place2));
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
@@ -75,13 +85,18 @@ class RecommendServiceTest {
         when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
                 .thenReturn(Collections.emptySet());
 
-        Place mockPlace = mock(Place.class);
-        when(mockPlace.getId()).thenReturn(2L);
-        when(mockPlace.getName()).thenReturn("DB 추천 명소");
-        when(mockPlace.getLikeCount()).thenReturn(10);
-        when(mockPlace.getViewCount()).thenReturn(20);
+        Place place = createTestPlace(2L, "DB 추천 명소", 37.5, 127.0);
+        org.springframework.test.util.ReflectionTestUtils.setField(place, "likeCount", 10);
+        org.springframework.test.util.ReflectionTestUtils.setField(place, "viewCount", 20);
 
-        when(placeRepository.findTopPopularPlaces(anyDouble(), anyDouble(), any())).thenReturn(List.of(mockPlace));
+        when(placeRepository.findTopPopularPlaces(anyDouble(), anyDouble(), any())).thenReturn(List.of(place));
+
+        when(stringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
+                .thenAnswer(invocation -> {
+                    org.springframework.data.redis.core.SessionCallback<?> callback = invocation.getArgument(0);
+                    callback.execute(stringRedisTemplate);
+                    return Collections.emptyList();
+                });
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
@@ -106,12 +121,10 @@ class RecommendServiceTest {
         when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
                 .thenReturn(new java.util.LinkedHashSet<>(List.of("1", "invalid_id", "2")));
 
-        Place mockPlace1 = mock(Place.class);
-        lenient().when(mockPlace1.getId()).thenReturn(1L);
-        Place mockPlace2 = mock(Place.class);
-        lenient().when(mockPlace2.getId()).thenReturn(2L);
+        Place place1 = createTestPlace(1L, "Place 1", 37.5, 127.0);
+        Place place2 = createTestPlace(2L, "Place 2", 37.5, 127.0);
         
-        when(placeRepository.findAllById(any())).thenReturn(List.of(mockPlace1, mockPlace2));
+        when(placeRepository.findAllById(any())).thenReturn(List.of(place1, place2));
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
@@ -141,19 +154,18 @@ class RecommendServiceTest {
     @DisplayName("근처 추천 - DB 조회 후 Java 메모리 셔플 및 제한 확인")
     void getNearbyRecommendations() {
         // given
-        Place mock1 = mock(Place.class);
-        Place mock2 = mock(Place.class);
-        lenient().when(mock1.getId()).thenReturn(1L);
-        lenient().when(mock2.getId()).thenReturn(2L);
+        Place place1 = createTestPlace(1L, "Place 1", 37.501, 127.001);
+        Place place2 = createTestPlace(2L, "Place 2", 37.502, 127.002);
 
         when(placeRepository.findNearbyPlacesWithinRadius(anyDouble(), anyDouble(), anyDouble(), anyInt()))
-                .thenReturn(new java.util.ArrayList<>(List.of(mock1, mock2)));
+                .thenReturn(new java.util.ArrayList<>(List.of(place1, place2)));
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getNearbyRecommendations(37.5, 127.0, 5.0, 1);
 
         // then
         assertThat(result).hasSize(1); // limit 적용 확인
+        assertThat(result.get(0).distanceMeters()).isNotNull(); // 거리 계산 확인
     }
 
     @Test

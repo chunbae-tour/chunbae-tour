@@ -11,7 +11,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -109,8 +112,16 @@ public class RecommendService {
                                (place.getViewCount() * PlaceRedisConstants.POPULAR_VIEW_WEIGHT);
                 tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
             });
-            stringRedisTemplate.opsForZSet().add(key, tuples);
-            stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            
+            stringRedisTemplate.executePipelined(new SessionCallback<Object>() {
+                @Override
+                public Object execute(RedisOperations operations) throws DataAccessException {
+                    operations.delete(key);
+                    operations.opsForZSet().add(key, tuples);
+                    operations.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+                    return null;
+                }
+            });
         } catch (Exception e) {
             log.error("Redis 인기 추천 데이터 캐싱 실패", e);
         }
@@ -139,8 +150,22 @@ public class RecommendService {
         
         return nearbyPlaces.stream()
                 .limit(limit)
-                .map(RecommendPlaceResponse::from)
+                .map(place -> RecommendPlaceResponse.fromWithDistance(
+                        place, 
+                        calculateDistance(lat, lng, place.getLat().doubleValue(), place.getLng().doubleValue())
+                ))
                 .toList();
+    }
+
+    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371; // 지구 반경 (km)
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c * 1000; // 미터 단위로 변환
     }
 
     /**
