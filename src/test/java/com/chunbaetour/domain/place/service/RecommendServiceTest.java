@@ -270,9 +270,13 @@ class RecommendServiceTest {
         when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.empty());
 
         // when & then
-        org.junit.jupiter.api.Assertions.assertThrows(com.chunbaetour.domain.common.error.BusinessException.class, () -> {
-            recommendService.getPlaceBasedRecommendations(placeId);
-        });
+        com.chunbaetour.domain.common.error.BusinessException ex =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        com.chunbaetour.domain.common.error.BusinessException.class,
+                        () -> recommendService.getPlaceBasedRecommendations(placeId)
+                );
+        assertThat(ex.getErrorCode())
+                .isEqualTo(com.chunbaetour.domain.common.error.ErrorCode.PLACE_NOT_FOUND);
     }
 
     @Test
@@ -295,5 +299,13 @@ class RecommendServiceTest {
         // then
         assertThat(result).hasSize(1);
         assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(placeRepository).findById(placeId);
+        verify(placeRepository).findNearbyPlacesByCategory(
+                anyDouble(),
+                anyDouble(),
+                eq(PlaceCategory.TOURIST_SPOT),
+                eq(placeId),
+                eq(5)
+        );
     }
 }
