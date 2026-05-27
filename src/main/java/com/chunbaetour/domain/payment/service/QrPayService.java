@@ -12,7 +12,6 @@ import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
-import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
@@ -108,24 +107,17 @@ public class QrPayService {
             }
 
             snapshots.add(new MenuSnapshotItem(menu.getId(), menu.getName(), menu.getPrice(), item.quantity()));
-            totalAmount += menu.getPrice() * item.quantity();
-        }
-
-        // 오버플로우 방어 — price * quantity가 long 범위 초과 시 음수로 wrap-around
-        if (totalAmount < 0) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            try {
+                long itemTotal = Math.multiplyExact(menu.getPrice(), (long) item.quantity());
+                totalAmount = Math.addExact(totalAmount, itemTotal);
+            } catch (ArithmeticException e) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
         }
 
         // totalAmount 0원 차단 — 메뉴 가격 데이터 오류(price=0)가 있어도 결제 생성 방지
         if (totalAmount == 0) {
             throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
-        }
-
-        // 동일 사용자·가게에 PENDING 요청 중복 방지
-        // 프론트 더블클릭·네트워크 재시도로 같은 요청이 두 번 들어오면 PENDING이 2개 생기고,
-        // 상인이 둘 다 승인할 경우 이중 차감 발생. 서버에서 선제 차단.
-        if (qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(userId, shop.getId(), QrPayStatus.PENDING)) {
-            throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
         }
 
         // 결제 요청 시점 잔액 사전 체크 — 명백한 잔액 부족 조기 차단 (실제 차감은 상인 승인 시 STORY-14)

@@ -19,8 +19,8 @@ import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
-import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -119,7 +119,7 @@ class QrPayServiceTest {
         Wallet wallet = createWallet(50_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1, MENU_ID_2))).willReturn(List.of(menu1, menu2));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
+
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
         given(qrPayRequestRepository.saveAndFlush(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
 
@@ -151,7 +151,7 @@ class QrPayServiceTest {
         Wallet wallet = createWallet(50_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
+
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
         given(qrPayRequestRepository.saveAndFlush(any(QrPayRequest.class))).willAnswer(i -> i.getArgument(0));
 
@@ -289,7 +289,6 @@ class QrPayServiceTest {
 
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
@@ -313,7 +312,6 @@ class QrPayServiceTest {
         Wallet lowWallet = createWallet(3_000L);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING)).willReturn(false);
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(lowWallet));
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
@@ -370,9 +368,9 @@ class QrPayServiceTest {
     }
 
     @Test
-    @DisplayName("QR 결제 요청 생성 — price * quantity 오버플로우 → INVALID_REQUEST")
+    @DisplayName("QR 결제 요청 생성 — totalAmount long 오버플로우 → INVALID_REQUEST")
     void createQrPayRequest_totalAmountOverflow_throws() {
-        // given — Long.MAX_VALUE 가격 메뉴 2개 → 누적 시 long wrap-around → 음수
+        // given — Long.MAX_VALUE/2+1 가격 메뉴 2개 → addExact 시 ArithmeticException
         Shop shop = createActiveShop();
         Menu hugeMenu1 = createMenu(MENU_ID_1, SHOP_ID, "비싼메뉴1", Long.MAX_VALUE / 2 + 1, true);
         Menu hugeMenu2 = createMenu(MENU_ID_2, SHOP_ID, "비싼메뉴2", Long.MAX_VALUE / 2 + 1, true);
@@ -413,16 +411,18 @@ class QrPayServiceTest {
     }
 
     @Test
-    @DisplayName("QR 결제 요청 생성 — 동일 사용자·가게에 PENDING 이미 존재 → DUPLICATE_QR_PAY_REQUEST")
+    @DisplayName("QR 결제 요청 생성 — pendingKey DB 충돌(동시 요청 레이스) → DUPLICATE_QR_PAY_REQUEST")
     void createQrPayRequest_duplicatePending_throws() {
-        // given — 메뉴 검증 통과 후 중복 PENDING 체크에서 차단되는 경로
+        // given — saveAndFlush 시 pendingKey unique 제약 위반 (동시 요청 레이스 케이스)
         Shop shop = createActiveShop();
         Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
+        Wallet wallet = createWallet(50_000L);
 
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
-        given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatus(USER_ID, SHOP_ID, QrPayStatus.PENDING))
-                .willReturn(true);
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
+        given(qrPayRequestRepository.saveAndFlush(any(QrPayRequest.class)))
+                .willThrow(new DataIntegrityViolationException("pending_key unique constraint"));
 
         QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
