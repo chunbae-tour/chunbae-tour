@@ -62,8 +62,9 @@ public class RefreshCookieFactory {
                 .httpOnly(true)
                 // Secure: HTTPS에서만 전송. local=false, prod=true (프로파일별 분리)
                 .secure(cookieProperties.secure())
-                // SameSite: cross-site 요청에서의 쿠키 전송 정책. Lax 기본 (CSRF 방어 + SPA 호환)
-                .sameSite(cookieProperties.sameSite())
+                // SameSite: cross-site 요청에서의 쿠키 전송 정책. Lax 기본 (CSRF 방어 + SPA 호환).
+                // KAN-125: enum 도입 → ResponseCookie가 요구하는 표준 헤더 표기로 변환.
+                .sameSite(cookieProperties.sameSite().headerValue())
                 // Path: 쿠키 전송 범위 제한. /api/v1/auth로 좁혀 다른 API에는 노출 안 됨
                 .path(cookieProperties.path());
     }

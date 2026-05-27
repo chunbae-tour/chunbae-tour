@@ -73,6 +73,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/actuator/**"
     );
 
+    /**
+     * GET 메서드 한정 공개 경로 패턴.
+     *
+     * <p>{@link com.chunbaetour.domain.auth.config.SecurityConfig}에서 특정 HTTP 메서드만 permitAll인 경로.
+     * 경로만으로 skip하면 다른 메서드 요청 시 유효 토큰도 SecurityContext에 채워지지 않아 인증 실패.
+     * GET /api/v1/shops/* — QR 스캔 후 결제창 진입 시 가게명·메뉴 fetch 용도. 만료 토큰 보유 유저도 차단되지 않아야 함.
+     */
+    private static final List<String> PUBLIC_GET_PATH_PATTERNS = List.of(
+            "/api/v1/shops/*"
+    );
+
     /** logout은 인증 필요. {@link #shouldNotFilter}에서 명시적으로 예외 처리. */
     private static final String LOGOUT_PATH = "/api/v1/auth/logout";
 
@@ -97,6 +108,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // logout은 인증 필요 경로 — public 매칭에서 명시적으로 제외하고 doFilterInternal로 진입시킨다.
         if (LOGOUT_PATH.equals(path)) {
             return false;
+        }
+        if ("GET".equals(request.getMethod())
+                && PUBLIC_GET_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
+            return true;
         }
         return PUBLIC_PATH_PATTERNS.stream()
                 .anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
