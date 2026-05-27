@@ -26,6 +26,11 @@ import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -60,7 +65,7 @@ public class ReportService {
         }
 
         // 검증 순서: DB 조회 없는 자기신고 체크 → 존재 확인(DB 1회, 게시글/댓글 자기신고 포함) → 중복 확인(DB 1회)
-        validateTargetExists(request.targetType(), request.targetId(), reporterId);
+        validateReportTarget(request.targetType(), request.targetId(), reporterId);
 
         if (reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
                 reporterId, request.targetType(), request.targetId())) {
@@ -152,8 +157,13 @@ public class ReportService {
         List<Report> content = hasNext ? reports.subList(0, size) : reports;
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
+        // N+1 방지: 신고자 ID를 일괄 조회 후 Map으로 매핑
+        Set<Long> reporterIds = content.stream().map(Report::getReporterId).collect(Collectors.toSet());
+        Map<Long, String> nicknameMap = accountRepository.findAllById(reporterIds).stream()
+                .collect(Collectors.toMap(Account::getId, Account::getNickname));
+
         List<ReportResponse> responses = content.stream()
-                .map(r -> ReportResponse.of(r, resolveNickname(r.getReporterId())))
+                .map(r -> ReportResponse.of(r, nicknameMap.getOrDefault(r.getReporterId(), "탈퇴한 사용자")))
                 .toList();
 
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
@@ -172,8 +182,8 @@ public class ReportService {
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
 
-    // 신고 대상 존재·활성 상태 검증 + 게시글/댓글 자기신고 차단
-    private void validateTargetExists(ReportTargetType targetType, Long targetId, Long reporterId) {
+    // 신고 대상 존재·활성 상태 검증 + 자기신고 차단 (게시글/댓글/MERCHANT)
+    private void validateReportTarget(ReportTargetType targetType, Long targetId, Long reporterId) {
         switch (targetType) {
             case POST_COMPANION -> {
                 CompanionPost post = companionPostRepository.findById(targetId)
@@ -209,6 +219,9 @@ public class ReportService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (merchant.getRole() != Role.MERCHANT) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+                if (merchant.getId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
             case COMMENT -> {
@@ -252,7 +265,7 @@ public class ReportService {
     private ReportStatus parseStatus(String statusParam) {
         if (statusParam == null || statusParam.isBlank()) return null;
         try {
-            return ReportStatus.valueOf(statusParam.toUpperCase());
+            return ReportStatus.valueOf(statusParam.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }

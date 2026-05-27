@@ -85,6 +85,9 @@ public class Report extends BaseEntity {
      * status = RESOLVED, action·adminNote·resolvedBy·resolvedAt 기록.
      */
     public void resolve(ReportAction action, String adminNote, String resolvedBy) {
+        if (!isPending()) {
+            throw new IllegalStateException("이미 처리된 신고입니다.");
+        }
         this.status = ReportStatus.RESOLVED;
         this.action = action;
         this.adminNote = adminNote;
@@ -97,6 +100,9 @@ public class Report extends BaseEntity {
      * status = DISMISSED로 종결.
      */
     public void dismiss(String adminNote, String resolvedBy) {
+        if (!isPending()) {
+            throw new IllegalStateException("이미 처리된 신고입니다.");
+        }
         this.status = ReportStatus.DISMISSED;
         this.action = ReportAction.DISMISS;
         this.adminNote = adminNote;
