@@ -63,6 +63,10 @@ public class Product extends BaseEntity {
 
     /** 구매 시 재고 차감 — 재고 소진 시 SOLD_OUT 자동 전환 */
     public void decreaseStock(int quantity) {
+        if (quantity <= 0) {
+            throw new com.chunbaetour.domain.common.error.BusinessException(
+                    com.chunbaetour.domain.common.error.ErrorCode.INVALID_PURCHASE_QUANTITY);
+        }
         if (this.stock < quantity) {
             throw new com.chunbaetour.domain.common.error.BusinessException(
                     com.chunbaetour.domain.common.error.ErrorCode.PRODUCT_SOLD_OUT);

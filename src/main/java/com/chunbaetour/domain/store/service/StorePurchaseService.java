@@ -17,6 +17,7 @@ import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
@@ -25,6 +26,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 스토어 상품 구매 서비스 (STORY-17).
@@ -62,15 +65,32 @@ public class StorePurchaseService {
         Long productId = request.productId();
         int quantity = request.quantity().intValue(); // @NotNull 보장 — NPE 없음
         String stockKey = STOCK_KEY_PREFIX + productId;
-        // Redis 차감 여부 추적 — 예외 발생 시 finally에서 복구 여부 결정
-        boolean redisDecremented = false;
+        // Redis 차감 여부 추적 — AtomicBoolean으로 afterCompletion 람다 캡처 가능
+        AtomicBoolean redisDecremented = new AtomicBoolean(false);
+        // 트랜잭션 동기화 등록 여부 — finally fallback과 이중 복구 방지
+        boolean synchronizationRegistered = false;
+        // 구매 성공 여부 — finally 실패 경로 판별용
+        boolean succeeded = false;
         RLock lock = redissonClient.getLock(PURCHASE_LOCK_PREFIX + userId);
 
         try {
             // [1단계] Redis 재고 선점 — 키 없으면 DB 단독 처리로 폴백 (상품 활성화 시 Redis 키 사전 세팅 필요)
             if (Boolean.TRUE.equals(redisTemplate.hasKey(stockKey))) {
                 Long remaining = redisTemplate.opsForValue().decrement(stockKey, (long) quantity);
-                redisDecremented = true;
+                redisDecremented.set(true);
+                // @Transactional 커밋은 메서드 반환 후 — 커밋 실패 시 Redis 복구 누락 방지용 동기화 콜백 등록
+                // isSynchronizationActive() 가드: 트랜잭션 컨텍스트 없는 단위테스트에서 ISE 방지
+                if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override
+                        public void afterCompletion(int status) {
+                            if (redisDecremented.get() && status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                                redisTemplate.opsForValue().increment(stockKey, (long) quantity);
+                            }
+                        }
+                    });
+                    synchronizationRegistered = true;
+                }
                 // remaining < 0이면 재고 초과 — 즉시 품절 처리
                 if (remaining != null && remaining < 0) {
                     throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
@@ -131,8 +151,7 @@ public class StorePurchaseService {
                 log.warn("[구매] 상품 캐시 무효화 실패 (productId: {})", productId, e);
             }
 
-            // 구매 성공 — finally에서 Redis 복구 불필요
-            redisDecremented = false;
+            succeeded = true;
             return StoreOrderResponse.from(order);
 
         } catch (InterruptedException e) {
@@ -140,8 +159,8 @@ public class StorePurchaseService {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.PURCHASE_PROCESSING);
         } finally {
-            // 실패 시 Redis 재고 복구 — DB 롤백과 함께 Redis도 일관성 유지
-            if (redisDecremented) {
+            // 트랜잭션 동기화 미등록 시(단위테스트·비트랜잭션 컨텍스트) 실패 경로 직접 복구
+            if (!succeeded && !synchronizationRegistered && redisDecremented.get()) {
                 redisTemplate.opsForValue().increment(stockKey, (long) quantity);
             }
             // 분산 락 해제 (현재 스레드가 보유 중일 때만)
