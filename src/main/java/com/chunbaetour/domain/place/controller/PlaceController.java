@@ -4,8 +4,10 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
+import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
 import com.chunbaetour.domain.place.service.PlaceService;
+import com.chunbaetour.domain.place.service.RecommendService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -19,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/places")
 @RequiredArgsConstructor
@@ -26,6 +30,7 @@ public class PlaceController {
 
     private final PlaceService placeService;
     private final PlaceLikeService placeLikeService;
+    private final RecommendService recommendService;
 
     @GetMapping("/nearby")
     public ApiResponse<NearbyPlacePageResponse> getNearbyPlaces(@Valid @ModelAttribute NearbyPlaceRequest request) {
@@ -85,5 +90,18 @@ public class PlaceController {
             @AuthenticationPrincipal Long userId) {
         placeLikeService.removeLike(userId, placeId);
         return ApiResponse.success(null);
+    }
+
+    /**
+     * 4-2. 특정 관광지 기반 추천
+     * GET /api/v1/places/{placeId}/recommend
+     * <p>
+     * - 동일 카테고리 + 거리순 가까운 곳 TOP 5 (자신 제외)
+     * - 비로그인 허용 (permitAll)
+     */
+    @GetMapping("/{placeId}/recommend")
+    public ApiResponse<List<RecommendPlaceResponse>> getPlaceBasedRecommendations(
+            @PathVariable Long placeId) {
+        return ApiResponse.success(recommendService.getPlaceBasedRecommendations(placeId));
     }
 }
