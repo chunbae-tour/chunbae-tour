@@ -25,6 +25,7 @@ import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
@@ -194,7 +195,8 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     .andExpect(jsonPath("$.data.action").value("DELETE"));
 
             FreePost updated = freePostRepository.findById(post.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(FreePostStatus.DELETED);
+            // 관리자 DELETE 액션 = 게시글 비공개(HIDDEN). 작성자 삭제(DELETED)와 구분.
+            assertThat(updated.getStatus()).isEqualTo(FreePostStatus.HIDDEN);
         }
 
         @Test
@@ -247,7 +249,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
                     ReportReason.SPAM, null));
-            report.resolve(null, null, "admin");  // already resolved
+            report.resolve(ReportAction.WARNING, null, "admin");  // already resolved, valid action required
             reportRepository.save(report);
             String adminToken = adminToken();
 

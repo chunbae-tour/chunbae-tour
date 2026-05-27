@@ -54,7 +54,7 @@ public enum ErrorCode {
     POST_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_004", "해당 게시글을 삭제할 권한이 없습니다."),
     COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND,             "COMMUNITY_005", "존재하지 않는 댓글입니다."),
     COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN,             "COMMUNITY_006", "댓글 작성자만 수정·삭제할 수 있습니다."),
-    COMMENT_ALREADY1_DELETED(HttpStatus.BAD_REQUEST,     "COMMUNITY_007", "이미 삭제된 댓글입니다."),
+    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,      "COMMUNITY_007", "이미 삭제된 댓글입니다."),
     COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
     POST_NOT_COMMENTABLE(HttpStatus.FORBIDDEN,          "COMMUNITY_009", "댓글을 작성할 수 없는 게시글입니다."),
 

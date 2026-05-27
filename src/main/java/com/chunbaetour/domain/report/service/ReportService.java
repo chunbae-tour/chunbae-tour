@@ -36,6 +36,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
  * KAN-91: 관리자 신고 목록·상세 조회
  * KAN-92: 관리자 신고 처리 (콘텐츠·가게 분리)
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -193,8 +195,9 @@ public class ReportService {
         }
 
         ReportAction action = request.action();
+        // 가게 전용 액션을 콘텐츠 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
         if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
         }
 
         applyContentAction(action, report.getTargetType(), report.getTargetId());
@@ -231,9 +234,10 @@ public class ReportService {
         }
 
         ReportAction action = request.action();
+        // 콘텐츠 전용 액션을 가게 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
         if (action == ReportAction.WARNING || action == ReportAction.SUSPEND
                 || action == ReportAction.DELETE) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
         }
 
         applyMerchantAction(action, report.getTargetId());
@@ -289,14 +293,28 @@ public class ReportService {
      */
     private void deleteTargetContent(ReportTargetType targetType, Long targetId) {
         switch (targetType) {
-            case POST_COMPANION ->
-                companionPostRepository.findById(targetId).ifPresent(CompanionPost::hide);
-            case POST_FREE ->
-                freePostRepository.findById(targetId).ifPresent(FreePost::hide);
-            case COMMENT ->
-                commentRepository.findById(targetId).ifPresent(Comment::delete);
-            case USER ->
-                accountRepository.findById(targetId).ifPresent(Account::suspend);
+            case POST_COMPANION -> {
+                if (companionPostRepository.findById(targetId).map(post -> { post.hide(); return true; }).isEmpty()) {
+                    log.warn("deleteTargetContent: POST_COMPANION not found, targetId={}", targetId);
+                }
+            }
+            case POST_FREE -> {
+                if (freePostRepository.findById(targetId).map(post -> { post.hide(); return true; }).isEmpty()) {
+                    log.warn("deleteTargetContent: POST_FREE not found, targetId={}", targetId);
+                }
+            }
+            case COMMENT -> {
+                if (commentRepository.findById(targetId).map(comment -> { comment.delete(); return true; }).isEmpty()) {
+                    log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId);
+                }
+            }
+            case USER -> {
+                // DELETE 액션 시 계정을 완전 삭제하지 않고 SUSPENDED 처리.
+                // 법적 의무(개인정보 보존 기간) 및 추후 복구 가능성을 위해 Soft 정지.
+                if (accountRepository.findById(targetId).map(acc -> { acc.suspend(); return true; }).isEmpty()) {
+                    log.warn("deleteTargetContent: USER not found, targetId={}", targetId);
+                }
+            }
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }

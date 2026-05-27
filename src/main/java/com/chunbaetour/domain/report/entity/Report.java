@@ -83,8 +83,14 @@ public class Report extends BaseEntity {
     /**
      * 신고 처리 (WARNING / SUSPEND / DELETE).
      * status = RESOLVED, action·adminNote·resolvedBy·resolvedAt 기록.
+     *
+     * <p>TODO(Clock): LocalDateTime.now() 직접 사용 — 테스트에서 시간 제어 불가.
+     * 추후 Clock 주입 방식으로 개선 가능 (엔티티 Clock 주입은 복잡도 증가로 MVP 범위 제외).
      */
     public void resolve(ReportAction action, String adminNote, String resolvedBy) {
+        if (action == null) {
+            throw new IllegalArgumentException("action은 null일 수 없습니다.");
+        }
         this.status = ReportStatus.RESOLVED;
         this.action = action;
         this.adminNote = adminNote;
