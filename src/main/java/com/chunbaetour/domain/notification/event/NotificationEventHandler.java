@@ -28,6 +28,7 @@ public class NotificationEventHandler {
 
     // 참여 신청 생성 — 방장에게 CHAT_JOIN_REQUEST 알림, 원본 트랜잭션 커밋 후 새 트랜잭션에서 저장
     // REQUIRES_NEW 트랜잭션 실패 시 원본 비즈니스 흐름 영향 없음 — log.error로 silent loss 추적
+    // Push는 REQUIRES_NEW 커밋 전에 발생 — WS 수신 직후 REST 조회 시 수 ms 창에서 알림 미노출 가능 (MVP 허용 수준)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleJoinRequestCreated(JoinRequestCreatedEvent event) {

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
@@ -45,7 +46,7 @@ class NotificationEventHandlerTest {
     // 참여 신청 생성 이벤트 — 방장에게 CHAT_JOIN_REQUEST 알림 저장 + WebSocket Push 검증
     @Test
     void handleJoinRequestCreated_notifiesOwner_andPushes() {
-        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, JOIN_REQUEST_ID);
+        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, NotificationReferenceType.JOIN_REQUEST, JOIN_REQUEST_ID);
         given(notificationService.createNotification(
                 eq(OWNER_USER_ID),
                 eq(NotificationType.CHAT_JOIN_REQUEST),
@@ -73,7 +74,7 @@ class NotificationEventHandlerTest {
     // 참여 신청 수락 이벤트 — 신청자에게 CHAT_JOIN_APPROVED 알림 저장 + WebSocket Push 검증
     @Test
     void handleJoinRequestApproved_notifiesApplicant_andPushes() {
-        Notification notification = buildNotification(101L, APPLICANT_USER_ID, NotificationType.CHAT_JOIN_APPROVED, JOIN_REQUEST_ID);
+        Notification notification = buildNotification(101L, APPLICANT_USER_ID, NotificationType.CHAT_JOIN_APPROVED, NotificationReferenceType.JOIN_REQUEST, JOIN_REQUEST_ID);
         given(notificationService.createNotification(
                 eq(APPLICANT_USER_ID),
                 eq(NotificationType.CHAT_JOIN_APPROVED),
@@ -101,7 +102,7 @@ class NotificationEventHandlerTest {
     // 참여 신청 거절 이벤트 — 신청자에게 CHAT_JOIN_REJECTED 알림 저장 + WebSocket Push 검증
     @Test
     void handleJoinRequestRejected_notifiesApplicant_andPushes() {
-        Notification notification = buildNotification(102L, APPLICANT_USER_ID, NotificationType.CHAT_JOIN_REJECTED, JOIN_REQUEST_ID);
+        Notification notification = buildNotification(102L, APPLICANT_USER_ID, NotificationType.CHAT_JOIN_REJECTED, NotificationReferenceType.JOIN_REQUEST, JOIN_REQUEST_ID);
         given(notificationService.createNotification(
                 eq(APPLICANT_USER_ID),
                 eq(NotificationType.CHAT_JOIN_REJECTED),
@@ -129,7 +130,7 @@ class NotificationEventHandlerTest {
     // 멤버 강퇴 이벤트 — 강퇴 대상에게 CHAT_MEMBER_KICKED 알림 저장 + WebSocket Push 검증
     @Test
     void handleChatMemberKicked_notifiesKickedUser_andPushes() {
-        Notification notification = buildNotification(103L, KICKED_USER_ID, NotificationType.CHAT_MEMBER_KICKED, CHAT_ROOM_ID);
+        Notification notification = buildNotification(103L, KICKED_USER_ID, NotificationType.CHAT_MEMBER_KICKED, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
         given(notificationService.createNotification(
                 eq(KICKED_USER_ID),
                 eq(NotificationType.CHAT_MEMBER_KICKED),
@@ -157,7 +158,7 @@ class NotificationEventHandlerTest {
     // WebSocket Push 실패 시 예외 미전파 — 알림 저장 롤백 없음 보장
     @Test
     void handleJoinRequestCreated_pushFailure_doesNotPropagateException() {
-        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, JOIN_REQUEST_ID);
+        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, NotificationReferenceType.JOIN_REQUEST, JOIN_REQUEST_ID);
         given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
                 .willReturn(notification);
         willThrow(new RuntimeException("WS broker unavailable"))
@@ -168,13 +169,25 @@ class NotificationEventHandlerTest {
                         new JoinRequestCreatedEvent(CHAT_ROOM_ID, JOIN_REQUEST_ID, OWNER_USER_ID)));
     }
 
-    private Notification buildNotification(Long id, Long userId, NotificationType type, Long referenceId) {
+    // createNotification 예외 시 push 미호출 — 저장 실패 경로에서 WS 전송 차단 검증
+    @Test
+    void handleJoinRequestCreated_createNotificationFails_noPush() {
+        given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
+                .willThrow(new RuntimeException("DB error"));
+
+        handler.handleJoinRequestCreated(
+                new JoinRequestCreatedEvent(CHAT_ROOM_ID, JOIN_REQUEST_ID, OWNER_USER_ID));
+
+        verify(messagingTemplate, never()).convertAndSendToUser(any(), any(), any());
+    }
+
+    private Notification buildNotification(Long id, Long userId, NotificationType type, NotificationReferenceType referenceType, Long referenceId) {
         Notification n = Notification.builder()
                 .userId(userId)
                 .type(type)
                 .title("테스트")
                 .message("테스트 메시지")
-                .referenceType(NotificationReferenceType.JOIN_REQUEST)
+                .referenceType(referenceType)
                 .referenceId(referenceId)
                 .build();
         try {
