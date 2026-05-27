@@ -140,6 +140,7 @@ class ChatRoomServiceTest {
         given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
         LocalDateTime joinedAt = LocalDateTime.of(2025, 1, 1, 0, 0);
         ChatRoomMember member = stubMember(USER_ID, ChatMemberState.OWNER_ACTIVE);
+        given(member.isActiveMember()).willReturn(true);
         given(member.getJoinedAt()).willReturn(joinedAt);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
@@ -194,6 +195,7 @@ class ChatRoomServiceTest {
         ChatRoomMember member1 = mock(ChatRoomMember.class);
         given(member1.getUserId()).willReturn(USER_ID);
         given(member1.getMemberState()).willReturn(ChatMemberState.OWNER_ACTIVE);
+        given(member1.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member1));
         ChatRoomMember member2 = mock(ChatRoomMember.class);

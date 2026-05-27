@@ -26,7 +26,6 @@ import com.chunbaetour.domain.chat.entity.JoinRequest;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
-import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -188,7 +187,7 @@ class JoinRequestServiceTest {
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         ChatRoomMember kickedMember = mock(ChatRoomMember.class);
-        given(kickedMember.getMemberState()).willReturn(ChatMemberState.MEMBER_KICKED);
+        given(kickedMember.isKicked()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(kickedMember));
 
@@ -206,7 +205,7 @@ class JoinRequestServiceTest {
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         ChatRoomMember activeMember = mock(ChatRoomMember.class);
-        given(activeMember.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(activeMember.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(activeMember));
 
