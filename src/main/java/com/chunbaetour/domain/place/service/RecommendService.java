@@ -280,7 +280,7 @@ public class RecommendService {
      */
     @Transactional(readOnly = true)
     public List<NearbyShopResponse> getNearbyShops(Long placeId, int limit) {
-        if (placeId == null) {
+        if (placeId == null || limit < 1 || limit > 50) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 

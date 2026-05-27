@@ -19,10 +19,13 @@ import tools.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.List;
+
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import java.math.BigDecimal;
 import java.util.concurrent.TimeUnit;
 
@@ -359,5 +362,53 @@ class RecommendServiceTest {
         
         verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
         verify(shopRepository).findNearbyShops(basePlace.getLat().doubleValue(), basePlace.getLng().doubleValue(), limit);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (관광지를 찾을 수 없음)")
+    void getNearbyShops_Fail_PlaceNotFound() {
+        // given
+        Long placeId = 999L;
+        int limit = 5;
+
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE))
+            .thenReturn(java.util.Optional.empty());
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PLACE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (limit이 1 미만)")
+    void getNearbyShops_Fail_InvalidLimit_TooSmall() {
+        // given
+        Long placeId = 1L;
+        int limit = 0;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (limit이 50 초과)")
+    void getNearbyShops_Fail_InvalidLimit_TooLarge() {
+        // given
+        Long placeId = 1L;
+        int limit = 51;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 }
