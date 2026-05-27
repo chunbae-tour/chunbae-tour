@@ -3,11 +3,15 @@ package com.chunbaetour.domain.auth;
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.UserMeHomeResponse;
 import com.chunbaetour.domain.auth.dto.UserMeResponse;
+import com.chunbaetour.domain.auth.jwt.AccessClaims;
+import com.chunbaetour.domain.auth.security.JwtAuthenticationFilter;
+import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +19,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code PATCH /api/v1/users/me} — 닉네임/언어/프로필 partial update (Epic A S2, KAN-127)</li>
  *   <li>{@code GET /api/v1/users/me/home} — 마이페이지 홈 통합 응답 (Epic A S3, KAN-128)</li>
  *   <li>{@code GET /api/v1/users/me/likes} — 찜한 관광지 페이징 (Epic A S5, KAN-130)</li>
+ *   <li>{@code DELETE /api/v1/users/me} — 회원 탈퇴 + 토큰 cascade 무효화 (Epic C S1, KAN-143)</li>
  * </ul>
  *
  * <p>URL 권한:
@@ -61,6 +70,7 @@ public class UserMeController {
     private final UserMeService userMeService;
     private final UserMeHomeService userMeHomeService;
     private final PlaceLikeService placeLikeService;
+    private final RefreshCookieFactory refreshCookieFactory;
 
     /**
      * 본인 정보 조회 (Epic A S1).
@@ -144,6 +154,62 @@ public class UserMeController {
             }
         });
         return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
+    }
+
+    /**
+     * 회원 탈퇴 (Epic C S1, KAN-143).
+     *
+     * <p>DELETE {@code /api/v1/users/me} — soft delete + 토큰 cascade 무효화 + Refresh cookie 만료.
+     *
+     * <p>흐름:
+     * <ol>
+     *   <li>SecurityConfig가 {@code /api/v1/users/**} = {@code hasRole(USER)}로 매핑 — 미인증 호출은
+     *       {@link com.chunbaetour.domain.auth.security.RestAuthenticationEntryPoint}가 AUTH_006 응답.</li>
+     *   <li>{@link JwtAuthenticationFilter}가 Access Token 검증을 마치고 {@link AccessClaims}를 request
+     *       attribute({@link JwtAuthenticationFilter#REQUEST_ATTR_ACCESS_CLAIMS})에 노출 → JWT 재파싱 없음.</li>
+     *   <li>{@link UserMeService#deleteMe}가 softDelete + afterCommit 토큰 cascade 등록.</li>
+     *   <li>응답: 204 No Content + {@link RefreshCookieFactory#expire}로 Refresh Cookie 만료(Max-Age=0).</li>
+     * </ol>
+     *
+     * <p><b>보안 회귀 가드 — PathVariable 미사용</b>: 본인 식별은 {@code @AuthenticationPrincipal Long userId}로
+     * SecurityContext에서만 추출. URL에 {@code /users/{id}}처럼 PK를 노출하면 다른 사용자 계정 탈퇴를
+     * 시도할 수 있어 원천 차단. PATCH /me / GET /me / DELETE /me 모두 같은 정책.
+     *
+     * <p><b>보안 회귀 가드 — Set-Cookie 만료 처리</b>: 클라이언트의 Refresh Cookie를 즉시 제거해야 같은
+     * 브라우저에서 후속 reissue 호출이 발생하지 않는다. {@link RefreshCookieFactory#expire}가 발급 시와
+     * 동일한 {@code name}/{@code path}/{@code SameSite}/{@code Secure} 속성으로 Max-Age=0 쿠키를 만들어
+     * 브라우저가 같은 쿠키로 인식해 덮어쓴다 — KAN-125 SameSite/Domain 정책 자동 준수.
+     *
+     * <p><b>중복 호출 처리</b>: 첫 탈퇴 직후 access token이 blacklist에 등록되므로 같은 토큰으로 재호출
+     * 시 {@link JwtAuthenticationFilter}가 AUTH_013으로 차단한다. {@code Account.softDelete}의
+     * {@link IllegalStateException} 가드는 도메인 단위 테스트가 커버 — 통합 흐름에서는 도달 불가.
+     *
+     * @param userId  SecurityContext에서 추출한 본인 ID
+     * @param request 인증 필터가 채운 {@link AccessClaims}를 attribute에서 꺼내기 위해 받음 (JWT 재파싱 회피)
+     * @return 204 No Content + Set-Cookie 만료 헤더
+     */
+    @DeleteMapping
+    public ResponseEntity<Void> deleteMe(
+            @AuthenticationPrincipal Long userId,
+            HttpServletRequest request) {
+        requireAuthenticated(userId);
+
+        Object attr = request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS);
+        if (!(attr instanceof AccessClaims claims)) {
+            // 인증 필터를 통과했는데 attribute가 없는 비정상 상태(필터 설정 누락/우회 등). 안전하게 거부.
+            // 정상 흐름에서는 SecurityContext와 attribute가 같은 분기에서 채워지므로 도달 불가.
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+
+        userMeService.deleteMe(userId, claims);
+
+        // 클라이언트의 Refresh Cookie를 즉시 만료 (Max-Age=0). 발급 시와 같은 name/path여야 브라우저가 덮어쓴다.
+        // LogoutController와 동일한 RefreshCookieFactory.expire() 재사용 — KAN-125 SameSite/Domain 정책 자동 준수.
+        ResponseCookie expiredCookie = refreshCookieFactory.expire();
+
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, expiredCookie.toString())
+                .build();
     }
 
     /**
