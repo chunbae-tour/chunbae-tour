@@ -13,6 +13,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.List;
@@ -39,7 +41,13 @@ class RecommendServiceTest {
     private org.springframework.data.redis.core.RedisOperations<String, String> redisOperations;
 
     @Mock
+    private org.springframework.data.redis.core.ValueOperations<String, String> valueOperations;
+
+    @Mock
     private ZSetOperations<String, String> zSetOperations;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private RecommendService recommendService;
@@ -196,5 +204,59 @@ class RecommendServiceTest {
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
             recommendService.getCategoryRecommendations(null);
         });
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Cache Hit")
+    void getPlaceBasedRecommendations_CacheHit() throws Exception {
+        // given
+        Long placeId = 1L;
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+        String cachedJson = "[{\"placeId\":2}]";
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(cachedJson);
+        
+        List<RecommendPlaceResponse> mockResponse = List.of(
+            RecommendPlaceResponse.builder().placeId(2L).build()
+        );
+        when(objectMapper.readValue(eq(cachedJson), any(TypeReference.class))).thenReturn(mockResponse);
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(placeRepository, never()).findById(anyLong());
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Cache Miss & DB 조회")
+    void getPlaceBasedRecommendations_CacheMiss() throws Exception {
+        // given
+        Long placeId = 1L;
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(null);
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findById(placeId)).thenReturn(java.util.Optional.of(basePlace));
+
+        Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
+            .thenReturn(List.of(nearbyPlace));
+
+        String jsonResult = "[{}]";
+        when(objectMapper.writeValueAsString(any())).thenReturn(jsonResult);
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(valueOperations).set(eq(cacheKey), eq(jsonResult), eq(PlaceRedisConstants.RECOMMEND_PLACE_BASED_TTL_MINUTES), eq(TimeUnit.MINUTES));
     }
 }

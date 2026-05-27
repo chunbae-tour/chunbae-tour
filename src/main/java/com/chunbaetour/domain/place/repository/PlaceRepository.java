@@ -35,4 +35,14 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
                    "ORDER BY (6371 * acos(cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))) ASC " +
                    "LIMIT ?4", nativeQuery = true)
     List<Place> findNearbyPlacesWithinRadius(double lat, double lng, double radiusKm, int limit);
+
+    /**
+     * 4-2. 특정 관광지 기반 추천 (동일 카테고리 + 근거리 TOP N)
+     * 파라미터: 1=lat, 2=lng, 3=category(String), 4=excludePlaceId, 5=limit
+     */
+    @Query(value = "SELECT * FROM places p " +
+                   "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
+                   "ORDER BY (6371 * acos(cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))) ASC " +
+                   "LIMIT ?5", nativeQuery = true)
+    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, int limit);
 }

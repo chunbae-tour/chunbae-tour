@@ -17,6 +17,8 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -36,6 +38,7 @@ public class RecommendService {
 
     private final PlaceRepository placeRepository;
     private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * 인기 관광지 추천 (Top 10)
@@ -181,5 +184,69 @@ public class RecommendService {
         return placeRepository.findTopByCategory(category, top10).stream()
                 .map(RecommendPlaceResponse::from)
                 .toList();
+    }
+
+    /**
+     * 특정 관광지 기반 추천 (Phase 4-2)
+     * - 동일 카테고리
+     * - 거리순 가까운 곳 TOP 5
+     * - 기준 관광지는 제외
+     * - 캐시 TTL 30분
+     * - 빈 결과([])도 캐싱하여 Cache Penetration(캐시 관통) 방어
+     */
+    @Transactional(readOnly = true)
+    public List<RecommendPlaceResponse> getPlaceBasedRecommendations(Long placeId) {
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+        
+        // 1. 캐시 조회
+        try {
+            String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cachedData != null) {
+                return objectMapper.readValue(cachedData, new TypeReference<List<RecommendPlaceResponse>>() {});
+            }
+        } catch (Exception e) {
+            log.error("관광지 기반 추천 캐시 조회 중 오류 발생: placeId={}", placeId, e);
+        }
+
+        // 2. 기준 관광지 조회
+        Place basePlace = placeRepository.findById(placeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
+        // 3. DB 조회 (동일 카테고리, 가까운 순 5개)
+        List<Place> nearbyPlaces = placeRepository.findNearbyPlacesByCategory(
+                basePlace.getLat().doubleValue(),
+                basePlace.getLng().doubleValue(),
+                basePlace.getCategory().name(),
+                placeId,
+                5
+        );
+
+        // 4. DTO 변환 (거리 계산 포함)
+        List<RecommendPlaceResponse> responses = nearbyPlaces.stream()
+                .map(place -> RecommendPlaceResponse.fromWithDistance(
+                        place,
+                        calculateDistance(
+                                basePlace.getLat().doubleValue(),
+                                basePlace.getLng().doubleValue(),
+                                place.getLat().doubleValue(),
+                                place.getLng().doubleValue()
+                        )
+                ))
+                .toList();
+
+        // 5. 캐시 저장 (빈 배열도 캐싱)
+        try {
+            String jsonData = objectMapper.writeValueAsString(responses);
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    jsonData,
+                    PlaceRedisConstants.RECOMMEND_PLACE_BASED_TTL_MINUTES,
+                    TimeUnit.MINUTES
+            );
+        } catch (Exception e) {
+            log.error("관광지 기반 추천 캐시 저장 중 오류 발생: placeId={}", placeId, e);
+        }
+
+        return responses;
     }
 }
