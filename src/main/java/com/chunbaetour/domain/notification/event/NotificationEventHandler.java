@@ -104,10 +104,15 @@ public class NotificationEventHandler {
         }
     }
 
-    // Redis Pub/Sub으로 Push — 다중 서버 환경에서 모든 인스턴스에 전달, 전송 실패는 저장 롤백 없음
+    // Redis Pub/Sub으로 Push — 전송 실패가 알림 저장 롤백에 영향 없도록 별도 try-catch
     private void pushNotification(Notification notification) {
-        notificationRedisPubSubService.publish(
-                notification.getUserId(),
-                NotificationResponse.from(notification));
+        try {
+            notificationRedisPubSubService.publish(
+                    notification.getUserId(),
+                    NotificationResponse.from(notification));
+        } catch (Exception e) {
+            log.warn("WebSocket 알림 Push 실패 — userId={}, notificationId={}",
+                    notification.getUserId(), notification.getId(), e);
+        }
     }
 }
