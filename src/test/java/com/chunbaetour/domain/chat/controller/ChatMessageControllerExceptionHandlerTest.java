@@ -1,19 +1,18 @@
 package com.chunbaetour.domain.chat.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.chat.dto.response.StompErrorResponse;
 import com.chunbaetour.domain.chat.service.ChatMessageService;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.lang.reflect.Method;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.slf4j.Logger;
+import org.springframework.messaging.simp.annotation.SendToUser;
 
 @ExtendWith(MockitoExtension.class)
 class ChatMessageControllerExceptionHandlerTest {
@@ -65,5 +64,27 @@ class ChatMessageControllerExceptionHandlerTest {
         StompErrorResponse response = chatMessageController.handleException(ex);
 
         assertThat(response.message()).doesNotContain("internal secret");
+    }
+
+    // @SendToUser(value="/queue/errors", broadcast=false) — 발신 세션에만 전달되는지 어노테이션 설정 검증
+    @Test
+    void handleBusinessException_sendToUser_annotation_routesToQueueErrors_broadcastFalse() throws NoSuchMethodException {
+        Method method = ChatMessageController.class.getMethod("handleBusinessException", BusinessException.class);
+        SendToUser annotation = method.getAnnotation(SendToUser.class);
+
+        assertThat(annotation).isNotNull();
+        assertThat(annotation.value()).containsExactly("/queue/errors");
+        assertThat(annotation.broadcast()).isFalse();
+    }
+
+    // @SendToUser(value="/queue/errors", broadcast=false) — Exception 핸들러도 동일 설정 검증
+    @Test
+    void handleException_sendToUser_annotation_routesToQueueErrors_broadcastFalse() throws NoSuchMethodException {
+        Method method = ChatMessageController.class.getMethod("handleException", Exception.class);
+        SendToUser annotation = method.getAnnotation(SendToUser.class);
+
+        assertThat(annotation).isNotNull();
+        assertThat(annotation.value()).containsExactly("/queue/errors");
+        assertThat(annotation.broadcast()).isFalse();
     }
 }
