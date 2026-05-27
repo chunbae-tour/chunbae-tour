@@ -42,6 +42,10 @@ public class ChatRedisPubSubService {
 
     // Redis 구독 콜백 — chat:* 패턴 채널 메시지 수신 → STOMP 토픽으로 브로드캐스트
     public void handleMessage(String message, String channel) {
+        if (!channel.startsWith(CHANNEL_PREFIX)) {
+            log.warn("예상하지 못한 Redis 채널입니다. channel={}", channel);
+            return;
+        }
         ChatMessageResponse response;
         try {
             response = objectMapper.readValue(message, ChatMessageResponse.class);
