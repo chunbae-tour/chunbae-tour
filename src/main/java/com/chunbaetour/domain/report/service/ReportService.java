@@ -71,6 +71,7 @@ public class ReportService {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
 
+        // 검증 순서: DB 조회 없는 자기신고 체크 → 존재 확인(DB 1회, 게시글/댓글 자기신고 포함) → 중복 확인(DB 1회)
         validateReportTarget(request.targetType(), request.targetId(), reporterId);
 
         if (reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
@@ -82,6 +83,7 @@ public class ReportService {
             Report report = Report.create(
                     reporterId, request.targetType(), request.targetId(),
                     request.reason(), request.description());
+            // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
             return ReportCreateResponse.of(reportRepository.saveAndFlush(report));
         } catch (DataIntegrityViolationException e) {
             String msg = e.getMostSpecificCause().getMessage();
@@ -334,6 +336,7 @@ public class ReportService {
             case COMMENT -> commentRepository.findById(targetId)
                     .map(Comment::getAuthorId).orElse(null);
             case USER -> targetId;
+            // USER case: targetId가 곧 작성자 ID — 직접 정지 대상
             default -> null;
         };
 

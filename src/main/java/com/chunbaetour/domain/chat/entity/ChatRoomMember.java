@@ -84,6 +84,16 @@ public class ChatRoomMember extends BaseEntity {
         return this.memberState == ChatMemberState.OWNER_ACTIVE;
     }
 
+    // ACTIVE 멤버(방장·일반 참여자 모두) 여부 — 비참여·퇴장·강퇴는 false
+    public boolean isActiveMember() {
+        return ChatMemberState.activeStates().contains(this.memberState);
+    }
+
+    // 강퇴 이력 여부 — 재참여 신청 차단 판단에 사용
+    public boolean isKicked() {
+        return this.memberState == ChatMemberState.MEMBER_KICKED;
+    }
+
     // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
         if (this.memberState == ChatMemberState.OWNER_ACTIVE) {

@@ -9,6 +9,7 @@ import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
+import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -35,13 +37,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ChatRoomService {
 
-    private static final List<ChatMemberState> ACTIVE_STATES =
-            List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final CompanionPostRepository companionPostRepository;
     private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복은 DB 제약으로 원자적 차단
     @Transactional
@@ -74,10 +74,10 @@ public class ChatRoomService {
     // 내 채팅방 목록 — ACTIVE 멤버 상태 기준 커서 페이지네이션, CLOSED 방도 포함
     public CursorPageResponse<MyChatRoomResponse> getMyRooms(Long userId, String cursor, int size) {
         Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : Long.MAX_VALUE;
-        // ACTIVE_STATES(멤버 상태)로 필터링 — close() 이후에도 멤버 상태는 OWNER_ACTIVE/MEMBER_ACTIVE 유지되므로
+        // 활성 멤버 상태로 필터링 — close() 이후에도 멤버 상태는 OWNER_ACTIVE/MEMBER_ACTIVE 유지되므로
         // CLOSED 방은 room.status로 구분되며, 기존 멤버의 이력 조회를 위해 목록에 계속 포함됨
         List<ChatRoomMember> members = chatRoomMemberRepository.findMyRoomsWithCursor(
-                userId, ACTIVE_STATES, cursorId, PageRequest.of(0, size + 1));
+                userId, ChatMemberState.activeStates(), cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = members.size() > size;
         List<ChatRoomMember> page = hasNext ? members.subList(0, size) : members;
@@ -100,7 +100,7 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        if (!chatRoom.getOwnerId().equals(userId)) {
+        if (!chatRoom.isOwnedBy(userId)) {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
@@ -129,8 +129,7 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(chatRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        // ownerId는 @AuthenticationPrincipal 보장 — NPE 방지를 위해 ownerId 기준으로 equals 호출
-        if (!ownerId.equals(chatRoom.getOwnerId())) {
+        if (!chatRoom.isOwnedBy(ownerId)) {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
@@ -154,6 +153,9 @@ public class ChatRoomService {
         } catch (ObjectOptimisticLockingFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
+
+        // 트랜잭션 커밋 후 강퇴 대상에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        eventPublisher.publishEvent(new ChatMemberKickedEvent(chatRoomId, targetUserId));
     }
 
     // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
@@ -186,10 +188,10 @@ public class ChatRoomService {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
-        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 조회 — 참여 순서(joinedAt ASC, id ASC) 정렬
+        // 활성 멤버(OWNER_ACTIVE, MEMBER_ACTIVE)만 조회 — 참여 순서(joinedAt ASC, id ASC) 정렬
         // KICKED/LEFT 멤버는 필터에서 제외되어 isMember 검사에서 자동으로 접근 거부 처리됨
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
-                .findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(roomId, ACTIVE_STATES);
+                .findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(roomId, ChatMemberState.activeStates());
 
         // 비멤버, KICKED, LEFT 모두 CHAT_NOT_JOINED로 통일 — API 계약 일관성 유지
         boolean isMember = activeMembers.stream()
@@ -210,12 +212,12 @@ public class ChatRoomService {
 
         // 참여 여부 먼저 확인 — 전체 멤버 로드 전에 단건 조회로 비용 최소화
         chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
-                .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
+                .filter(ChatRoomMember::isActiveMember)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
 
-        // ACTIVE_STATES(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(joinedAt ASC, id ASC) 정렬
+        // 활성 멤버(OWNER_ACTIVE, MEMBER_ACTIVE)만 — KICKED/LEFT 제외, 참여 순서(joinedAt ASC, id ASC) 정렬
         List<ChatRoomMember> activeMembers = chatRoomMemberRepository
-                .findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(roomId, ACTIVE_STATES);
+                .findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(roomId, ChatMemberState.activeStates());
 
         // TOCTOU 방어 — 단건 조회와 목록 조회 사이에 KICKED/LEFT로 상태 변경된 경우 재차 차단
         boolean stillActive = activeMembers.stream().anyMatch(m -> m.getUserId().equals(userId));

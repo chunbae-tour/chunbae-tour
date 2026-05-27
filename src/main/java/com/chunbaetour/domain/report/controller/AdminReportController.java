@@ -66,7 +66,7 @@ public class AdminReportController {
      * MERCHANT 신고에 이 엔드포인트 사용 시 REPORT_WRONG_ENDPOINT 에러.
      *
      * @param reportId 처리할 신고 ID
-     * @param admin    인증된 관리자 계정
+     * @param adminId  인증된 관리자 계정
      * @param request  처리 요청 (action, adminNote)
      */
     @PostMapping("/{reportId}/resolve")

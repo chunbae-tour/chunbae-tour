@@ -13,9 +13,10 @@ package com.chunbaetour.domain.common.audit;
  *   <li>TOKEN_* — JWT 검증 분기 (JwtAuthenticationFilter)</li>
  *   <li>REFRESH_* — Refresh Token rotation (ReissueService)</li>
  *   <li>RATE_LIMIT_DENIED — Rate Limit 거부 (RateLimitFilter)</li>
+ *   <li>ACCOUNT_DELETED — 회원 탈퇴 (UserMeService — Epic C S2, KAN-144)</li>
  * </ul>
  *
- * <p>본 슬라이스는 인증 도메인 한정. 관리자 권한 변경 / 비밀번호 변경 / 회원 탈퇴 등은
+ * <p>본 슬라이스는 인증 + 계정 lifecycle 도메인 한정. 관리자 권한 변경 / 비밀번호 변경 / 관리자 강제 탈퇴 등은
  * 후속 도메인 PRD 도래 시 추가.
  */
 public enum SecurityAuditEventType {
@@ -46,5 +47,17 @@ public enum SecurityAuditEventType {
     REFRESH_REJECTED,
 
     /** Rate Limit 거부 — reason = AUTH_014. endpoint metadata 동반. */
-    RATE_LIMIT_DENIED
+    RATE_LIMIT_DENIED,
+
+    /**
+     * 회원 탈퇴 — soft delete + UserLike cascade + 토큰 무효화 완료 시 발행 (Epic C S2, KAN-144).
+     *
+     * <p>actorId = 탈퇴한 사용자 본인 (self-withdrawal MVP). metadata = {@code tokenRole} (Access Token claim 기준),
+     * {@code deletedLikes} (삭제된 UserLike row 수). 관리자 강제 탈퇴는 admin 도메인 Epic에서 별도 eventType 추가.
+     *
+     * <p>발행 시점 = 탈퇴 트랜잭션 commit 직후({@code afterCommit}) — DB rollback 시 audit 발행 차단.
+     * CAS UPDATE({@code AccountRepository.markAsDeleted})가 동시 호출 중 1행 영향을 받은 호출자만 afterCommit
+     * 경로로 진입시켜 본 이벤트는 실제 탈퇴 1건당 정확히 1번 발행 (ADR §5).
+     */
+    ACCOUNT_DELETED
 }

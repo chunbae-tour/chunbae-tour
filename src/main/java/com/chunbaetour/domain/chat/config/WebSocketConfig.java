@@ -34,7 +34,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.setApplicationDestinationPrefixes("/pub");
-        registry.enableSimpleBroker("/sub");
+        // /sub: 채팅 브로드캐스트 토픽, /queue: @SendToUser 개인 에러 큐
+        registry.enableSimpleBroker("/sub", "/queue");
     }
 
     // JWT 검증 인터셉터 — STOMP CONNECT 프레임에만 적용

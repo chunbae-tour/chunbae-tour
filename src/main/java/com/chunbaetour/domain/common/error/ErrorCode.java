@@ -92,6 +92,13 @@ public enum ErrorCode {
     REFUND_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_018", "존재하지 않는 환불 요청입니다."),
     REFUND_CANCEL_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_019", "대기 중인 환불 요청만 취소할 수 있습니다."),
     REFUND_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_020", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
+    DUPLICATE_QR_PAY_REQUEST(HttpStatus.CONFLICT,          "PAY_022", "이미 대기 중인 QR 결제 요청이 있습니다."),
+    SELF_PAYMENT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_023", "본인 가게에는 결제할 수 없습니다."),
+    ZERO_AMOUNT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,        "PAY_024", "결제 금액은 0원보다 커야 합니다."),
+    QR_PAY_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_025", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
+    QR_PAY_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND,         "PAY_026", "존재하지 않는 QR 결제 요청입니다."),
+    SHOP_WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,            "PAY_027", "상인 엽전 지갑을 찾을 수 없습니다."),
+    QR_PAY_CONFIRM_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_028", "본인 가게의 결제 요청만 승인/거절할 수 있습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
@@ -115,8 +122,9 @@ public enum ErrorCode {
     SHOP_UPDATE_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_002", "본인 가게 정보만 수정할 수 있습니다."),
     SHOP_ALREADY_EXISTS(HttpStatus.CONFLICT,                "SHOP_003", "이미 등록된 가게가 있습니다."),
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
-    SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게는 수정할 수 없습니다."),
+    SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게입니다."),
     MENU_DUPLICATE(HttpStatus.CONFLICT,                     "SHOP_006", "이미 동일한 이름의 메뉴가 존재합니다."),
+    MENU_UNAVAILABLE(HttpStatus.CONFLICT,                   "SHOP_007", "현재 주문할 수 없는 메뉴입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
