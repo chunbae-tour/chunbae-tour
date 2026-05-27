@@ -61,6 +61,18 @@ public class Product extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ProductStatus status;
 
+    /** 구매 시 재고 차감 — 재고 소진 시 SOLD_OUT 자동 전환 */
+    public void decreaseStock(int quantity) {
+        if (this.stock < quantity) {
+            throw new com.chunbaetour.domain.common.error.BusinessException(
+                    com.chunbaetour.domain.common.error.ErrorCode.PRODUCT_SOLD_OUT);
+        }
+        this.stock -= quantity;
+        if (this.stock == 0) {
+            this.status = ProductStatus.SOLD_OUT;
+        }
+    }
+
     @Builder
     private Product(String name, String description, String category, long price,
                     Long originalPrice, int stock, int originalStock, String imageUrls,
