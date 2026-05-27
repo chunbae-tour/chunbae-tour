@@ -125,6 +125,9 @@ public enum ErrorCode {
     SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게입니다."),
     MENU_DUPLICATE(HttpStatus.CONFLICT,                     "SHOP_006", "이미 동일한 이름의 메뉴가 존재합니다."),
     MENU_UNAVAILABLE(HttpStatus.CONFLICT,                   "SHOP_007", "현재 주문할 수 없는 메뉴입니다."),
+    SETTLEMENT_NOT_FOUND(HttpStatus.NOT_FOUND,              "SHOP_008", "존재하지 않는 정산 요청입니다."),
+    DUPLICATE_SETTLEMENT_REQUEST(HttpStatus.CONFLICT,       "SHOP_009", "이미 처리 대기 중인 정산 요청이 있습니다."),
+    SETTLEMENT_INVALID_STATUS(HttpStatus.CONFLICT,          "SHOP_010", "현재 상태에서는 처리할 수 없는 정산 요청입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
