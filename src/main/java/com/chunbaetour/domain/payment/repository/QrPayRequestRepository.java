@@ -2,8 +2,16 @@ package com.chunbaetour.domain.payment.repository;
 
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
+
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long> {
 
