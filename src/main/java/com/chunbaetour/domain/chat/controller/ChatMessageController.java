@@ -43,17 +43,18 @@ public class ChatMessageController {
         chatMessageService.sendMessage(userId, chatRoomId, request);
     }
 
-    // @MessageMapping 처리 중 BusinessException — 발신자에게만 에러 응답 전송
+    // @MessageMapping 처리 중 BusinessException — 발신 세션에만 에러 응답 전송
+    // broadcast=false: 동일 유저 다른 탭/기기로 에러 전파 차단
     // 클라이언트 구독 경로: /user/queue/errors
     @MessageExceptionHandler(BusinessException.class)
-    @SendToUser("/queue/errors")
+    @SendToUser(value = "/queue/errors", broadcast = false)
     public StompErrorResponse handleBusinessException(BusinessException e) {
         return new StompErrorResponse(e.getErrorCode().getCode(), e.getMessage());
     }
 
     // 예상치 못한 예외 — 내부 에러로 치환해 상세 정보 노출 차단
     @MessageExceptionHandler(Exception.class)
-    @SendToUser("/queue/errors")
+    @SendToUser(value = "/queue/errors", broadcast = false)
     public StompErrorResponse handleException(Exception e) {
         return new StompErrorResponse(
                 ErrorCode.INTERNAL_SERVER_ERROR.getCode(),
