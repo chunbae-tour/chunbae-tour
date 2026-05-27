@@ -9,13 +9,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface MessageRepository extends JpaRepository<Message, Long> {
 
-    // 채팅 내역 조회 — 시간 오름차순.
-    // Message는 BaseEntity.createdAt만 가지고 별도 sentAt 필드를 두지 않으므로 createdAt 기준으로 정렬한다.
-    // (원래 KAN-55 머지에 findByChatRoomIdOrderBySentAtAsc로 들어와 Spring Data가 property 매핑 실패로 컨텍스트 부팅 차단됨 → 본 S5 PR에서 함께 복구.)
-    List<Message> findByChatRoomIdOrderByCreatedAtAsc(Long chatRoomId);
-
-    // 메시지 커서 페이징 — id DESC(최신순), id < cursorId
-    @Query("SELECT m FROM Message m WHERE m.chatRoomId = :chatRoomId AND m.id < :cursorId ORDER BY m.id DESC")
+    // 메시지 커서 페이징 — id DESC(최신순), cursorId null 시 첫 페이지(상한 없음)
+    @Query("SELECT m FROM Message m WHERE m.chatRoomId = :chatRoomId AND (:cursorId IS NULL OR m.id < :cursorId) ORDER BY m.id DESC")
     List<Message> findWithCursor(
             @Param("chatRoomId") Long chatRoomId,
             @Param("cursorId") Long cursorId,

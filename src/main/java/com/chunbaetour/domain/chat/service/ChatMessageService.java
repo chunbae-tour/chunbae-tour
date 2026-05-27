@@ -103,7 +103,7 @@ public class ChatMessageService {
                 .filter(m -> ACTIVE_STATES.contains(m.getMemberState()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
 
-        Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : Long.MAX_VALUE;
+        Long cursorId = cursor != null ? CursorUtils.decodeSafe(cursor) : null;
 
         List<Message> messages = messageRepository.findWithCursor(
                 roomId, cursorId, PageRequest.of(0, size + 1));
