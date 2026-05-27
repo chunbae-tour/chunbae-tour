@@ -298,6 +298,7 @@ class ChatMessageServiceTest {
         given(msg.getSenderId()).willReturn(USER_ID);
         given(msg.getMessageType()).willReturn(MessageType.TEXT);
         given(msg.getContent()).willReturn("메시지" + id);
+        given(msg.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 27, 12, 0));
         return msg;
     }
 }

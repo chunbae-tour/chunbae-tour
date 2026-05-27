@@ -25,6 +25,8 @@ public class ChatMessageController {
             @DestinationVariable Long chatRoomId,
             @Payload ChatSendMessageRequest request,
             Principal principal) {
+        // StompChannelInterceptor가 SEND 프레임 null principal을 차단하므로 정상 흐름에서 도달 불가
+        // 인터셉터 설정 변경 대비 방어 코드
         if (principal == null) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
