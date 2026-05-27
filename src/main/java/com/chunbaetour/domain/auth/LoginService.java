@@ -5,9 +5,13 @@ import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.jwt.TokenWithId;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,11 +37,16 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class LoginService {
 
+    /** KAN-104 메트릭 — 카탈로그({@code docs/operations/metrics-catalog.md}) 동기. outcome 라벨 분기. */
+    private static final String METRIC_LOGIN_ATTEMPT = "auth.login.attempt.total";
+
     private final AccountRepository accountRepository;
     private final PasswordHasher passwordHasher;
     private final TokenIssuer tokenIssuer;
     private final RefreshTokenStore refreshTokenStore;
     private final JwtProperties jwtProperties;
+    private final MeterRegistry meterRegistry;
+    private final SecurityAuditLogger auditLogger;
 
     /**
      * 로그인 처리. 성공 시 TokenPair 반환 + Redis에 Refresh 저장.
@@ -55,11 +64,23 @@ public class LoginService {
         // 이메일은 대소문자 무관 저장 정책이므로 조회 직전 lowercase 정규화
         String email = loginId.toLowerCase(Locale.ROOT);
 
-        Account account = accountRepository.findByEmail(email)
-                .orElseThrow(() -> new BusinessException(ErrorCode.LOGIN_FAILED));
+        Account account = accountRepository.findByEmail(email).orElse(null);
+        if (account == null) {
+            // 이메일 미존재 — 비밀번호 불일치와 같은 응답으로 정보 노출 차단.
+            // 메트릭에서는 분기 구분 (`email_not_found` vs `invalid_password`)이 의미 있을 수 있으나,
+            // 외부 응답이 동일하므로 outcome도 통일해 운영 대시보드 노이즈 최소화.
+            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "invalid_password").increment();
+            // KAN-105: 감사 로그 — actorId null (이메일 미존재 = 추정 brute force).
+            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, null, ErrorCode.LOGIN_FAILED.getCode(),
+                    Map.of("requiredRole", requiredRole.name(), "reasonDetail", "email_not_found"));
+            throw new BusinessException(ErrorCode.LOGIN_FAILED);
+        }
 
         // 비밀번호 검증 (BCrypt). 일치 여부만 노출, 어느 단계에서 실패했는지는 노출 안 함 (timing attack 외 사유 노출 차단)
         if (!passwordHasher.matches(password, account.getPassword())) {
+            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "invalid_password").increment();
+            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.LOGIN_FAILED.getCode(),
+                    Map.of("requiredRole", requiredRole.name(), "reasonDetail", "wrong_password"));
             throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
 
@@ -67,12 +88,20 @@ public class LoginService {
         // role mismatch 자체로 정보 노출되지만, 엔드포인트 분리가 곧 보안 모델이라 허용.
         // SUSPENDED 체크보다 먼저 두는 이유: 다른 role 계정의 정지 상태가 page 호출자에게 누설되는 oracle 차단.
         if (account.getRole() != requiredRole) {
+            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "role_mismatch").increment();
+            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.ACCESS_DENIED.getCode(),
+                    Map.of("requiredRole", requiredRole.name(),
+                            "actualRole", account.getRole().name(),
+                            "reasonDetail", "role_mismatch"));
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
 
         // 정지 계정은 비밀번호와 무관하게 차단. 메시지는 명시 (사용자에게 정지 사실 안내 필요).
         // role 체크를 먼저 통과한 후 검사 — 다른 page 호출자에게 정지 상태가 노출되는 oracle 차단.
         if (account.getStatus() == AccountStatus.SUSPENDED) {
+            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "suspended").increment();
+            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.ACCOUNT_SUSPENDED.getCode(),
+                    Map.of("requiredRole", requiredRole.name(), "reasonDetail", "account_suspended"));
             throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
@@ -84,6 +113,9 @@ public class LoginService {
         // 다른 디바이스에서 동일 계정으로 로그인하면 이전 디바이스의 Refresh가 즉시 무효화된다.
         refreshTokenStore.save(account.getId(), refresh.tokenId(), jwtProperties.refreshTokenTtl());
 
+        meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "success").increment();
+        auditLogger.emitSuccess(SecurityAuditEventType.LOGIN_SUCCESS, account.getId(),
+                Map.of("role", account.getRole().name()));
         return new TokenPair(accessToken, refresh.token(), refresh.tokenId(), account.getRole());
     }
 }

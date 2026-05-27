@@ -3,20 +3,32 @@ package com.chunbaetour.domain.search.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.search.dto.request.RecentSearchRequest;
 import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
+import com.chunbaetour.domain.search.service.RecentSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.time.LocalDate;
@@ -47,6 +59,7 @@ public class SearchController {
     private final PopularSearchService popularSearchService;
     private final SearchService searchService;
     private final SuggestService suggestService;
+    private final RecentSearchService recentSearchService;
 
     /**
      * 인기 검색어 TOP 10 조회.
@@ -164,5 +177,70 @@ public class SearchController {
     ) {
         List<String> result = suggestService.suggest(q);
         return ApiResponse.success(result);
+    }
+
+    /**
+     * 최근 검색어 저장.
+     * <p>
+     * SA: {@code POST /api/v1/search}<br>
+     * 인증: 필수(USER)<br>
+     * 설명: 사용자의 검색 히스토리를 Redis List에 저장한다. (최대 10개)
+     * </p>
+     *
+     * @param userId 인증된 사용자 ID
+     * @param request 검색어
+     * @return 200 OK
+     */
+    @PostMapping
+    public ApiResponse<Void> saveRecentSearch(
+            @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody RecentSearchRequest request
+    ) {
+        recentSearchService.saveRecentSearch(userId, request.keyword());
+        return ApiResponse.success(null);
+    }
+
+    /**
+     * 최근 검색어 조회.
+     * <p>
+     * SA: {@code GET /api/v1/search/recent}<br>
+     * 인증: 필수(USER)<br>
+     * 설명: 사용자의 최근 검색어 목록을 조회한다. (최대 10개)
+     * </p>
+     *
+     * @param userId 인증된 사용자 ID
+     * @return 200 OK + 최근 검색어 목록
+     */
+    @GetMapping("/recent")
+    public ApiResponse<List<String>> getRecentSearches(
+            @AuthenticationPrincipal Long userId
+    ) {
+        List<String> results = recentSearchService.getRecentSearches(userId);
+        return ApiResponse.success(results);
+    }
+
+    /**
+     * 최근 검색어 단건/전체 삭제.
+     * <p>
+     * SA: {@code DELETE /api/v1/search/recent}<br>
+     * 인증: 필수(USER)<br>
+     * 설명: keyword 파라미터가 있으면 단건 삭제, 없으면 전체 삭제를 수행한다.
+     * </p>
+     *
+     * @param userId 인증된 사용자 ID
+     * @param keyword 삭제할 검색어 (선택)
+     * @return 204 No Content
+     */
+    @DeleteMapping("/recent")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteRecentSearch(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(name = "keyword", required = false) @Size(max = 50, message = "검색어는 최대 50자까지 입력 가능합니다.") String keyword
+    ) {
+        if (keyword == null) {
+            recentSearchService.deleteAllRecentSearches(userId);
+        } else {
+            recentSearchService.deleteRecentSearch(userId, keyword);
+        }
     }
 }

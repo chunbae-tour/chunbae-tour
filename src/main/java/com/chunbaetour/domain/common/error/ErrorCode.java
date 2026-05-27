@@ -18,6 +18,7 @@ public enum ErrorCode {
     // cursor 값이 Base64 디코딩 실패 또는 1 미만(IDENTITY id 범위 위반)일 때 사용
     INVALID_CURSOR(HttpStatus.BAD_REQUEST,                   "COMMON_008", "유효하지 않은 커서 값입니다."),
     CONCURRENT_UPDATE(HttpStatus.CONFLICT,                   "COMMON_009", "동시 수정 충돌이 발생했습니다. 다시 시도해주세요."),
+    // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
 
     // ===== AUTH (담당: 정민교) =====
@@ -55,6 +56,7 @@ public enum ErrorCode {
     COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN,             "COMMUNITY_006", "댓글 작성자만 수정·삭제할 수 있습니다."),
     COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,     "COMMUNITY_007", "이미 삭제된 댓글입니다."),
     COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
+    POST_NOT_COMMENTABLE(HttpStatus.FORBIDDEN,          "COMMUNITY_009", "댓글을 작성할 수 없는 게시글입니다."),
 
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
@@ -66,6 +68,8 @@ public enum ErrorCode {
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
+    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
+    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
@@ -108,6 +112,7 @@ public enum ErrorCode {
     MERCHANT_NOT_CERTIFIED(HttpStatus.FORBIDDEN,            "MERCHANT_003", "상인 인증이 필요합니다."),
     DUPLICATE_BUSINESS_NUMBER(HttpStatus.CONFLICT,          "MERCHANT_004", "이미 등록된 사업자등록번호입니다."),
     MERCHANT_APPLICATION_STATUS_INVALID(HttpStatus.CONFLICT,"MERCHANT_005", "현재 상태에서는 허용되지 않는 작업입니다."),
+    MERCHANT_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND,    "MERCHANT_006", "존재하지 않는 상인 신청입니다."),
 
     // ===== SHOP (담당: 신현민) =====
     SHOP_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_001", "존재하지 않는 가게입니다."),
@@ -116,6 +121,8 @@ public enum ErrorCode {
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
     SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게입니다."),
     MENU_UNAVAILABLE(HttpStatus.CONFLICT,                   "SHOP_006", "현재 주문할 수 없는 메뉴입니다."),
+    SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게는 수정할 수 없습니다."),
+    MENU_DUPLICATE(HttpStatus.CONFLICT,                     "SHOP_006", "이미 동일한 이름의 메뉴가 존재합니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
@@ -134,7 +141,8 @@ public enum ErrorCode {
     CHAT_ROOM_DUPLICATE(HttpStatus.CONFLICT,                "CHAT_014", "해당 게시글에 이미 개설된 채팅방이 있습니다."),
     CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 직접 퇴장할 수 없습니다."),
     CHAT_MEMBER_ALREADY_INACTIVE(HttpStatus.CONFLICT,       "CHAT_016", "이미 퇴장하거나 강퇴된 멤버입니다."),
-    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다.");
+    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
+    CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다.");
 
     private final HttpStatus status;
     private final String code;

@@ -33,4 +33,10 @@ public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> 
     @Modifying
     @Query("UPDATE JoinRequest j SET j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.REJECTED, j.pendingKey = null WHERE j.id = :id AND j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.PENDING")
     int rejectIfPending(@Param("id") Long id);
+
+    // 조건부 원자적 취소 — WHERE status=PENDING으로 approve 경합 시 이중 처리 차단, 영향 행 수 반환 (0이면 이미 처리된 신청)
+    // clearAutomatically = true — bulk DELETE 후 1차 캐시 오염 방지
+    @Modifying(clearAutomatically = true)
+    @Query("DELETE FROM JoinRequest j WHERE j.id = :id AND j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.PENDING")
+    int deleteIfPending(@Param("id") Long id);
 }

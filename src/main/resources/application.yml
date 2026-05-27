@@ -33,12 +33,15 @@ jwt:
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P7D}
 
 # Refresh Token 쿠키 정책 공통 기본값.
-# secure는 프로파일별로 오버라이드: local=false (HTTP 허용), prod=true (HTTPS 강제)
+# - secure는 프로파일별로 오버라이드: local=false (HTTP 허용), prod=true (HTTPS 강제).
+# - same-site는 환경변수로 오버라이드 (KAN-125 S5). 운영 프론트엔드/백엔드 도메인 정합에 따라 Lax/None 결정.
+#   default=Lax (same-site 배치 권장). cross-site 운영 시 prod 배포 환경에서 COOKIE_SAMESITE=None 주입.
+#   None 사용 시 secure=true 필수 (CookieProperties compact ctor가 강제). 의사결정: docs/operations/samesite-policy.md
 cookie:
   refresh-token:
     name: refreshToken
     secure: false
-    same-site: Lax
+    same-site: ${COOKIE_SAMESITE:Lax}
     path: /api/v1/auth
 
 # CORS 정책.
@@ -79,25 +82,37 @@ ratelimit:
       window: PT1M
 
 portone:
-  secret: ${PORTONE_SECRET}
-  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
-  store-id: ${PORTONE_STORE_ID}
+  secret: ${PORTONE_SECRET:}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET:}
+  store-id: ${PORTONE_STORE_ID:}
   base-url: https://api.portone.io
   channel:
-    card: ${PORTONE_CHANNEL_CARD}
-    kakao-pay: ${PORTONE_CHANNEL_KAKAO_PAY}
-    toss-pay: ${PORTONE_CHANNEL_TOSS_PAY}
-    foreign-card: ${PORTONE_CHANNEL_FOREIGN_CARD}
+    card: ${PORTONE_CHANNEL_CARD:}
+    kakao-pay: ${PORTONE_CHANNEL_KAKAO_PAY:}
+    toss-pay: ${PORTONE_CHANNEL_TOSS_PAY:}
+    foreign-card: ${PORTONE_CHANNEL_FOREIGN_CARD:}
 
+# Actuator + Micrometer Prometheus (KAN-104 인증 필터 성능 모니터링).
+# - health/info: 외부 LB health check 허용 (SecurityConfig가 permitAll 매핑)
+# - prometheus: Grafana/Datadog 등이 메트릭 수집. 운영에서는 internal-only (SecurityConfig + IP allowlist 후속 작업)
+# - 그 외 env/beans/mappings 등은 노출 금지 (보안: 정보 노출 차단)
+# metrics.tags는 모든 메트릭에 application/env 라벨 자동 추가 → Prometheus query 시 필터링/그룹핑 일관
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: chunbae-tour
+      env: ${SPRING_PROFILES_ACTIVE:local}
 
 kakao:
   map:
-    api-key: ${KAKAO_MAP_API_KEY}
+    api-key: ${KAKAO_MAP_API_KEY:}
     coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
     map-url: https://map.kakao.com/link/from
 

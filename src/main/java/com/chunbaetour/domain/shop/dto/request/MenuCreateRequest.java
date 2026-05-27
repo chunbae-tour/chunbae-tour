@@ -9,7 +9,7 @@ import org.hibernate.validator.constraints.URL;
 public record MenuCreateRequest(
         @NotBlank @Size(max = 100) String name,
         @Size(max = 500) String description,
-        @NotNull @Min(1) Long price,
+        @NotNull @Min(1) @Max(9_999_999) Long price,
         @URL @Size(max = 500) String imageUrl
 ) {
 }
