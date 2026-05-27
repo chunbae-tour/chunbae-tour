@@ -39,9 +39,6 @@ public class ChatMessageService {
     // 운영 보안 정책 설계서 11번 — 채팅 메시지 전송 30회/10초
     private static final RateLimitPolicy MESSAGE_RATE_LIMIT = new RateLimitPolicy(30, Duration.ofSeconds(10));
 
-    private static final List<ChatMemberState> ACTIVE_STATES =
-            List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final AccountRepository accountRepository;
@@ -61,7 +58,7 @@ public class ChatMessageService {
 
         // senderId는 SecurityContext(STOMP principal)에서 추출 — 클라이언트 전달값 신뢰 금지
         boolean isMember = chatRoomMemberRepository
-                .existsByChatRoomIdAndUserIdAndMemberStateIn(chatRoomId, userId, ACTIVE_STATES);
+                .existsByChatRoomIdAndUserIdAndMemberStateIn(chatRoomId, userId, ChatMemberState.activeStates());
         if (!isMember) {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }

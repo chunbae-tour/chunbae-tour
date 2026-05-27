@@ -86,8 +86,7 @@ public class ChatRoomMember extends BaseEntity {
 
     // ACTIVE 멤버(방장·일반 참여자 모두) 여부 — 비참여·퇴장·강퇴는 false
     public boolean isActiveMember() {
-        return this.memberState == ChatMemberState.OWNER_ACTIVE
-                || this.memberState == ChatMemberState.MEMBER_ACTIVE;
+        return ChatMemberState.activeStates().contains(this.memberState);
     }
 
     // 강퇴 이력 여부 — 재참여 신청 차단 판단에 사용
