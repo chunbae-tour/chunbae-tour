@@ -19,7 +19,7 @@ public record ShopResponse(
         String operatingHours,
         String closedDays,
         boolean isCertified,
-        double rating,
+        BigDecimal rating,
         int reviewCount,
         ShopStatus status
 ) {
@@ -38,7 +38,7 @@ public record ShopResponse(
                 shop.getOperatingHours(),
                 shop.getClosedDays(),
                 shop.isCertified(),
-                shop.getRating(),
+                BigDecimal.valueOf(shop.getRating()),
                 shop.getReviewCount(),
                 shop.getStatus()
         );

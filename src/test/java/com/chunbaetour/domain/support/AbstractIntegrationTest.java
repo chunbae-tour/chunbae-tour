@@ -126,6 +126,7 @@ public abstract class AbstractIntegrationTest {
         // PlaceholderResolutionException이 발생하지 않도록. 통합 테스트는 외부 호출 안 함.
         registry.add("kakao.map.api-key", () -> "test-only-kakao-key");
         registry.add("portone.secret", () -> "test-only-portone-secret");
+        registry.add("portone.webhook-secret", () -> "test-only-webhook-secret");
         registry.add("portone.store-id", () -> "test-only-portone-store-id");
         registry.add("portone.channel.card", () -> "test-channel-card");
         registry.add("portone.channel.kakao-pay", () -> "test-channel-kakao-pay");

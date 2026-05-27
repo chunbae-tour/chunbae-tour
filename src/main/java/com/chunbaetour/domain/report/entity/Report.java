@@ -2,9 +2,6 @@ package com.chunbaetour.domain.report.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.report.type.ReportAction;
-import com.chunbaetour.domain.report.type.ReportReason;
-import com.chunbaetour.domain.report.type.ReportStatus;
-import com.chunbaetour.domain.report.type.ReportTargetType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,13 +10,22 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "reports")
+@Table(
+        name = "reports",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_reports_reporter_target",
+                        columnNames = {"reporter_id", "target_type", "target_id"}
+                )
+        }
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Report extends BaseEntity {

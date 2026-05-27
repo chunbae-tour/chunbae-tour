@@ -2,33 +2,38 @@ package com.chunbaetour.domain.report.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import com.chunbaetour.domain.community.free.entity.FreePost;
+import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.report.dto.MyReportResponse;
+import com.chunbaetour.domain.report.dto.ReportCreateRequest;
+import com.chunbaetour.domain.report.dto.ReportCreateResponse;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.entity.Report;
+import com.chunbaetour.domain.report.entity.ReportStatus;
+import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
-import com.chunbaetour.domain.report.type.ReportStatus;
-import com.chunbaetour.domain.report.type.ReportTargetType;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 신고 서비스 (KAN-91 신고 목록 조회 / KAN-92 신고 처리 / KAN-93 자동 숨김).
+ * 신고 서비스 (KAN-90 신고 접수·내 신고 조회 / KAN-91 관리자 신고 목록·상세).
  * AdminReportController → ReportService 직접 호출 (spec Section 3-1).
  */
 @Service
@@ -36,16 +41,88 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ReportService {
 
-    private static final Pattern CURSOR_PATTERN = Pattern.compile("^\\{\"id\":(\\d+)\\}$");
-    private static final int AUTO_HIDE_THRESHOLD = 3;
-
     private final ReportRepository reportRepository;
     private final AccountRepository accountRepository;
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
 
-    // ── KAN-91: 신고 목록 조회 ────────────────────────────────────────────
+    // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
+
+    @Transactional
+    public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
+        // USER 자기신고 — DB 없이 즉시 차단 (ID 일치 비교)
+        // MERCHANT는 role 검증 후 판정 (자기 ID라도 Role.USER면 REPORT_TARGET_NOT_FOUND가 맞음)
+        // 게시글·댓글 자기신고 — validateTargetExists 내부에서 authorId 비교 후 차단
+        if (request.targetType() == ReportTargetType.USER
+                && request.targetId().equals(reporterId)) {
+            throw new BusinessException(ErrorCode.REPORT_SELF);
+        }
+
+        // 검증 순서: DB 조회 없는 자기신고 체크 → 존재 확인(DB 1회, 게시글/댓글 자기신고 포함) → 중복 확인(DB 1회)
+        validateTargetExists(request.targetType(), request.targetId(), reporterId);
+
+        if (reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
+                reporterId, request.targetType(), request.targetId())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
+        }
+
+        try {
+            Report report = Report.create(
+                    reporterId, request.targetType(), request.targetId(),
+                    request.reason(), request.description());
+            // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
+            return ReportCreateResponse.of(reportRepository.saveAndFlush(report));
+        } catch (DataIntegrityViolationException e) {
+            // uk_reports_reporter_target 제약 위반 = 동시 중복 신고, 그 외는 재throw
+            String msg = e.getMostSpecificCause().getMessage();
+            if (msg != null && msg.contains("uk_reports_reporter_target")) {
+                throw new BusinessException(ErrorCode.DUPLICATE_REPORT);
+            }
+            throw e;
+        }
+    }
+
+    // ── KAN-90: 내 신고 내역 조회 ──────────────────────────────────────────
+
+    /**
+     * 내가 신고한 내역 cursor 페이징 조회.
+     *
+     * @param reporterId 요청자 userId (@AuthenticationPrincipal)
+     * @param cursor     Base64 인코딩된 cursor (null = 첫 페이지)
+     * @param size       페이지 크기
+     */
+    public CursorPageResponse<MyReportResponse> getMyReports(Long reporterId, String cursor, int size) {
+        PageRequest pageable = PageRequest.of(0, size + 1);
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        List<Report> reports = (cursorId == null)
+                ? reportRepository.findByReporterIdOrderByIdDesc(reporterId, pageable)
+                : reportRepository.findByReporterIdAndIdLessThanOrderByIdDesc(
+                        reporterId, cursorId, pageable);
+
+        boolean hasNext = reports.size() > size;
+        List<Report> content = hasNext ? reports.subList(0, size) : reports;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
+
+        return new CursorPageResponse<>(
+                content.stream().map(MyReportResponse::of).toList(),
+                nextCursor, hasNext, content.size());
+    }
+
+    /**
+     * 내 신고 단건 조회 — 본인이 신고한 건만 허용.
+     * 신고 없음·타인 신고 모두 RESOURCE_NOT_FOUND 통일 → reportId enumeration 차단.
+     *
+     * @throws BusinessException RESOURCE_NOT_FOUND: 신고 없음 또는 본인 신고 아님
+     */
+    public MyReportResponse getMyReport(Long reportId, Long requesterId) {
+        Report report = reportRepository.findById(reportId)
+                .filter(r -> r.getReporterId().equals(requesterId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        return MyReportResponse.of(report);
+    }
+
+    // ── KAN-91: 관리자 신고 목록 조회 ────────────────────────────────────
 
     /**
      * 관리자 신고 목록 cursor 페이징 조회.
@@ -58,21 +135,22 @@ public class ReportService {
         PageRequest pageable = PageRequest.of(0, size + 1);
 
         ReportStatus status = parseStatus(statusParam);
+        Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Report> reports;
 
         if (status == null) {
-            reports = (cursor == null)
+            reports = (cursorId == null)
                     ? reportRepository.findAllOrderByIdDesc(pageable)
-                    : reportRepository.findByIdLessThanOrderByIdDesc(decodeCursor(cursor), pageable);
+                    : reportRepository.findByIdLessThanOrderByIdDesc(cursorId, pageable);
         } else {
-            reports = (cursor == null)
+            reports = (cursorId == null)
                     ? reportRepository.findByStatusOrderByIdDesc(status, pageable)
-                    : reportRepository.findByStatusAndIdLessThanOrderByIdDesc(status, decodeCursor(cursor), pageable);
+                    : reportRepository.findByStatusAndIdLessThanOrderByIdDesc(status, cursorId, pageable);
         }
 
         boolean hasNext = reports.size() > size;
         List<Report> content = hasNext ? reports.subList(0, size) : reports;
-        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
         List<ReportResponse> responses = content.stream()
                 .map(r -> ReportResponse.of(r, resolveNickname(r.getReporterId())))
@@ -92,40 +170,71 @@ public class ReportService {
         return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()), targetContent);
     }
 
-    /**
-     * 사용자 신고 단건 조회 — 본인이 신고한 건만 허용.
-     * ReportController(USER 전용) 에서 호출.
-     *
-     * @param reportId    조회할 신고 ID
-     * @param requesterId 요청자 userId (@AuthenticationPrincipal)
-     * @throws BusinessException REPORT_NOT_FOUND: 신고 없음
-     * @throws BusinessException ACCESS_DENIED: 본인 신고 아님
-     */
-    public ReportResponse getMyReport(Long reportId, Long requesterId) {
-        Report report = reportRepository.findById(reportId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
-        if (!report.getReporterId().equals(requesterId)) {
-            throw new BusinessException(ErrorCode.ACCESS_DENIED);
-        }
-        return ReportResponse.of(report, resolveNickname(report.getReporterId()));
-    }
-
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
+
+    // 신고 대상 존재·활성 상태 검증 + 게시글/댓글 자기신고 차단
+    private void validateTargetExists(ReportTargetType targetType, Long targetId, Long reporterId) {
+        switch (targetType) {
+            case POST_COMPANION -> {
+                CompanionPost post = companionPostRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (post.getStatus() != CompanionPostStatus.ACTIVE) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (post.getAuthorId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
+                }
+            }
+            case POST_FREE -> {
+                FreePost post = freePostRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (post.getStatus() != FreePostStatus.ACTIVE) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (post.getAuthorId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
+                }
+            }
+            case USER -> {
+                // Account has @SQLRestriction("deleted_at IS NULL") — deleted accounts return empty
+                Account account = accountRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (account.getRole() != Role.USER) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+            }
+            case MERCHANT -> {
+                // MERCHANT는 별도 테이블 없이 Account.role로 구분 — role 불일치 시 대상 없음으로 처리
+                Account merchant = accountRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (merchant.getRole() != Role.MERCHANT) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+            }
+            case COMMENT -> {
+                Comment comment = commentRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (comment.getStatus() == CommentStatus.DELETED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (comment.getAuthorId().equals(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
+                }
+            }
+        }
+    }
 
     /**
      * targetType + targetId → 신고 대상 콘텐츠 텍스트.
-     * REVIEW: 리뷰 도메인 미구현 → null.
-     * POST: companion 먼저 조회, 없으면 free 조회.
      */
     private String resolveTargetContent(ReportTargetType type, Long targetId) {
         return switch (type) {
-            case POST -> companionPostRepository.findById(targetId)
-                    .map(CompanionPost::getContent)
-                    .orElseGet(() -> freePostRepository.findById(targetId)
-                            .map(FreePost::getContent).orElse(null));
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .map(CompanionPost::getContent).orElse(null);
+            case POST_FREE -> freePostRepository.findById(targetId)
+                    .map(FreePost::getContent).orElse(null);
             case COMMENT -> commentRepository.findById(targetId)
                     .map(Comment::getContent).orElse(null);
-            case REVIEW -> null; // TODO: 리뷰 도메인 구현 후 연결
             case USER, MERCHANT -> accountRepository.findById(targetId)
                     .map(Account::getNickname).orElse(null);
         };
@@ -146,23 +255,6 @@ public class ReportService {
             return ReportStatus.valueOf(statusParam.toUpperCase());
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-    }
-
-    private String encodeCursor(Long id) {
-        String json = "{\"id\":" + id + "}";
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(json.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private Long decodeCursor(String cursor) {
-        try {
-            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
-            String json = new String(decoded, StandardCharsets.UTF_8);
-            Matcher matcher = CURSOR_PATTERN.matcher(json);
-            if (!matcher.matches()) throw new IllegalArgumentException("invalid cursor format");
-            return Long.parseLong(matcher.group(1));
-        } catch (IllegalArgumentException e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
         }
     }
 }
