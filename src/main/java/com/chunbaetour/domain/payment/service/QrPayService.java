@@ -58,6 +58,14 @@ public class QrPayService {
     /**
      * QR 결제 요청 생성.
      * 결제 시점 메뉴 정보를 JSON 스냅샷으로 저장 — 이후 메뉴 수정/삭제 시에도 영수증에 당시 가격 보존.
+     *
+     * TODO(refactor): 메서드 책임 분리 — 현재 가게 검증·메뉴 검증·잔액 확인·저장 로직이 한 메서드에 집중됨.
+     *   아래 private 헬퍼로 분리하면 각 단계 테스트 가독성·재사용성 향상:
+     *     - validateShopPayable(shopId, userId)       : 가게 존재·ACTIVE·자가결제 검증
+     *     - validateNoDuplicateMenuIds(menuItems)     : 중복 menuId 검사
+     *     - buildMenuSnapshots(menuItems, shopId)     : 메뉴 조회·검증·스냅샷+금액 계산
+     *     - validateWalletBalance(userId, totalAmount): 지갑 잔액 사전 체크
+     *     - validateNoPendingRequest(userId, shopId)  : PENDING 중복 요청 사전 차단
      */
     @Transactional
     public QrPayCreateResponse createQrPayRequest(Long userId, QrPayCreateRequest request) {
