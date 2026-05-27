@@ -130,8 +130,9 @@ public class SecurityConfig {
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
-                        // 관광지 조회 (근처/상세)는 비인증 허용 — isLiked는 서비스에서 userId null 체크로 처리
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
+                        // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
                         // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
