@@ -75,12 +75,14 @@ class AccountWithdrawalIntegrationTest extends AbstractIntegrationTest {
         jdbcTemplate.execute("DELETE FROM wallets");
         // @SQLRestriction이 JPA delete에는 SELECT 필터로 작용해 soft-deleted row가 살아남음 → native delete.
         jdbcTemplate.execute("DELETE FROM users");
+        // Spring Data Redis 공식 시그니처상 keys()는 pipeline/transaction 또는 키 없을 때 null 가능.
+        // 단일 호출 환경에선 보통 빈 Set이지만 방어적으로 null 가드. PR #207 CodeRabbit 리뷰 반영.
         var refreshKeys = redis.keys("auth:refresh:*");
-        if (!refreshKeys.isEmpty()) {
+        if (refreshKeys != null && !refreshKeys.isEmpty()) {
             redis.delete(refreshKeys);
         }
         var blacklistKeys = redis.keys("auth:blacklist:*");
-        if (!blacklistKeys.isEmpty()) {
+        if (blacklistKeys != null && !blacklistKeys.isEmpty()) {
             redis.delete(blacklistKeys);
         }
     }

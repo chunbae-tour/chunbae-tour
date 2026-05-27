@@ -180,10 +180,19 @@ public class Account {
      * <p>본 메서드는 도메인 상태 전이만 담당. 토큰 무효화 cascade(Redis refresh 삭제 + access blacklist
      * 등록) + audit log는 호출자(UserMeService.deleteMe) 책임이며 트랜잭션 commit 후에 실행된다.
      *
-     * @param now 탈퇴 시각. 호출자가 {@link java.time.Clock}으로 주입 — 테스트 결정성 확보.
+     * @param now 탈퇴 시각. 호출자가 {@link java.time.Clock}으로 주입 — 테스트 결정성 확보. null 금지.
+     * @throws IllegalArgumentException {@code now}가 null인 경우 — soft-delete 불변식
+     *         ({@code deletedAt != null} ⇔ {@code status == DELETED}) 보호.
      * @throws IllegalStateException 이미 {@code DELETED} 상태인 경우.
      */
     public void softDelete(LocalDateTime now) {
+        // 도메인 불변식 가드 — now가 null이면 status=DELETED인데 deletedAt=null인 partial 상태가
+        // 만들어져 @SQLRestriction("deleted_at IS NULL")이 행을 살아있는 것으로 잘못 인식.
+        // 호출자(UserMeService.deleteMe)는 항상 LocalDateTime.now(clock)으로 호출하지만,
+        // 외부 호출자/테스트가 우회하지 못하도록 도메인 자체에서 방어. PR #207 CodeRabbit 리뷰 반영.
+        if (now == null) {
+            throw new IllegalArgumentException("탈퇴 시각(now)은 null일 수 없습니다.");
+        }
         if (this.status == AccountStatus.DELETED) {
             throw new IllegalStateException(
                     "이미 탈퇴 처리된 계정입니다. accountId=" + this.id);

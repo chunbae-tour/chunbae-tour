@@ -73,4 +73,20 @@ class AccountTest {
         assertThat(account.getStatus()).isEqualTo(AccountStatus.DELETED);
         assertThat(account.getDeletedAt()).isEqualTo(NOW);
     }
+
+    @Test
+    void softDelete_with_null_now_throws_IllegalArgumentException() {
+        // 도메인 불변식: status=DELETED ⇔ deletedAt != null. now가 null이면 partial 상태 위험
+        // (@SQLRestriction이 행을 살아있는 것으로 잘못 인식).
+        // PR #207 CodeRabbit 리뷰 반영 — 호출자가 안전해도 도메인 자체에서 방어.
+        Account account = Account.registerUser("nullguard@example.com", "hash", "가드");
+
+        assertThatThrownBy(() -> account.softDelete(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("null일 수 없습니다");
+
+        // 가드가 status 세팅보다 먼저 실행돼야 함 — partial 전이 차단 검증
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(account.getDeletedAt()).isNull();
+    }
 }

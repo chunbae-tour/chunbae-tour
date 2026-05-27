@@ -8,6 +8,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -159,7 +160,7 @@ public class UserMeService {
         // afterCommit에서 사용할 값은 final로 캡처. accessClaims는 record라 immutable이라 안전.
         final long uid = userId;
         final String tokenId = accessClaims.tokenId();
-        final java.time.Instant expiresAt = accessClaims.expiresAt();
+        final Instant expiresAt = accessClaims.expiresAt();
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
