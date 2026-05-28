@@ -1,0 +1,129 @@
+package com.chunbaetour.domain.shop.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.shop.dto.request.AdApplicationRequest;
+import com.chunbaetour.domain.shop.dto.response.AdApplicationResponse;
+import com.chunbaetour.domain.shop.entity.AdApplication;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.AdApplicationRepository;
+import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import java.time.LocalDate;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class AdApplicationServiceTest {
+
+    @Mock private AdApplicationRepository adApplicationRepository;
+    @Mock private ShopRepository shopRepository;
+
+    @InjectMocks
+    private AdApplicationService adApplicationService;
+
+    private static final Long USER_ID = 1L;
+    private static final Long SHOP_ID = 10L;
+    private static final LocalDate START = LocalDate.of(2026, 6, 1);
+    private static final LocalDate END = LocalDate.of(2026, 6, 30);
+
+    private Shop createShop() {
+        Shop shop = mock(Shop.class);
+        given(shop.getId()).willReturn(SHOP_ID);
+        return shop;
+    }
+
+    private AdApplicationRequest validRequest() {
+        return new AdApplicationRequest(SHOP_ID, "BANNER", START, END, 10_000L);
+    }
+
+    private AdApplication createAdApplication(Long id) {
+        AdApplication a = AdApplication.create(SHOP_ID, "BANNER", START, END, 10_000L);
+        ReflectionTestUtils.setField(a, "id", id);
+        return a;
+    }
+
+    @Test
+    @DisplayName("광고 신청 성공 — AdApplication 저장 및 응답 반환")
+    void applyAd_success() {
+        Shop shop = createShop();
+        AdApplication saved = createAdApplication(1L);
+
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(adApplicationRepository.findByShopIdAndStatusWithLock(SHOP_ID, AdApplicationStatus.PENDING))
+                .willReturn(Collections.emptyList());
+        given(adApplicationRepository.save(any(AdApplication.class))).willReturn(saved);
+
+        AdApplicationResponse response = adApplicationService.applyAd(USER_ID, validRequest());
+
+        assertThat(response.applicationId()).isEqualTo(1L);
+        assertThat(response.shopId()).isEqualTo(SHOP_ID);
+        assertThat(response.adType()).isEqualTo("BANNER");
+        assertThat(response.status()).isEqualTo(AdApplicationStatus.PENDING);
+        then(adApplicationRepository).should().save(any(AdApplication.class));
+    }
+
+    @Test
+    @DisplayName("가게 없음 — SHOP_NOT_FOUND")
+    void applyAd_shopNotFound() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adApplicationService.applyAd(USER_ID, validRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+
+        then(adApplicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("중복 PENDING 신청 — DUPLICATE_AD_APPLICATION")
+    void applyAd_duplicatePending() {
+        Shop shop = createShop();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(adApplicationRepository.findByShopIdAndStatusWithLock(SHOP_ID, AdApplicationStatus.PENDING))
+                .willReturn(List.of(mock(AdApplication.class)));
+
+        assertThatThrownBy(() -> adApplicationService.applyAd(USER_ID, validRequest()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_AD_APPLICATION);
+
+        then(adApplicationRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("시작일이 종료일보다 늦음 — INVALID_INPUT_VALUE")
+    void applyAd_invalidDateRange() {
+        Shop shop = createShop();
+        AdApplicationRequest invalidRequest = new AdApplicationRequest(SHOP_ID, "BANNER", END, START, 10_000L);
+
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> adApplicationService.applyAd(USER_ID, invalidRequest))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+
+        then(adApplicationRepository).should(never()).save(any());
+    }
+}
