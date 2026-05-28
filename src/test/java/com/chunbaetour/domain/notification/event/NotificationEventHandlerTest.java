@@ -18,12 +18,12 @@ import com.chunbaetour.domain.notification.service.NotificationRedisPubSubServic
 import com.chunbaetour.domain.notification.service.NotificationService;
 import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
-import java.lang.reflect.Field;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class NotificationEventHandlerTest {
@@ -186,13 +186,7 @@ class NotificationEventHandlerTest {
                 .referenceType(referenceType)
                 .referenceId(referenceId)
                 .build();
-        try {
-            Field idField = Notification.class.getDeclaredField("id");
-            idField.setAccessible(true);
-            idField.set(n, id);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        ReflectionTestUtils.setField(n, "id", id);
         return n;
     }
 }

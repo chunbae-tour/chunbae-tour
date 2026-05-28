@@ -20,6 +20,7 @@ public class NotificationRedisPubSubService {
     private static final String STOMP_QUEUE = "/queue/notifications";
     private static final String METRIC_BROADCAST_FAILURE = "notification.broadcast.failure.total";
     private static final String METRIC_SERIALIZE_FAILURE = "notification.serialize.failure.total";
+    private static final String METRIC_PUBLISH_FAILURE = "notification.publish.failure.total";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -36,6 +37,9 @@ public class NotificationRedisPubSubService {
         } catch (JacksonException e) {
             log.error("NotificationResponse 직렬화 실패. userId={}", userId, e);
             meterRegistry.counter(METRIC_SERIALIZE_FAILURE).increment();
+        } catch (Exception e) {
+            log.error("Redis 채널 발행 실패. userId={}", userId, e);
+            meterRegistry.counter(METRIC_PUBLISH_FAILURE).increment();
         }
     }
 
@@ -53,6 +57,10 @@ public class NotificationRedisPubSubService {
             return;
         }
         String userId = channel.substring(CHANNEL_PREFIX.length());
+        if (userId.isBlank()) {
+            log.warn("userId가 없는 Redis 채널입니다. channel={}", channel);
+            return;
+        }
         try {
             messagingTemplate.convertAndSendToUser(userId, STOMP_QUEUE, response);
         } catch (Exception e) {

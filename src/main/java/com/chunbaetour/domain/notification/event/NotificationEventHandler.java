@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @Component
@@ -28,7 +30,7 @@ public class NotificationEventHandler {
 
     // 참여 신청 생성 — 방장에게 CHAT_JOIN_REQUEST 알림, 원본 트랜잭션 커밋 후 새 트랜잭션에서 저장
     // REQUIRES_NEW 트랜잭션 실패 시 원본 비즈니스 흐름 영향 없음 — log.error로 silent loss 추적
-    // Push는 REQUIRES_NEW 커밋 전에 발생 — WS 수신 직후 REST 조회 시 수 ms 창에서 알림 미노출 가능 (MVP 허용 수준)
+    // Push는 REQUIRES_NEW afterCommit 훅에서 전송 — 커밋 전 유령 알림/미노출 방지
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleJoinRequestCreated(JoinRequestCreatedEvent event) {
@@ -104,8 +106,23 @@ public class NotificationEventHandler {
         }
     }
 
-    // Redis Pub/Sub으로 Push — 전송 실패가 알림 저장 롤백에 영향 없도록 별도 try-catch
+    // Redis Pub/Sub으로 Push — REQUIRES_NEW 커밋 후 전송해 유령 알림/미노출 방지
     private void pushNotification(Notification notification) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            doPush(notification);
+                        }
+                    });
+            return;
+        }
+        doPush(notification);
+    }
+
+    // 전송 실패가 알림 저장 롤백에 영향 없도록 별도 try-catch
+    private void doPush(Notification notification) {
         try {
             notificationRedisPubSubService.publish(
                     notification.getUserId(),
