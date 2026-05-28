@@ -4,7 +4,16 @@ import com.chunbaetour.domain.store.entity.UserItem;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import java.time.LocalDate;
 
-/** GET /api/v1/users/me/items 응답 DTO. itemId=user_items.id, expiresAt=null이면 무기한 */
+/**
+ * Response DTO for GET /api/v1/users/me/items.
+ *
+ * @param itemId user_items.id
+ * @param orderId order id that created the item
+ * @param productId purchased product id
+ * @param productName product name snapshot at purchase time
+ * @param status current user item status
+ * @param expiresAt expiration date, or null when the item never expires
+ */
 public record UserItemResponse(
         Long itemId,
         Long orderId,

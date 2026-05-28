@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.store.controller;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.store.dto.response.UserItemResponse;
@@ -29,6 +31,13 @@ public class UserItemController {
             @AuthenticationPrincipal Long userId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        requireAuthenticated(userId);
         return ApiResponse.success(userItemService.getMyItems(userId, cursor, size));
+    }
+
+    private static void requireAuthenticated(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
     }
 }

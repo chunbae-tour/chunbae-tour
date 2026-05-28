@@ -1,12 +1,16 @@
 package com.chunbaetour.domain.store.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.store.dto.response.UserItemResponse;
 import com.chunbaetour.domain.store.entity.UserItem;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
@@ -96,7 +100,7 @@ class UserItemServiceTest {
     @DisplayName("내 보유 아이템 조회 — cursor 전달 시 cursor 이후 항목만 반환")
     void getMyItems_withCursor() {
         // given: cursor=encoded(5) 전달
-        String cursor = com.chunbaetour.domain.common.util.CursorUtils.encode(5L);
+        String cursor = CursorUtils.encode(5L);
         UserItem item = createItem(4L);
         given(userItemRepository.findItemsByUserIdWithCursor(eq(USER_ID), eq(5L), any()))
                 .willReturn(List.of(item));
@@ -108,5 +112,16 @@ class UserItemServiceTest {
         assertThat(result.content()).hasSize(1);
         assertThat(result.content().get(0).itemId()).isEqualTo(4L);
         assertThat(result.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("내 보유 아이템 조회 — 잘못된 cursor 형식 → INVALID_CURSOR 예외")
+    void getMyItems_invalidCursor_throwsInvalidCursor() {
+        String invalidCursor = "not-base64!!";
+
+        assertThatThrownBy(() -> userItemService.getMyItems(USER_ID, invalidCursor, 20))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_CURSOR);
     }
 }
