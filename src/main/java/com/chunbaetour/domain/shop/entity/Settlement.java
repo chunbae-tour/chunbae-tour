@@ -79,6 +79,6 @@ public class Settlement extends BaseEntity {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         this.status = SettlementStatus.REJECTED;
-        this.rejectReason = reason;
+        this.rejectReason = reason.trim();
     }
 }
