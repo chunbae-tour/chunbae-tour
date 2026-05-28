@@ -138,7 +138,7 @@ public class Shop extends BaseEntity {
      */
     public void hide() {
         if (this.status == ShopStatus.CLOSED) {
-            throw new IllegalStateException("폐업한 가게는 정지 처리할 수 없습니다. shopId=" + this.id);
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
         this.status = ShopStatus.SUSPENDED;
     }

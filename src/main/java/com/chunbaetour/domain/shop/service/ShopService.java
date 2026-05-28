@@ -139,19 +139,13 @@ public class ShopService {
 
     /**
      * 신고 처리: 가게 숨김 (shopId 기준).
-     * CLOSED 가게는 Shop.hide() 내부 IllegalStateException → SHOP_INACTIVE 변환.
      * report 도메인이 ShopRepository를 직접 참조하지 않도록 위임 진입점 역할.
      */
     @Transactional
     public void hideShop(Long shopId) {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
-        try {
-            shop.hide();
-        } catch (IllegalStateException e) {
-            // 폐업(CLOSED) 가게 숨김 시도 — SHOP_INACTIVE로 변환
-            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
-        }
+        shop.hide();
     }
 
     /**
