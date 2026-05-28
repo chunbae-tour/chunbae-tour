@@ -1,11 +1,14 @@
 package com.chunbaetour.domain.common.entity;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -17,7 +20,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 // ERD: common_error_logs — Translation / AI FAQ 외부 API 실패 로그 공통 Entity, 수정 없는 append-only
 @Entity
-@Table(name = "common_error_logs")
+@Table(name = "common_error_logs", indexes = @Index(name = "idx_common_error_logs_domain_created", columnList = "domain, created_at"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @EntityListeners(AuditingEntityListener.class)
@@ -53,9 +56,9 @@ public class CommonErrorLog {
     @Builder
     private CommonErrorLog(String domain, String errorType, String message,
                            String detail, String externalProvider) {
-        if (domain == null || domain.isBlank()) throw new IllegalArgumentException("domain is required");
-        if (errorType == null || errorType.isBlank()) throw new IllegalArgumentException("errorType is required");
-        if (message == null || message.isBlank()) throw new IllegalArgumentException("message is required");
+        if (domain == null || domain.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
+        if (errorType == null || errorType.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
+        if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
         this.domain = domain;
         this.errorType = errorType;
         this.message = message;
