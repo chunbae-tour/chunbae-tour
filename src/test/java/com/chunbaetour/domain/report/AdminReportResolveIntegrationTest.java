@@ -28,6 +28,7 @@ import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
@@ -326,7 +327,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("REVOKE_MERCHANT — 상인 계정 USER로 강등")
+        @DisplayName("REVOKE_MERCHANT — 해당 가게 SUSPENDED 처리")
         void revoke_merchant_downgrades_role() throws Exception {
             Account reporter = seedFactory.seed("rreporter@test.com", PASSWORD, "강등신고자", Role.USER, AccountStatus.ACTIVE);
             Account merchant = seedFactory.seedMerchant("rmerchant@test.com", PASSWORD, "강등상인");
@@ -346,8 +347,8 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     .andExpect(jsonPath("$.data.status").value("RESOLVED"))
                     .andExpect(jsonPath("$.data.action").value("REVOKE_MERCHANT"));
 
-            Account updated = accountRepository.findById(merchant.getId()).orElseThrow();
-            assertThat(updated.getRole()).isEqualTo(Role.USER);
+            Shop updatedShop = shopRepository.findById(shop.getId()).orElseThrow();
+            assertThat(updatedShop.getStatus()).isEqualTo(ShopStatus.SUSPENDED);
         }
 
         @Test
