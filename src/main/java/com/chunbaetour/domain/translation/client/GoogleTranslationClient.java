@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 // Google Cloud Translation API v2 클라이언트 — 호출 실패 시 TranslationClientException
 @Slf4j
@@ -32,10 +33,9 @@ public class GoogleTranslationClient {
         TranslateRequest request = new TranslateRequest(List.of(text), targetLanguage.name().toLowerCase(Locale.ROOT));
         try {
             TranslateResponse response = restClient.post()
-                    .uri(uriBuilder -> uriBuilder
-                            .path(TRANSLATE_URL)
+                    .uri(UriComponentsBuilder.fromHttpUrl(TRANSLATE_URL)
                             .queryParam("key", apiKey)
-                            .build())
+                            .build().toUri())
                     .body(request)
                     .retrieve()
                     .body(TranslateResponse.class);
@@ -51,8 +51,6 @@ public class GoogleTranslationClient {
                 throw new TranslationClientException("Google Translation API returned invalid translated text");
             }
             return translatedText;
-        } catch (TranslationClientException e) {
-            throw e;
         } catch (RestClientException e) {
             log.error("Google Translation API 호출 실패. targetLanguage={}", targetLanguage, e);
             throw new TranslationClientException("Google Translation API 호출 실패", e);
