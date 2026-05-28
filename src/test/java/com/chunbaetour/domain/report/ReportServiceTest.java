@@ -123,13 +123,20 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("MERCHANT 자기신고 → REPORT_SELF")
-    void create_MERCHANT_자기신고() {
-        assertThatThrownBy(() ->
-                reportService.create(REPORTER_ID,
-                        new ReportCreateRequest(ReportTargetType.MERCHANT, REPORTER_ID, ReportReason.SPAM, null)))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_SELF);
+    @DisplayName("MERCHANT 신고 — shopId가 reporterId와 숫자 일치해도 owner 다르면 정상 신고 (KAN-93 조기 차단 오판 회귀)")
+    void create_MERCHANT_shopId_숫자일치_owner_다름() {
+        Long shopId = REPORTER_ID; // shopId(1) == reporterId(1) — 숫자 우연 일치
+        given(shopService.findMerchantAccountId(shopId)).willReturn(Optional.of(OTHER_ID));
+        given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
+                REPORTER_ID, ReportTargetType.MERCHANT, shopId)).willReturn(false);
+        given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
+        given(reportRepository.countByTargetTypeAndTargetId(
+                ReportTargetType.MERCHANT, shopId)).willReturn(1L);
+
+        ReportCreateResponse response = reportService.create(REPORTER_ID,
+                new ReportCreateRequest(ReportTargetType.MERCHANT, shopId, ReportReason.SPAM, null));
+
+        assertThat(response.status()).isEqualTo(ReportStatus.PENDING);
     }
 
     @Test

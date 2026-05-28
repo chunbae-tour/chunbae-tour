@@ -315,13 +315,14 @@ public class ReportService {
 
     private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
-            // HIDE_SHOP: 관리자 임시 정지 (SUSPENDED, 복구 가능)
+            // HIDE_SHOP: 신고 대상 가게만 임시 정지 (SUSPENDED, 복구 가능). role 유지.
             case HIDE_SHOP -> shopService.hideShop(shopId);
-            // REVOKE_MERCHANT: 가게 정지 + 계정 MERCHANT → USER 권한 회수
+            // REVOKE_MERCHANT: 계정 단위 처리 — owner의 모든 가게 SUSPENDED + MERCHANT → USER 권한 회수.
+            //   다중 가게 운영 시 신고 대상 외 가게도 모두 정지됨.
             case REVOKE_MERCHANT -> {
-                shopService.hideShop(shopId);
                 Long ownerId = shopService.findMerchantAccountId(shopId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                shopService.hideAllShopsByOwnerId(ownerId);
                 Account owner = accountRepository.findById(ownerId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (owner.getRole() == Role.MERCHANT) {

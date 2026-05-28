@@ -149,6 +149,15 @@ public class ShopService {
     }
 
     /**
+     * REVOKE_MERCHANT 신고 처리: owner의 모든 활성 가게를 일괄 SUSPENDED.
+     * 다중 가게 운영 상인의 계정 단위 권한 회수 시 호출.
+     */
+    @Transactional
+    public void hideAllShopsByOwnerId(Long ownerId) {
+        shopRepository.findAllByUserId(ownerId).forEach(Shop::hide);
+    }
+
+    /**
      * shopId → 상인 accountId(userId) 반환.
      * 신고 처리(REVOKE_MERCHANT) 및 신고 대상 자기신고 검증에 사용.
      * 가게 없으면 Optional.empty() — 에러 코드는 호출 측에서 결정.
