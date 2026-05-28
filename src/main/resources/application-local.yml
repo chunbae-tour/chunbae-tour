@@ -2,6 +2,10 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+google:
+  translation:
+    api-key: ${GOOGLE_TRANSLATION_API_KEY}
+
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}

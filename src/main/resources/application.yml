@@ -109,6 +109,10 @@ management:
       application: chunbae-tour
       env: ${SPRING_PROFILES_ACTIVE:local}
 
+google:
+  translation:
+    api-key: ${GOOGLE_TRANSLATION_API_KEY}
+
 kakao:
   map:
     api-key: ${KAKAO_MAP_API_KEY:}
