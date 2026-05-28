@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -274,5 +275,146 @@ class ShopServiceTest {
 
         assertThat(response.menus()).hasSize(2);
         assertThat(response.menus()).anyMatch(m -> m.name().equals("순대") && !m.isAvailable());
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — SUSPENDED 상태 → SHOP_NOT_FOUND (공개 노출 차단)")
+    void getShopInfo_suspended_throws() {
+        // given — 관리자 신고 처리로 정지된 가게는 공개 조회 불가
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        // then — 존재 여부 노출 방지를 위해 SHOP_NOT_FOUND로 통일
+        assertThatThrownBy(() -> shopService.getShopInfo(SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+        verify(menuRepository, never()).findByShopIdOrderByIdAsc(any());
+    }
+
+    // ── updateShopStatus ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("가게 상태 변경 — ACTIVE → SUSPENDED 성공")
+    void updateShopStatus_activeToSuspended_success() {
+        Shop shop = createShop(); // ACTIVE
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateShopStatus(SHOP_ID, ShopStatus.SUSPENDED);
+
+        assertThat(shop.getStatus()).isEqualTo(ShopStatus.SUSPENDED);
+    }
+
+    @Test
+    @DisplayName("가게 상태 변경 — SUSPENDED → ACTIVE 성공 (복구)")
+    void updateShopStatus_suspendedToActive_success() {
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateShopStatus(SHOP_ID, ShopStatus.ACTIVE);
+
+        verify(shop).updateStatus(ShopStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("가게 상태 변경 — CLOSED 가게 → SHOP_INACTIVE")
+    void updateShopStatus_closedShop_throws() {
+        Shop shop = mock(Shop.class);
+        given(shop.getStatus()).willReturn(ShopStatus.CLOSED);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.updateShopStatus(SHOP_ID, ShopStatus.ACTIVE))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
+    @DisplayName("가게 상태 변경 — CLOSED로 변경 시도 → INVALID_INPUT_VALUE")
+    void updateShopStatus_toClosed_throws() {
+        assertThatThrownBy(() -> shopService.updateShopStatus(SHOP_ID, ShopStatus.CLOSED))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    @DisplayName("가게 상태 변경 — 가게 없음 → SHOP_NOT_FOUND")
+    void updateShopStatus_notFound_throws() {
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.updateShopStatus(SHOP_ID, ShopStatus.SUSPENDED))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    // ── hideShop ───────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("가게 정지 — 성공: status SUSPENDED로 변경")
+    void hideShop_success() {
+        // given — ACTIVE 가게 정상 정지
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        // when
+        shopService.hideShop(SHOP_ID);
+
+        // then
+        assertThat(shop.getStatus()).isEqualTo(ShopStatus.SUSPENDED);
+    }
+
+    @Test
+    @DisplayName("가게 숨김 — 가게 없음 → SHOP_NOT_FOUND")
+    void hideShop_notFound_throws() {
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.hideShop(SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("가게 숨김 — CLOSED 상태 → SHOP_INACTIVE (폐업 가게 숨김 불가)")
+    void hideShop_closedShop_throws() {
+        // given — Shop.hide()가 CLOSED 상태에서 IllegalStateException 발생 → SHOP_INACTIVE 변환
+        Shop shop = mock(Shop.class);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        doThrow(new IllegalStateException("폐업한 가게는 숨김 처리할 수 없습니다."))
+                .when(shop).hide();
+
+        assertThatThrownBy(() -> shopService.hideShop(SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    // ── findMerchantAccountId ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("상인 accountId 조회 — 성공: userId 반환")
+    void findMerchantAccountId_success() {
+        // given — createShop()은 userId = USER_ID로 생성
+        Shop shop = createShop();
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        Optional<Long> result = shopService.findMerchantAccountId(SHOP_ID);
+
+        assertThat(result).contains(USER_ID);
+    }
+
+    @Test
+    @DisplayName("상인 accountId 조회 — 가게 없음 → Optional.empty()")
+    void findMerchantAccountId_notFound_returnsEmpty() {
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
+
+        Optional<Long> result = shopService.findMerchantAccountId(SHOP_ID);
+
+        assertThat(result).isEmpty();
     }
 }

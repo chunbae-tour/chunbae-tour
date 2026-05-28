@@ -35,6 +35,7 @@ import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.service.ReportService;
+import com.chunbaetour.domain.shop.service.ShopService;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -57,6 +58,7 @@ class ReportServiceTest {
     @Mock private FreePostRepository freePostRepository;
     @Mock private CommentRepository commentRepository;
     @Mock private AccountRepository accountRepository;
+    @Mock private ShopService shopService;
 
     @InjectMocks
     private ReportService reportService;
@@ -121,6 +123,35 @@ class ReportServiceTest {
         assertThatThrownBy(() ->
                 reportService.create(REPORTER_ID,
                         new ReportCreateRequest(ReportTargetType.MERCHANT, REPORTER_ID, ReportReason.SPAM, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_SELF);
+    }
+
+    @Test
+    @DisplayName("MERCHANT 신고 — 가게 없음 → REPORT_TARGET_NOT_FOUND")
+    void create_MERCHANT_가게없음() {
+        // targetId(shopId=50) != reporterId(1) → 조기 차단 통과, validateReportTarget에서 가게 조회 실패
+        Long shopId = 50L;
+        given(shopService.findMerchantAccountId(shopId)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                reportService.create(REPORTER_ID,
+                        new ReportCreateRequest(ReportTargetType.MERCHANT, shopId, ReportReason.SPAM, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_TARGET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("MERCHANT 신고 — 본인 소유 가게 → REPORT_SELF (shopId ≠ reporterId이지만 owner가 본인)")
+    void create_MERCHANT_본인가게신고() {
+        // shopId(50) != reporterId(1) → 조기 차단 통과
+        // 하지만 가게 owner가 reporter이므로 validateReportTarget에서 REPORT_SELF
+        Long shopId = 50L;
+        given(shopService.findMerchantAccountId(shopId)).willReturn(Optional.of(REPORTER_ID));
+
+        assertThatThrownBy(() ->
+                reportService.create(REPORTER_ID,
+                        new ReportCreateRequest(ReportTargetType.MERCHANT, shopId, ReportReason.SPAM, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REPORT_SELF);
     }

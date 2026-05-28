@@ -16,8 +16,7 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
-import com.chunbaetour.domain.shop.entity.Shop;
-import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.service.ShopService;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -65,7 +64,7 @@ public class ReportService {
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
-    private final ShopRepository shopRepository;
+    private final ShopService shopService;
 
     // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
 
@@ -312,15 +311,11 @@ public class ReportService {
 
     private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
-            case HIDE_SHOP -> {
-                Shop shop = shopRepository.findById(shopId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
-                shop.hide();
-            }
+            case HIDE_SHOP -> shopService.hideShop(shopId);
             case REVOKE_MERCHANT -> {
-                Shop shop = shopRepository.findById(shopId)
+                Long merchantAccountId = shopService.findMerchantAccountId(shopId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
-                Account merchant = accountRepository.findById(shop.getUserId())
+                Account merchant = accountRepository.findById(merchantAccountId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
                 merchant.revokeToUser();
             }
@@ -395,7 +390,12 @@ public class ReportService {
             case COMMENT -> commentRepository.findById(targetId)
                     .map(c -> new TargetDetail(null, c.getContent(), null))
                     .orElse(TargetDetail.empty());
-            case USER, MERCHANT -> accountRepository.findById(targetId)
+            case USER -> accountRepository.findById(targetId)
+                    .map(a -> new TargetDetail(null, a.getNickname(), null))
+                    .orElse(TargetDetail.empty());
+            // MERCHANT: targetId = shopId → accountId 변환 후 닉네임 조회
+            case MERCHANT -> shopService.findMerchantAccountId(targetId)
+                    .flatMap(accountRepository::findById)
                     .map(a -> new TargetDetail(null, a.getNickname(), null))
                     .orElse(TargetDetail.empty());
             // TODO(KAN-152): REVIEW 도메인 구현 후 case 추가 — title·content·imageUrls 반환
@@ -447,9 +447,9 @@ public class ReportService {
             }
             case MERCHANT -> {
                 // targetId = shopId — 다중 가게 지원 시 신고 대상 가게만 조치 가능
-                Shop shop = shopRepository.findById(targetId)
+                Long ownerId = shopService.findMerchantAccountId(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
-                if (shop.getUserId().equals(reporterId)) {
+                if (ownerId.equals(reporterId)) {
                     throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }

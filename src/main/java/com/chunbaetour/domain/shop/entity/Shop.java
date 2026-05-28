@@ -134,14 +134,22 @@ public class Shop extends BaseEntity {
     }
 
     /**
-     * 관리자 신고 처리 비공개 (status = HIDDEN).
-     * SUSPENDED(자체 정지)와 구분 — 신고에 의한 관리자 조치임을 명시.
+     * 관리자 신고 처리 정지 (status = SUSPENDED).
+     * 공개 노출 차단 + 상인 수정 불가 — CLOSED(폐업)와 구분.
      */
     public void hide() {
         if (this.status == ShopStatus.CLOSED) {
-            throw new IllegalStateException("폐업한 가게는 숨김 처리할 수 없습니다. shopId=" + this.id);
+            throw new IllegalStateException("폐업한 가게는 정지 처리할 수 없습니다. shopId=" + this.id);
         }
-        this.status = ShopStatus.HIDDEN;
+        this.status = ShopStatus.SUSPENDED;
+    }
+
+    /**
+     * 관리자 가게 상태 직접 변경 — ACTIVE ↔ SUSPENDED 전환.
+     * CLOSED 가게 변경 및 CLOSED로 변경은 서비스 레이어에서 사전 차단.
+     */
+    public void updateStatus(ShopStatus newStatus) {
+        this.status = newStatus;
     }
 
     /**
