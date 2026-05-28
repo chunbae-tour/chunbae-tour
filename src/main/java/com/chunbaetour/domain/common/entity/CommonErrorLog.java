@@ -2,9 +2,13 @@ package com.chunbaetour.domain.common.entity;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.type.CommonErrorDomain;
+import com.chunbaetour.domain.common.type.CommonErrorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -15,11 +19,13 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.Immutable;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 // ERD: common_error_logs — Translation / AI FAQ 외부 API 실패 로그 공통 Entity, 수정 없는 append-only
 @Entity
+@Immutable
 @Table(name = "common_error_logs", indexes = @Index(name = "idx_common_error_logs_domain_created", columnList = "domain, created_at"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -30,13 +36,13 @@ public class CommonErrorLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 어떤 도메인에서 발생한 에러인지 (예: TRANSLATION, AI_FAQ)
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private String domain;
+    private CommonErrorDomain domain;
 
-    // 에러 유형 (예: API_CALL_FAILURE, RATE_LIMIT_EXCEEDED, TIMEOUT)
+    @Enumerated(EnumType.STRING)
     @Column(name = "error_type", nullable = false, length = 50)
-    private String errorType;
+    private CommonErrorType errorType;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
@@ -54,12 +60,10 @@ public class CommonErrorLog {
     private LocalDateTime createdAt;
 
     @Builder
-    private CommonErrorLog(String domain, String errorType, String message,
+    private CommonErrorLog(CommonErrorDomain domain, CommonErrorType errorType, String message,
                            String detail, String externalProvider) {
-        if (domain == null || domain.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
-        if (domain.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        if (errorType == null || errorType.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
-        if (errorType.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        if (domain == null) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
+        if (errorType == null) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
         if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
         if (externalProvider != null && externalProvider.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         this.domain = domain;
