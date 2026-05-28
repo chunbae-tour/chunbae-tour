@@ -4,6 +4,7 @@ import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.persistence.LockModeType;
@@ -38,4 +39,22 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
     int bulkExpireOverdue(@Param("pendingStatus") QrPayStatus pendingStatus,
                           @Param("expiredStatus") QrPayStatus expiredStatus,
                           @Param("now") LocalDateTime now);
+
+    /** 상인 홈 대시보드 — 오늘 완료된 QR 결제 합계 */
+    @Query("""
+            SELECT COALESCE(SUM(q.amount), 0)
+            FROM QrPayRequest q
+            WHERE q.shopId IN :shopIds
+              AND q.status = :status
+              AND q.updatedAt >= :startAt
+              AND q.updatedAt < :endAt
+            """)
+    Long sumAmountByShopIdsAndStatusBetween(@Param("shopIds") List<Long> shopIds,
+                                            @Param("status") QrPayStatus status,
+                                            @Param("startAt") LocalDateTime startAt,
+                                            @Param("endAt") LocalDateTime endAt);
+
+    /** 상인 홈 대시보드 — 최근 완료 QR 결제 최대 10건 */
+    List<QrPayRequest> findTop10ByShopIdInAndStatusOrderByUpdatedAtDescIdDesc(
+            List<Long> shopIds, QrPayStatus status);
 }
