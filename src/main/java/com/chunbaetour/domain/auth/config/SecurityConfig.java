@@ -14,8 +14,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -46,6 +46,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/payments/**} — USER 전용 (webhook POST는 permitAll 선 매칭)</li>
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
  *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
+ *   <li>{@code /api/v1/reports/**} — USER 전용 (신고 생성·내 신고 조회; admin 신고 API는 /admin/** 커버)</li>
  *   <li>그 외 — 인증 필요</li>
  * </ul>
  *
@@ -99,6 +100,8 @@ public class SecurityConfig {
                         .access(new WebExpressionAuthorizationManager(
                                 "hasIpAddress('127.0.0.1') or hasIpAddress('::1')"))
                         .requestMatchers("/actuator/**").denyAll()
+                        // WebSocket 핸드셰이크 + SockJS 경로 — STOMP 레벨에서 JWT 인증 처리
+                        .requestMatchers("/ws-stomp/**").permitAll()
                         // 신고 접수·내 신고 조회: USER 전용 (ADMIN은 신고 처리자이지 신고자가 아님)
                         .requestMatchers("/api/v1/reports/**").hasRole("USER")
                         // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
@@ -110,6 +113,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/free/**").permitAll()
                         // PortOne 웹훅: 서버→서버 호출이라 JWT 없음 — permitAll 필수
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
+                        // QR 결제 승인/거절은 MERCHANT 전용 — payments/** USER 룰보다 반드시 먼저 선언
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/payments/qr/*/confirm").hasRole("MERCHANT")
                         // 결제/환불은 USER 전용 — webhook permitAll 라인보다 뒤에 위치해야 순서 안전
                         .requestMatchers("/api/v1/payments/**").hasRole("USER")
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
@@ -127,12 +132,19 @@ public class SecurityConfig {
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
-                        // 관광지 조회 (근처/상세)는 비인증 허용 — isLiked는 서비스에서 userId null 체크로 처리
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
+                        // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용 — KAN-157
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
+                        // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
+                        // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/chat/**").hasRole("USER")
+                        // 알림은 USER 전용 — 채팅 알림 등 일반 사용자 기능
+                        .requestMatchers("/api/v1/notifications/**").hasRole("USER")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

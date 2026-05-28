@@ -23,13 +23,16 @@ import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.JoinRequest;
+import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
+import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
+import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
-import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -55,6 +58,7 @@ class JoinRequestServiceTest {
     @Mock private AccountRepository accountRepository;
     @Mock private RedissonClient redissonClient;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private Account account;
     @Mock private RLock lock;
 
@@ -91,11 +95,12 @@ class JoinRequestServiceTest {
 
     @Test
     void createJoinRequest_success() {
-        // 정상 신청 — JoinRequest 저장 및 writer 정보 반환 검증
+        // 정상 신청 — JoinRequest 저장 및 writer 정보 반환 검증, 방장 알림 이벤트 발행 확인
         given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행초보");
 
         ChatRoom room = mock(ChatRoom.class);
+        given(room.getOwnerId()).willReturn(OWNER_ID);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         JoinRequest saved = mock(JoinRequest.class);
@@ -109,6 +114,7 @@ class JoinRequestServiceTest {
                 USER_ID, ROOM_ID, new CreateJoinRequestRequest("같이 가요!"));
 
         verify(joinRequestRepository).save(any(JoinRequest.class));
+        verify(eventPublisher).publishEvent(new JoinRequestCreatedEvent(ROOM_ID, 1L, OWNER_ID));
         assertThat(response.writer().userId()).isEqualTo(USER_ID);
         assertThat(response.status()).isEqualTo(JoinRequestStatus.PENDING);
         assertThat(response.writer().nickname()).isEqualTo("여행초보");
@@ -188,7 +194,7 @@ class JoinRequestServiceTest {
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         ChatRoomMember kickedMember = mock(ChatRoomMember.class);
-        given(kickedMember.getMemberState()).willReturn(ChatMemberState.MEMBER_KICKED);
+        given(kickedMember.isKicked()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(kickedMember));
 
@@ -206,7 +212,7 @@ class JoinRequestServiceTest {
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
 
         ChatRoomMember activeMember = mock(ChatRoomMember.class);
-        given(activeMember.getMemberState()).willReturn(ChatMemberState.MEMBER_ACTIVE);
+        given(activeMember.isActiveMember()).willReturn(true);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(activeMember));
 
@@ -414,6 +420,7 @@ class JoinRequestServiceTest {
         verify(req).approve();
         verify(chatRoom).incrementMembers();
         verify(chatRoomMemberRepository).save(any(ChatRoomMember.class));
+        verify(eventPublisher).publishEvent(new JoinRequestApprovedEvent(ROOM_ID, REQUEST_ID, USER_ID));
         assertThat(response.status()).isEqualTo(JoinRequestStatus.APPROVED);
         assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
         assertThat(response.currentMembers()).isEqualTo(3);
@@ -601,7 +608,7 @@ class JoinRequestServiceTest {
 
     @Test
     void rejectJoinRequest_success() {
-        // 정상 거절 — SELECT FOR UPDATE 후 조건부 UPDATE, reject() 호출 검증
+        // 정상 거절 — SELECT FOR UPDATE 후 조건부 UPDATE, reject() 호출 검증, 신청자 알림 이벤트 발행 확인
         ChatRoomMember owner = stubOwnerMember();
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
                 .willReturn(Optional.of(owner));
@@ -609,6 +616,7 @@ class JoinRequestServiceTest {
         JoinRequest joinRequest = mock(JoinRequest.class);
         given(joinRequest.getChatRoomId()).willReturn(ROOM_ID);
         given(joinRequest.getId()).willReturn(REQUEST_ID);
+        given(joinRequest.getUserId()).willReturn(USER_ID);
         // reject()는 mock 기본 no-op — getStatus()는 REJECTED 고정 반환으로 응답 검증
         given(joinRequest.getStatus()).willReturn(JoinRequestStatus.REJECTED);
         // SELECT FOR UPDATE — approve↔reject 경합 직렬화용 비관적 락 조회
@@ -620,6 +628,7 @@ class JoinRequestServiceTest {
                 joinRequestService.rejectJoinRequest(OWNER_ID, ROOM_ID, REQUEST_ID);
 
         verify(joinRequest).reject();
+        verify(eventPublisher).publishEvent(new JoinRequestRejectedEvent(ROOM_ID, REQUEST_ID, USER_ID));
         assertThat(response.joinRequestId()).isEqualTo(REQUEST_ID);
         assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
         assertThat(response.status()).isEqualTo(JoinRequestStatus.REJECTED);

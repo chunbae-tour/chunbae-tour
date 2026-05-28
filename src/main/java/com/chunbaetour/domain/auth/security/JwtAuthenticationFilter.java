@@ -70,7 +70,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/merchants/auth/**",
             "/api/v1/admin/auth/**",
             "/api/v1/auth/**",
-            "/actuator/**"
+            "/actuator/**",
+            // WebSocket 핸드셰이크 + SockJS — STOMP 레벨에서 JWT 인증 처리하므로 HTTP 필터 스킵
+            "/ws-stomp/**"
+    );
+
+    /**
+     * GET 메서드 한정 공개 경로 패턴.
+     *
+     * <p>{@link com.chunbaetour.domain.auth.config.SecurityConfig}에서 특정 HTTP 메서드만 permitAll인 경로.
+     * 경로만으로 skip하면 다른 메서드 요청 시 유효 토큰도 SecurityContext에 채워지지 않아 인증 실패.
+     * GET /api/v1/shops/* — QR 스캔 후 결제창 진입 시 가게명·메뉴 fetch 용도. 만료 토큰 보유 유저도 차단되지 않아야 함.
+     */
+    private static final List<String> PUBLIC_GET_PATH_PATTERNS = List.of(
+            "/api/v1/shops/*",
+            // 관광지 조회/추천 API — 비로그인 허용 (isLiked는 서비스 단에서 userId null 체크)
+            "/api/v1/places/**",
+            "/api/v1/recommend/**",
+            // 검색 조회 API — 인기/장소/축제/자동완성
+            "/api/v1/search/popular",
+            "/api/v1/search/places",
+            "/api/v1/search/festivals",
+            "/api/v1/search/suggest",
+            // 커뮤니티 목록·단건 조회 — 비로그인 허용
+            "/api/v1/community/posts/companions/**",
+            "/api/v1/community/posts/free/**",
+            // 스토어 상품 조회 — 비인증 공개 API
+            "/api/v1/store/products/**"
+    );
+
+    /**
+     * POST 메서드 한정 공개 경로 패턴.
+     *
+     * <p>SecurityConfig에서 특정 POST 메서드만 permitAll인 경로.
+     * PortOne 웹훅은 서버→서버 호출이라 Bearer 토큰이 없어 필터에서도 반드시 스킵해야 한다.
+     */
+    private static final List<String> PUBLIC_POST_PATH_PATTERNS = List.of(
+            // PortOne 결제 웹훅 — 서버→서버 호출, JWT 없음
+            "/api/v1/payments/webhook"
     );
 
     /** logout은 인증 필요. {@link #shouldNotFilter}에서 명시적으로 예외 처리. */
@@ -97,6 +134,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // logout은 인증 필요 경로 — public 매칭에서 명시적으로 제외하고 doFilterInternal로 진입시킨다.
         if (LOGOUT_PATH.equals(path)) {
             return false;
+        }
+        if ("GET".equals(request.getMethod())
+                && PUBLIC_GET_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
+            return true;
+        }
+        if ("POST".equals(request.getMethod())
+                && PUBLIC_POST_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
+            return true;
         }
         return PUBLIC_PATH_PATTERNS.stream()
                 .anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
