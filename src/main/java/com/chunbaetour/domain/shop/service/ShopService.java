@@ -150,11 +150,14 @@ public class ShopService {
 
     /**
      * REVOKE_MERCHANT 신고 처리: owner의 모든 활성 가게를 일괄 SUSPENDED.
+     * CLOSED(폐업) 가게는 이미 운영 종료 상태이므로 skip — hide() 호출 시 SHOP_INACTIVE 예외 방지.
      * 다중 가게 운영 상인의 계정 단위 권한 회수 시 호출.
      */
     @Transactional
     public void hideAllShopsByOwnerId(Long ownerId) {
-        shopRepository.findAllByUserId(ownerId).forEach(Shop::hide);
+        shopRepository.findAllByUserId(ownerId).stream()
+                .filter(shop -> shop.getStatus() != ShopStatus.CLOSED)
+                .forEach(Shop::hide);
     }
 
     /**

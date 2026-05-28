@@ -378,10 +378,10 @@ class ShopServiceTest {
     @Test
     @DisplayName("가게 숨김 — CLOSED 상태 → SHOP_INACTIVE (폐업 가게 숨김 불가)")
     void hideShop_closedShop_throws() {
-        // given — Shop.hide()가 CLOSED 상태에서 IllegalStateException 발생 → SHOP_INACTIVE 변환
+        // Shop.hide()가 CLOSED 상태에서 BusinessException(SHOP_INACTIVE)를 직접 던짐
         Shop shop = mock(Shop.class);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        doThrow(new IllegalStateException("폐업한 가게는 숨김 처리할 수 없습니다."))
+        doThrow(new BusinessException(ErrorCode.SHOP_INACTIVE))
                 .when(shop).hide();
 
         assertThatThrownBy(() -> shopService.hideShop(SHOP_ID))
