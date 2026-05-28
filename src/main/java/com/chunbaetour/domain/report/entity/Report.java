@@ -11,6 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -33,6 +34,10 @@ public class Report extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** 낙관적 락 — 관리자 동시 처리 중복 방지 (KAN-92). */
+    @Version
+    private Long version;
 
     @Column(name = "reporter_id", nullable = false)
     private Long reporterId;

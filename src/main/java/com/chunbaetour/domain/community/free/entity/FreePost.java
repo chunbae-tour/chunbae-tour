@@ -79,6 +79,9 @@ public class FreePost extends BaseEntity {
 
     /** 관리자 신고 처리 비공개 (status = HIDDEN). 사용자 삭제(DELETED)와 구분. */
     public void hide() {
+        if (this.status == FreePostStatus.DELETED) {
+            throw new IllegalStateException("삭제된 게시글은 숨김 처리할 수 없습니다. postId=" + this.id);
+        }
         this.status = FreePostStatus.HIDDEN;
     }
 

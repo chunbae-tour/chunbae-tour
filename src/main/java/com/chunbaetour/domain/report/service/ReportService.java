@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -186,32 +187,37 @@ public class ReportService {
     @Transactional
     public ReportResolveResponse resolveReport(Long reportId, Long adminId,
                                                ReportResolveRequest request) {
-        Report report = reportRepository.findById(reportId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+        try {
+            Report report = reportRepository.findById(reportId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
 
-        if (!report.isPending()) {
+            if (!report.isPending()) {
+                throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
+            }
+            if (report.getTargetType() == ReportTargetType.MERCHANT) {
+                throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
+            }
+
+            ReportAction action = request.action();
+            // 가게 전용 액션을 콘텐츠 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
+            if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
+                throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
+            }
+
+            applyContentAction(action, report.getTargetType(), report.getTargetId());
+
+            String adminNickname = resolveNickname(adminId);
+            if (action == ReportAction.DISMISS) {
+                report.dismiss(request.adminNote(), adminNickname);
+            } else {
+                report.resolve(action, request.adminNote(), adminNickname);
+            }
+
+            return ReportResolveResponse.of(report);
+        } catch (OptimisticLockingFailureException e) {
+            // 관리자 동시 처리 경쟁 — 먼저 처리된 요청이 이미 상태를 변경
             throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
         }
-        if (report.getTargetType() == ReportTargetType.MERCHANT) {
-            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
-        }
-
-        ReportAction action = request.action();
-        // 가게 전용 액션을 콘텐츠 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
-        if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
-            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
-        }
-
-        applyContentAction(action, report.getTargetType(), report.getTargetId());
-
-        String adminNickname = resolveNickname(adminId);
-        if (action == ReportAction.DISMISS) {
-            report.dismiss(request.adminNote(), adminNickname);
-        } else {
-            report.resolve(action, request.adminNote(), adminNickname);
-        }
-
-        return ReportResolveResponse.of(report);
     }
 
     /**
@@ -225,33 +231,37 @@ public class ReportService {
     @Transactional
     public ReportResolveResponse resolveMerchantReport(Long reportId, Long adminId,
                                                        MerchantReportResolveRequest request) {
-        Report report = reportRepository.findById(reportId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+        try {
+            Report report = reportRepository.findById(reportId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
 
-        if (!report.isPending()) {
+            if (!report.isPending()) {
+                throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
+            }
+            if (report.getTargetType() != ReportTargetType.MERCHANT) {
+                throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
+            }
+
+            ReportAction action = request.action();
+            // 콘텐츠 전용 액션을 가게 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
+            if (action == ReportAction.WARNING || action == ReportAction.SUSPEND
+                    || action == ReportAction.DELETE) {
+                throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
+            }
+
+            applyMerchantAction(action, report.getTargetId());
+
+            String adminNickname = resolveNickname(adminId);
+            if (action == ReportAction.DISMISS) {
+                report.dismiss(request.adminNote(), adminNickname);
+            } else {
+                report.resolve(action, request.adminNote(), adminNickname);
+            }
+
+            return ReportResolveResponse.of(report);
+        } catch (OptimisticLockingFailureException e) {
             throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
         }
-        if (report.getTargetType() != ReportTargetType.MERCHANT) {
-            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
-        }
-
-        ReportAction action = request.action();
-        // 콘텐츠 전용 액션을 가게 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
-        if (action == ReportAction.WARNING || action == ReportAction.SUSPEND
-                || action == ReportAction.DELETE) {
-            throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
-        }
-
-        applyMerchantAction(action, report.getTargetId());
-
-        String adminNickname = resolveNickname(adminId);
-        if (action == ReportAction.DISMISS) {
-            report.dismiss(request.adminNote(), adminNickname);
-        } else {
-            report.resolve(action, request.adminNote(), adminNickname);
-        }
-
-        return ReportResolveResponse.of(report);
     }
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
@@ -276,7 +286,8 @@ public class ReportService {
     private void applyMerchantAction(ReportAction action, Long targetId) {
         switch (action) {
             case HIDE_SHOP -> {
-                // TODO: Shop 도메인 구현 후 ShopRepository.findById(targetId).hide() 연결
+                // Shop 도메인 미연동 — 연동 전까지 요청 거절 (무음 처리 방지)
+                throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
             }
             case REVOKE_MERCHANT -> {
                 Account merchant = accountRepository.findById(targetId)

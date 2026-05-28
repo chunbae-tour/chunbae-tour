@@ -140,6 +140,9 @@ public class Account {
      * status = SUSPENDED. 해제는 별도 관리자 기능으로 처리.
      */
     public void suspend() {
+        if (this.status == AccountStatus.DELETED) {
+            throw new IllegalStateException("탈퇴 계정은 정지할 수 없습니다. accountId=" + this.id);
+        }
         this.status = AccountStatus.SUSPENDED;
     }
 
@@ -148,6 +151,9 @@ public class Account {
      * MERCHANT → USER 권한 하향.
      */
     public void revokeToUser() {
+        if (this.role != Role.MERCHANT) {
+            throw new IllegalStateException("MERCHANT 계정만 USER로 권한 회수할 수 있습니다. accountId=" + this.id);
+        }
         this.role = Role.USER;
     }
 

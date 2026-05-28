@@ -242,7 +242,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("이미 처리된 신고 재처리 시 409 REPORT_003")
+        @DisplayName("이미 처리된 신고 재처리 시 409 REPORT_006")
         void already_resolved_returns_409() throws Exception {
             Account reporter = seedFactory.seed("dup@test.com", PASSWORD, "중복신고자", Role.USER, AccountStatus.ACTIVE);
             Account target = seedFactory.seed("duptarget@test.com", PASSWORD, "중복피신고", Role.USER, AccountStatus.ACTIVE);
@@ -262,7 +262,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("MERCHANT 신고에 /resolve 호출 시 400 REPORT_004")
+        @DisplayName("MERCHANT 신고에 /resolve 호출 시 400 REPORT_007")
         void merchant_report_on_content_endpoint_returns_400() throws Exception {
             Account reporter = seedFactory.seed("mreporter@test.com", PASSWORD, "가게신고자", Role.USER, AccountStatus.ACTIVE);
             Account merchant = seedFactory.seedMerchant("mtarget@test.com", PASSWORD, "가게주인");
@@ -280,7 +280,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("존재하지 않는 신고 처리 시 404 REPORT_002")
+        @DisplayName("존재하지 않는 신고 처리 시 404 REPORT_005")
         void not_found_report_returns_404() throws Exception {
             String adminToken = adminToken();
 
