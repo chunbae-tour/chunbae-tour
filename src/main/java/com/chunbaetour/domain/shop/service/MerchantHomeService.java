@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.shop.service;
 
+import static com.chunbaetour.domain.common.redis.MerchantHomeCacheKeys.CACHE_KEY_PREFIX;
+
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.repository.QrPayRequestRepository;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
@@ -36,8 +38,6 @@ public class MerchantHomeService {
 
     // 상인 홈 데이터는 정확도보다 응답 속도를 우선하므로 Redis에 3분 동안 저장한다.
     private static final Duration CACHE_TTL = Duration.ofMinutes(3);
-    // 캐시 키 버전 프리픽스. 스키마가 바뀌면 v2로 올려 이전 캐시와 충돌을 피한다.
-    public static final String CACHE_KEY_PREFIX = "merchant:home:v1:";
     // 오늘 매출은 한국 영업일 기준으로 집계한다.
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 

@@ -1,6 +1,6 @@
 package com.chunbaetour.domain.payment.service;
 
-import static com.chunbaetour.domain.shop.service.MerchantHomeService.CACHE_KEY_PREFIX;
+import static com.chunbaetour.domain.common.redis.MerchantHomeCacheKeys.CACHE_KEY_PREFIX;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;

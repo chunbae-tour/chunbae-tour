@@ -63,7 +63,16 @@ class MerchantHomeServiceTest {
     @Test
     @DisplayName("상인 홈 조회 — 캐시 hit이면 DB 조회 없이 캐시를 반환한다")
     void getHome_cacheHit_returnsCachedResponse() throws Exception {
-        MerchantHomeResponse cachedResponse = new MerchantHomeResponse(12_000L, java.time.LocalDate.of(2026, 5, 25), List.of());
+        MerchantHomeResponse cachedResponse = new MerchantHomeResponse(
+                12_000L,
+                java.time.LocalDate.of(2026, 5, 25),
+                List.of(new MerchantHomeResponse.RecentPaymentResponse(
+                        "req-001",
+                        SHOP_ID,
+                        5_000L,
+                        LocalDateTime.of(2026, 5, 25, 10, 10)
+                ))
+        );
         String cached = objectMapper.writeValueAsString(cachedResponse);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get(CACHE_KEY)).willReturn(cached);
@@ -72,6 +81,9 @@ class MerchantHomeServiceTest {
 
         assertThat(response.todaySalesAmount()).isEqualTo(12_000L);
         assertThat(response.todaySalesDate()).isEqualTo(java.time.LocalDate.of(2026, 5, 25));
+        assertThat(response.recentPayments()).hasSize(1);
+        assertThat(response.recentPayments().get(0).completedAt())
+                .isEqualTo(LocalDateTime.of(2026, 5, 25, 10, 10));
         verify(shopRepository, never()).findAllByUserId(any());
         verify(qrPayRequestRepository, never()).sumAmountByShopIdsAndStatusBetween(any(), any(), any(), any());
         verify(valueOperations, never()).set(any(), any(), any(Duration.class));
