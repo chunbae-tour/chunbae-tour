@@ -9,6 +9,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import org.mockito.ArgumentCaptor;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -17,6 +18,7 @@ import com.chunbaetour.domain.shop.dto.response.SettlementResponse;
 import com.chunbaetour.domain.shop.entity.Settlement;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
+import java.util.Collections;
 import com.chunbaetour.domain.shop.repository.SettlementRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
@@ -78,7 +80,7 @@ class SettlementServiceTest {
         Settlement settlement = createSettlement(1L);
 
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.save(any(Settlement.class))).willReturn(settlement);
 
@@ -111,7 +113,7 @@ class SettlementServiceTest {
         ShopWallet wallet = createWallet(BALANCE);
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
-        given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(true);
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(List.of(mock(Settlement.class)));
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
                 .isInstanceOf(BusinessException.class)
@@ -141,7 +143,7 @@ class SettlementServiceTest {
         ShopWallet wallet = createWallet(0L);
 
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
@@ -159,7 +161,7 @@ class SettlementServiceTest {
         ShopWallet wallet = createWallet(4_999L); // 5,000 미만
 
         given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
-        given(settlementRepository.existsByShopIdAndStatus(SHOP_ID, SettlementStatus.PENDING)).willReturn(false);
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
 
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
@@ -167,6 +169,53 @@ class SettlementServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SETTLEMENT_AMOUNT_TOO_LOW);
 
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("정산 신청 성공 — 저장 Settlement 필드 검증 (shopId/amount/bankName/accountNumber/accountHolder/status)")
+    void requestSettlement_savedSettlementFields() {
+        // given
+        Shop shop = createShop();
+        ShopWallet wallet = createWallet(BALANCE);
+        Settlement settlement = createSettlement(1L);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+        given(settlementRepository.save(any(Settlement.class))).willReturn(settlement);
+
+        // when
+        settlementService.requestSettlement(USER_ID);
+
+        // then — ArgumentCaptor로 저장된 엔티티 필드 검증
+        ArgumentCaptor<Settlement> captor = ArgumentCaptor.forClass(Settlement.class);
+        then(settlementRepository).should().save(captor.capture());
+        Settlement saved = captor.getValue();
+        assertThat(saved.getShopId()).isEqualTo(SHOP_ID);
+        assertThat(saved.getAmount()).isEqualTo(BALANCE);
+        assertThat(saved.getBankName()).isEqualTo("국민은행");
+        assertThat(saved.getAccountNumber()).isEqualTo("123-456-789");
+        assertThat(saved.getAccountHolder()).isEqualTo("홍길동");
+        assertThat(saved.getStatus()).isEqualTo(SettlementStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("계좌 정보 미설정(bankName null) — MISSING_REQUIRED_FIELD")
+    void requestSettlement_missingBankName() {
+        // given: bankName null → StringUtils.hasText() false → 즉시 예외
+        Shop shop = createShop();
+        ShopWallet wallet = mock(ShopWallet.class);
+        given(wallet.getBalance()).willReturn(BALANCE);
+        given(wallet.getBankName()).willReturn(null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+
+        // when & then
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
         then(settlementRepository).should(never()).save(any());
     }
 

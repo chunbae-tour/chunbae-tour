@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 상인 정산 서비스.
@@ -50,7 +51,8 @@ public class SettlementService {
         ShopWallet wallet = shopWalletRepository.findByShopIdWithLock(shop.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
-        if (settlementRepository.existsByShopIdAndStatus(shop.getId(), SettlementStatus.PENDING)) {
+        // PENDING 중복 체크 — SELECT FOR UPDATE로 current read 보장 (REPEATABLE READ 스냅샷 우회)
+        if (!settlementRepository.findByShopIdAndStatusWithLock(shop.getId(), SettlementStatus.PENDING).isEmpty()) {
             throw new BusinessException(ErrorCode.DUPLICATE_SETTLEMENT_REQUEST);
         }
 
@@ -61,6 +63,13 @@ public class SettlementService {
         // 최소 정산 금액(5,000엽전) 미달 차단
         if (wallet.getBalance() < MIN_SETTLEMENT_AMOUNT) {
             throw new BusinessException(ErrorCode.SETTLEMENT_AMOUNT_TOO_LOW);
+        }
+
+        // 계좌 정보 미설정 시 DB 예외 대신 명시적 BusinessException
+        if (!StringUtils.hasText(wallet.getBankName())
+                || !StringUtils.hasText(wallet.getAccountNumber())
+                || !StringUtils.hasText(wallet.getAccountHolder())) {
+            throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
         }
 
         // 신청 시점 잔액 + 계좌 정보 스냅샷으로 정산 요청 생성

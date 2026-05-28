@@ -13,7 +13,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface SettlementRepository extends JpaRepository<Settlement, Long> {
 
-    boolean existsByShopIdAndStatus(Long shopId, SettlementStatus status);
+    /** PENDING 중복 체크용 — SELECT FOR UPDATE로 current read 보장 (REPEATABLE READ 스냅샷 우회) */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Settlement s WHERE s.shopId = :shopId AND s.status = :status")
+    List<Settlement> findByShopIdAndStatusWithLock(
+            @Param("shopId") Long shopId, @Param("status") SettlementStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Settlement s WHERE s.id = :id")
