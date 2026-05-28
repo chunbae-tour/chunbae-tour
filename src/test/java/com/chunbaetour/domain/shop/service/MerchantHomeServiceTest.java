@@ -86,10 +86,10 @@ class MerchantHomeServiceTest {
         given(qrPayRequestRepository.sumAmountByShopIdsAndStatusBetween(
                 eq(List.of(SHOP_ID)),
                 eq(QrPayStatus.COMPLETED),
-                eq(LocalDateTime.of(2026, 5, 25, 0, 0)),
-                eq(LocalDateTime.of(2026, 5, 26, 0, 0))
+                eq(LocalDateTime.of(2026, 5, 24, 15, 0)),
+                eq(LocalDateTime.of(2026, 5, 25, 15, 0))
         )).willReturn(15_000L);
-        given(qrPayRequestRepository.findTop10ByShopIdInAndStatusOrderByUpdatedAtDescIdDesc(
+        given(qrPayRequestRepository.findTop10ByShopIdInAndStatusAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
                 List.of(SHOP_ID), QrPayStatus.COMPLETED
         )).willReturn(List.of(recentPayment));
 
@@ -98,6 +98,8 @@ class MerchantHomeServiceTest {
         assertThat(response.todaySalesAmount()).isEqualTo(15_000L);
         assertThat(response.recentPayments()).hasSize(1);
         assertThat(response.recentPayments().get(0).payRequestId()).isEqualTo("req-001");
+        assertThat(response.recentPayments().get(0).completedAt())
+                .isEqualTo(LocalDateTime.of(2026, 5, 25, 10, 10));
         verify(valueOperations).set(eq(CACHE_KEY), any(String.class), eq(Duration.ofMinutes(3)));
     }
 
@@ -138,8 +140,7 @@ class MerchantHomeServiceTest {
                 LocalDateTime.of(2026, 5, 25, 10, 5)
         );
         ReflectionTestUtils.setField(request, "id", 1L);
-        ReflectionTestUtils.setField(request, "updatedAt", LocalDateTime.of(2026, 5, 25, 10, 10));
-        request.complete();
+        request.complete(LocalDateTime.of(2026, 5, 25, 10, 10));
         return request;
     }
 }

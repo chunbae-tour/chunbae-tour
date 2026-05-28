@@ -11,6 +11,8 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+/**
+ * 상인 홈 대시보드 조회 서비스.
+ * 상인이 운영하는 모든 가게의 오늘 QR 결제 매출 합계와 최근 결제 목록을 제공한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -39,6 +45,13 @@ public class MerchantHomeService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
+    /**
+     * 상인 홈 데이터를 조회한다.
+     * Redis 캐시를 먼저 확인하고, 캐시가 없으면 DB 조회 후 3분 동안 캐싱한다.
+     *
+     * @param userId 인증된 상인 사용자 ID
+     * @return 상인 홈 대시보드 응답
+     */
     public MerchantHomeResponse getHome(Long userId) {
         // 1. 상인 userId 단위로 캐시 키를 만든다.
         String cacheKey = CACHE_KEY_PREFIX + userId;
@@ -83,10 +96,11 @@ public class MerchantHomeService {
             return new MerchantHomeResponse(0L, List.of());
         }
 
-        // 한국 영업일 기준 오늘 00:00 이상, 내일 00:00 미만의 반개구간을 만든다.
+        // 한국 영업일 기준 오늘 00:00 이상, 내일 00:00 미만을 DB 저장 기준인 UTC LocalDateTime으로 변환한다.
         LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
-        LocalDateTime startAt = today.atStartOfDay();
-        LocalDateTime endAt = today.plusDays(1).atStartOfDay();
+        ZonedDateTime startKst = today.atStartOfDay(BUSINESS_ZONE);
+        LocalDateTime startAt = startKst.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        LocalDateTime endAt = startKst.plusDays(1).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
 
         // 오늘 매출: 모든 내 가게의 COMPLETED QR 결제 금액을 합산한다.
         Long todaySalesAmount = qrPayRequestRepository.sumAmountByShopIdsAndStatusBetween(
@@ -94,7 +108,8 @@ public class MerchantHomeService {
 
         // 최근 결제: 모든 내 가게의 COMPLETED QR 결제 중 최신 10건을 조회한다.
         List<QrPayRequest> recentPayments = qrPayRequestRepository
-                .findTop10ByShopIdInAndStatusOrderByUpdatedAtDescIdDesc(shopIds, QrPayStatus.COMPLETED);
+                .findTop10ByShopIdInAndStatusAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
+                        shopIds, QrPayStatus.COMPLETED);
 
         // 엔티티를 API 응답 DTO로 변환한다.
         return new MerchantHomeResponse(

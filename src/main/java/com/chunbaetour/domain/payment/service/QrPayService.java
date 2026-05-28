@@ -294,8 +294,8 @@ public class QrPayService {
                             null, LocaleContextHolder.getLocale())
             ));
 
-            // 상태 COMPLETED 전이
-            lockedRequest.complete();
+            // 상태 COMPLETED 전이 — 완료 시각은 updatedAt과 별도로 고정 보존
+            lockedRequest.complete(now);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

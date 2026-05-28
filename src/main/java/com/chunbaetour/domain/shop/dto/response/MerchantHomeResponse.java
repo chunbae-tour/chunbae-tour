@@ -21,7 +21,7 @@ public record MerchantHomeResponse(
                     request.getPayRequestId(),
                     request.getShopId(),
                     request.getAmount(),
-                    request.getUpdatedAt()
+                    request.getCompletedAt()
             );
         }
     }
