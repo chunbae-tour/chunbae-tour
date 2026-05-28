@@ -3,18 +3,13 @@ package com.chunbaetour.domain.translation.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.chunbaetour.domain.common.entity.CommonErrorLog;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.common.repository.CommonErrorLogRepository;
-import com.chunbaetour.domain.common.type.CommonErrorDomain;
-import com.chunbaetour.domain.common.type.CommonErrorType;
 import com.chunbaetour.domain.translation.client.GoogleTranslationClient;
 import com.chunbaetour.domain.translation.client.TranslationClientException;
 import com.chunbaetour.domain.translation.dto.response.TranslationResponse;
@@ -32,7 +27,7 @@ class TranslationServiceTest {
     private GoogleTranslationClient googleTranslationClient;
 
     @Mock
-    private CommonErrorLogRepository commonErrorLogRepository;
+    private TranslationErrorLogWriter errorLogWriter;
 
     @InjectMocks
     private TranslationService translationService;
@@ -46,10 +41,10 @@ class TranslationServiceTest {
 
         assertThat(result.translatedContent()).isEqualTo("Hello");
         assertThat(result.targetLanguage()).isEqualTo(LanguageCode.EN);
-        verify(commonErrorLogRepository, never()).save(any());
+        verify(errorLogWriter, never()).save(any());
     }
 
-    // 번역 실패 — CommonErrorLog 저장 + EXTERNAL_SERVICE_ERROR throw
+    // 번역 실패 — errorLogWriter.save() 호출 + EXTERNAL_SERVICE_ERROR throw
     @Test
     void translate_clientException_savesErrorLogAndThrows() {
         given(googleTranslationClient.translate("안녕", LanguageCode.EN))
@@ -60,11 +55,7 @@ class TranslationServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR));
 
-        verify(commonErrorLogRepository).save(argThat(log ->
-                log.getDomain() == CommonErrorDomain.TRANSLATION
-                && log.getErrorType() == CommonErrorType.API_CALL_FAILURE
-                && "Google Translation API".equals(log.getExternalProvider())
-                && log.getMessage() != null && !log.getMessage().isBlank()));
+        verify(errorLogWriter).save(any(TranslationClientException.class));
     }
 
     // ErrorLog 저장 실패 — 원본 EXTERNAL_SERVICE_ERROR 그대로 전파 (저장 실패가 응답 덮지 않음)
@@ -72,7 +63,7 @@ class TranslationServiceTest {
     void translate_errorLogSaveFails_stillThrowsExternalServiceError() {
         given(googleTranslationClient.translate("안녕", LanguageCode.EN))
                 .willThrow(new TranslationClientException("호출 실패"));
-        willThrow(new RuntimeException("DB 장애")).given(commonErrorLogRepository).save(any());
+        willThrow(new RuntimeException("DB 장애")).given(errorLogWriter).save(any());
 
         assertThatThrownBy(() -> translationService.translate("안녕", LanguageCode.EN))
                 .isInstanceOf(BusinessException.class)
