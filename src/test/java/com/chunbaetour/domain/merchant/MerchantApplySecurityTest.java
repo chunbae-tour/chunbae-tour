@@ -85,8 +85,8 @@ class MerchantApplySecurityTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("MERCHANT 토큰 → 403 AUTH_007")
-    void merchantToken_returns403() throws Exception {
+    @DisplayName("MERCHANT 토큰 + 유효 바디 → 201 (다중 가게 지원으로 상인도 신청 가능)")
+    void merchantToken_returns201() throws Exception {
         seedFactory.seedMerchant("merchant@example.com", PASSWORD, "상인닉");
         String token = loginAndGetToken("/api/v1/merchants/auth/login", "merchant@example.com");
 
@@ -94,8 +94,7 @@ class MerchantApplySecurityTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_BODY))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_007"));
+                .andExpect(status().isCreated());
     }
 
     @Test

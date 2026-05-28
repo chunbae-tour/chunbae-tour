@@ -62,70 +62,74 @@ class ShopServiceTest {
                 .build();
     }
 
-    // ── GET /merchants/me/shop ──────────────────────────────────────────────
+    // ── GET /merchants/me/shops ────────────────────────────────────────────
 
     @Test
-    @DisplayName("내 가게 조회 — 성공")
-    void getMyShop_success() {
-        // given — 실제 Shop 인스턴스 사용 (ACTIVE 상태)
+    @DisplayName("내 가게 목록 조회 — 성공")
+    void getMyShops_success() {
         Shop shop = createShop();
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findAllByUserId(USER_ID)).willReturn(List.of(shop));
 
-        // when
-        ShopResponse response = shopService.getMyShop(USER_ID);
+        List<ShopResponse> responses = shopService.getMyShops(USER_ID);
 
-        // then
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).shopName()).isEqualTo("광화문 떡볶이");
+    }
+
+    // ── GET /merchants/me/shops/{shopId} ───────────────────────────────────
+
+    @Test
+    @DisplayName("내 가게 단건 조회 — 성공")
+    void getMyShop_success() {
+        Shop shop = createShop();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopResponse response = shopService.getMyShop(USER_ID, SHOP_ID);
+
         assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
         assertThat(response.userId()).isEqualTo(USER_ID);
         assertThat(response.status()).isEqualTo(ShopStatus.ACTIVE);
     }
 
     @Test
-    @DisplayName("내 가게 조회 — 가게 없음 → SHOP_NOT_FOUND")
+    @DisplayName("내 가게 단건 조회 — 가게 없음 → SHOP_NOT_FOUND")
     void getMyShop_notFound_throws() {
-        // given — userId에 해당하는 가게 없음
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
-        // then
-        assertThatThrownBy(() -> shopService.getMyShop(USER_ID))
+        assertThatThrownBy(() -> shopService.getMyShop(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
     }
 
-    // ── PATCH /merchants/me/shop ────────────────────────────────────────────
+    // ── PATCH /merchants/me/shops/{shopId} ─────────────────────────────────
 
     @Test
     @DisplayName("내 가게 수정 — 성공 (부분 수정, 실제 값 변경 검증)")
     void updateMyShop_success() {
-        // given — 실제 Shop 인스턴스로 update() 실제 호출 검증
         Shop shop = createShop();
         ShopUpdateRequest request = new ShopUpdateRequest(
                 "새로운 가게명", null, "02-9999-8888", "업데이트된 소개글", null, null, null
         );
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
-        // when
-        ShopResponse response = shopService.updateMyShop(USER_ID, request);
+        ShopResponse response = shopService.updateMyShop(USER_ID, SHOP_ID, request);
 
-        // then — update() 실제 호출 후 변경된 값 검증 (null 필드는 기존 값 유지 확인)
         assertThat(response.shopName()).isEqualTo("새로운 가게명");
         assertThat(response.phone()).isEqualTo("02-9999-8888");
         assertThat(response.description()).isEqualTo("업데이트된 소개글");
-        assertThat(response.category()).isEqualTo("FOOD"); // null 요청 → 기존 값 유지
+        assertThat(response.category()).isEqualTo("FOOD");
     }
 
     @Test
     @DisplayName("내 가게 수정 — SUSPENDED 상태 → SHOP_INACTIVE")
     void updateMyShop_suspended_throws() {
-        // given — 상태 제어가 필요해 mock 사용 (빌더로 SUSPENDED 생성 불가)
         Shop shop = mock(Shop.class);
         ShopUpdateRequest request = new ShopUpdateRequest("새이름", null, null, null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
 
-        // then
-        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, request))
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -134,14 +138,12 @@ class ShopServiceTest {
     @Test
     @DisplayName("내 가게 수정 — CLOSED 상태 → SHOP_INACTIVE")
     void updateMyShop_closed_throws() {
-        // given — 폐업 가게는 수정 불가
         Shop shop = mock(Shop.class);
         ShopUpdateRequest request = new ShopUpdateRequest("새이름", null, null, null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.CLOSED);
 
-        // then
-        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, request))
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -150,31 +152,26 @@ class ShopServiceTest {
     @Test
     @DisplayName("내 가게 수정 — 가게 없음 → SHOP_NOT_FOUND")
     void updateMyShop_notFound_throws() {
-        // given — userId에 해당하는 가게 없음
         ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
-        // then
-        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, request))
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
     }
 
-    // ── GET /merchants/me/qr ───────────────────────────────────────────────
+    // ── GET /merchants/me/shops/{shopId}/qr ───────────────────────────────
 
     @Test
     @DisplayName("QR 코드 조회 — 성공: qrPayload 형식 검증")
     void getMyQrCode_success() {
-        // given — id 있는 Shop 필요 (qrPayload에 shopId 포함)
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
-        // when
-        QrCodeResponse response = shopService.getMyQrCode(USER_ID);
+        QrCodeResponse response = shopService.getMyQrCode(USER_ID, SHOP_ID);
 
-        // then
         assertThat(response.shopId()).isEqualTo(SHOP_ID);
         assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
         assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
@@ -183,9 +180,9 @@ class ShopServiceTest {
     @Test
     @DisplayName("QR 코드 조회 — 가게 없음 → SHOP_NOT_FOUND")
     void getMyQrCode_notFound_throws() {
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shopService.getMyQrCode(USER_ID))
+        assertThatThrownBy(() -> shopService.getMyQrCode(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -194,13 +191,12 @@ class ShopServiceTest {
     @Test
     @DisplayName("QR 코드 조회 — SUSPENDED 가게도 QR 정상 반환 (상태 가드 없음)")
     void getMyQrCode_suspendedShop_success() {
-        // given — SUSPENDED 상태 가게도 상인이 QR 확인 가능해야 함, 상태 체크 없이 바로 반환
         Shop shop = mock(Shop.class);
         given(shop.getId()).willReturn(SHOP_ID);
         given(shop.getShopName()).willReturn("광화문 떡볶이");
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
-        QrCodeResponse response = shopService.getMyQrCode(USER_ID);
+        QrCodeResponse response = shopService.getMyQrCode(USER_ID, SHOP_ID);
 
         assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
     }
