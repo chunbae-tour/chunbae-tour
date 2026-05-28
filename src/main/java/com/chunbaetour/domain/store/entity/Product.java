@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.store.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -61,10 +63,29 @@ public class Product extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ProductStatus status;
 
+    /** 1인당 최대 구매 수량 — 이벤트·상품마다 다른 구매 한도 적용 */
+    @Column(nullable = false)
+    private int maxPerPerson;
+
+    /** 구매 시 재고 차감 — 재고 소진 시 SOLD_OUT 자동 전환 */
+    public void decreaseStock(int quantity) {
+        if (quantity <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_PURCHASE_QUANTITY);
+        }
+        if (this.stock < quantity) {
+            throw new BusinessException(ErrorCode.PRODUCT_SOLD_OUT);
+        }
+        this.stock -= quantity;
+        if (this.stock == 0) {
+            this.status = ProductStatus.SOLD_OUT;
+        }
+    }
+
     @Builder
     private Product(String name, String description, String category, long price,
                     Long originalPrice, int stock, int originalStock, String imageUrls,
-                    String merchantName, Integer validityDays, ProductStatus status) {
+                    String merchantName, Integer validityDays, ProductStatus status,
+                    int maxPerPerson) {
         this.name = name;
         this.description = description;
         this.category = category;
@@ -76,5 +97,6 @@ public class Product extends BaseEntity {
         this.merchantName = merchantName;
         this.validityDays = validityDays;
         this.status = status;
+        this.maxPerPerson = maxPerPerson;
     }
 }
