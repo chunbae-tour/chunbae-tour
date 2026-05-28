@@ -22,7 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class MerchantApplicationService {
 
-    private static final List<MerchantApplicationStatus> ACTIVE_STATUSES =
+    // 동일 사용자의 중복 신청 방지: PENDING인 건이 있으면 차단 (APPROVED는 허용 — 1상인 다중 가게)
+    private static final List<MerchantApplicationStatus> USER_PENDING_STATUSES =
+            List.of(MerchantApplicationStatus.PENDING);
+    // 사업자번호 중복 방지: PENDING·APPROVED 모두 포함 (다른 사용자의 활성 신청 차단)
+    private static final List<MerchantApplicationStatus> BIZ_ACTIVE_STATUSES =
             List.of(MerchantApplicationStatus.PENDING, MerchantApplicationStatus.APPROVED);
 
     private final MerchantApplicationRepository merchantApplicationRepository;
@@ -41,8 +45,8 @@ public class MerchantApplicationService {
      */
     @Transactional
     public MerchantApplicationResponse apply(Long userId, MerchantApplyRequest request) {
-        // PENDING 또는 APPROVED 신청이 이미 있으면 중복 신청 불가 (MERCHANT_001)
-        if (merchantApplicationRepository.existsByUserIdAndStatusIn(userId, ACTIVE_STATUSES)) {
+        // 이미 PENDING 신청이 있으면 중복 신청 불가 (MERCHANT_001)
+        if (merchantApplicationRepository.existsByUserIdAndStatusIn(userId, USER_PENDING_STATUSES)) {
             throw new BusinessException(ErrorCode.MERCHANT_CERT_ALREADY_PENDING);
         }
 
@@ -56,7 +60,7 @@ public class MerchantApplicationService {
 
         // 다른 유저가 동일 사업자번호로 이미 PENDING/APPROVED 신청 중이면 차단 (MERCHANT_004)
         // REJECTED된 신청의 번호는 재사용 허용 — 코드 레벨 선제 차단 + DB 제약 최종 방어선
-        if (merchantApplicationRepository.existsByBusinessNumberAndStatusIn(normalized, ACTIVE_STATUSES)) {
+        if (merchantApplicationRepository.existsByBusinessNumberAndStatusIn(normalized, BIZ_ACTIVE_STATUSES)) {
             throw new BusinessException(ErrorCode.DUPLICATE_BUSINESS_NUMBER);
         }
 

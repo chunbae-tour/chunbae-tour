@@ -101,8 +101,8 @@ class AdminMerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("승인 실패: 계정이 이미 MERCHANT 역할 → MERCHANT_005")
-    void approve_accountAlreadyMerchant_throws() {
+    @DisplayName("승인 성공: 이미 MERCHANT인 상인의 추가 가게 신청 — role 유지, Shop 생성")
+    void approve_accountAlreadyMerchant_success() {
         MerchantApplication app = pendingApplication();
         Account merchantAccount = (Account) ReflectionTestUtils.invokeMethod(
                 Account.class, "createForSeed",
@@ -113,12 +113,13 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(merchantAccount));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID.getMessage());
+        MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
 
-        verify(shopRepository, never()).save(any());
+        assertThat(response.status()).isEqualTo(MerchantApplicationStatus.APPROVED);
+        assertThat(merchantAccount.getRole()).isEqualTo(com.chunbaetour.domain.auth.Role.MERCHANT);
+        verify(shopRepository).save(any(Shop.class));
     }
 
     @Test

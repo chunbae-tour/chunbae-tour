@@ -85,14 +85,9 @@ public class AdminMerchantApplicationService {
         Account account = accountRepository.findByIdWithLock(application.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        // USER 이외의 role(MERCHANT/ADMIN)은 승격 불가 — entity 상태 변경 전 선제 검증
-        if (account.getRole() != Role.USER) {
-            throw new BusinessException(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID);
-        }
-
         // 선행 검증 통과 후 상태 전이 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
-        application.approve();                                      // 신청 상태 PENDING → APPROVED
-        account.promoteToMerchant();                                // 계정 역할 USER → MERCHANT
+        application.approve();                // 신청 상태 PENDING → APPROVED
+        account.promoteToMerchant();          // USER → MERCHANT 승격 (MERCHANT면 멱등 skip, ADMIN이면 예외)
         try {
             shopRepository.save(Shop.fromApplication(application)); // 가게 엔티티 신규 생성
         } catch (DataIntegrityViolationException e) {
