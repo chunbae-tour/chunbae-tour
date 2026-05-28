@@ -64,6 +64,10 @@ public class QrPayRequest extends BaseEntity {
     @Column(name = "expired_at", nullable = false)
     private LocalDateTime expiredAt;
 
+    // 상인이 승인해 COMPLETED로 전이된 시각 — updatedAt은 이후 수정에도 바뀌므로 완료 시각 전용 컬럼으로 보존
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
     // PENDING 상태일 때만 "{userId}_{shopId}" 값을 가짐 — DB unique 제약으로 동시 PENDING 중복 방지
     // 상태 전이(complete/reject/expire) 시 null 로 초기화 → null 은 unique 제약 대상 외
     @Column(name = "pending_key", unique = true)
@@ -95,10 +99,14 @@ public class QrPayRequest extends BaseEntity {
     }
 
     /** 상인 승인 — STORY-14에서 호출 */
-    public void complete() {
+    public void complete(LocalDateTime completedAt) {
         if (this.status != QrPayStatus.PENDING) {
             throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
         }
+        if (completedAt == null) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
+        this.completedAt = completedAt;
         this.status = QrPayStatus.COMPLETED;
         this.pendingKey = null;
     }
