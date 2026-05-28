@@ -57,8 +57,11 @@ public class CommonErrorLog {
     private CommonErrorLog(String domain, String errorType, String message,
                            String detail, String externalProvider) {
         if (domain == null || domain.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
+        if (domain.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         if (errorType == null || errorType.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
+        if (errorType.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
+        if (externalProvider != null && externalProvider.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         this.domain = domain;
         this.errorType = errorType;
         this.message = message;
