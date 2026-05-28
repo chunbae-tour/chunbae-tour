@@ -16,6 +16,7 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
 
@@ -124,8 +125,9 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         if (accessor.getUser() == null) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
-        UsernamePasswordAuthenticationToken auth =
-                (UsernamePasswordAuthenticationToken) accessor.getUser();
+        if (!(accessor.getUser() instanceof Authentication auth)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
         boolean isUser = auth.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_USER"));
         if (!isUser) {

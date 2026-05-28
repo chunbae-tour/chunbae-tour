@@ -102,17 +102,20 @@ class NotificationRedisPubSubServiceTest {
                 eq(String.valueOf(USER_ID)), eq(STOMP_QUEUE), eq(RESPONSE));
     }
 
-    // handleMessage() — 잘못된 채널 prefix → convertAndSendToUser 미호출
+    // handleMessage() — 잘못된 채널 prefix → 파싱·전송 모두 미호출 (조기 반환 계약 고정)
     @Test
-    void handleMessage_wrongChannelPrefix_skipsProcessing() {
+    void handleMessage_wrongChannelPrefix_skipsProcessing() throws Exception {
         service.handleMessage("{}", "chat:123");
 
+        verify(objectMapper, never()).readValue(anyString(), eq(NotificationResponse.class));
         verify(messagingTemplate, never()).convertAndSendToUser(any(), any(), any());
     }
 
-    // handleMessage() — userId 없는 채널("notification:") → convertAndSendToUser 미호출
+    // handleMessage() — userId 없는 채널("notification:") → 파싱 성공 후 blank userId로 skip
     @Test
-    void handleMessage_blankUserId_skipsProcessing() {
+    void handleMessage_blankUserId_skipsProcessing() throws Exception {
+        given(objectMapper.readValue(anyString(), eq(NotificationResponse.class))).willReturn(RESPONSE);
+
         service.handleMessage("{}", "notification:");
 
         verify(messagingTemplate, never()).convertAndSendToUser(any(), any(), any());
