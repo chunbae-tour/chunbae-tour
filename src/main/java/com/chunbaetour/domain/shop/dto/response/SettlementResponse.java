@@ -21,9 +21,20 @@ public record SettlementResponse(
                 s.getStatus(),
                 s.getRejectReason(),
                 s.getBankName(),
-                s.getAccountNumber(),
+                maskAccountNumber(s.getAccountNumber()),
                 s.getAccountHolder(),
                 s.getCreatedAt()
         );
+    }
+
+    /** 계좌번호 마스킹 — 앞 3자리·뒤 4자리 외 * 처리. 예: 123-****-7890 */
+    private static String maskAccountNumber(String accountNumber) {
+        if (accountNumber == null || accountNumber.length() <= 7) {
+            return accountNumber;
+        }
+        int len = accountNumber.length();
+        return accountNumber.substring(0, 3)
+                + "*".repeat(len - 7)
+                + accountNumber.substring(len - 4);
     }
 }
