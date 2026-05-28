@@ -111,7 +111,7 @@ management:
 
 google:
   translation:
-    api-key: ${GOOGLE_TRANSLATION_API_KEY}
+    api-key: ${GOOGLE_TRANSLATION_API_KEY:}
 
 kakao:
   map:
