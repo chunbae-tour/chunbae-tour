@@ -45,13 +45,13 @@ public class SettlementService {
         Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // 이미 PENDING 정산 신청 존재 시 중복 차단
-
-        // ShopWallet 조회 — 잔액 및 계좌 정보 스냅샷용
+        // ShopWallet SELECT FOR UPDATE — 동시 정산 신청 직렬화 (동일 가게 동시 신청 시 ShopWallet 락으로 순서 보장)
+        // 락 순서: ShopWallet → Settlement (AdminSettlementService와 동일 순서, 데드락 방지)
         ShopWallet wallet = shopWalletRepository.findByShopIdWithLock(shop.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
         // PENDING 중복 체크 — SELECT FOR UPDATE로 current read 보장 (REPEATABLE READ 스냅샷 우회)
+        // ShopWallet 락 보유 후 실행 → 공백 결과에 대한 gap lock 데드락 없음
         if (!settlementRepository.findByShopIdAndStatusWithLock(shop.getId(), SettlementStatus.PENDING).isEmpty()) {
             throw new BusinessException(ErrorCode.DUPLICATE_SETTLEMENT_REQUEST);
         }

@@ -19,7 +19,10 @@ import lombok.NoArgsConstructor;
 import org.springframework.util.StringUtils;
 
 @Entity
-@Table(name = "settlements", indexes = @Index(name = "idx_settlements_shop_id", columnList = "shop_id"))
+@Table(name = "settlements", indexes = {
+        @Index(name = "idx_settlements_shop_id", columnList = "shop_id"),
+        @Index(name = "idx_settlements_shop_id_status", columnList = "shop_id, status")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Settlement extends BaseEntity {

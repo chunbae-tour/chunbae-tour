@@ -19,7 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 관리자 정산 처리 서비스.
  * 정산 승인(ShopWallet 잔액 차감), 거절, 목록 조회 담당.
- * 락 순서: Settlement → ShopWallet (데드락 방지)
+ * 락 순서: ShopWallet → Settlement (SettlementService.requestSettlement()와 동일, 데드락 방지)
+ * approveSettlement()는 settlementId만 알고 shopId를 모르므로 비잠금 peek 후 ShopWallet 락 획득.
  */
 @Service
 @RequiredArgsConstructor
@@ -31,22 +32,28 @@ public class AdminSettlementService {
 
     /**
      * 정산 승인.
-     * Settlement 비관적 락 → ShopWallet 비관적 락 순서 고정 (데드락 방지).
+     * 락 순서: ShopWallet → Settlement (SettlementService.requestSettlement()와 동일, 데드락 방지).
+     * settlementId만 알고 shopId를 모르는 문제는 비잠금 peek으로 shopId 선조회 후 락 획득.
      * ShopWallet.debit()에서 잔액 부족 시 INSUFFICIENT_BALANCE 발생.
      * 실제 계좌 이체는 수동 처리 (시스템 외부).
      */
     @Transactional
     public void approveSettlement(Long settlementId) {
-        // Settlement SELECT FOR UPDATE — 동시 승인/거절 직렬화
+        // 비잠금 peek — shopId 취득 목적, 상태는 이후 재조회로 검증
+        Settlement peek = settlementRepository.findById(settlementId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SETTLEMENT_NOT_FOUND));
+
+        // ShopWallet SELECT FOR UPDATE 먼저 획득 (락 순서 1번: ShopWallet)
+        ShopWallet wallet = shopWalletRepository.findByShopIdWithLock(peek.getShopId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
+
+        // Settlement SELECT FOR UPDATE — ShopWallet 락 이후 획득 (락 순서 2번: Settlement)
+        // 비잠금 peek 이후 상태가 바뀌었을 수 있으므로 재조회 필수
         Settlement settlement = settlementRepository.findByIdWithLock(settlementId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SETTLEMENT_NOT_FOUND));
 
         // 상태 전이 가드 (PENDING만 처리 가능) — Settlement.approve() 내부에서도 검증
         settlement.approve();
-
-        // ShopWallet SELECT FOR UPDATE — Settlement 락 이후 획득 (락 순서 준수)
-        ShopWallet wallet = shopWalletRepository.findByShopIdWithLock(settlement.getShopId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
         // 신청 시점 스냅샷 금액 차감 — 잔액 부족 시 INSUFFICIENT_BALANCE
         wallet.debit(settlement.getAmount());

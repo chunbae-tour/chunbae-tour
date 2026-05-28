@@ -61,8 +61,10 @@ class AdminSettlementServiceTest {
         Settlement settlement = createSettlement(SettlementStatus.PENDING);
         ShopWallet wallet = createWallet(AMOUNT);
 
-        given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
+        // 2단계 조회: 비잠금 peek → ShopWallet 락 → Settlement 재조회(락)
+        given(settlementRepository.findById(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
 
         adminSettlementService.approveSettlement(SETTLEMENT_ID);
 
@@ -73,7 +75,8 @@ class AdminSettlementServiceTest {
     @Test
     @DisplayName("정산 없음 — SETTLEMENT_NOT_FOUND")
     void approveSettlement_notFound() {
-        given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.empty());
+        // 비잠금 peek 단계에서 바로 not found
+        given(settlementRepository.findById(SETTLEMENT_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> adminSettlementService.approveSettlement(SETTLEMENT_ID))
                 .isInstanceOf(BusinessException.class)
@@ -85,15 +88,17 @@ class AdminSettlementServiceTest {
     @DisplayName("이미 처리된 정산 승인 시도 — SETTLEMENT_INVALID_STATUS")
     void approveSettlement_alreadyApproved() {
         Settlement settlement = createSettlement(SettlementStatus.APPROVED);
+        ShopWallet wallet = createWallet(AMOUNT);
 
+        // peek → ShopWallet 락 → Settlement 재조회 후 approve() 내부에서 상태 가드 발생
+        given(settlementRepository.findById(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
 
         assertThatThrownBy(() -> adminSettlementService.approveSettlement(SETTLEMENT_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SETTLEMENT_INVALID_STATUS);
-
-        then(shopWalletRepository).should(never()).findByShopIdWithLock(any());
     }
 
     @Test
@@ -102,8 +107,9 @@ class AdminSettlementServiceTest {
         Settlement settlement = createSettlement(SettlementStatus.PENDING);
         ShopWallet wallet = createWallet(AMOUNT - 1);
 
-        given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
+        given(settlementRepository.findById(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByIdWithLock(SETTLEMENT_ID)).willReturn(Optional.of(settlement));
 
         assertThatThrownBy(() -> adminSettlementService.approveSettlement(SETTLEMENT_ID))
                 .isInstanceOf(BusinessException.class)
