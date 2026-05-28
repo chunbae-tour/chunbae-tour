@@ -3,6 +3,8 @@ package com.chunbaetour.domain.shop.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.service.ShopService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * GET /api/v1/merchants/me/shops/{shopId}/qr — MERCHANT 권한 필요.
  * SecurityConfig: /api/v1/merchants/** → MERCHANT 권한 필요.
  */
+@Tag(name = "QR 코드 (MERCHANT)", description = "내 가게 QR 코드 조회 (/api/v1/merchants/me/shops/{shopId}/qr)")
 @RestController
 @RequestMapping("/api/v1/merchants/me/shops/{shopId}/qr")
 @RequiredArgsConstructor
@@ -22,7 +25,7 @@ public class MerchantQrController {
 
     private final ShopService shopService;
 
-    /** 내 가게 QR payload 조회 — 클라이언트가 qrPayload로 QR 이미지 렌더링 */
+    @Operation(summary = "내 가게 QR 코드 조회")
     @GetMapping
     public ApiResponse<QrCodeResponse> getMyQrCode(
             @AuthenticationPrincipal Long userId,

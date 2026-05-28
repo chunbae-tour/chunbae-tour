@@ -3,6 +3,8 @@ package com.chunbaetour.domain.shop.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.service.ShopService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
  * QR 스캔·앱 탐색 등 진입 경로 무관하게 가게 정보를 누구나 조회 가능.
  * 실제 결제 요청(POST /payments/qr)은 USER 인증 필수 — 이 엔드포인트는 메뉴 확인 단계.
  */
+@Tag(name = "가게 (공개)", description = "가게 공개 정보·메뉴 조회 (/api/v1/shops/**)")
 @Validated
 @RestController
 @RequestMapping("/api/v1/shops")
@@ -33,6 +36,7 @@ public class ShopPublicController {
      * {@link com.chunbaetour.domain.auth.security.JwtAuthenticationFilter} PUBLIC_PATH_PATTERNS에
      * {@code /api/v1/shops/*} 등록 필수 — 누락 시 만료 토큰 보유 유저가 결제창 접근 불가.
      */
+    @Operation(summary = "가게 공개 정보 조회")
     @GetMapping("/{shopId}")
     public ApiResponse<ShopInfoResponse> getShopInfo(@PathVariable @Positive Long shopId) {
         return ApiResponse.success(shopService.getShopInfo(shopId));

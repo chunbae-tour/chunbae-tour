@@ -7,6 +7,8 @@ import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.service.JoinRequestService;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import java.util.List;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "채팅 참여 신청", description = "채팅방 참여 신청·목록·수락·거절·취소 (/api/v1/chat/rooms/{chatRoomId}/join-requests/**)")
 @RestController
 @RequestMapping("/api/v1/chat/rooms")
 @RequiredArgsConstructor
@@ -31,7 +34,7 @@ public class JoinRequestController {
 
     private final JoinRequestService joinRequestService;
 
-    // 참여 신청 목록 조회 — 방장 전용, PENDING 상태 신청만 반환
+    @Operation(summary = "참여 신청 목록 조회")
     @GetMapping("/{chatRoomId}/join-requests")
     public ApiResponse<List<JoinRequestResponse>> getJoinRequests(
             @AuthenticationPrincipal Long userId,
@@ -40,7 +43,7 @@ public class JoinRequestController {
                 joinRequestService.getJoinRequests(userId, chatRoomId));
     }
 
-    // 채팅방 참여 신청 — OPEN 방에 한해 신청, 분산 락으로 TOCTOU 방지
+    @Operation(summary = "채팅방 참여 신청")
     @PostMapping("/{chatRoomId}/join-requests")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CreateJoinRequestResponse> createJoinRequest(
@@ -51,7 +54,7 @@ public class JoinRequestController {
                 joinRequestService.createJoinRequest(userId, chatRoomId, request));
     }
 
-    // 참여 신청 수락 — 방장 전용, 분산 락으로 정원 TOCTOU 방지
+    @Operation(summary = "참여 신청 수락")
     @PostMapping("/{chatRoomId}/join-requests/{requestId}/approve")
     public ApiResponse<ApproveJoinRequestResponse> approveJoinRequest(
             @AuthenticationPrincipal Long userId,
@@ -61,7 +64,7 @@ public class JoinRequestController {
                 joinRequestService.approveJoinRequest(userId, chatRoomId, requestId));
     }
 
-    // 참여 신청 취소 — 신청자 본인만 가능, PENDING 상태 신청만 취소 허용
+    @Operation(summary = "참여 신청 취소")
     @DeleteMapping("/{chatRoomId}/join-requests/{requestId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancelJoinRequest(
@@ -71,7 +74,7 @@ public class JoinRequestController {
         joinRequestService.cancelJoinRequest(userId, chatRoomId, requestId);
     }
 
-    // 참여 신청 거절 — 방장 전용
+    @Operation(summary = "참여 신청 거절")
     @PostMapping("/{chatRoomId}/join-requests/{requestId}/reject")
     public ApiResponse<RejectJoinRequestResponse> rejectJoinRequest(
             @AuthenticationPrincipal Long userId,

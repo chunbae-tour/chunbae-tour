@@ -6,6 +6,8 @@ import com.chunbaetour.domain.shop.dto.request.SettlementRejectRequest;
 import com.chunbaetour.domain.shop.dto.response.AdminSettlementResponse;
 import com.chunbaetour.domain.shop.service.AdminSettlementService;
 import com.chunbaetour.domain.shop.type.SettlementStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 정산 처리 컨트롤러.
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
+@Tag(name = "정산 (관리자)", description = "정산 목록 조회·승인·거절 (/api/v1/admin/settlements/**)")
 @RestController
 @RequestMapping("/api/v1/admin/settlements")
 @RequiredArgsConstructor
@@ -31,7 +34,7 @@ public class AdminSettlementController {
 
     private final AdminSettlementService adminSettlementService;
 
-    /** GET /api/v1/admin/settlements — 정산 목록 조회 (?status=PENDING|APPROVED|REJECTED, 미지정 시 전체) */
+    @Operation(summary = "정산 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<AdminSettlementResponse>> getSettlements(
             @RequestParam(required = false) String cursor,
@@ -40,14 +43,14 @@ public class AdminSettlementController {
         return ApiResponse.success(adminSettlementService.getSettlements(cursor, size, status));
     }
 
-    /** PATCH /api/v1/admin/settlements/{settlementId}/approve — 정산 승인 */
+    @Operation(summary = "정산 승인")
     @PatchMapping("/{settlementId}/approve")
     public ApiResponse<Void> approveSettlement(@PathVariable Long settlementId) {
         adminSettlementService.approveSettlement(settlementId);
         return ApiResponse.success(null);
     }
 
-    /** PATCH /api/v1/admin/settlements/{settlementId}/reject — 정산 거절 (사유 필수) */
+    @Operation(summary = "정산 거절")
     @PatchMapping("/{settlementId}/reject")
     public ApiResponse<Void> rejectSettlement(
             @PathVariable Long settlementId,
