@@ -1,7 +1,5 @@
 package com.chunbaetour.domain.common.entity;
 
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.type.CommonErrorDomain;
 import com.chunbaetour.domain.common.type.CommonErrorType;
 import jakarta.persistence.Column;
@@ -62,10 +60,10 @@ public class CommonErrorLog {
     @Builder
     private CommonErrorLog(CommonErrorDomain domain, CommonErrorType errorType, String message,
                            String detail, String externalProvider) {
-        if (domain == null) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
-        if (errorType == null) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
-        if (message == null || message.isBlank()) throw new BusinessException(ErrorCode.MISSING_REQUIRED_FIELD);
-        if (externalProvider != null && externalProvider.length() > 50) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        if (domain == null) throw new IllegalArgumentException("domain must not be null");
+        if (errorType == null) throw new IllegalArgumentException("errorType must not be null");
+        if (message == null || message.isBlank()) throw new IllegalArgumentException("message must not be blank");
+        if (externalProvider != null && externalProvider.length() > 50) throw new IllegalArgumentException("externalProvider must not exceed 50 characters");
         this.domain = domain;
         this.errorType = errorType;
         this.message = message;
