@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -90,9 +92,14 @@ class UserItemIntegrationTest extends AbstractIntegrationTest {
     }
 
     private void deleteByPrefix(String pattern) {
-        var keys = redis.keys(pattern);
-        if (keys != null && !keys.isEmpty()) {
-            redis.delete(keys);
+        ScanOptions options = ScanOptions.scanOptions()
+                .match(pattern)
+                .count(100)
+                .build();
+        try (Cursor<String> cursor = redis.scan(options)) {
+            while (cursor.hasNext()) {
+                redis.delete(cursor.next());
+            }
         }
     }
 }
