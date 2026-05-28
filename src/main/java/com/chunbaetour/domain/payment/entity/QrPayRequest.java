@@ -103,6 +103,9 @@ public class QrPayRequest extends BaseEntity {
         if (this.status != QrPayStatus.PENDING) {
             throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
         }
+        if (completedAt == null) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
         this.completedAt = completedAt;
         this.status = QrPayStatus.COMPLETED;
         this.pendingKey = null;
