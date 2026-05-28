@@ -212,6 +212,8 @@ public class ReportService {
             } else {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
+            // saveAndFlush: @Version 충돌을 커밋 시점이 아닌 즉시 발생시켜 try-catch에서 포착
+            reportRepository.saveAndFlush(report);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
@@ -257,6 +259,7 @@ public class ReportService {
             } else {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
+            reportRepository.saveAndFlush(report);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
