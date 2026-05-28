@@ -75,6 +75,9 @@ class ReportServiceTest {
 
     @BeforeEach
     void setUp() {
+        // @Value 필드는 @InjectMocks로 주입 안 됨 — 테스트용 기본값(3) 직접 세팅
+        ReflectionTestUtils.setField(reportService, "autoHideThreshold", 3);
+
         activeFreePost = FreePost.create(2L, "여행 후기", "좋았어요", List.of());
         ReflectionTestUtils.setField(activeFreePost, "id", FREE_POST_ID);
 
@@ -429,7 +432,7 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("신고 대상 삭제된 경우 — targetTitle·targetContent null 반환 (graceful)")
+    @DisplayName("신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
     void getReport_대상_삭제됨_graceful() {
         Account reporter = mock(Account.class);
         given(reporter.getNickname()).willReturn("신고자닉네임");
@@ -440,8 +443,8 @@ class ReportServiceTest {
 
         ReportDetailResponse result = reportService.getReport(REPORT_ID);
 
-        assertThat(result.targetTitle()).isNull();
-        assertThat(result.targetContent()).isNull();
+        assertThat(result.targetTitle()).isEqualTo("(삭제됨)");
+        assertThat(result.targetContent()).isEqualTo("(삭제됨)");
         assertThat(result.targetImageUrls()).isNull();
     }
 

@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
@@ -56,8 +57,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ReportService {
 
-    /** n건 이상 신고 시 콘텐츠 자동 숨김 임계값 (KAN-93) */
-    private static final int AUTO_HIDE_THRESHOLD = 3;
+    /** n건 이상 신고 시 콘텐츠 자동 숨김 임계값 — application.yml report.auto-hide.threshold (KAN-93) */
+    @Value("${report.auto-hide.threshold:3}")
+    private int autoHideThreshold;
 
     private final ReportRepository reportRepository;
     private final AccountRepository accountRepository;
@@ -273,7 +275,7 @@ public class ReportService {
     // ── KAN-93: 자동 숨김 ─────────────────────────────────────────────────
 
     /**
-     * 누적 신고 수가 AUTO_HIDE_THRESHOLD 이상이면 콘텐츠 자동 숨김.
+     * 누적 신고 수가 autoHideThreshold 이상이면 콘텐츠 자동 숨김.
      * USER·MERCHANT는 자동 조치 생략 — 계정 정지·가게 비공개는 관리자가 직접 판단.
      * 이미 삭제된 콘텐츠는 filter 조건으로 중복 처리 방지.
      */
@@ -284,15 +286,15 @@ public class ReportService {
         switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE)
-                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= AUTO_HIDE_THRESHOLD)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= autoHideThreshold)
                     .ifPresent(CompanionPost::hide);
             case POST_FREE -> freePostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
-                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= AUTO_HIDE_THRESHOLD)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= autoHideThreshold)
                     .ifPresent(FreePost::hide);
             case COMMENT -> commentRepository.findByIdForUpdate(targetId)
                     .filter(c -> c.getStatus() != CommentStatus.DELETED)
-                    .filter(c -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= AUTO_HIDE_THRESHOLD)
+                    .filter(c -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= autoHideThreshold)
                     .ifPresent(Comment::delete);
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요
@@ -314,14 +316,10 @@ public class ReportService {
 
     private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
+            // HIDE_SHOP: 관리자 임시 정지 (SUSPENDED, 복구 가능)
             case HIDE_SHOP -> shopService.hideShop(shopId);
-            case REVOKE_MERCHANT -> {
-                Long merchantAccountId = shopService.findMerchantAccountId(shopId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
-                Account merchant = accountRepository.findById(merchantAccountId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-                merchant.revokeToUser();
-            }
+            // REVOKE_MERCHANT: 상인 인증 취소 — 해당 가게만 SUSPENDED (CLOSED는 상인 신청 시에만)
+            case REVOKE_MERCHANT -> shopService.hideShop(shopId);
             case DISMISS -> { /* 무시, 상태 기록만 */ }
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
@@ -386,21 +384,21 @@ public class ReportService {
             case POST_FREE -> freePostRepository.findById(targetId)
                     .map(p -> new TargetDetail(p.getTitle(), p.getContent(),
                             List.copyOf(p.getImageUrls())))
-                    .orElse(TargetDetail.empty());
+                    .orElse(TargetDetail.deleted());
             case POST_COMPANION -> companionPostRepository.findById(targetId)
                     .map(p -> new TargetDetail(p.getTitle(), p.getContent(), null))
-                    .orElse(TargetDetail.empty());
+                    .orElse(TargetDetail.deleted());
             case COMMENT -> commentRepository.findById(targetId)
                     .map(c -> new TargetDetail(null, c.getContent(), null))
-                    .orElse(TargetDetail.empty());
+                    .orElse(TargetDetail.deleted());
             case USER -> accountRepository.findById(targetId)
                     .map(a -> new TargetDetail(null, a.getNickname(), null))
-                    .orElse(TargetDetail.empty());
+                    .orElse(TargetDetail.deleted());
             // MERCHANT: targetId = shopId → accountId 변환 후 닉네임 조회
             case MERCHANT -> shopService.findMerchantAccountId(targetId)
                     .flatMap(accountRepository::findById)
                     .map(a -> new TargetDetail(null, a.getNickname(), null))
-                    .orElse(TargetDetail.empty());
+                    .orElse(TargetDetail.deleted());
             // TODO(KAN-152): REVIEW 도메인 구현 후 case 추가 — title·content·imageUrls 반환
         };
     }
@@ -409,6 +407,10 @@ public class ReportService {
     private record TargetDetail(String title, String content, java.util.List<String> imageUrls) {
         static TargetDetail empty() {
             return new TargetDetail(null, null, null);
+        }
+        /** 신고 접수 후 대상 콘텐츠가 삭제된 경우 — 관리자 UI에 "(삭제됨)" 표시. */
+        static TargetDetail deleted() {
+            return new TargetDetail("(삭제됨)", "(삭제됨)", null);
         }
     }
 
