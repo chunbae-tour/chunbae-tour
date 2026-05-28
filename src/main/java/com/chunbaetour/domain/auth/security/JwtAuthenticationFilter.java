@@ -70,7 +70,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/merchants/auth/**",
             "/api/v1/admin/auth/**",
             "/api/v1/auth/**",
-            "/actuator/**"
+            "/actuator/**",
+            // WebSocket 핸드셰이크 + SockJS — STOMP 레벨에서 JWT 인증 처리하므로 HTTP 필터 스킵
+            "/ws-stomp/**"
     );
 
     /**
@@ -89,7 +91,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/search/popular",
             "/api/v1/search/places",
             "/api/v1/search/festivals",
-            "/api/v1/search/suggest"
+            "/api/v1/search/suggest",
+            // 커뮤니티 목록·단건 조회 — 비로그인 허용
+            "/api/v1/community/posts/companions/**",
+            "/api/v1/community/posts/free/**",
+            // 스토어 상품 조회 — 비인증 공개 API
+            "/api/v1/store/products/**"
+    );
+
+    /**
+     * POST 메서드 한정 공개 경로 패턴.
+     *
+     * <p>SecurityConfig에서 특정 POST 메서드만 permitAll인 경로.
+     * PortOne 웹훅은 서버→서버 호출이라 Bearer 토큰이 없어 필터에서도 반드시 스킵해야 한다.
+     */
+    private static final List<String> PUBLIC_POST_PATH_PATTERNS = List.of(
+            // PortOne 결제 웹훅 — 서버→서버 호출, JWT 없음
+            "/api/v1/payments/webhook"
     );
 
     /** logout은 인증 필요. {@link #shouldNotFilter}에서 명시적으로 예외 처리. */
@@ -119,6 +137,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         if ("GET".equals(request.getMethod())
                 && PUBLIC_GET_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
+            return true;
+        }
+        if ("POST".equals(request.getMethod())
+                && PUBLIC_POST_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
             return true;
         }
         return PUBLIC_PATH_PATTERNS.stream()

@@ -96,6 +96,9 @@ public enum ErrorCode {
     SELF_PAYMENT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_023", "본인 가게에는 결제할 수 없습니다."),
     ZERO_AMOUNT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,        "PAY_024", "결제 금액은 0원보다 커야 합니다."),
     QR_PAY_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_025", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
+    QR_PAY_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND,         "PAY_026", "존재하지 않는 QR 결제 요청입니다."),
+    SHOP_WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,            "PAY_027", "상인 엽전 지갑을 찾을 수 없습니다."),
+    QR_PAY_CONFIRM_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_028", "본인 가게의 결제 요청만 승인/거절할 수 있습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),

@@ -113,6 +113,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/free/**").permitAll()
                         // PortOne 웹훅: 서버→서버 호출이라 JWT 없음 — permitAll 필수
                         .requestMatchers(HttpMethod.POST, "/api/v1/payments/webhook").permitAll()
+                        // QR 결제 승인/거절은 MERCHANT 전용 — payments/** USER 룰보다 반드시 먼저 선언
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/payments/qr/*/confirm").hasRole("MERCHANT")
                         // 결제/환불은 USER 전용 — webhook permitAll 라인보다 뒤에 위치해야 순서 안전
                         .requestMatchers("/api/v1/payments/**").hasRole("USER")
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
@@ -131,16 +133,18 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
-                        // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용
+                        // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용 — KAN-157
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
                         // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
+                        // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/chat/**").hasRole("USER")
-                        // 신고 생성·내 신고 내역: USER 전용 — MERCHANT/ADMIN 접근 불가 (admin 신고 조회·처리는 /admin/** 커버)
-                        .requestMatchers("/api/v1/reports/**").hasRole("USER")
+                        // 알림은 USER 전용 — 채팅 알림 등 일반 사용자 기능
+                        .requestMatchers("/api/v1/notifications/**").hasRole("USER")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

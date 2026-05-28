@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.yeopjeon.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -30,7 +32,7 @@ public class Wallet extends BaseEntity {
 
     public static Wallet create(Long userId) {
         if (userId == null) {
-            throw new IllegalArgumentException("userId must not be null");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         Wallet wallet = new Wallet();
         wallet.userId = userId;
@@ -40,21 +42,21 @@ public class Wallet extends BaseEntity {
 
     public void credit(long amount) {
         if (amount <= 0) {
-            throw new IllegalArgumentException("amount must be positive");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         if (Long.MAX_VALUE - this.balance < amount) {
-            throw new IllegalArgumentException("balance overflow");
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
         this.balance += amount;
     }
 
-    /** 엽전 차감. 잔액 부족 시 IllegalArgumentException — WalletService가 사전 확인하지만 엔티티도 자체 방어. */
+    /** 잔액 부족 시 BusinessException — WalletService가 사전 확인하지만 엔티티도 자체 방어. */
     public void debit(long amount) {
         if (amount <= 0) {
-            throw new IllegalArgumentException("amount must be positive");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         if (this.balance < amount) {
-            throw new IllegalArgumentException("insufficient balance");
+            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
         }
         this.balance -= amount;
     }
