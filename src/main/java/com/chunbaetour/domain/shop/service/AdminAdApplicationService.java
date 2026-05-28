@@ -57,6 +57,9 @@ public class AdminAdApplicationService {
      */
     public CursorPageResponse<AdminAdApplicationResponse> getApplications(
             String cursor, int size, AdApplicationStatus status) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_PAGE_SIZE);
+        }
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
         List<AdApplication> applications = adApplicationRepository.findAllWithCursor(

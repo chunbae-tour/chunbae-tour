@@ -50,8 +50,8 @@ class AdApplicationServiceTest {
     private static final Long USER_ID = 1L;
     private static final Long SHOP_ID = 10L;
     private static final Long AD_ID = 1L;
-    private static final LocalDate START = LocalDate.of(2026, 6, 1);
-    private static final LocalDate END = LocalDate.of(2026, 6, 30);
+    private static final LocalDate START = LocalDate.now().plusDays(3);
+    private static final LocalDate END = LocalDate.now().plusDays(32);
 
     private Shop createShop() {
         Shop shop = mock(Shop.class);
@@ -76,6 +76,7 @@ class AdApplicationServiceTest {
         AdApplication saved = createAdApplication(1L);
 
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(adApplicationRepository.findByShopIdAndStatusWithLock(SHOP_ID, AdApplicationStatus.PENDING))
                 .willReturn(Collections.emptyList());
         given(adApplicationRepository.save(any(AdApplication.class))).willReturn(saved);
@@ -107,6 +108,7 @@ class AdApplicationServiceTest {
     void applyAd_duplicatePending() {
         Shop shop = createShop();
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(adApplicationRepository.findByShopIdAndStatusWithLock(SHOP_ID, AdApplicationStatus.PENDING))
                 .willReturn(List.of(mock(AdApplication.class)));
 

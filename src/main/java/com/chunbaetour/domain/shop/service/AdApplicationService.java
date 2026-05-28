@@ -58,7 +58,13 @@ public class AdApplicationService {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
-        // PENDING 중복 체크 — SELECT FOR UPDATE로 current read 보장
+        // Shop SELECT FOR UPDATE — 직렬화 포인트.
+        // findByShopIdAndStatusWithLock은 빈 결과에 gap lock이 걸리지 않아 동시 요청이 둘 다 통과 가능.
+        // Shop 행 락을 먼저 획득해 동시 신청을 직렬화한 뒤 PENDING 체크를 수행한다.
+        shopRepository.findByIdWithLock(shop.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // PENDING 중복 체크 — Shop 락 보유 후 실행 → 원자성 보장
         if (!adApplicationRepository.findByShopIdAndStatusWithLock(shop.getId(), AdApplicationStatus.PENDING).isEmpty()) {
             throw new BusinessException(ErrorCode.DUPLICATE_AD_APPLICATION);
         }
