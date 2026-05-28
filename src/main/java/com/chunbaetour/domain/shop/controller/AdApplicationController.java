@@ -38,7 +38,10 @@ public class AdApplicationController {
         return ApiResponse.success(adApplicationService.applyAd(userId, request));
     }
 
-    /** POST /api/v1/merchants/me/ads/{adId}/extend — 광고 연장 (엽전 차감) */
+    /**
+     * POST /api/v1/merchants/me/ads/{adId}/extend — 광고 연장 (엽전 차감).
+     * 기존 광고의 endDate를 변경하고, 연장된 endDate를 포함한 응답을 200 OK로 반환한다.
+     */
     @PostMapping("/{adId}/extend")
     public ApiResponse<AdApplicationResponse> extendAd(
             @AuthenticationPrincipal Long userId,

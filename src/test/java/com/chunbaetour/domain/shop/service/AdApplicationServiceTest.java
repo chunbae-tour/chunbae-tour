@@ -17,8 +17,12 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.AdApplicationRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import com.chunbaetour.domain.shop.type.AdType;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -29,20 +33,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class AdApplicationServiceTest {
 
     @Mock private AdApplicationRepository adApplicationRepository;
     @Mock private ShopRepository shopRepository;
     @Mock private WalletService walletService;
     @Mock private RedissonClient redissonClient;
+    @Mock private Clock clock;
 
     @InjectMocks
     private AdApplicationService adApplicationService;
@@ -50,21 +52,19 @@ class AdApplicationServiceTest {
     private static final Long USER_ID = 1L;
     private static final Long SHOP_ID = 10L;
     private static final Long AD_ID = 1L;
-    private static final LocalDate START = LocalDate.now().plusDays(3);
-    private static final LocalDate END = LocalDate.now().plusDays(32);
+    private static final LocalDate START = LocalDate.of(2026, 6, 1);
+    private static final LocalDate END = LocalDate.of(2026, 6, 30);
 
     private Shop createShop() {
-        Shop shop = mock(Shop.class);
-        given(shop.getId()).willReturn(SHOP_ID);
-        return shop;
+        return mock(Shop.class);
     }
 
     private AdApplicationRequest validRequest() {
-        return new AdApplicationRequest(SHOP_ID, "BANNER", START, END, 10_000L);
+        return new AdApplicationRequest(SHOP_ID, AdType.BANNER, START, END);
     }
 
     private AdApplication createAdApplication(Long id) {
-        AdApplication a = AdApplication.create(SHOP_ID, "BANNER", START, END, 10_000L);
+        AdApplication a = AdApplication.create(SHOP_ID, AdType.BANNER, START, END, 30_000L);
         ReflectionTestUtils.setField(a, "id", id);
         return a;
     }
@@ -75,6 +75,9 @@ class AdApplicationServiceTest {
         Shop shop = createShop();
         AdApplication saved = createAdApplication(1L);
 
+        given(clock.instant()).willReturn(Instant.parse("2026-05-29T00:00:00Z"));
+        given(clock.getZone()).willReturn(ZoneOffset.UTC);
+        given(shop.getId()).willReturn(SHOP_ID);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(adApplicationRepository.findByShopIdAndStatusWithLock(SHOP_ID, AdApplicationStatus.PENDING))
@@ -85,7 +88,8 @@ class AdApplicationServiceTest {
 
         assertThat(response.applicationId()).isEqualTo(1L);
         assertThat(response.shopId()).isEqualTo(SHOP_ID);
-        assertThat(response.adType()).isEqualTo("BANNER");
+        assertThat(response.adType()).isEqualTo(AdType.BANNER);
+        assertThat(response.cost()).isEqualTo(30_000L);
         assertThat(response.status()).isEqualTo(AdApplicationStatus.PENDING);
         then(adApplicationRepository).should().save(any(AdApplication.class));
     }
@@ -107,6 +111,9 @@ class AdApplicationServiceTest {
     @DisplayName("중복 PENDING 신청 — DUPLICATE_AD_APPLICATION")
     void applyAd_duplicatePending() {
         Shop shop = createShop();
+        given(clock.instant()).willReturn(Instant.parse("2026-05-29T00:00:00Z"));
+        given(clock.getZone()).willReturn(ZoneOffset.UTC);
+        given(shop.getId()).willReturn(SHOP_ID);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(adApplicationRepository.findByShopIdAndStatusWithLock(SHOP_ID, AdApplicationStatus.PENDING))
@@ -124,8 +131,10 @@ class AdApplicationServiceTest {
     @DisplayName("시작일이 종료일보다 늦음 — INVALID_INPUT_VALUE")
     void applyAd_invalidDateRange() {
         Shop shop = createShop();
-        AdApplicationRequest invalidRequest = new AdApplicationRequest(SHOP_ID, "BANNER", END, START, 10_000L);
+        AdApplicationRequest invalidRequest = new AdApplicationRequest(SHOP_ID, AdType.BANNER, END, START);
 
+        given(clock.instant()).willReturn(Instant.parse("2026-05-29T00:00:00Z"));
+        given(clock.getZone()).willReturn(ZoneOffset.UTC);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
         assertThatThrownBy(() -> adApplicationService.applyAd(USER_ID, invalidRequest))
@@ -141,13 +150,13 @@ class AdApplicationServiceTest {
     private RLock mockLock() throws InterruptedException {
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(any(String.class))).willReturn(lock);
-        given(lock.tryLock(3, 5, TimeUnit.SECONDS)).willReturn(true);
+        given(lock.tryLock(3, TimeUnit.SECONDS)).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
         return lock;
     }
 
     private AdApplication createApproved(Long id) {
-        AdApplication a = AdApplication.create(SHOP_ID, "BANNER", START, END, 30_000L); // 30일, 30000엽전 → 1000/일
+        AdApplication a = AdApplication.create(SHOP_ID, AdType.BANNER, START, END, 30_000L); // 30일, 30000엽전 → 1000/일
         a.approve();
         ReflectionTestUtils.setField(a, "id", id);
         return a;

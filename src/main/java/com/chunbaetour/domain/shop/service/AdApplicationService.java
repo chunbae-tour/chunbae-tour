@@ -10,7 +10,9 @@ import com.chunbaetour.domain.shop.repository.AdApplicationRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,8 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 상인 광고 신청 서비스.
@@ -32,13 +36,12 @@ public class AdApplicationService {
     /** 광고 연장 분산 락 키: ad:extend:lock:{adId} — 동일 광고 동시 연장 직렬화 */
     private static final String AD_EXTEND_LOCK_KEY = "ad:extend:lock:%d";
     private static final int LOCK_WAIT_SECONDS = 3;
-    /** leaseTime 명시 — watchdog 무한 갱신 방지 (설계서 §6.2: 장애 시 자동 해제 보장) */
-    private static final int LOCK_LEASE_SECONDS = 5;
 
     private final AdApplicationRepository adApplicationRepository;
     private final ShopRepository shopRepository;
     private final WalletService walletService;
     private final RedissonClient redissonClient;
+    private final Clock clock;
 
     /**
      * 광고 신청.
@@ -51,7 +54,7 @@ public class AdApplicationService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // 날짜 유효성 — 과거 시작일 또는 시작일이 종료일보다 늦으면 거부
-        if (request.startDate().isBefore(LocalDate.now())) {
+        if (request.startDate().isBefore(LocalDate.now(clock))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         if (request.startDate().isAfter(request.endDate())) {
@@ -69,12 +72,15 @@ public class AdApplicationService {
             throw new BusinessException(ErrorCode.DUPLICATE_AD_APPLICATION);
         }
 
+        long durationDays = ChronoUnit.DAYS.between(request.startDate(), request.endDate()) + 1;
+        long cost = calculateApplicationCost(request, durationDays);
+
         AdApplication application = AdApplication.create(
                 shop.getId(),
                 request.adType(),
                 request.startDate(),
                 request.endDate(),
-                request.cost()
+                cost
         );
         AdApplication saved = adApplicationRepository.save(application);
 
@@ -89,10 +95,12 @@ public class AdApplicationService {
     @Transactional
     public AdApplicationResponse extendAd(Long userId, Long adId, int extensionDays) {
         RLock lock = redissonClient.getLock(AD_EXTEND_LOCK_KEY.formatted(adId));
+        boolean unlockRegistered = false;
         try {
-            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
+            unlockRegistered = registerUnlockAfterTransaction(lock, adId);
 
             // 비잠금 peek — 소유권 검증 목적 (shopId 취득)
             AdApplication peek = adApplicationRepository.findById(adId)
@@ -110,7 +118,7 @@ public class AdApplicationService {
             long extensionCost = application.calculateExtensionCost(extensionDays);
 
             // 엽전 차감 — SELECT FOR UPDATE on Wallet (락 순서 2번: Wallet)
-            walletService.spendForAdExtension(userId, extensionCost, application.getAdType());
+            walletService.spendForAdExtension(userId, extensionCost, application.getAdType().name());
 
             // endDate 연장 — APPROVED 상태 아니면 AD_APPLICATION_INVALID_STATUS
             application.extend(extensionDays);
@@ -121,13 +129,44 @@ public class AdApplicationService {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         } finally {
-            try {
-                if (lock.isHeldByCurrentThread()) {
-                    lock.unlock();
-                }
-            } catch (Exception e) {
-                log.warn("[광고 연장] 분산 락 해제 실패 (adId: {})", adId, e);
+            if (!unlockRegistered) {
+                unlockIfHeld(lock, adId);
             }
+        }
+    }
+
+    private long calculateApplicationCost(AdApplicationRequest request, long durationDays) {
+        try {
+            return request.adType().calculateCost(durationDays);
+        } catch (ArithmeticException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    /**
+     * DB 커밋/롤백이 끝난 뒤 분산 락을 해제한다.
+     * 락을 트랜잭션 커밋 전에 풀면 다음 요청이 미커밋 endDate를 읽고 비용을 계산할 수 있다.
+     */
+    private boolean registerUnlockAfterTransaction(RLock lock, Long adId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return false;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                unlockIfHeld(lock, adId);
+            }
+        });
+        return true;
+    }
+
+    private void unlockIfHeld(RLock lock, Long adId) {
+        try {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        } catch (Exception e) {
+            log.warn("[광고 연장] 분산 락 해제 실패 (adId: {})", adId, e);
         }
     }
 }

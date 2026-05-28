@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import com.chunbaetour.domain.shop.type.AdType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -35,8 +36,9 @@ public class AdApplication extends BaseEntity {
     @Column(name = "shop_id", nullable = false)
     private Long shopId;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "ad_type", nullable = false, length = 50)
-    private String adType;
+    private AdType adType;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -54,7 +56,7 @@ public class AdApplication extends BaseEntity {
     @Column(name = "reject_reason", length = 500)
     private String rejectReason;
 
-    public static AdApplication create(Long shopId, String adType, LocalDate startDate, LocalDate endDate, long cost) {
+    public static AdApplication create(Long shopId, AdType adType, LocalDate startDate, LocalDate endDate, long cost) {
         AdApplication a = new AdApplication();
         a.shopId = shopId;
         a.adType = adType;
@@ -83,7 +85,10 @@ public class AdApplication extends BaseEntity {
     /** 광고 연장 비용 계산 — 곱셈 먼저로 정수 나눗셈 손실 최소화 (cost × extensionDays / 기간). */
     public long calculateExtensionCost(int extensionDays) {
         long durationDays = ChronoUnit.DAYS.between(startDate, endDate) + 1;
-        return (cost * extensionDays) / durationDays;
+        if (durationDays <= 0) {
+            throw new BusinessException(ErrorCode.AD_APPLICATION_INVALID_STATUS);
+        }
+        return Math.ceilDiv(Math.multiplyExact(cost, extensionDays), durationDays);
     }
 
     /** 광고 기간 연장 — APPROVED 상태에서만 허용. */

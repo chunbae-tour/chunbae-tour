@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.isNull;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -13,6 +12,7 @@ import com.chunbaetour.domain.shop.dto.response.AdminAdApplicationResponse;
 import com.chunbaetour.domain.shop.entity.AdApplication;
 import com.chunbaetour.domain.shop.repository.AdApplicationRepository;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import com.chunbaetour.domain.shop.type.AdType;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -37,8 +37,8 @@ class AdminAdApplicationServiceTest {
     private static final Long SHOP_ID = 10L;
 
     private AdApplication createPending(Long id) {
-        AdApplication a = AdApplication.create(SHOP_ID, "BANNER",
-                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), 10_000L);
+        AdApplication a = AdApplication.create(SHOP_ID, AdType.BANNER,
+                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), 30_000L);
         ReflectionTestUtils.setField(a, "id", id);
         return a;
     }
@@ -124,7 +124,7 @@ class AdminAdApplicationServiceTest {
         AdApplication a1 = createPending(2L);
         AdApplication a2 = createPending(1L);
 
-        given(adApplicationRepository.findAllWithCursor(isNull(), isNull(), any(Pageable.class)))
+        given(adApplicationRepository.findAllByOrderByIdDesc(any(Pageable.class)))
                 .willReturn(List.of(a1, a2));
 
         CursorPageResponse<AdminAdApplicationResponse> result =
@@ -142,7 +142,7 @@ class AdminAdApplicationServiceTest {
         AdApplication a2 = createPending(2L);
         AdApplication a3 = createPending(1L);
 
-        given(adApplicationRepository.findAllWithCursor(isNull(), isNull(), any(Pageable.class)))
+        given(adApplicationRepository.findAllByOrderByIdDesc(any(Pageable.class)))
                 .willReturn(List.of(a1, a2, a3));
 
         CursorPageResponse<AdminAdApplicationResponse> result =

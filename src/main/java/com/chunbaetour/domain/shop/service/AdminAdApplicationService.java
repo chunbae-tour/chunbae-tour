@@ -62,8 +62,8 @@ public class AdminAdApplicationService {
         }
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
-        List<AdApplication> applications = adApplicationRepository.findAllWithCursor(
-                cursorId, status, PageRequest.of(0, size + 1));
+        PageRequest pageable = PageRequest.of(0, size + 1);
+        List<AdApplication> applications = findApplications(cursorId, status, pageable);
 
         boolean hasNext = applications.size() > size;
         List<AdApplication> page = hasNext ? applications.subList(0, size) : applications;
@@ -74,5 +74,16 @@ public class AdminAdApplicationService {
 
         String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+    }
+
+    private List<AdApplication> findApplications(Long cursorId, AdApplicationStatus status, PageRequest pageable) {
+        if (status == null) {
+            return cursorId == null
+                    ? adApplicationRepository.findAllByOrderByIdDesc(pageable)
+                    : adApplicationRepository.findByIdLessThanOrderByIdDesc(cursorId, pageable);
+        }
+        return cursorId == null
+                ? adApplicationRepository.findByStatusOrderByIdDesc(status, pageable)
+                : adApplicationRepository.findByStatusAndIdLessThanOrderByIdDesc(status, cursorId, pageable);
     }
 }

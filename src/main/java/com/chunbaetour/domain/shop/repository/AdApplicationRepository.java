@@ -30,13 +30,16 @@ public interface AdApplicationRepository extends JpaRepository<AdApplication, Lo
     @Query("SELECT a FROM AdApplication a WHERE a.id = :id")
     Optional<AdApplication> findByIdWithLock(@Param("id") Long id);
 
-    /** 관리자 광고 신청 목록 — cursor keyset (id DESC), status=null이면 전체 조회 */
-    @Query("""
-            SELECT a FROM AdApplication a
-            WHERE (:cursorId IS NULL OR a.id < :cursorId)
-            AND (:status IS NULL OR a.status = :status)
-            ORDER BY a.id DESC
-            """)
-    List<AdApplication> findAllWithCursor(@Param("cursorId") Long cursorId,
-            @Param("status") AdApplicationStatus status, Pageable pageable);
+    /** 관리자 광고 신청 목록 — 전체 첫 페이지 */
+    List<AdApplication> findAllByOrderByIdDesc(Pageable pageable);
+
+    /** 관리자 광고 신청 목록 — 전체 cursor 다음 페이지 */
+    List<AdApplication> findByIdLessThanOrderByIdDesc(Long cursorId, Pageable pageable);
+
+    /** 관리자 광고 신청 목록 — 상태 필터 첫 페이지 */
+    List<AdApplication> findByStatusOrderByIdDesc(AdApplicationStatus status, Pageable pageable);
+
+    /** 관리자 광고 신청 목록 — 상태 필터 cursor 다음 페이지 */
+    List<AdApplication> findByStatusAndIdLessThanOrderByIdDesc(
+            AdApplicationStatus status, Long cursorId, Pageable pageable);
 }

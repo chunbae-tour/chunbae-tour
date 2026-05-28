@@ -2,13 +2,14 @@ package com.chunbaetour.domain.shop.dto.response;
 
 import com.chunbaetour.domain.shop.entity.AdApplication;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import com.chunbaetour.domain.shop.type.AdType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public record AdminAdApplicationResponse(
         Long applicationId,
         Long shopId,
-        String adType,
+        AdType adType,
         LocalDate startDate,
         LocalDate endDate,
         long cost,

@@ -1,16 +1,13 @@
 package com.chunbaetour.domain.shop.dto.request;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.NotBlank;
+import com.chunbaetour.domain.shop.type.AdType;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import java.time.LocalDate;
 
 public record AdApplicationRequest(
         @NotNull Long shopId,
-        @NotBlank String adType,
+        @NotNull AdType adType,
         @NotNull LocalDate startDate,
-        @NotNull LocalDate endDate,
-        @Positive @Max(10_000_000L) long cost
+        @NotNull LocalDate endDate
 ) {
 }
