@@ -57,12 +57,12 @@ class MerchantHomeServiceTest {
 
     private static final Long USER_ID = 99L;
     private static final Long SHOP_ID = 10L;
-    private static final String CACHE_KEY = "merchant:home:" + USER_ID;
+    private static final String CACHE_KEY = "merchant:home:v1:" + USER_ID;
 
     @Test
     @DisplayName("상인 홈 조회 — 캐시 hit이면 DB 조회 없이 캐시를 반환한다")
     void getHome_cacheHit_returnsCachedResponse() throws Exception {
-        MerchantHomeResponse cachedResponse = new MerchantHomeResponse(12_000L, List.of());
+        MerchantHomeResponse cachedResponse = new MerchantHomeResponse(12_000L, java.time.LocalDate.of(2026, 5, 25), List.of());
         String cached = objectMapper.writeValueAsString(cachedResponse);
         given(redisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get(CACHE_KEY)).willReturn(cached);
@@ -70,6 +70,7 @@ class MerchantHomeServiceTest {
         MerchantHomeResponse response = merchantHomeService.getHome(USER_ID);
 
         assertThat(response.todaySalesAmount()).isEqualTo(12_000L);
+        assertThat(response.todaySalesDate()).isEqualTo(java.time.LocalDate.of(2026, 5, 25));
         verify(shopRepository, never()).findAllByUserId(any());
         verify(qrPayRequestRepository, never()).sumAmountByShopIdsAndStatusBetween(any(), any(), any(), any());
         verify(valueOperations, never()).set(any(), any(), any(Duration.class));
@@ -89,13 +90,17 @@ class MerchantHomeServiceTest {
                 eq(LocalDateTime.of(2026, 5, 24, 15, 0)),
                 eq(LocalDateTime.of(2026, 5, 25, 15, 0))
         )).willReturn(15_000L);
-        given(qrPayRequestRepository.findTop10ByShopIdInAndStatusAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
-                List.of(SHOP_ID), QrPayStatus.COMPLETED
+        given(qrPayRequestRepository.findTop10ByShopIdInAndStatusAndCompletedAtBetweenOrderByCompletedAtDescIdDesc(
+                List.of(SHOP_ID),
+                QrPayStatus.COMPLETED,
+                LocalDateTime.of(2026, 5, 24, 15, 0),
+                LocalDateTime.of(2026, 5, 25, 15, 0)
         )).willReturn(List.of(recentPayment));
 
         MerchantHomeResponse response = merchantHomeService.getHome(USER_ID);
 
         assertThat(response.todaySalesAmount()).isEqualTo(15_000L);
+        assertThat(response.todaySalesDate()).isEqualTo(java.time.LocalDate.of(2026, 5, 25));
         assertThat(response.recentPayments()).hasSize(1);
         assertThat(response.recentPayments().get(0).payRequestId()).isEqualTo("req-001");
         assertThat(response.recentPayments().get(0).completedAt())
@@ -113,6 +118,7 @@ class MerchantHomeServiceTest {
         MerchantHomeResponse response = merchantHomeService.getHome(USER_ID);
 
         assertThat(response.todaySalesAmount()).isZero();
+        assertThat(response.todaySalesDate()).isEqualTo(java.time.LocalDate.of(2026, 5, 25));
         assertThat(response.recentPayments()).isEmpty();
         verify(qrPayRequestRepository, never()).sumAmountByShopIdsAndStatusBetween(any(), any(), any(), any());
         verify(valueOperations).set(eq(CACHE_KEY), any(String.class), eq(Duration.ofMinutes(3)));

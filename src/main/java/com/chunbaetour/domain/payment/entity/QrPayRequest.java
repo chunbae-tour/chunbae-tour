@@ -13,7 +13,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -104,14 +103,9 @@ public class QrPayRequest extends BaseEntity {
         if (this.status != QrPayStatus.PENDING) {
             throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
         }
-        this.completedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+        this.completedAt = completedAt;
         this.status = QrPayStatus.COMPLETED;
         this.pendingKey = null;
-    }
-
-    /** 테스트/기존 호출 호환용 — 운영 서비스에서는 Clock 기반 complete(LocalDateTime)을 사용한다. */
-    public void complete() {
-        complete(LocalDateTime.now());
     }
 
     /** 상인 거절 — STORY-14에서 호출 */

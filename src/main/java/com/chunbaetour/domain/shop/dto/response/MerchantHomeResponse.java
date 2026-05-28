@@ -1,11 +1,13 @@
 package com.chunbaetour.domain.shop.dto.response;
 
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 public record MerchantHomeResponse(
-        Long todaySalesAmount,
+        long todaySalesAmount,
+        LocalDate todaySalesDate,
         List<RecentPaymentResponse> recentPayments
 ) {
 

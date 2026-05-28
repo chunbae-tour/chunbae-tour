@@ -30,6 +30,8 @@ public class MerchantHomeController {
      */
     @GetMapping
     public ApiResponse<MerchantHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
+        // SecurityConfig가 인증을 보장하지만, null principal이 들어오는 비정상 상황은
+        // AUTH_006으로 통일해 다른 /me 계열 컨트롤러와 응답 형태를 맞춘다.
         requireAuthenticated(userId);
         return ApiResponse.success(merchantHomeService.getHome(userId));
     }

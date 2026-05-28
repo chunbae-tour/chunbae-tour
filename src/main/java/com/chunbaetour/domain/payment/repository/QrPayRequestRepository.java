@@ -54,7 +54,7 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
                                             @Param("startAt") LocalDateTime startAt,
                                             @Param("endAt") LocalDateTime endAt);
 
-    /** 상인 홈 대시보드 — 최근 완료 QR 결제 최대 10건 */
-    List<QrPayRequest> findTop10ByShopIdInAndStatusAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
-            List<Long> shopIds, QrPayStatus status);
+    /** 상인 홈 대시보드 — 오늘 완료된 QR 결제 중 최신 10건 */
+    List<QrPayRequest> findTop10ByShopIdInAndStatusAndCompletedAtBetweenOrderByCompletedAtDescIdDesc(
+            List<Long> shopIds, QrPayStatus status, LocalDateTime startAt, LocalDateTime endAt);
 }
