@@ -67,7 +67,7 @@ public class GlobalExceptionHandler {
     // JSON 역직렬화 실패 (잘못된 enum 값, 타입 불일치 등) — 400 반환
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
-        log.warn("HttpMessageNotReadable: {}", ex.getMessage());
+        log.warn("invalid request body: {}", ex.getMostSpecificCause().getMessage());
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
                 .body(ApiResponse.error(ErrorCode.INVALID_REQUEST.getCode(), ErrorCode.INVALID_REQUEST.getMessage()));
     }

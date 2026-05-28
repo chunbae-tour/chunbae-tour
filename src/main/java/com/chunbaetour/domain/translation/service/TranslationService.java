@@ -13,6 +13,8 @@ import com.chunbaetour.domain.translation.type.LanguageCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -35,8 +37,9 @@ public class TranslationService {
         }
     }
 
-    // 번역 실패 로그 저장 — 저장 실패가 원본 예외 전파를 막지 않도록 try-catch 격리
-    private void saveErrorLog(TranslationClientException e) {
+    // 번역 실패 로그 저장 — REQUIRES_NEW로 외부 트랜잭션 롤백 시에도 로그 커밋 보장
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveErrorLog(TranslationClientException e) {
         try {
             commonErrorLogRepository.save(CommonErrorLog.builder()
                     .domain(CommonErrorDomain.TRANSLATION)
