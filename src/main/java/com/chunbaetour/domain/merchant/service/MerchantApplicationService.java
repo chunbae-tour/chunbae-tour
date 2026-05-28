@@ -33,7 +33,8 @@ public class MerchantApplicationService {
 
     /**
      * 상인 등록 신청.
-     * 중복 신청(PENDING/APPROVED) 방지 → 사업자번호 유효성 검증 → 사업자번호 중복 검사 → 신청 저장.
+     * 중복 신청(PENDING) 방지 → 사업자번호 유효성 검증 → 사업자번호 중복 검사 → 신청 저장.
+     * APPROVED 상태는 차단하지 않음 — 1상인 다중 가게 지원.
      *
      * <p>사업자번호 동시성: existsByBusinessNumberAndStatusIn + save 사이 check-then-act race condition을
      * uk_merchant_active_business_number (business_number, active_flag) 유니크 제약으로 최종 차단.
