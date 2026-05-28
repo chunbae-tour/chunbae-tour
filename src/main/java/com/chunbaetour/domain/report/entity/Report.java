@@ -86,13 +86,20 @@ public class Report extends BaseEntity {
     }
 
     /**
-     * 신고 처리 (WARNING / SUSPEND / DELETE).
+     * 신고 처리 (WARNING / SUSPEND / DELETE / HIDE_SHOP / REVOKE_MERCHANT).
      * status = RESOLVED, action·adminNote·resolvedBy·resolvedAt 기록.
+     * DISMISS는 {@link #dismiss} 전용 메서드로 분리.
+     *
+     * <p>도메인 불변식 보호: PENDING 상태가 아니면 IllegalStateException.
+     * 서비스 레이어에서도 체크하지만 엔티티 자체도 방어.
      *
      * <p>TODO(Clock): LocalDateTime.now() 직접 사용 — 테스트에서 시간 제어 불가.
      * 추후 Clock 주입 방식으로 개선 가능 (엔티티 Clock 주입은 복잡도 증가로 MVP 범위 제외).
      */
     public void resolve(ReportAction action, String adminNote, String resolvedBy) {
+        if (!isPending()) {
+            throw new IllegalStateException("이미 처리된 신고입니다. reportId=" + this.id);
+        }
         if (action == null) {
             throw new IllegalArgumentException("action은 null일 수 없습니다.");
         }
