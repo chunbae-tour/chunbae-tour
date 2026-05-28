@@ -119,8 +119,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/payments/**").hasRole("USER")
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
-                        // 상인 신청은 USER 권한 — /merchants/** 보다 먼저 선언해야 우선순위 적용됨
-                        .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasRole("USER")
+                        // 상인 신청은 USER·MERCHANT 모두 허용 — 1상인 다중 가게 지원. /merchants/** 보다 먼저 선언해야 우선순위 적용됨
+                        .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasAnyRole("USER", "MERCHANT")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // 검색 관련 보호 API: 최근 검색어 저장/조회는 인증된 USER 전용 (조회 공개 API보다 먼저 선언)

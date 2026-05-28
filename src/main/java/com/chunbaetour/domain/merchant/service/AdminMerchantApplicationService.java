@@ -85,26 +85,15 @@ public class AdminMerchantApplicationService {
         Account account = accountRepository.findByIdWithLock(application.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        // 이미 가게가 있는 계정이면 중복 생성 차단 — uk_shops_user_id DB 제약의 코드 레벨 선제 방어
-        if (shopRepository.existsByUserId(account.getId())) {
-            throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
-        }
-
-        // USER 이외의 role(MERCHANT/ADMIN)은 승격 불가 — entity 상태 변경 전 선제 검증
-        if (account.getRole() != Role.USER) {
-            throw new BusinessException(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID);
-        }
-
         // 선행 검증 통과 후 상태 전이 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
-        application.approve();                                      // 신청 상태 PENDING → APPROVED
-        account.promoteToMerchant();                                // 계정 역할 USER → MERCHANT
+        application.approve();                // 신청 상태 PENDING → APPROVED
+        account.promoteToMerchant();          // USER → MERCHANT 승격 (MERCHANT면 멱등 skip, ADMIN이면 예외)
         try {
             shopRepository.save(Shop.fromApplication(application)); // 가게 엔티티 신규 생성
         } catch (DataIntegrityViolationException e) {
-            // existsByUserId 체크 → save 사이 극히 드문 race condition
-            // uk_shops_user_id(동일 사용자) 또는 uk_shops_application_id(동일 신청서) 제약 위반
+            // uk_shops_application_id 제약 위반 — 동일 신청서로 가게 2개 생성 방지 (동시 승인 race condition)
             String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();
-            if (msg != null && (msg.contains("uk_shops_user_id") || msg.contains("uk_shops_application_id"))) {
+            if (msg != null && msg.contains("uk_shops_application_id")) {
                 throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
             }
             log.error("Shop 저장 중 예상치 못한 DB 제약 위반 발생. applicationId={}", application.getId(), e);

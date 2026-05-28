@@ -2,6 +2,7 @@ package com.chunbaetour.domain.chat.config;
 
 import com.chunbaetour.domain.auth.security.CorsProperties;
 import com.chunbaetour.domain.chat.service.ChatRedisPubSubService;
+import com.chunbaetour.domain.notification.service.NotificationRedisPubSubService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -54,6 +55,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         MessageListenerAdapter adapter =
                 new MessageListenerAdapter(chatRedisPubSubService, "handleMessage");
         container.addMessageListener(adapter, new PatternTopic("chat:*"));
+        return container;
+    }
+
+    // notification:* 패턴 Redis 채널 구독 — 다중 서버 환경에서 개인 알림 Push 동기화
+    @Bean
+    public RedisMessageListenerContainer notificationRedisListenerContainer(
+            RedisConnectionFactory connectionFactory,
+            NotificationRedisPubSubService notificationRedisPubSubService) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        MessageListenerAdapter adapter =
+                new MessageListenerAdapter(notificationRedisPubSubService, "handleMessage");
+        container.addMessageListener(adapter, new PatternTopic("notification:*"));
         return container;
     }
 }

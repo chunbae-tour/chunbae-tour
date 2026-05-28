@@ -21,13 +21,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 메뉴 CRUD API (STORY-11).
- * POST   /api/v1/merchants/me/shop/menus         — 메뉴 등록 (MERCHANT)
- * PATCH  /api/v1/merchants/me/shop/menus/{menuId} — 메뉴 수정 (MERCHANT)
- * DELETE /api/v1/merchants/me/shop/menus/{menuId} — 메뉴 삭제 (MERCHANT)
+ * POST   /api/v1/merchants/me/shops/{shopId}/menus          — 메뉴 등록 (MERCHANT)
+ * PATCH  /api/v1/merchants/me/shops/{shopId}/menus/{menuId} — 메뉴 수정 (MERCHANT)
+ * DELETE /api/v1/merchants/me/shops/{shopId}/menus/{menuId} — 메뉴 삭제 (MERCHANT)
  * SecurityConfig: /api/v1/merchants/** → MERCHANT 권한 필요.
  */
 @RestController
-@RequestMapping("/api/v1/merchants/me/shop/menus")
+@RequestMapping("/api/v1/merchants/me/shops/{shopId}/menus")
 @RequiredArgsConstructor
 @Validated
 public class MenuController {
@@ -38,26 +38,29 @@ public class MenuController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<MenuResponse> createMenu(
             @AuthenticationPrincipal Long userId,
+            @PathVariable Long shopId,
             @Valid @RequestBody MenuCreateRequest request
     ) {
-        return ApiResponse.success(menuService.createMenu(userId, request));
+        return ApiResponse.success(menuService.createMenu(userId, shopId, request));
     }
 
     @PatchMapping("/{menuId}")
     public ApiResponse<MenuResponse> updateMenu(
             @AuthenticationPrincipal Long userId,
+            @PathVariable Long shopId,
             @PathVariable Long menuId,
             @Valid @RequestBody MenuUpdateRequest request
     ) {
-        return ApiResponse.success(menuService.updateMenu(userId, menuId, request));
+        return ApiResponse.success(menuService.updateMenu(userId, shopId, menuId, request));
     }
 
     @DeleteMapping("/{menuId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteMenu(
             @AuthenticationPrincipal Long userId,
+            @PathVariable Long shopId,
             @PathVariable Long menuId
     ) {
-        menuService.deleteMenu(userId, menuId);
+        menuService.deleteMenu(userId, shopId, menuId);
     }
 }
