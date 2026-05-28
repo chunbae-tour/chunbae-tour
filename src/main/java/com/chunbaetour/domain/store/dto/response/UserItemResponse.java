@@ -4,6 +4,7 @@ import com.chunbaetour.domain.store.entity.UserItem;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import java.time.LocalDate;
 
+/** GET /api/v1/users/me/items 응답 DTO. itemId=user_items.id, expiresAt=null이면 무기한 */
 public record UserItemResponse(
         Long itemId,
         Long orderId,

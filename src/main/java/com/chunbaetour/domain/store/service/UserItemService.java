@@ -17,12 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class UserItemService {
 
     private final UserItemRepository userItemRepository;
 
     /** 내 보유 아이템 조회 — cursor keyset 페이징 (id DESC) */
-    @Transactional(readOnly = true)
     public CursorPageResponse<UserItemResponse> getMyItems(Long userId, String cursor, int size) {
         // cursor 디코딩 — null이면 첫 페이지
         Long cursorId = CursorUtils.decodeSafe(cursor);
