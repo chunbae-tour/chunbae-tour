@@ -10,6 +10,7 @@ import com.chunbaetour.domain.shop.repository.AdApplicationRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import java.time.LocalDate;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,8 @@ public class AdApplicationService {
     /** 광고 연장 분산 락 키: ad:extend:lock:{adId} — 동일 광고 동시 연장 직렬화 */
     private static final String AD_EXTEND_LOCK_KEY = "ad:extend:lock:%d";
     private static final int LOCK_WAIT_SECONDS = 3;
+    /** leaseTime 명시 — watchdog 무한 갱신 방지 (설계서 §6.2: 장애 시 자동 해제 보장) */
+    private static final int LOCK_LEASE_SECONDS = 5;
 
     private final AdApplicationRepository adApplicationRepository;
     private final ShopRepository shopRepository;
@@ -47,7 +50,10 @@ public class AdApplicationService {
         Shop shop = shopRepository.findByIdAndUserId(request.shopId(), userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // 날짜 유효성 — 시작일이 종료일보다 늦으면 거부
+        // 날짜 유효성 — 과거 시작일 또는 시작일이 종료일보다 늦으면 거부
+        if (request.startDate().isBefore(LocalDate.now())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         if (request.startDate().isAfter(request.endDate())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
@@ -78,7 +84,7 @@ public class AdApplicationService {
     public AdApplicationResponse extendAd(Long userId, Long adId, int extensionDays) {
         RLock lock = redissonClient.getLock(AD_EXTEND_LOCK_KEY.formatted(adId));
         try {
-            if (!lock.tryLock(LOCK_WAIT_SECONDS, TimeUnit.SECONDS)) {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
 

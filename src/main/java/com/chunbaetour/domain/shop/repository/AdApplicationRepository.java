@@ -11,6 +11,10 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * 광고 신청 레포지토리.
+ * PENDING 중복 체크(비관적 락), 관리자 목록 cursor 페이징, 상태 전이용 단건 락 조회 담당.
+ */
 public interface AdApplicationRepository extends JpaRepository<AdApplication, Long> {
 
     /**

@@ -49,6 +49,7 @@ class AdApplicationServiceTest {
 
     private static final Long USER_ID = 1L;
     private static final Long SHOP_ID = 10L;
+    private static final Long AD_ID = 1L;
     private static final LocalDate START = LocalDate.of(2026, 6, 1);
     private static final LocalDate END = LocalDate.of(2026, 6, 30);
 
@@ -138,7 +139,7 @@ class AdApplicationServiceTest {
     private RLock mockLock() throws InterruptedException {
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(any(String.class))).willReturn(lock);
-        given(lock.tryLock(3, TimeUnit.SECONDS)).willReturn(true);
+        given(lock.tryLock(3, 5, TimeUnit.SECONDS)).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
         return lock;
     }
@@ -211,5 +212,4 @@ class AdApplicationServiceTest {
                 .isEqualTo(ErrorCode.AD_APPLICATION_INVALID_STATUS);
     }
 
-    private static final Long AD_ID = 1L;
 }

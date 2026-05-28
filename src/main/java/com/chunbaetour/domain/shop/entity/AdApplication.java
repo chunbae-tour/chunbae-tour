@@ -80,11 +80,10 @@ public class AdApplication extends BaseEntity {
         this.rejectReason = reason;
     }
 
-    /** 광고 연장 비용 계산 — 원래 일 단가(cost ÷ 기간) × extensionDays. */
+    /** 광고 연장 비용 계산 — 곱셈 먼저로 정수 나눗셈 손실 최소화 (cost × extensionDays / 기간). */
     public long calculateExtensionCost(int extensionDays) {
         long durationDays = ChronoUnit.DAYS.between(startDate, endDate) + 1;
-        long costPerDay = cost / durationDays;
-        return costPerDay * extensionDays;
+        return (cost * extensionDays) / durationDays;
     }
 
     /** 광고 기간 연장 — APPROVED 상태에서만 허용. */
