@@ -2,7 +2,6 @@ package com.chunbaetour.domain.translation.client;
 
 import com.chunbaetour.domain.translation.type.LanguageCode;
 import java.util.List;
-import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +29,7 @@ public class GoogleTranslationClient {
 
     // 텍스트를 targetLanguage로 번역. 실패 시 TranslationClientException
     public String translate(String text, LanguageCode targetLanguage) {
-        TranslateRequest request = new TranslateRequest(List.of(text), targetLanguage.name().toLowerCase(Locale.ROOT));
+        TranslateRequest request = new TranslateRequest(List.of(text), targetLanguage.getApiCode(), "text");
         try {
             TranslateResponse response = restClient.post()
                     .uri(UriComponentsBuilder.fromUriString(TRANSLATE_URL)
@@ -57,7 +56,8 @@ public class GoogleTranslationClient {
         }
     }
 
-    private record TranslateRequest(List<String> q, String target) {}
+    // format = "text": HTML 기본값 방지 — 채팅 메시지의 <, > 등 특수문자 오해석 차단
+    private record TranslateRequest(List<String> q, String target, String format) {}
 
     private record TranslateResponse(TranslateData data) {
         private record TranslateData(List<Translation> translations) {
