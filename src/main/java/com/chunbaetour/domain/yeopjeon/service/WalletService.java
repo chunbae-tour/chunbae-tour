@@ -81,6 +81,24 @@ public class WalletService {
     }
 
     /**
+     * 스토어 상품 구매 시 엽전 차감 + 구매 이력 저장.
+     * SELECT FOR UPDATE로 지갑 행 락 획득 후 잔액 차감.
+     * 락 획득 순서: Product → Wallet (StorePurchaseService에서 Product 락 먼저 획득).
+     */
+    @Transactional
+    public void spendForPurchase(Long userId, long amount, String productName) {
+        // SELECT FOR UPDATE로 지갑 행 락 획득
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        // 잔액 차감 (부족 시 Wallet.debit()에서 INSUFFICIENT_BALANCE 던짐)
+        wallet.debit(amount);
+        // 구매 이력 저장
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofStorePurchase(userId, amount, wallet.getBalance(), productName)
+        );
+    }
+
+    /**
      * 신규 유저 지갑 생성 (멱등).
      * existsByUserId 체크 후 없으면 saveAndFlush.
      * 동시 요청으로 UK_WALLETS_USER_ID 제약 위반 시 정상 처리(return) — 다른 DB 에러는 그대로 던짐.
