@@ -26,6 +26,8 @@ import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.type.ReportAction;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
@@ -70,6 +72,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
     @Autowired private CompanionPostRepository companionPostRepository;
     @Autowired private FreePostRepository freePostRepository;
     @Autowired private CommentRepository commentRepository;
+    @Autowired private ShopRepository shopRepository;
 
     @AfterEach
     void cleanup() {
@@ -77,6 +80,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         commentRepository.deleteAll();
         companionPostRepository.deleteAll();
         freePostRepository.deleteAll();
+        shopRepository.deleteAll();
         accountRepository.deleteAll();
     }
 
@@ -304,8 +308,11 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         void dismiss_merchant_report() throws Exception {
             Account reporter = seedFactory.seed("mdr@test.com", PASSWORD, "가게기각신고자", Role.USER, AccountStatus.ACTIVE);
             Account merchant = seedFactory.seedMerchant("mdm@test.com", PASSWORD, "기각가게주인");
+            Shop shop = shopRepository.save(Shop.builder()
+                    .userId(merchant.getId()).applicationId(1L)
+                    .shopName("기각가게").category("FOOD").address("서울시 테스트구").build());
             Report report = reportRepository.save(Report.create(
-                    reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
+                    reporter.getId(), ReportTargetType.MERCHANT, shop.getId(),
                     ReportReason.OTHER, null));
             String adminToken = adminToken();
 
@@ -323,8 +330,11 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         void revoke_merchant_downgrades_role() throws Exception {
             Account reporter = seedFactory.seed("rreporter@test.com", PASSWORD, "강등신고자", Role.USER, AccountStatus.ACTIVE);
             Account merchant = seedFactory.seedMerchant("rmerchant@test.com", PASSWORD, "강등상인");
+            Shop shop = shopRepository.save(Shop.builder()
+                    .userId(merchant.getId()).applicationId(1L)
+                    .shopName("강등가게").category("FOOD").address("서울시 테스트구").build());
             Report report = reportRepository.save(Report.create(
-                    reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
+                    reporter.getId(), ReportTargetType.MERCHANT, shop.getId(),
                     ReportReason.ILLEGAL, "사기"));
             String adminToken = adminToken();
 
@@ -341,12 +351,15 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("HIDE_SHOP — Shop 미구현이라도 status=RESOLVED")
+        @DisplayName("HIDE_SHOP — 가게 SUSPENDED 처리 후 status=RESOLVED")
         void hide_shop_records_resolved() throws Exception {
             Account reporter = seedFactory.seed("hsreporter@test.com", PASSWORD, "숨김신고자", Role.USER, AccountStatus.ACTIVE);
             Account merchant = seedFactory.seedMerchant("hsmerchant@test.com", PASSWORD, "숨김상인");
+            Shop shop = shopRepository.save(Shop.builder()
+                    .userId(merchant.getId()).applicationId(1L)
+                    .shopName("숨김가게").category("FOOD").address("서울시 테스트구").build());
             Report report = reportRepository.save(Report.create(
-                    reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
+                    reporter.getId(), ReportTargetType.MERCHANT, shop.getId(),
                     ReportReason.SPAM, null));
             String adminToken = adminToken();
 

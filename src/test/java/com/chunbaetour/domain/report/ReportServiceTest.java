@@ -94,6 +94,8 @@ class ReportServiceTest {
     @DisplayName("정상 신고 생성 → PENDING 상태 반환")
     void create_정상() {
         given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
+        // 락 획득 후 내부 count 재확인 — findByIdForUpdate 항상 호출됨
+        given(freePostRepository.findByIdForUpdate(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
                 REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID)).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
@@ -130,7 +132,7 @@ class ReportServiceTest {
     @Test
     @DisplayName("MERCHANT 신고 — 가게 없음 → REPORT_TARGET_NOT_FOUND")
     void create_MERCHANT_가게없음() {
-        // targetId(shopId=50) != reporterId(1) → 조기 차단 통과, validateReportTarget에서 가게 조회 실패
+        // targetId = shopId — 가게 없으면 REPORT_TARGET_NOT_FOUND
         Long shopId = 50L;
         given(shopService.findMerchantAccountId(shopId)).willReturn(Optional.empty());
 
@@ -145,7 +147,7 @@ class ReportServiceTest {
     @DisplayName("MERCHANT 신고 — 본인 소유 가게 → REPORT_SELF (shopId ≠ reporterId이지만 owner가 본인)")
     void create_MERCHANT_본인가게신고() {
         // shopId(50) != reporterId(1) → 조기 차단 통과
-        // 하지만 가게 owner가 reporter이므로 validateReportTarget에서 REPORT_SELF
+        // 가게 owner == reporter → validateReportTarget에서 REPORT_SELF
         Long shopId = 50L;
         given(shopService.findMerchantAccountId(shopId)).willReturn(Optional.of(REPORTER_ID));
 
@@ -201,11 +203,13 @@ class ReportServiceTest {
     @Test
     @DisplayName("신고 2건 — 임계값 미달 시 게시글 상태 변경 없음")
     void create_autoHide_임계값_미달() {
+        // 락 획득 후 내부에서 count 재확인 — findByIdForUpdate는 항상 호출됨
         given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
+        given(freePostRepository.findByIdForUpdate(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
         given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.POST_FREE, FREE_POST_ID))
-                .willReturn(2L);
+                .willReturn(2L);  // 임계값(3) 미달 → 내부 filter 탈락, hide() 미호출
 
         reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.POST_FREE, FREE_POST_ID, ReportReason.SPAM, null));

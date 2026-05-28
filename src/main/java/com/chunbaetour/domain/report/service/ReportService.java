@@ -278,18 +278,21 @@ public class ReportService {
      * 이미 삭제된 콘텐츠는 filter 조건으로 중복 처리 방지.
      */
     private void autoHideIfThresholdReached(ReportTargetType targetType, Long targetId) {
-        long count = reportRepository.countByTargetTypeAndTargetId(targetType, targetId);
-        if (count < AUTO_HIDE_THRESHOLD) return;
-
+        // 외부 카운트 체크 제거 — 락 바깥에서 count를 확인하면 동시 트랜잭션이 모두
+        // 임계값 미만으로 읽어 아무도 hide를 호출하지 않는 race condition 발생.
+        // 락 획득(findByIdForUpdate) 후 내부에서 count를 재확인해 정확히 한 번만 실행.
         switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= AUTO_HIDE_THRESHOLD)
                     .ifPresent(CompanionPost::hide);
             case POST_FREE -> freePostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= AUTO_HIDE_THRESHOLD)
                     .ifPresent(FreePost::hide);
             case COMMENT -> commentRepository.findByIdForUpdate(targetId)
                     .filter(c -> c.getStatus() != CommentStatus.DELETED)
+                    .filter(c -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= AUTO_HIDE_THRESHOLD)
                     .ifPresent(Comment::delete);
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요
@@ -446,7 +449,7 @@ public class ReportService {
                 }
             }
             case MERCHANT -> {
-                // targetId = shopId — 다중 가게 지원 시 신고 대상 가게만 조치 가능
+                // targetId = shopId — 다중 가게 지원: 신고 대상 가게를 명시적으로 지정
                 Long ownerId = shopService.findMerchantAccountId(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (ownerId.equals(reporterId)) {
