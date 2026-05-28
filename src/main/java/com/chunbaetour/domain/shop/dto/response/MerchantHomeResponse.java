@@ -16,6 +16,15 @@ public record MerchantHomeResponse(
             LocalDateTime completedAt
     ) {
 
+        /**
+         * QR 결제 요청 엔티티를 상인 홈의 최근 결제 응답으로 변환한다.
+         *
+         * <p>대시보드에는 완료 시각을 기준으로 노출해야 하므로 updatedAt이 아니라
+         * 완료 시점 전용 컬럼 completedAt을 사용한다.
+         *
+         * @param request 최근 결제에 표시할 QR 결제 요청 엔티티
+         * @return 상인 홈 최근 결제 응답 DTO
+         */
         public static RecentPaymentResponse from(QrPayRequest request) {
             return new RecentPaymentResponse(
                     request.getPayRequestId(),

@@ -47,6 +47,9 @@ class UserItemIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private StringRedisTemplate redis;
 
+    /**
+     * 각 테스트가 Redis와 DB의 이전 상태에 영향을 받지 않도록 정리한다.
+     */
     @AfterEach
     void cleanup() {
         accountRepository.deleteAll();
@@ -74,6 +77,13 @@ class UserItemIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
+    /**
+     * 테스트에 필요한 사용자를 회원가입시킨다.
+     *
+     * @param email 회원가입 이메일
+     * @param password 회원가입 비밀번호
+     * @param nickname 회원가입 닉네임
+     */
     private void signup(String email, String password, String nickname) throws Exception {
         SignupRequest request = new SignupRequest(email, password, nickname);
         mockMvc.perform(post("/api/v1/users/auth/signup")
@@ -82,6 +92,13 @@ class UserItemIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated());
     }
 
+    /**
+     * 로그인 요청을 보내고 access token을 추출한다.
+     *
+     * @param email 로그인에 사용할 이메일
+     * @param password 로그인에 사용할 비밀번호
+     * @return 인증된 사용자의 access token
+     */
     private String login(String email, String password) throws Exception {
         LoginRequest request = new LoginRequest(email, password);
         MvcResult result = mockMvc.perform(post("/api/v1/users/auth/login")
@@ -93,6 +110,14 @@ class UserItemIntegrationTest extends AbstractIntegrationTest {
         return body.get("data").get("accessToken").asString();
     }
 
+    /**
+     * Redis에서 접두사가 일치하는 키를 모두 수집한 뒤 일괄 삭제한다.
+     *
+     * <p>SCAN으로 키를 모으는 이유는 cleanup 중 Redis를 장시간 잠그는 KEYS 명령을 피하고,
+     * cursor 순회와 삭제를 분리해 테스트 격리를 안정적으로 유지하기 위함이다.
+     *
+     * @param pattern 삭제할 키의 Redis pattern
+     */
     private void deleteByPrefix(String pattern) {
         ScanOptions options = ScanOptions.scanOptions()
                 .match(pattern)

@@ -85,6 +85,15 @@ public class MerchantHomeService {
         return response;
     }
 
+    /**
+     * 상인이 소유한 모든 가게를 기준으로 오늘 매출 합계와 최근 결제 목록을 만든다.
+     *
+     * <p>상인 1명이 여러 가게를 운영할 수 있으므로 가게 단건이 아니라 userId 기준
+     * 전체 가게를 조회해서 대시보드 요약을 생성한다.
+     *
+     * @param userId 인증된 상인 사용자 ID
+     * @return DB 조회 결과로 만든 상인 홈 응답
+     */
     private MerchantHomeResponse loadHome(Long userId) {
         // 상인이 소유한 모든 가게 ID를 조회한다. 상인 1명은 여러 가게를 운영할 수 있다.
         List<Long> shopIds = shopRepository.findAllByUserId(userId).stream()
