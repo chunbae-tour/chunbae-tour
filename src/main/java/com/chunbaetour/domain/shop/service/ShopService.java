@@ -33,14 +33,24 @@ public class ShopService {
     private final ObjectMapper objectMapper;
 
     /**
-     * 내 가게 조회.
-     * userId로 가게를 조회 — 승인된 상인에게만 가게가 존재함.
-     * 가게가 없으면 SHOP_001 예외.
+     * 내 가게 목록 조회.
+     * 상인은 여러 가게를 운영할 수 있으므로 전체 목록 반환.
+     * SUSPENDED/CLOSED 가게도 포함 — 본인 가게 상태 확인 가능해야 함.
+     */
+    public List<ShopResponse> getMyShops(Long userId) {
+        // userId로 내 가게 목록 조회
+        return shopRepository.findAllByUserId(userId)
+                .stream().map(ShopResponse::from).toList();
+    }
+
+    /**
+     * 내 가게 단건 조회.
+     * shopId + userId 조합으로 소유권 검증 — 타인 가게 접근 시 SHOP_001.
      * SUSPENDED/CLOSED 상태도 조회 허용 — 상인이 본인 가게 상태 확인 가능해야 함.
      */
-    public ShopResponse getMyShop(Long userId) {
-        // userId로 내 가게 단건 조회 — 가게 없으면 SHOP_001
-        Shop shop = shopRepository.findByUserId(userId)
+    public ShopResponse getMyShop(Long userId, Long shopId) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         return ShopResponse.from(shop);
@@ -53,9 +63,9 @@ public class ShopService {
      * 위치(address/lat/lng)는 수정 불가 — 관리자에게 문의.
      */
     @Transactional
-    public ShopResponse updateMyShop(Long userId, ShopUpdateRequest request) {
-        // userId로 내 가게 조회 — 가게 없으면 SHOP_001
-        Shop shop = shopRepository.findByUserId(userId)
+    public ShopResponse updateMyShop(Long userId, Long shopId, ShopUpdateRequest request) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // ACTIVE 상태 가드 — SUSPENDED/CLOSED 가게는 수정 불가 (SHOP_005)
@@ -75,11 +85,11 @@ public class ShopService {
     /**
      * 내 가게 QR 코드 payload 조회.
      * qrPayload = "YEOPJEON_PAY:SHOP:{shopId}" — 클라이언트가 이 문자열로 QR 이미지 렌더링.
-     * 가게가 없으면 SHOP_001. SUSPENDED/CLOSED여도 QR 확인 허용 — 결제 차단은 STORY-13에서 처리.
+     * SUSPENDED/CLOSED여도 QR 확인 허용 — 결제 차단은 STORY-13에서 처리.
      */
-    public QrCodeResponse getMyQrCode(Long userId) {
-        // userId로 내 가게 조회 — 가게 없으면 SHOP_001
-        Shop shop = shopRepository.findByUserId(userId)
+    public QrCodeResponse getMyQrCode(Long userId, Long shopId) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         return QrCodeResponse.from(shop);

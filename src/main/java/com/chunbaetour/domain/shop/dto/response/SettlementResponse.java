@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 public record SettlementResponse(
         Long settlementId,
+        Long shopId,
         long amount,
         SettlementStatus status,
         String rejectReason,
@@ -17,6 +18,7 @@ public record SettlementResponse(
     public static SettlementResponse from(Settlement s) {
         return new SettlementResponse(
                 s.getId(),
+                s.getShopId(),
                 s.getAmount(),
                 s.getStatus(),
                 s.getRejectReason(),

@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,27 +23,29 @@ import org.springframework.web.bind.annotation.RestController;
  * /api/v1/merchants/** 경로는 SecurityConfig에서 MERCHANT 권한 필수로 설정됨.
  */
 @RestController
-@RequestMapping("/api/v1/merchants/me/settlements")
+@RequestMapping("/api/v1/merchants/me/shops/{shopId}/settlements")
 @RequiredArgsConstructor
 @Validated
 public class SettlementController {
 
     private final SettlementService settlementService;
 
-    /** POST /api/v1/merchants/me/settlements — 정산 신청 */
+    /** POST /api/v1/merchants/me/shops/{shopId}/settlements — 정산 신청 */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<SettlementResponse> requestSettlement(
-            @AuthenticationPrincipal Long userId) {
-        return ApiResponse.success(settlementService.requestSettlement(userId));
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long shopId) {
+        return ApiResponse.success(settlementService.requestSettlement(userId, shopId));
     }
 
-    /** GET /api/v1/merchants/me/settlements — 내 정산 내역 조회 */
+    /** GET /api/v1/merchants/me/shops/{shopId}/settlements — 내 정산 내역 조회 */
     @GetMapping
     public ApiResponse<CursorPageResponse<SettlementResponse>> getMySettlements(
             @AuthenticationPrincipal Long userId,
+            @PathVariable Long shopId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return ApiResponse.success(settlementService.getMySettlements(userId, cursor, size));
+        return ApiResponse.success(settlementService.getMySettlements(userId, shopId, cursor, size));
     }
 }

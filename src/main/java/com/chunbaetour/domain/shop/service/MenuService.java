@@ -32,9 +32,9 @@ public class MenuService {
      * ACTIVE 가게만 등록 가능. 가게 내 메뉴 이름 중복 불허 (trim 기준).
      */
     @Transactional
-    public MenuResponse createMenu(Long userId, MenuCreateRequest request) {
-        // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
-        Shop shop = getActiveShop(userId);
+    public MenuResponse createMenu(Long userId, Long shopId, MenuCreateRequest request) {
+        // shopId + userId 조합으로 본인 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
+        Shop shop = getActiveShop(userId, shopId);
 
         // 앞뒤 공백 trim — " 떡볶이 "와 "떡볶이"를 같은 이름으로 처리
         String normalizedName = request.name().trim();
@@ -61,9 +61,9 @@ public class MenuService {
      * 다른 가게 메뉴 접근 시 MENU_NOT_FOUND (소유권 노출 방지).
      */
     @Transactional
-    public MenuResponse updateMenu(Long userId, Long menuId, MenuUpdateRequest request) {
-        // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
-        Shop shop = getActiveShop(userId);
+    public MenuResponse updateMenu(Long userId, Long shopId, Long menuId, MenuUpdateRequest request) {
+        // shopId + userId 조합으로 본인 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
+        Shop shop = getActiveShop(userId, shopId);
 
         // menuId + shopId 조합 조회 — 타 가게 메뉴는 MENU_NOT_FOUND로 처리
         Menu menu = getMenuOfShop(menuId, shop.getId());
@@ -86,9 +86,9 @@ public class MenuService {
      * ACTIVE 가게만 삭제 가능. 본인 가게 메뉴만 삭제 가능.
      */
     @Transactional
-    public void deleteMenu(Long userId, Long menuId) {
-        // userId로 내 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
-        Shop shop = getActiveShop(userId);
+    public void deleteMenu(Long userId, Long shopId, Long menuId) {
+        // shopId + userId 조합으로 본인 가게 조회 — 가게 없으면 SHOP_001, 비활성이면 SHOP_005
+        Shop shop = getActiveShop(userId, shopId);
 
         // menuId + shopId 조합 조회 — 타 가게 메뉴는 MENU_NOT_FOUND로 처리
         Menu menu = getMenuOfShop(menuId, shop.getId());
@@ -104,9 +104,9 @@ public class MenuService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.MENU_NOT_FOUND));
     }
 
-    /** userId로 ACTIVE 가게 조회. 없으면 SHOP_001, 비활성이면 SHOP_005. */
-    private Shop getActiveShop(Long userId) {
-        Shop shop = shopRepository.findByUserId(userId)
+    /** shopId + userId 조합으로 ACTIVE 가게 조회. 없거나 소유자 불일치면 SHOP_001, 비활성이면 SHOP_005. */
+    private Shop getActiveShop(Long userId, Long shopId) {
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         if (shop.getStatus() != ShopStatus.ACTIVE) {

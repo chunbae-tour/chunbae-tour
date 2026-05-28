@@ -31,7 +31,6 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "shops",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_shops_user_id", columnNames = {"user_id"}),
                 // 동일 신청서로 가게 2개 생성 방지 — 동시 승인 race condition 차단
                 @UniqueConstraint(name = "uk_shops_application_id", columnNames = {"application_id"})
         }

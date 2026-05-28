@@ -13,7 +13,12 @@ import org.springframework.data.repository.query.Param;
 
 public interface SettlementRepository extends JpaRepository<Settlement, Long> {
 
-    /** PENDING 중복 체크용 — SELECT FOR UPDATE로 current read 보장 (REPEATABLE READ 스냅샷 우회) */
+    /**
+     * PENDING 중복 체크용 — SELECT FOR UPDATE (current read).
+     * MySQL REPEATABLE READ에서 일반 SELECT는 트랜잭션 시작 시점 스냅샷을 읽으므로,
+     * 동시 요청이 커밋한 PENDING 행을 놓칠 수 있다. FOR UPDATE는 최신 커밋 데이터를 읽어 이를 방지.
+     * 정상 운영 시 가게당 PENDING 건수는 0~1건이므로 락 범위는 사실상 단건 수준.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Settlement s WHERE s.shopId = :shopId AND s.status = :status")
     List<Settlement> findByShopIdAndStatusWithLock(

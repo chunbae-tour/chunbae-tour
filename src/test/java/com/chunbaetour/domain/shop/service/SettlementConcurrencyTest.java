@@ -67,7 +67,7 @@ class SettlementConcurrencyTest extends AbstractIntegrationTest {
         Runnable task = () -> {
             try {
                 startLatch.await();
-                settlementService.requestSettlement(TEST_USER_ID);
+                settlementService.requestSettlement(TEST_USER_ID, shop.getId());
                 successCount.incrementAndGet();
             } catch (BusinessException e) {
                 if (e.getErrorCode() == ErrorCode.DUPLICATE_SETTLEMENT_REQUEST) {

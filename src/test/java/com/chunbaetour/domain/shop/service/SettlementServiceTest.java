@@ -79,13 +79,13 @@ class SettlementServiceTest {
         ShopWallet wallet = createWallet(BALANCE);
         Settlement settlement = createSettlement(1L);
 
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.save(any(Settlement.class))).willReturn(settlement);
 
         // when
-        SettlementResponse response = settlementService.requestSettlement(USER_ID);
+        SettlementResponse response = settlementService.requestSettlement(USER_ID, SHOP_ID);
 
         // then
         assertThat(response.settlementId()).isEqualTo(1L);
@@ -96,9 +96,9 @@ class SettlementServiceTest {
     @Test
     @DisplayName("가게 없음 — SHOP_NOT_FOUND")
     void requestSettlement_shopNotFound() {
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -111,11 +111,11 @@ class SettlementServiceTest {
     void requestSettlement_duplicatePending() {
         Shop shop = createShop();
         ShopWallet wallet = createWallet(BALANCE);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(List.of(mock(Settlement.class)));
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.DUPLICATE_SETTLEMENT_REQUEST);
@@ -127,10 +127,10 @@ class SettlementServiceTest {
     @DisplayName("지갑 없음 — SHOP_WALLET_NOT_FOUND")
     void requestSettlement_walletNotFound() {
         Shop shop = createShop();
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_WALLET_NOT_FOUND);
@@ -142,11 +142,11 @@ class SettlementServiceTest {
         Shop shop = createShop();
         ShopWallet wallet = createWallet(0L);
 
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SETTLEMENT_BALANCE_EMPTY);
@@ -160,11 +160,11 @@ class SettlementServiceTest {
         Shop shop = createShop();
         ShopWallet wallet = createWallet(4_999L); // 5,000 미만
 
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SETTLEMENT_AMOUNT_TOO_LOW);
@@ -179,13 +179,13 @@ class SettlementServiceTest {
         Shop shop = createShop();
         ShopWallet wallet = createWallet(BALANCE);
         Settlement settlement = createSettlement(1L);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
         given(settlementRepository.save(any(Settlement.class))).willReturn(settlement);
 
         // when
-        settlementService.requestSettlement(USER_ID);
+        settlementService.requestSettlement(USER_ID, SHOP_ID);
 
         // then — ArgumentCaptor로 저장된 엔티티 필드 검증
         ArgumentCaptor<Settlement> captor = ArgumentCaptor.forClass(Settlement.class);
@@ -206,11 +206,11 @@ class SettlementServiceTest {
         ShopWallet wallet = mock(ShopWallet.class);
         given(wallet.getBalance()).willReturn(BALANCE);
         given(wallet.getBankName()).willReturn(null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
@@ -224,11 +224,11 @@ class SettlementServiceTest {
         ShopWallet wallet = mock(ShopWallet.class);
         given(wallet.getBalance()).willReturn(BALANCE);
         given(wallet.getBankName()).willReturn("   ");
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
@@ -243,11 +243,11 @@ class SettlementServiceTest {
         given(wallet.getBalance()).willReturn(BALANCE);
         given(wallet.getBankName()).willReturn("국민은행");
         given(wallet.getAccountNumber()).willReturn(null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
@@ -262,11 +262,11 @@ class SettlementServiceTest {
         given(wallet.getBalance()).willReturn(BALANCE);
         given(wallet.getBankName()).willReturn("국민은행");
         given(wallet.getAccountNumber()).willReturn("");
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
@@ -282,11 +282,11 @@ class SettlementServiceTest {
         given(wallet.getBankName()).willReturn("국민은행");
         given(wallet.getAccountNumber()).willReturn("123-456-789");
         given(wallet.getAccountHolder()).willReturn(null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
@@ -302,11 +302,11 @@ class SettlementServiceTest {
         given(wallet.getBankName()).willReturn("국민은행");
         given(wallet.getAccountNumber()).willReturn("123-456-789");
         given(wallet.getAccountHolder()).willReturn("  ");
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
@@ -320,12 +320,12 @@ class SettlementServiceTest {
         Settlement s1 = createSettlement(2L);
         Settlement s2 = createSettlement(1L);
 
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.findByShopId(eq(SHOP_ID), isNull(), any(Pageable.class)))
                 .willReturn(List.of(s1, s2));
 
         CursorPageResponse<SettlementResponse> result =
-                settlementService.getMySettlements(USER_ID, null, 20);
+                settlementService.getMySettlements(USER_ID, SHOP_ID, null, 20);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isFalse();
@@ -340,12 +340,12 @@ class SettlementServiceTest {
         Settlement s2 = createSettlement(2L);
         Settlement s3 = createSettlement(1L);
 
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(settlementRepository.findByShopId(eq(SHOP_ID), isNull(), any(Pageable.class)))
                 .willReturn(List.of(s1, s2, s3));
 
         CursorPageResponse<SettlementResponse> result =
-                settlementService.getMySettlements(USER_ID, null, 2);
+                settlementService.getMySettlements(USER_ID, SHOP_ID, null, 2);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isTrue();

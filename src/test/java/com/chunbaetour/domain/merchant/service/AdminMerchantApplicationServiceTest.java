@@ -78,7 +78,6 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.existsByUserId(USER_ID)).willReturn(false);
         given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
 
         MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
@@ -102,23 +101,6 @@ class AdminMerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("승인 실패: 이미 가게 있음 → SHOP_ALREADY_EXISTS")
-    void approve_shopAlreadyExists_throws() {
-        MerchantApplication app = pendingApplication();
-        Account account = activeAccount();
-
-        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
-        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.existsByUserId(USER_ID)).willReturn(true);
-
-        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining(ErrorCode.SHOP_ALREADY_EXISTS.getMessage());
-
-        verify(shopRepository, never()).save(any());
-    }
-
-    @Test
     @DisplayName("승인 실패: 계정이 이미 MERCHANT 역할 → MERCHANT_005")
     void approve_accountAlreadyMerchant_throws() {
         MerchantApplication app = pendingApplication();
@@ -131,7 +113,6 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(merchantAccount));
-        given(shopRepository.existsByUserId(USER_ID)).willReturn(false);
 
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
                 .isInstanceOf(BusinessException.class)
@@ -147,14 +128,12 @@ class AdminMerchantApplicationServiceTest {
         Account account = activeAccount();
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.existsByUserId(USER_ID)).willReturn(false);
         given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
         adminMerchantApplicationService.approve(APPLICATION_ID); // 첫 번째 승인
 
-        // 첫 번째 승인 후 application=APPROVED, account=MERCHANT — 두 번째 요청은 application.approve() 전에 role 선제 검증에서 차단
+        // 첫 번째 승인 후 application=APPROVED, account=MERCHANT — 두 번째 요청은 role 선제 검증에서 차단
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.existsByUserId(USER_ID)).willReturn(false);
 
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
                 .isInstanceOf(BusinessException.class)

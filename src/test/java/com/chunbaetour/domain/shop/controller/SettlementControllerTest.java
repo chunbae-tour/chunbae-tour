@@ -33,7 +33,7 @@ class SettlementControllerTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("정산 신청 — 비로그인 401 AUTH_006")
     void requestSettlement_unauthenticated_returns401() throws Exception {
-        mockMvc.perform(post("/api/v1/merchants/me/settlements"))
+        mockMvc.perform(post("/api/v1/merchants/me/shops/1/settlements"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
@@ -42,7 +42,7 @@ class SettlementControllerTest extends AbstractIntegrationTest {
     @DisplayName("정산 신청 — USER 토큰 403 AUTH_007")
     void requestSettlement_userRole_returns403() throws Exception {
         String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
-        mockMvc.perform(post("/api/v1/merchants/me/settlements")
+        mockMvc.perform(post("/api/v1/merchants/me/shops/1/settlements")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));
@@ -51,7 +51,7 @@ class SettlementControllerTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("내 정산 목록 — 비로그인 401 AUTH_006")
     void getMySettlements_unauthenticated_returns401() throws Exception {
-        mockMvc.perform(get("/api/v1/merchants/me/settlements"))
+        mockMvc.perform(get("/api/v1/merchants/me/shops/1/settlements"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
     }
@@ -60,7 +60,7 @@ class SettlementControllerTest extends AbstractIntegrationTest {
     @DisplayName("내 정산 목록 — USER 토큰 403 AUTH_007")
     void getMySettlements_userRole_returns403() throws Exception {
         String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
-        mockMvc.perform(get("/api/v1/merchants/me/settlements")
+        mockMvc.perform(get("/api/v1/merchants/me/shops/1/settlements")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_007"));

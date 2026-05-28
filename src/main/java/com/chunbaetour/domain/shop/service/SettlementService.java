@@ -40,9 +40,9 @@ public class SettlementService {
      * 실제 잔액 차감은 관리자 승인(AdminSettlementService) 시점에 처리.
      */
     @Transactional
-    public SettlementResponse requestSettlement(Long userId) {
-        // userId로 상인 가게 조회
-        Shop shop = shopRepository.findByUserId(userId)
+    public SettlementResponse requestSettlement(Long userId, Long shopId) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // 이미 PENDING 정산 신청 존재 시 중복 차단
@@ -86,9 +86,9 @@ public class SettlementService {
     }
 
     /** 내 정산 내역 조회 — cursor keyset 페이징 (id DESC) */
-    public CursorPageResponse<SettlementResponse> getMySettlements(Long userId, String cursor, int size) {
-        // userId로 가게 조회
-        Shop shop = shopRepository.findByUserId(userId)
+    public CursorPageResponse<SettlementResponse> getMySettlements(Long userId, Long shopId, String cursor, int size) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // cursor 디코딩 — null이면 첫 페이지
