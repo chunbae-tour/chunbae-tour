@@ -202,7 +202,6 @@ class SettlementServiceTest {
     @Test
     @DisplayName("계좌 정보 미설정(bankName null) — MISSING_REQUIRED_FIELD")
     void requestSettlement_missingBankName() {
-        // given: bankName null → StringUtils.hasText() false → 즉시 예외
         Shop shop = createShop();
         ShopWallet wallet = mock(ShopWallet.class);
         given(wallet.getBalance()).willReturn(BALANCE);
@@ -211,7 +210,102 @@ class SettlementServiceTest {
         given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
         given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
 
-        // when & then
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("계좌 정보 미설정(bankName blank) — MISSING_REQUIRED_FIELD")
+    void requestSettlement_blankBankName() {
+        Shop shop = createShop();
+        ShopWallet wallet = mock(ShopWallet.class);
+        given(wallet.getBalance()).willReturn(BALANCE);
+        given(wallet.getBankName()).willReturn("   ");
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("계좌번호 미설정(accountNumber null) — MISSING_REQUIRED_FIELD")
+    void requestSettlement_missingAccountNumber() {
+        Shop shop = createShop();
+        ShopWallet wallet = mock(ShopWallet.class);
+        given(wallet.getBalance()).willReturn(BALANCE);
+        given(wallet.getBankName()).willReturn("국민은행");
+        given(wallet.getAccountNumber()).willReturn(null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("계좌번호 미설정(accountNumber blank) — MISSING_REQUIRED_FIELD")
+    void requestSettlement_blankAccountNumber() {
+        Shop shop = createShop();
+        ShopWallet wallet = mock(ShopWallet.class);
+        given(wallet.getBalance()).willReturn(BALANCE);
+        given(wallet.getBankName()).willReturn("국민은행");
+        given(wallet.getAccountNumber()).willReturn("");
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("예금주 미설정(accountHolder null) — MISSING_REQUIRED_FIELD")
+    void requestSettlement_missingAccountHolder() {
+        Shop shop = createShop();
+        ShopWallet wallet = mock(ShopWallet.class);
+        given(wallet.getBalance()).willReturn(BALANCE);
+        given(wallet.getBankName()).willReturn("국민은행");
+        given(wallet.getAccountNumber()).willReturn("123-456-789");
+        given(wallet.getAccountHolder()).willReturn(null);
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+
+        assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MISSING_REQUIRED_FIELD);
+        then(settlementRepository).should(never()).save(any());
+    }
+
+    @Test
+    @DisplayName("예금주 미설정(accountHolder blank) — MISSING_REQUIRED_FIELD")
+    void requestSettlement_blankAccountHolder() {
+        Shop shop = createShop();
+        ShopWallet wallet = mock(ShopWallet.class);
+        given(wallet.getBalance()).willReturn(BALANCE);
+        given(wallet.getBankName()).willReturn("국민은행");
+        given(wallet.getAccountNumber()).willReturn("123-456-789");
+        given(wallet.getAccountHolder()).willReturn("  ");
+        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopIdWithLock(SHOP_ID)).willReturn(Optional.of(wallet));
+        given(settlementRepository.findByShopIdAndStatusWithLock(SHOP_ID, SettlementStatus.PENDING)).willReturn(Collections.emptyList());
+
         assertThatThrownBy(() -> settlementService.requestSettlement(USER_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
