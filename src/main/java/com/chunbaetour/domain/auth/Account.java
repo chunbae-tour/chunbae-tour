@@ -136,6 +136,28 @@ public class Account {
     }
 
     /**
+     * 계정 정지 처리 (KAN-92 신고 처리 SUSPEND 액션).
+     * status = SUSPENDED. 해제는 별도 관리자 기능으로 처리.
+     */
+    public void suspend() {
+        if (this.status == AccountStatus.DELETED) {
+            throw new IllegalStateException("탈퇴 계정은 정지할 수 없습니다. accountId=" + this.id);
+        }
+        this.status = AccountStatus.SUSPENDED;
+    }
+
+    /**
+     * 상인 인증 취소 (KAN-92 신고 처리 REVOKE_MERCHANT 액션).
+     * MERCHANT → USER 권한 하향.
+     */
+    public void revokeToUser() {
+        if (this.role != Role.MERCHANT) {
+            throw new IllegalStateException("MERCHANT 계정만 USER로 권한 회수할 수 있습니다. accountId=" + this.id);
+        }
+        this.role = Role.USER;
+    }
+
+    /**
      * 마이페이지 PATCH /users/me에서 호출되는 partial update 도메인 메서드 (Epic A S2, KAN-127).
      *
      * <p>null 인자는 변경 미요청으로 간주해 무시 (PATCH partial update semantics).

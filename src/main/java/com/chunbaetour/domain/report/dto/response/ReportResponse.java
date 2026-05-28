@@ -7,6 +7,10 @@ import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.type.ReportAction;
 import java.time.LocalDateTime;
 
+/**
+ * 관리자 신고 목록 조회 응답 DTO (KAN-91).
+ * 신고 단건 상세는 {@link ReportDetailResponse} 참조.
+ */
 public record ReportResponse(
         Long reportId,
         ReportTargetType targetType,

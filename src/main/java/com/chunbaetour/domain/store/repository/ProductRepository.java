@@ -2,14 +2,22 @@ package com.chunbaetour.domain.store.repository;
 
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.type.ProductStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
+
+    /** 구매 처리 시 재고 재검증용 — SELECT FOR UPDATE */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Product p WHERE p.id = :id")
+    Optional<Product> findByIdWithLock(@Param("id") Long id);
 
     /** 공개 상태 화이트리스트(ON_SALE·SOLD_OUT), category 필터(null=전체), cursor 기반 페이징.
      *  블랙리스트(HIDDEN 제외) 대신 화이트리스트 — 신규 status 추가 시 의도적 결정 강제. */
