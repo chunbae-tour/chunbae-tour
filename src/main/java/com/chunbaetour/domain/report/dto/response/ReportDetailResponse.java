@@ -8,8 +8,11 @@ import com.chunbaetour.domain.report.type.ReportAction;
 import java.time.LocalDateTime;
 
 /**
- * 관리자 신고 단건 상세 응답 DTO.
+ * 관리자 신고 단건 상세 응답 (KAN-91).
  * 목록 응답({@link ReportResponse})에 reporterId·targetContent 추가.
+ *
+ * <p>명세 기본 필드 외에 {@code action}, {@code adminNote}, {@code resolvedBy}, {@code resolvedAt}
+ * 포함 — 처리 완료 신고 조회 시 관리자 UI에서 필요. 프론트 계약 시 반영 필요.
  */
 public record ReportDetailResponse(
         Long reportId,
