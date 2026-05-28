@@ -99,6 +99,24 @@ public class WalletService {
     }
 
     /**
+     * 광고 연장 시 엽전 차감 + 이력 저장.
+     * SELECT FOR UPDATE로 지갑 행 락 획득 후 잔액 차감.
+     * 락 획득 순서: AdApplication → Wallet (AdApplicationService에서 AdApplication 락 먼저 획득).
+     */
+    @Transactional
+    public void spendForAdExtension(Long userId, long amount, String adType) {
+        // SELECT FOR UPDATE로 지갑 행 락 획득
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        // 잔액 차감 (부족 시 Wallet.debit()에서 INSUFFICIENT_BALANCE 던짐)
+        wallet.debit(amount);
+        // 광고 연장 이력 저장
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofAdExtension(userId, amount, wallet.getBalance(), adType)
+        );
+    }
+
+    /**
      * 신규 유저 지갑 생성 (멱등).
      * existsByUserId 체크 후 없으면 saveAndFlush.
      * 동시 요청으로 UK_WALLETS_USER_ID 제약 위반 시 정상 처리(return) — 다른 DB 에러는 그대로 던짐.

@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -77,5 +78,20 @@ public class AdApplication extends BaseEntity {
         }
         this.status = AdApplicationStatus.REJECTED;
         this.rejectReason = reason;
+    }
+
+    /** 광고 연장 비용 계산 — 원래 일 단가(cost ÷ 기간) × extensionDays. */
+    public long calculateExtensionCost(int extensionDays) {
+        long durationDays = ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        long costPerDay = cost / durationDays;
+        return costPerDay * extensionDays;
+    }
+
+    /** 광고 기간 연장 — APPROVED 상태에서만 허용. */
+    public void extend(int extensionDays) {
+        if (this.status != AdApplicationStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.AD_APPLICATION_INVALID_STATUS);
+        }
+        this.endDate = this.endDate.plusDays(extensionDays);
     }
 }

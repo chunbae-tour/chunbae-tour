@@ -17,10 +17,12 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.AdApplicationRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +41,8 @@ class AdApplicationServiceTest {
 
     @Mock private AdApplicationRepository adApplicationRepository;
     @Mock private ShopRepository shopRepository;
+    @Mock private WalletService walletService;
+    @Mock private RedissonClient redissonClient;
 
     @InjectMocks
     private AdApplicationService adApplicationService;
@@ -126,4 +132,84 @@ class AdApplicationServiceTest {
 
         then(adApplicationRepository).should(never()).save(any());
     }
+
+    // ===== extendAd =====
+
+    private RLock mockLock() throws InterruptedException {
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(any(String.class))).willReturn(lock);
+        given(lock.tryLock(3, TimeUnit.SECONDS)).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+        return lock;
+    }
+
+    private AdApplication createApproved(Long id) {
+        AdApplication a = AdApplication.create(SHOP_ID, "BANNER", START, END, 30_000L); // 30일, 30000엽전 → 1000/일
+        a.approve();
+        ReflectionTestUtils.setField(a, "id", id);
+        return a;
+    }
+
+    @Test
+    @DisplayName("광고 연장 성공 — endDate 연장 및 엽전 차감 호출")
+    void extendAd_success() throws InterruptedException {
+        mockLock();
+        Shop shop = createShop();
+        AdApplication approved = createApproved(AD_ID);
+
+        given(adApplicationRepository.findById(AD_ID)).willReturn(Optional.of(approved));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(adApplicationRepository.findByIdWithLock(AD_ID)).willReturn(Optional.of(approved));
+
+        LocalDate originalEnd = approved.getEndDate();
+        AdApplicationResponse response = adApplicationService.extendAd(USER_ID, AD_ID, 7);
+
+        assertThat(response.endDate()).isEqualTo(originalEnd.plusDays(7));
+        then(walletService).should().spendForAdExtension(USER_ID, 7_000L, "BANNER"); // 1000/일 × 7일
+    }
+
+    @Test
+    @DisplayName("광고 연장 — 광고 미존재 AD_APPLICATION_NOT_FOUND")
+    void extendAd_notFound() throws InterruptedException {
+        mockLock();
+        given(adApplicationRepository.findById(AD_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adApplicationService.extendAd(USER_ID, AD_ID, 7))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AD_APPLICATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("광고 연장 — 본인 가게 아님 SHOP_NOT_FOUND")
+    void extendAd_shopNotOwned() throws InterruptedException {
+        mockLock();
+        AdApplication approved = createApproved(AD_ID);
+        given(adApplicationRepository.findById(AD_ID)).willReturn(Optional.of(approved));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adApplicationService.extendAd(USER_ID, AD_ID, 7))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("광고 연장 — APPROVED 아닌 상태 AD_APPLICATION_INVALID_STATUS")
+    void extendAd_invalidStatus() throws InterruptedException {
+        mockLock();
+        Shop shop = createShop();
+        AdApplication pending = createAdApplication(AD_ID); // PENDING 상태
+
+        given(adApplicationRepository.findById(AD_ID)).willReturn(Optional.of(pending));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(adApplicationRepository.findByIdWithLock(AD_ID)).willReturn(Optional.of(pending));
+
+        assertThatThrownBy(() -> adApplicationService.extendAd(USER_ID, AD_ID, 7))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AD_APPLICATION_INVALID_STATUS);
+    }
+
+    private static final Long AD_ID = 1L;
 }
