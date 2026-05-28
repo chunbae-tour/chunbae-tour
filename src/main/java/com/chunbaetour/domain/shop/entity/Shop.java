@@ -134,6 +134,17 @@ public class Shop extends BaseEntity {
     }
 
     /**
+     * 관리자 신고 처리 비공개 (status = HIDDEN).
+     * SUSPENDED(자체 정지)와 구분 — 신고에 의한 관리자 조치임을 명시.
+     */
+    public void hide() {
+        if (this.status == ShopStatus.CLOSED) {
+            throw new IllegalStateException("폐업한 가게는 숨김 처리할 수 없습니다. shopId=" + this.id);
+        }
+        this.status = ShopStatus.HIDDEN;
+    }
+
+    /**
      * 상인이 수정 가능한 필드 업데이트 (STORY-10).
      * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
      * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.

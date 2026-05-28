@@ -183,9 +183,10 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("신고 3건 도달 — FreePost 자동 삭제")
+    @DisplayName("신고 3건 도달 — FreePost 자동 숨김 (HIDDEN)")
     void create_autoHide_FreePost_3건_도달() {
         given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
+        given(freePostRepository.findByIdForUpdate(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
         given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.POST_FREE, FREE_POST_ID))
@@ -198,11 +199,12 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("신고 3건 도달 — CompanionPost 자동 삭제")
+    @DisplayName("신고 3건 도달 — CompanionPost 자동 숨김 (HIDDEN)")
     void create_autoHide_CompanionPost_3건_도달() {
         Report companionReport = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION,
                 COMP_POST_ID, ReportReason.SPAM, null);
         given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(activeCompanionPost));
+        given(companionPostRepository.findByIdForUpdate(COMP_POST_ID)).willReturn(Optional.of(activeCompanionPost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(companionReport);
         given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.POST_COMPANION, COMP_POST_ID))
@@ -257,6 +259,7 @@ class ReportServiceTest {
         Report commentReport = Report.create(REPORTER_ID, ReportTargetType.COMMENT, commentId,
                 ReportReason.SPAM, null);
         given(commentRepository.findById(commentId)).willReturn(Optional.of(activeComment));
+        given(commentRepository.findByIdForUpdate(commentId)).willReturn(Optional.of(activeComment));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(commentReport);
         given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.COMMENT, commentId))

@@ -16,6 +16,8 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -63,6 +65,7 @@ public class ReportService {
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
+    private final ShopRepository shopRepository;
 
     // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
 
@@ -280,13 +283,13 @@ public class ReportService {
         if (count < AUTO_HIDE_THRESHOLD) return;
 
         switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId)
+            case POST_COMPANION -> companionPostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE)
                     .ifPresent(CompanionPost::hide);
-            case POST_FREE -> freePostRepository.findById(targetId)
+            case POST_FREE -> freePostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
                     .ifPresent(FreePost::hide);
-            case COMMENT -> commentRepository.findById(targetId)
+            case COMMENT -> commentRepository.findByIdForUpdate(targetId)
                     .filter(c -> c.getStatus() != CommentStatus.DELETED)
                     .ifPresent(Comment::delete);
             case USER, MERCHANT -> {
@@ -307,15 +310,17 @@ public class ReportService {
         }
     }
 
-    private void applyMerchantAction(ReportAction action, Long targetId) {
+    private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
             case HIDE_SHOP -> {
-                // TODO: Merchant 도메인 연동 후 구현 (신현민 파트).
-                // 현재 신고 상태는 RESOLVED/HIDE_SHOP으로 기록되나 실제 가게 숨김은 미처리.
-                log.warn("HIDE_SHOP 미구현 — 가게 숨김 처리 보류, targetId={}", targetId);
+                Shop shop = shopRepository.findById(shopId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+                shop.hide();
             }
             case REVOKE_MERCHANT -> {
-                Account merchant = accountRepository.findById(targetId)
+                Shop shop = shopRepository.findById(shopId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+                Account merchant = accountRepository.findById(shop.getUserId())
                         .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
                 merchant.revokeToUser();
             }
@@ -381,7 +386,8 @@ public class ReportService {
     private TargetDetail resolveTargetDetail(ReportTargetType targetType, Long targetId) {
         return switch (targetType) {
             case POST_FREE -> freePostRepository.findById(targetId)
-                    .map(p -> new TargetDetail(p.getTitle(), p.getContent(), p.getImageUrls()))
+                    .map(p -> new TargetDetail(p.getTitle(), p.getContent(),
+                            List.copyOf(p.getImageUrls())))
                     .orElse(TargetDetail.empty());
             case POST_COMPANION -> companionPostRepository.findById(targetId)
                     .map(p -> new TargetDetail(p.getTitle(), p.getContent(), null))
@@ -440,12 +446,10 @@ public class ReportService {
                 }
             }
             case MERCHANT -> {
-                Account merchant = accountRepository.findById(targetId)
+                // targetId = shopId — 다중 가게 지원 시 신고 대상 가게만 조치 가능
+                Shop shop = shopRepository.findById(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
-                if (merchant.getRole() != Role.MERCHANT) {
-                    throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
-                }
-                if (merchant.getId().equals(reporterId)) {
+                if (shop.getUserId().equals(reporterId)) {
                     throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
