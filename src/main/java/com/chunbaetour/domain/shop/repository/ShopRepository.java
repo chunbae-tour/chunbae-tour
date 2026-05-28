@@ -1,16 +1,17 @@
 package com.chunbaetour.domain.shop.repository;
 
 import com.chunbaetour.domain.shop.entity.Shop;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ShopRepository extends JpaRepository<Shop, Long> {
 
-    /** userId로 가게 단건 조회 — 상인 1:1 관계 */
-    Optional<Shop> findByUserId(Long userId);
+    /** userId로 내 가게 목록 전체 조회 — 다중 가게 지원 */
+    List<Shop> findAllByUserId(Long userId);
 
-    /** 가게 중복 생성 방지 검사 */
-    boolean existsByUserId(Long userId);
+    /** 소유권 검증용 — shopId + userId 조합으로 본인 가게인지 확인 */
+    Optional<Shop> findByIdAndUserId(Long id, Long userId);
 
     /**
      * 특정 관광지 기반 주변 상점 조회 (Bounding Box + Haversine 최적화)

@@ -127,8 +127,15 @@ public class Account {
                 .build();
     }
 
-    /** 상인 승인 시 USER → MERCHANT 권한 상승 (STORY-09). USER 이외의 role은 승격 불가. */
+    /**
+     * 상인 승인 시 권한 상승 (STORY-09).
+     * USER → MERCHANT, MERCHANT는 멱등(이미 상인이면 skip), ADMIN은 승격 불가.
+     * 1상인 다중 가게 지원: MERCHANT가 추가 가게 신청 승인을 받을 때 재호출되므로 멱등 필수.
+     */
     public void promoteToMerchant() {
+        if (this.role == Role.MERCHANT) {
+            return;
+        }
         if (this.role != Role.USER) {
             throw new BusinessException(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID);
         }

@@ -73,11 +73,11 @@ class MenuServiceTest {
         Shop shop = createShop();
         Menu menu = createMenu();
         MenuCreateRequest request = new MenuCreateRequest("떡볶이", "매콤달콤 떡볶이", 5000L, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.save(any(Menu.class))).willReturn(menu);
 
         // when
-        MenuResponse response = menuService.createMenu(USER_ID, request);
+        MenuResponse response = menuService.createMenu(USER_ID, SHOP_ID, request);
 
         // then
         assertThat(response.name()).isEqualTo("떡볶이");
@@ -94,12 +94,12 @@ class MenuServiceTest {
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         MenuCreateRequest request = new MenuCreateRequest(" 떡볶이 ", null, 5000L, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.existsByShopIdAndName(eq(SHOP_ID), eq("떡볶이"))).willReturn(false);
         given(menuRepository.save(any(Menu.class))).willReturn(menu);
 
         // when
-        menuService.createMenu(USER_ID, request);
+        menuService.createMenu(USER_ID, SHOP_ID, request);
 
         // then — trim된 "떡볶이"로 중복 체크
         then(menuRepository).should().existsByShopIdAndName(SHOP_ID, "떡볶이");
@@ -113,11 +113,11 @@ class MenuServiceTest {
         given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
         given(shop.getId()).willReturn(SHOP_ID);
         MenuCreateRequest request = new MenuCreateRequest("떡볶이", null, 5000L, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.existsByShopIdAndName(SHOP_ID, "떡볶이")).willReturn(true);
 
         // then
-        assertThatThrownBy(() -> menuService.createMenu(USER_ID, request))
+        assertThatThrownBy(() -> menuService.createMenu(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_DUPLICATE);
@@ -128,10 +128,10 @@ class MenuServiceTest {
     void createMenu_shopNotFound_throws() {
         // given
         MenuCreateRequest request = new MenuCreateRequest("떡볶이", null, 5000L, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
         // then
-        assertThatThrownBy(() -> menuService.createMenu(USER_ID, request))
+        assertThatThrownBy(() -> menuService.createMenu(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -143,11 +143,11 @@ class MenuServiceTest {
         // given — 상태 제어 위해 mock 사용
         Shop shop = mock(Shop.class);
         MenuCreateRequest request = new MenuCreateRequest("떡볶이", null, 5000L, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
 
         // then
-        assertThatThrownBy(() -> menuService.createMenu(USER_ID, request))
+        assertThatThrownBy(() -> menuService.createMenu(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -159,11 +159,11 @@ class MenuServiceTest {
         // given
         Shop shop = mock(Shop.class);
         MenuCreateRequest request = new MenuCreateRequest("떡볶이", null, 5000L, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.CLOSED);
 
         // then
-        assertThatThrownBy(() -> menuService.createMenu(USER_ID, request))
+        assertThatThrownBy(() -> menuService.createMenu(USER_ID, SHOP_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -180,11 +180,11 @@ class MenuServiceTest {
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         MenuUpdateRequest request = new MenuUpdateRequest("순대국밥", null, 7000L, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
-        MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
+        MenuResponse response = menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request);
 
         // then — 변경 필드 확인, null 필드는 기존 값 유지
         assertThat(response.name()).isEqualTo("순대국밥");
@@ -201,11 +201,11 @@ class MenuServiceTest {
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         MenuUpdateRequest request = new MenuUpdateRequest(null, null, null, null, false);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
-        MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
+        MenuResponse response = menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request);
 
         // then
         assertThat(response.isAvailable()).isFalse();
@@ -220,12 +220,12 @@ class MenuServiceTest {
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu(); // name = "떡볶이"
         MenuUpdateRequest request = new MenuUpdateRequest("순대국밥", null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
         given(menuRepository.existsByShopIdAndName(SHOP_ID, "순대국밥")).willReturn(true);
 
         // then
-        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
+        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_DUPLICATE);
@@ -240,11 +240,11 @@ class MenuServiceTest {
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu(); // name = "떡볶이"
         MenuUpdateRequest request = new MenuUpdateRequest("떡볶이", null, 6000L, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when — existsByShopIdAndName 호출 안 됨 (자기 이름이므로)
-        MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
+        MenuResponse response = menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request);
 
         // then
         assertThat(response.price()).isEqualTo(6000L);
@@ -256,10 +256,10 @@ class MenuServiceTest {
     void updateMenu_shopNotFound_throws() {
         // given
         MenuUpdateRequest request = new MenuUpdateRequest("새이름", null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
         // then
-        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
+        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -273,11 +273,11 @@ class MenuServiceTest {
         given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
         given(shop.getId()).willReturn(SHOP_ID);
         MenuUpdateRequest request = new MenuUpdateRequest("새이름", null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.empty());
 
         // then
-        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
+        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_NOT_FOUND);
@@ -289,11 +289,11 @@ class MenuServiceTest {
         // given
         Shop shop = mock(Shop.class);
         MenuUpdateRequest request = new MenuUpdateRequest("새이름", null, null, null, null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
 
         // then
-        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, MENU_ID, request))
+        assertThatThrownBy(() -> menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -308,11 +308,11 @@ class MenuServiceTest {
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
         MenuUpdateRequest request = new MenuUpdateRequest(null, null, null, "", null);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
-        MenuResponse response = menuService.updateMenu(USER_ID, MENU_ID, request);
+        MenuResponse response = menuService.updateMenu(USER_ID, SHOP_ID, MENU_ID, request);
 
         // then — "" 전송 시 imageUrl이 null로 저장됨
         assertThat(response.imageUrl()).isNull();
@@ -328,11 +328,11 @@ class MenuServiceTest {
         given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
         given(shop.getId()).willReturn(SHOP_ID);
         Menu menu = createMenu();
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.of(menu));
 
         // when
-        menuService.deleteMenu(USER_ID, MENU_ID);
+        menuService.deleteMenu(USER_ID, SHOP_ID, MENU_ID);
 
         // then — soft delete: deletedAt 설정 확인
         assertThat(menu.getDeletedAt()).isNotNull();
@@ -343,11 +343,11 @@ class MenuServiceTest {
     void deleteMenu_shopInactive_throws() {
         // given
         Shop shop = mock(Shop.class);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
 
         // then
-        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, MENU_ID))
+        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, SHOP_ID, MENU_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -357,10 +357,10 @@ class MenuServiceTest {
     @DisplayName("메뉴 삭제 — 가게 없음 → SHOP_NOT_FOUND")
     void deleteMenu_shopNotFound_throws() {
         // given
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
         // then
-        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, MENU_ID))
+        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, SHOP_ID, MENU_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -373,11 +373,11 @@ class MenuServiceTest {
         Shop shop = mock(Shop.class);
         given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
         given(shop.getId()).willReturn(SHOP_ID);
-        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findByIdAndShopId(MENU_ID, SHOP_ID)).willReturn(Optional.empty());
 
         // then
-        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, MENU_ID))
+        assertThatThrownBy(() -> menuService.deleteMenu(USER_ID, SHOP_ID, MENU_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MENU_NOT_FOUND);
