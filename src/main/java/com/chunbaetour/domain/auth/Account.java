@@ -127,12 +127,41 @@ public class Account {
                 .build();
     }
 
-    /** 상인 승인 시 USER → MERCHANT 권한 상승 (STORY-09). USER 이외의 role은 승격 불가. */
+    /**
+     * 상인 승인 시 권한 상승 (STORY-09).
+     * USER → MERCHANT, MERCHANT는 멱등(이미 상인이면 skip), ADMIN은 승격 불가.
+     * 1상인 다중 가게 지원: MERCHANT가 추가 가게 신청 승인을 받을 때 재호출되므로 멱등 필수.
+     */
     public void promoteToMerchant() {
+        if (this.role == Role.MERCHANT) {
+            return;
+        }
         if (this.role != Role.USER) {
             throw new BusinessException(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID);
         }
         this.role = Role.MERCHANT;
+    }
+
+    /**
+     * 계정 정지 처리 (KAN-92 신고 처리 SUSPEND 액션).
+     * status = SUSPENDED. 해제는 별도 관리자 기능으로 처리.
+     */
+    public void suspend() {
+        if (this.status == AccountStatus.DELETED) {
+            throw new IllegalStateException("탈퇴 계정은 정지할 수 없습니다. accountId=" + this.id);
+        }
+        this.status = AccountStatus.SUSPENDED;
+    }
+
+    /**
+     * 상인 인증 취소 (KAN-92 신고 처리 REVOKE_MERCHANT 액션).
+     * MERCHANT → USER 권한 하향.
+     */
+    public void revokeToUser() {
+        if (this.role != Role.MERCHANT) {
+            throw new IllegalStateException("MERCHANT 계정만 USER로 권한 회수할 수 있습니다. accountId=" + this.id);
+        }
+        this.role = Role.USER;
     }
 
     /**

@@ -11,6 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -33,6 +34,10 @@ public class Report extends BaseEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** 낙관적 락 — 관리자 동시 처리 중복 방지 (KAN-92). */
+    @Version
+    private Long version;
 
     @Column(name = "reporter_id", nullable = false)
     private Long reporterId;
@@ -81,12 +86,22 @@ public class Report extends BaseEntity {
     }
 
     /**
-     * 신고 처리 (WARNING / SUSPEND / DELETE).
+     * 신고 처리 (WARNING / SUSPEND / DELETE / HIDE_SHOP / REVOKE_MERCHANT).
      * status = RESOLVED, action·adminNote·resolvedBy·resolvedAt 기록.
+     * DISMISS는 {@link #dismiss} 전용 메서드로 분리.
+     *
+     * <p>도메인 불변식 보호: PENDING 상태가 아니면 IllegalStateException.
+     * 서비스 레이어에서도 체크하지만 엔티티 자체도 방어.
+     *
+     * <p>TODO(Clock): LocalDateTime.now() 직접 사용 — 테스트에서 시간 제어 불가.
+     * 추후 Clock 주입 방식으로 개선 가능 (엔티티 Clock 주입은 복잡도 증가로 MVP 범위 제외).
      */
     public void resolve(ReportAction action, String adminNote, String resolvedBy) {
         if (!isPending()) {
-            throw new IllegalStateException("이미 처리된 신고입니다.");
+            throw new IllegalStateException("이미 처리된 신고입니다. reportId=" + this.id);
+        }
+        if (action == null) {
+            throw new IllegalArgumentException("action은 null일 수 없습니다.");
         }
         this.status = ReportStatus.RESOLVED;
         this.action = action;
@@ -98,10 +113,13 @@ public class Report extends BaseEntity {
     /**
      * 신고 무시 (DISMISS).
      * status = DISMISSED로 종결.
+     *
+     * <p>도메인 불변식 보호: 서비스 레이어에서 isPending() 체크를 하더라도
+     * 엔티티 자체도 방어 — 잘못된 직접 호출 시 상태 덮어쓰기 방지.
      */
     public void dismiss(String adminNote, String resolvedBy) {
         if (!isPending()) {
-            throw new IllegalStateException("이미 처리된 신고입니다.");
+            throw new IllegalStateException("이미 처리된 신고입니다. reportId=" + this.id);
         }
         this.status = ReportStatus.DISMISSED;
         this.action = ReportAction.DISMISS;

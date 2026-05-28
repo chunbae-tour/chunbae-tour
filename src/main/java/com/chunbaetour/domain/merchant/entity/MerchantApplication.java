@@ -120,12 +120,13 @@ public class MerchantApplication extends BaseEntity {
                 .build();
     }
 
-    /** 관리자 승인 시 상태 전이 (PENDING에서만 허용) */
+    /** 관리자 승인 시 상태 전이 (PENDING에서만 허용). activeFlag=null로 초기화해 uk_merchant_active_user_id 제약 해제 → 동일 상인의 추가 가게 신청 허용 */
     public void approve() {
         if (this.status != MerchantApplicationStatus.PENDING) {
             throw new BusinessException(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID);
         }
         this.status = MerchantApplicationStatus.APPROVED;
+        this.activeFlag = null;
     }
 
     /** 관리자 거절 시 상태 전이 + 거절 사유 저장 (PENDING에서만 허용) */

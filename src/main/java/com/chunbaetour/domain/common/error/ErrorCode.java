@@ -125,6 +125,11 @@ public enum ErrorCode {
     SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게입니다."),
     MENU_DUPLICATE(HttpStatus.CONFLICT,                     "SHOP_006", "이미 동일한 이름의 메뉴가 존재합니다."),
     MENU_UNAVAILABLE(HttpStatus.CONFLICT,                   "SHOP_007", "현재 주문할 수 없는 메뉴입니다."),
+    SETTLEMENT_NOT_FOUND(HttpStatus.NOT_FOUND,              "SHOP_008", "존재하지 않는 정산 요청입니다."),
+    DUPLICATE_SETTLEMENT_REQUEST(HttpStatus.CONFLICT,       "SHOP_009", "이미 처리 대기 중인 정산 요청이 있습니다."),
+    SETTLEMENT_INVALID_STATUS(HttpStatus.CONFLICT,          "SHOP_010", "현재 상태에서는 처리할 수 없는 정산 요청입니다."),
+    SETTLEMENT_BALANCE_EMPTY(HttpStatus.BAD_REQUEST,        "SHOP_011", "정산 가능한 잔액이 없습니다."),
+    SETTLEMENT_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,       "SHOP_012", "정산 신청 최소 금액은 5,000엽전입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
@@ -150,13 +155,15 @@ public enum ErrorCode {
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
 
     // ===== REPORT (담당: 박경화) =====
+    // REPORT_001~004: 신고 접수 유효성 검증 (KAN-90)
     REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND,            "REPORT_001", "신고 대상을 찾을 수 없습니다."),
     DUPLICATE_REPORT(HttpStatus.CONFLICT,                    "REPORT_002", "이미 신고한 대상입니다."),
     REPORT_SELF(HttpStatus.BAD_REQUEST,                      "REPORT_003", "자기 자신을 신고할 수 없습니다."),
     REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다."),
+    // REPORT_005~007: 관리자 신고 처리 (KAN-91/92)
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND,                   "REPORT_005", "존재하지 않는 신고 내역입니다."),
     REPORT_ALREADY_RESOLVED(HttpStatus.CONFLICT,             "REPORT_006", "이미 처리된 신고 내역입니다."),
-    // REPORT_007: targetType 불일치 엔드포인트 사용 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시
+    // REPORT_007: targetType 불일치 엔드포인트 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시
     REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,            "REPORT_007", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다.");
 
     private final HttpStatus status;

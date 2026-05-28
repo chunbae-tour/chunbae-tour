@@ -2,21 +2,28 @@ package com.chunbaetour.domain.report.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
+import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
+import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.service.ReportService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 관리자 신고 조회 API (KAN-91).
+ * 관리자 신고 조회/처리 API (KAN-91, KAN-92).
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
 @RestController
@@ -51,5 +58,42 @@ public class AdminReportController {
     @GetMapping("/{reportId}")
     public ApiResponse<ReportDetailResponse> getReport(@PathVariable Long reportId) {
         return ApiResponse.success(reportService.getReport(reportId));
+    }
+
+    /**
+     * 콘텐츠 신고 처리 (KAN-92).
+     * targetType이 POST·COMMENT·REVIEW·USER인 신고에만 사용.
+     * MERCHANT 신고에 이 엔드포인트 사용 시 REPORT_WRONG_ENDPOINT 에러.
+     *
+     * @param reportId 처리할 신고 ID
+     * @param adminId  인증된 관리자 계정
+     * @param request  처리 요청 (action, adminNote)
+     */
+    @PostMapping("/{reportId}/resolve")
+    public ApiResponse<ReportResolveResponse> resolveReport(
+            @PathVariable Long reportId,
+            @AuthenticationPrincipal Long adminId,
+            @Valid @RequestBody ReportResolveRequest request
+    ) {
+        return ApiResponse.success(reportService.resolveReport(reportId, adminId, request));
+    }
+
+    /**
+     * 가게 신고 처리 (KAN-92).
+     * targetType이 MERCHANT인 신고에만 사용.
+     * 콘텐츠 신고에 이 엔드포인트 사용 시 REPORT_WRONG_ENDPOINT 에러.
+     *
+     * @param reportId 처리할 신고 ID
+     * @param adminId  인증된 관리자 ID
+     * @param request  처리 요청 (HIDE_SHOP·REVOKE_MERCHANT·DISMISS, adminNote)
+     */
+    @PostMapping("/{reportId}/resolve/merchant")
+    public ApiResponse<ReportResolveResponse> resolveMerchantReport(
+            @PathVariable Long reportId,
+            @AuthenticationPrincipal Long adminId,
+            @Valid @RequestBody MerchantReportResolveRequest request
+    ) {
+        return ApiResponse.success(
+                reportService.resolveMerchantReport(reportId, adminId, request));
     }
 }

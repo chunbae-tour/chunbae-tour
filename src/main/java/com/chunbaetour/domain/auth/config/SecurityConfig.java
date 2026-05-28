@@ -119,8 +119,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/payments/**").hasRole("USER")
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
-                        // 상인 신청은 USER 권한 — /merchants/** 보다 먼저 선언해야 우선순위 적용됨
-                        .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasRole("USER")
+                        // 상인 신청은 USER·MERCHANT 모두 허용 — 1상인 다중 가게 지원. /merchants/** 보다 먼저 선언해야 우선순위 적용됨
+                        .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasAnyRole("USER", "MERCHANT")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // 검색 관련 보호 API: 최근 검색어 저장/조회는 인증된 USER 전용 (조회 공개 API보다 먼저 선언)
@@ -132,9 +132,8 @@ public class SecurityConfig {
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
-                        // 관광지 조회 (근처/상세)는 비인증 허용 — isLiked는 서비스에서 userId null 체크로 처리
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
-                        // 관광지 추천(인기/주변/카테고리)은 비인증 공개 API — KAN-134에서 추가된 RecommendController
+                        // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용 — KAN-157
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
                         // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
