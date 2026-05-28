@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class GoogleTranslationConfig {
 
+    // Translation API 전용 HttpClient 빈 생성 — 커넥션 풀 + 타임아웃 설정 포함
     @Bean(destroyMethod = "close")
     public CloseableHttpClient googleTranslationHttpClient() {
         PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
@@ -36,6 +37,7 @@ public class GoogleTranslationConfig {
                 .build();
     }
 
+    // Translation API 전용 RestClient 빈 생성 — googleTranslationHttpClient를 request factory로 사용
     @Bean
     public RestClient googleTranslationRestClient(CloseableHttpClient googleTranslationHttpClient) {
         HttpComponentsClientHttpRequestFactory factory =
