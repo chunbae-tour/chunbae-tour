@@ -72,9 +72,8 @@ public class ReportService {
 
     @Transactional
     public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
-        // USER·MERCHANT 자기신고 — DB 없이 즉시 차단
-        if ((request.targetType() == ReportTargetType.USER
-                || request.targetType() == ReportTargetType.MERCHANT)
+        // USER 자기신고 — DB 없이 즉시 차단
+        if (request.targetType() == ReportTargetType.USER
                 && request.targetId().equals(reporterId)) {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
@@ -318,8 +317,17 @@ public class ReportService {
         switch (action) {
             // HIDE_SHOP: 관리자 임시 정지 (SUSPENDED, 복구 가능)
             case HIDE_SHOP -> shopService.hideShop(shopId);
-            // REVOKE_MERCHANT: 상인 인증 취소 — 해당 가게만 SUSPENDED (CLOSED는 상인 신청 시에만)
-            case REVOKE_MERCHANT -> shopService.hideShop(shopId);
+            // REVOKE_MERCHANT: 가게 정지 + 계정 MERCHANT → USER 권한 회수
+            case REVOKE_MERCHANT -> {
+                shopService.hideShop(shopId);
+                Long ownerId = shopService.findMerchantAccountId(shopId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                Account owner = accountRepository.findById(ownerId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (owner.getRole() == Role.MERCHANT) {
+                    owner.revokeToUser();
+                }
+            }
             case DISMISS -> { /* 무시, 상태 기록만 */ }
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
