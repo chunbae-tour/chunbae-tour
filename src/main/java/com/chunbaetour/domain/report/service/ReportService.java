@@ -282,10 +282,10 @@ public class ReportService {
         switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findById(targetId)
                     .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE)
-                    .ifPresent(CompanionPost::delete);
+                    .ifPresent(CompanionPost::hide);
             case POST_FREE -> freePostRepository.findById(targetId)
                     .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
-                    .ifPresent(FreePost::delete);
+                    .ifPresent(FreePost::hide);
             case COMMENT -> commentRepository.findById(targetId)
                     .filter(c -> c.getStatus() != CommentStatus.DELETED)
                     .ifPresent(Comment::delete);

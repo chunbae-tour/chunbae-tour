@@ -6,8 +6,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import java.sql.SQLException;
+
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.entity.CommentStatus;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -20,6 +25,7 @@ import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
@@ -188,7 +194,7 @@ class ReportServiceTest {
         reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.POST_FREE, FREE_POST_ID, ReportReason.SPAM, null));
 
-        assertThat(activeFreePost.getStatus()).isEqualTo(FreePostStatus.DELETED);
+        assertThat(activeFreePost.getStatus()).isEqualTo(FreePostStatus.HIDDEN);
     }
 
     @Test
@@ -205,7 +211,61 @@ class ReportServiceTest {
         reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.POST_COMPANION, COMP_POST_ID, ReportReason.SPAM, null));
 
-        assertThat(activeCompanionPost.getStatus()).isEqualTo(CompanionPostStatus.DELETED);
+        assertThat(activeCompanionPost.getStatus()).isEqualTo(CompanionPostStatus.HIDDEN);
+    }
+
+    @Test
+    @DisplayName("POST_FREE 자기신고 → REPORT_SELF")
+    void create_POST_FREE_자기신고() {
+        FreePost myPost = FreePost.create(REPORTER_ID, "내 글", "내용", List.of());
+        ReflectionTestUtils.setField(myPost, "id", FREE_POST_ID);
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(myPost));
+
+        assertThatThrownBy(() ->
+                reportService.create(REPORTER_ID,
+                        new ReportCreateRequest(ReportTargetType.POST_FREE, FREE_POST_ID, ReportReason.SPAM, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_SELF);
+    }
+
+    @Test
+    @DisplayName("DB unique constraint 위반 시 DUPLICATE_REPORT 변환 (동시성)")
+    void create_동시성_중복신고() {
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
+        given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
+                REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID)).willReturn(false);
+
+        DataIntegrityViolationException mockException = mock(DataIntegrityViolationException.class);
+        SQLException cause = new SQLException("uk_reports_reporter_target violated");
+        given(mockException.getMostSpecificCause()).willReturn(cause);
+        given(reportRepository.saveAndFlush(any())).willThrow(mockException);
+
+        assertThatThrownBy(() ->
+                reportService.create(REPORTER_ID,
+                        new ReportCreateRequest(ReportTargetType.POST_FREE, FREE_POST_ID, ReportReason.SPAM, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_REPORT);
+    }
+
+    @Test
+    @DisplayName("COMMENT 신고 3건 도달 → 댓글 자동 삭제")
+    void create_autoHide_COMMENT_3건_도달() {
+        Long commentId = 30L;
+        Comment activeComment = Comment.create(FREE_POST_ID, PostType.FREE, 2L, "댓글 내용");
+        ReflectionTestUtils.setField(activeComment, "id", commentId);
+
+        Report commentReport = Report.create(REPORTER_ID, ReportTargetType.COMMENT, commentId,
+                ReportReason.SPAM, null);
+        given(commentRepository.findById(commentId)).willReturn(Optional.of(activeComment));
+        given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
+        given(reportRepository.saveAndFlush(any())).willReturn(commentReport);
+        given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.COMMENT, commentId))
+                .willReturn(3L);
+
+        reportService.create(REPORTER_ID,
+                new ReportCreateRequest(ReportTargetType.COMMENT, commentId, ReportReason.SPAM, null));
+
+        assertThat(activeComment.getStatus()).isEqualTo(CommentStatus.DELETED);
     }
 
     // ── getMyReports ──────────────────────────────────────────────────────
