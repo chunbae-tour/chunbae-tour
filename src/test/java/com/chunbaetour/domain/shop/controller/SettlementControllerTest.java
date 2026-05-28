@@ -69,6 +69,24 @@ class SettlementControllerTest extends AbstractIntegrationTest {
     // ===== ADMIN endpoint =====
 
     @Test
+    @DisplayName("관리자 정산 목록 — 비로그인 401 AUTH_006")
+    void getSettlements_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/settlements"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @DisplayName("관리자 정산 목록 — MERCHANT 토큰 403 AUTH_007")
+    void getSettlements_merchantRole_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.MERCHANT, "merchant@test.com");
+        mockMvc.perform(get("/api/v1/admin/settlements")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
     @DisplayName("정산 승인 — 비로그인 401 AUTH_006")
     void approveSettlement_unauthenticated_returns401() throws Exception {
         mockMvc.perform(patch("/api/v1/admin/settlements/1/approve"))
