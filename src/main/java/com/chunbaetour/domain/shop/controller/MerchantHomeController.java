@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.shop.controller;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.MerchantHomeResponse;
 import com.chunbaetour.domain.shop.service.MerchantHomeService;
@@ -28,6 +30,19 @@ public class MerchantHomeController {
      */
     @GetMapping
     public ApiResponse<MerchantHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
+        requireAuthenticated(userId);
         return ApiResponse.success(merchantHomeService.getHome(userId));
+    }
+
+    /**
+     * SecurityContext에 userId가 채워지지 않은 비정상 상태를 표준 AUTH_006 에러로 변환.
+     *
+     * <p>본 컨트롤러는 인증 필수 endpoint이므로 userId null = 인증 실패와 동일하게 응답한다.
+     * NPE 대신 도메인 에러로 통일해 클라이언트 응답 형식을 일관되게 유지한다.
+     */
+    private static void requireAuthenticated(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
     }
 }

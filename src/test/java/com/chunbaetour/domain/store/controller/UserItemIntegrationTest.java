@@ -9,6 +9,8 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -96,10 +98,12 @@ class UserItemIntegrationTest extends AbstractIntegrationTest {
                 .match(pattern)
                 .count(100)
                 .build();
+        Set<String> keys = new HashSet<>();
         try (Cursor<String> cursor = redis.scan(options)) {
-            while (cursor.hasNext()) {
-                redis.delete(cursor.next());
-            }
+            cursor.forEachRemaining(keys::add);
+        }
+        if (!keys.isEmpty()) {
+            redis.delete(keys);
         }
     }
 }
