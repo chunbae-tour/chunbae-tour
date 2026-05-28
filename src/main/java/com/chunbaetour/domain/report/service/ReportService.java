@@ -178,8 +178,9 @@ public class ReportService {
     public ReportDetailResponse getReport(Long reportId) {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
-        String targetContent = resolveTargetContent(report.getTargetType(), report.getTargetId());
-        return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()), targetContent);
+        TargetDetail detail = resolveTargetDetail(report.getTargetType(), report.getTargetId());
+        return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()),
+                detail.title(), detail.content(), detail.imageUrls());
     }
 
     // ── KAN-92: 관리자 신고 처리 ──────────────────────────────────────────
@@ -201,6 +202,10 @@ public class ReportService {
             if (report.getTargetType() == ReportTargetType.MERCHANT) {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
             }
+            // TODO(KAN-152): REVIEW enum 추가 후 명시적 가드 추가
+            // if (report.getTargetType() == ReportTargetType.REVIEW) {
+            //     throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+            // }
 
             ReportAction action = request.action();
             if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
@@ -287,6 +292,7 @@ public class ReportService {
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요
             }
+            // TODO(KAN-152): REVIEW enum 추가 후 case REVIEW -> { /* 자동 숨김 처리 */ } 추가
         }
     }
 
@@ -304,7 +310,9 @@ public class ReportService {
     private void applyMerchantAction(ReportAction action, Long targetId) {
         switch (action) {
             case HIDE_SHOP -> {
-                throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+                // TODO: Merchant 도메인 연동 후 구현 (신현민 파트).
+                // 현재 신고 상태는 RESOLVED/HIDE_SHOP으로 기록되나 실제 가게 숨김은 미처리.
+                log.warn("HIDE_SHOP 미구현 — 가게 숨김 처리 보류, targetId={}", targetId);
             }
             case REVOKE_MERCHANT -> {
                 Account merchant = accountRepository.findById(targetId)
@@ -363,17 +371,36 @@ public class ReportService {
         }
     }
 
-    private String resolveTargetContent(ReportTargetType targetType, Long targetId) {
+    /**
+     * 신고 대상 상세 정보 조회 — title·content·imageUrls.
+     * POST_FREE: title·content·imageUrls 모두 반환.
+     * POST_COMPANION: title·content 반환, imageUrls=null.
+     * COMMENT: content만 반환, title·imageUrls=null.
+     * USER·MERCHANT: content(닉네임)만 반환, title·imageUrls=null.
+     */
+    private TargetDetail resolveTargetDetail(ReportTargetType targetType, Long targetId) {
         return switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId)
-                    .map(CompanionPost::getContent).orElse(null);
             case POST_FREE -> freePostRepository.findById(targetId)
-                    .map(FreePost::getContent).orElse(null);
+                    .map(p -> new TargetDetail(p.getTitle(), p.getContent(), p.getImageUrls()))
+                    .orElse(TargetDetail.empty());
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .map(p -> new TargetDetail(p.getTitle(), p.getContent(), null))
+                    .orElse(TargetDetail.empty());
             case COMMENT -> commentRepository.findById(targetId)
-                    .map(Comment::getContent).orElse(null);
+                    .map(c -> new TargetDetail(null, c.getContent(), null))
+                    .orElse(TargetDetail.empty());
             case USER, MERCHANT -> accountRepository.findById(targetId)
-                    .map(Account::getNickname).orElse(null);
+                    .map(a -> new TargetDetail(null, a.getNickname(), null))
+                    .orElse(TargetDetail.empty());
+            // TODO(KAN-152): REVIEW 도메인 구현 후 case 추가 — title·content·imageUrls 반환
         };
+    }
+
+    /** 신고 대상 콘텐츠 정보 내부 전달 객체. */
+    private record TargetDetail(String title, String content, java.util.List<String> imageUrls) {
+        static TargetDetail empty() {
+            return new TargetDetail(null, null, null);
+        }
     }
 
     private String resolveNickname(Long accountId) {

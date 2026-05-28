@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
+import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -20,6 +22,7 @@ import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
+import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
@@ -278,6 +281,78 @@ class ReportServiceTest {
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> reportService.getMyReport(REPORT_ID, REPORTER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_NOT_FOUND);
+    }
+
+    // ── getReport (관리자 상세) ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST_FREE 신고 상세 — targetTitle·targetContent·targetImageUrls 반환")
+    void getReport_FREE_POST_상세() {
+        FreePost freePostWithImage = FreePost.create(2L, "스팸 제목", "스팸 본문", List.of("https://img.example.com/1.jpg"));
+        ReflectionTestUtils.setField(freePostWithImage, "id", FREE_POST_ID);
+
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(pendingReport));
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(freePostWithImage));
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.reportId()).isEqualTo(REPORT_ID);
+        assertThat(result.targetTitle()).isEqualTo("스팸 제목");
+        assertThat(result.targetContent()).isEqualTo("스팸 본문");
+        assertThat(result.targetImageUrls()).containsExactly("https://img.example.com/1.jpg");
+        assertThat(result.reporterNickname()).isEqualTo("신고자닉네임");
+    }
+
+    @Test
+    @DisplayName("POST_COMPANION 신고 상세 — targetTitle 반환, targetImageUrls null")
+    void getReport_COMPANION_POST_상세() {
+        Report companionReport = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION,
+                COMP_POST_ID, ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(companionReport, "id", REPORT_ID);
+
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(companionReport));
+        given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(activeCompanionPost));
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isEqualTo("동행 구함");
+        assertThat(result.targetContent()).isEqualTo("같이 가요");
+        assertThat(result.targetImageUrls()).isNull();
+    }
+
+    @Test
+    @DisplayName("신고 대상 삭제된 경우 — targetTitle·targetContent null 반환 (graceful)")
+    void getReport_대상_삭제됨_graceful() {
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(pendingReport));
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isNull();
+        assertThat(result.targetContent()).isNull();
+        assertThat(result.targetImageUrls()).isNull();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 신고 관리자 상세 조회 → REPORT_NOT_FOUND")
+    void getReport_없는신고() {
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> reportService.getReport(REPORT_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REPORT_NOT_FOUND);
     }
