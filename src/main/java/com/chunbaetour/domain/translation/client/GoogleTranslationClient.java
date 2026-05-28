@@ -33,7 +33,7 @@ public class GoogleTranslationClient {
         TranslateRequest request = new TranslateRequest(List.of(text), targetLanguage.name().toLowerCase(Locale.ROOT));
         try {
             TranslateResponse response = restClient.post()
-                    .uri(UriComponentsBuilder.fromHttpUrl(TRANSLATE_URL)
+                    .uri(UriComponentsBuilder.fromUriString(TRANSLATE_URL)
                             .queryParam("key", apiKey)
                             .build().toUri())
                     .body(request)
