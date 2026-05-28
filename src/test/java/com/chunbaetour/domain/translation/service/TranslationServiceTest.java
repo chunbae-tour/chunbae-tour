@@ -63,7 +63,8 @@ class TranslationServiceTest {
         verify(commonErrorLogRepository).save(argThat(log ->
                 log.getDomain() == CommonErrorDomain.TRANSLATION
                 && log.getErrorType() == CommonErrorType.API_CALL_FAILURE
-                && "Google Translation API".equals(log.getExternalProvider())));
+                && "Google Translation API".equals(log.getExternalProvider())
+                && log.getMessage() != null && !log.getMessage().isBlank()));
     }
 
     // ErrorLog 저장 실패 — 원본 EXTERNAL_SERVICE_ERROR 그대로 전파 (저장 실패가 응답 덮지 않음)
