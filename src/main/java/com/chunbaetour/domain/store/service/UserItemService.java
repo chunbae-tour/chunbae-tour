@@ -11,6 +11,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 내 보유 아이템 서비스.
+ * 담당 기능: cursor 페이징 기반 보유 아이템 조회.
+ */
 @Service
 @RequiredArgsConstructor
 public class UserItemService {

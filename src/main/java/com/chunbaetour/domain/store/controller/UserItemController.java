@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 내 보유 아이템 API (STORY-18) */
+/** 내 보유 아이템 API */
 @RestController
 @RequestMapping("/api/v1/users/me/items")
 @RequiredArgsConstructor
