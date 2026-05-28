@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -55,6 +56,18 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
                                             @Param("endAt") LocalDateTime endAt);
 
     /** 상인 홈 대시보드 — 오늘 완료된 QR 결제 중 최신 10건 */
-    List<QrPayRequest> findTop10ByShopIdInAndStatusAndCompletedAtBetweenOrderByCompletedAtDescIdDesc(
-            List<Long> shopIds, QrPayStatus status, LocalDateTime startAt, LocalDateTime endAt);
+    @Query("""
+            SELECT q
+            FROM QrPayRequest q
+            WHERE q.shopId IN :shopIds
+              AND q.status = :status
+              AND q.completedAt >= :startAt
+              AND q.completedAt < :endAt
+            ORDER BY q.completedAt DESC, q.id DESC
+            """)
+    List<QrPayRequest> findRecentCompletedByShops(@Param("shopIds") List<Long> shopIds,
+                                                   @Param("status") QrPayStatus status,
+                                                   @Param("startAt") LocalDateTime startAt,
+                                                   @Param("endAt") LocalDateTime endAt,
+                                                   Pageable pageable);
 }

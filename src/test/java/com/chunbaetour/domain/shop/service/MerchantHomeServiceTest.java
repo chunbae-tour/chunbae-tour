@@ -26,6 +26,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -90,11 +91,12 @@ class MerchantHomeServiceTest {
                 eq(LocalDateTime.of(2026, 5, 24, 15, 0)),
                 eq(LocalDateTime.of(2026, 5, 25, 15, 0))
         )).willReturn(15_000L);
-        given(qrPayRequestRepository.findTop10ByShopIdInAndStatusAndCompletedAtBetweenOrderByCompletedAtDescIdDesc(
+        given(qrPayRequestRepository.findRecentCompletedByShops(
                 List.of(SHOP_ID),
                 QrPayStatus.COMPLETED,
                 LocalDateTime.of(2026, 5, 24, 15, 0),
-                LocalDateTime.of(2026, 5, 25, 15, 0)
+                LocalDateTime.of(2026, 5, 25, 15, 0),
+                PageRequest.of(0, 10)
         )).willReturn(List.of(recentPayment));
 
         MerchantHomeResponse response = merchantHomeService.getHome(USER_ID);
@@ -122,6 +124,36 @@ class MerchantHomeServiceTest {
         assertThat(response.recentPayments()).isEmpty();
         verify(qrPayRequestRepository, never()).sumAmountByShopIdsAndStatusBetween(any(), any(), any(), any());
         verify(valueOperations).set(eq(CACHE_KEY), any(String.class), eq(Duration.ofMinutes(3)));
+    }
+
+    @Test
+    @DisplayName("상인 홈 조회 — KST 자정 정각이면 다음 영업일 시작 시각을 사용한다")
+    void getHome_kstMidnight_usesNextBusinessDay() {
+        Clock midnightClock = Clock.fixed(Instant.parse("2026-05-24T15:00:00Z"), ZoneOffset.UTC);
+        MerchantHomeService midnightService = new MerchantHomeService(
+                shopRepository, qrPayRequestRepository, redisTemplate, objectMapper, midnightClock);
+
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.get(CACHE_KEY)).willReturn(null);
+        given(shopRepository.findAllByUserId(USER_ID)).willReturn(List.of(createShop()));
+        given(qrPayRequestRepository.sumAmountByShopIdsAndStatusBetween(
+                eq(List.of(SHOP_ID)),
+                eq(QrPayStatus.COMPLETED),
+                eq(LocalDateTime.of(2026, 5, 24, 15, 0)),
+                eq(LocalDateTime.of(2026, 5, 25, 15, 0))
+        )).willReturn(0L);
+        given(qrPayRequestRepository.findRecentCompletedByShops(
+                eq(List.of(SHOP_ID)),
+                eq(QrPayStatus.COMPLETED),
+                eq(LocalDateTime.of(2026, 5, 24, 15, 0)),
+                eq(LocalDateTime.of(2026, 5, 25, 15, 0)),
+                eq(PageRequest.of(0, 10))
+        )).willReturn(List.of());
+
+        MerchantHomeResponse response = midnightService.getHome(USER_ID);
+
+        assertThat(response.todaySalesDate()).isEqualTo(java.time.LocalDate.of(2026, 5, 25));
+        assertThat(response.todaySalesAmount()).isZero();
     }
 
     private Shop createShop() {

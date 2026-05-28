@@ -41,6 +41,7 @@ import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -62,6 +63,7 @@ public class QrPayService {
     private final ShopWalletRepository shopWalletRepository;
     private final YeopjeonHistoryRepository yeopjeonHistoryRepository;
     private final RedissonClient redissonClient;
+    private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final MessageSource messageSource;
@@ -69,6 +71,8 @@ public class QrPayService {
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
     /** 분산 락 키: qr:lock:{shopId}:{userId} — 동일 사용자·가게 동시 승인 시도 직렬화 */
     private static final String QR_LOCK_KEY = "qr:lock:%d:%d";
+    /** 상인 홈 캐시 키: merchant:home:v1:{userId} — 승인 직후 무효화 대상 */
+    private static final String MERCHANT_HOME_CACHE_KEY_PREFIX = "merchant:home:v1:";
     private static final int LOCK_WAIT_SECONDS = 3;
     // pending_key unique 제약명 — DataIntegrityViolationException 원인 식별에 사용
     private static final String PENDING_KEY_CONSTRAINT = "pending_key";
@@ -296,6 +300,7 @@ public class QrPayService {
 
             // 상태 COMPLETED 전이 — 완료 시각은 updatedAt과 별도로 고정 보존
             lockedRequest.complete(now);
+            invalidateMerchantHomeCache(merchantUserId);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -304,6 +309,18 @@ public class QrPayService {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
+        }
+    }
+
+    /**
+     * 상인 홈 캐시를 무효화한다.
+     * 승인 완료 직후 최신 매출과 최근 결제가 바로 보이도록 best-effort로 삭제한다.
+     */
+    private void invalidateMerchantHomeCache(Long merchantUserId) {
+        try {
+            redisTemplate.delete(MERCHANT_HOME_CACHE_KEY_PREFIX + merchantUserId);
+        } catch (Exception e) {
+            log.warn("[QR 결제 승인] 상인 홈 캐시 무효화 실패 (merchantUserId: {})", merchantUserId, e);
         }
     }
 

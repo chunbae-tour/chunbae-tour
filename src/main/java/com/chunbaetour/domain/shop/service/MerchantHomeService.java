@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -122,8 +123,8 @@ public class MerchantHomeService {
 
         // 오늘 완료된 결제 중 최신 10건만 가져온다. 오늘 매출과 같은 날짜 범위를 유지한다.
         List<QrPayRequest> recentPayments = qrPayRequestRepository
-                .findTop10ByShopIdInAndStatusAndCompletedAtBetweenOrderByCompletedAtDescIdDesc(
-                        shopIds, QrPayStatus.COMPLETED, startAt, endAt);
+                .findRecentCompletedByShops(
+                        shopIds, QrPayStatus.COMPLETED, startAt, endAt, PageRequest.of(0, 10));
 
         // 엔티티를 API 응답 DTO로 변환한다.
         return new MerchantHomeResponse(

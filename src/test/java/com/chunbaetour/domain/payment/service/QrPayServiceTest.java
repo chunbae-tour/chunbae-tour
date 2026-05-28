@@ -52,6 +52,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -78,6 +79,9 @@ class QrPayServiceTest {
 
     @Mock
     private RedissonClient redissonClient;
+
+    @Mock
+    private StringRedisTemplate redisTemplate;
 
     @Mock
     private MessageSource messageSource;
@@ -530,6 +534,7 @@ class QrPayServiceTest {
         then(shopWallet).should().credit(AMOUNT);
         then(yeopjeonHistoryRepository).should(times(2)).save(any());
         assertThat(req.getStatus()).isEqualTo(QrPayStatus.COMPLETED);
+        then(redisTemplate).should().delete("merchant:home:v1:" + MERCHANT_USER_ID);
         then(lock).should().unlock();
         // 데드락 방지 락 순서 고정: wallets → shop_wallets
         InOrder order = inOrder(walletRepository, shopWalletRepository);
