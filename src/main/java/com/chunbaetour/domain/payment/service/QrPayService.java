@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.payment.service;
 
+import static com.chunbaetour.domain.shop.service.MerchantHomeService.CACHE_KEY_PREFIX;
+
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.dto.request.QrPayConfirmRequest;
@@ -71,8 +73,6 @@ public class QrPayService {
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
     /** 분산 락 키: qr:lock:{shopId}:{userId} — 동일 사용자·가게 동시 승인 시도 직렬화 */
     private static final String QR_LOCK_KEY = "qr:lock:%d:%d";
-    /** 상인 홈 캐시 키: merchant:home:v1:{userId} — 승인 직후 무효화 대상 */
-    private static final String MERCHANT_HOME_CACHE_KEY_PREFIX = "merchant:home:v1:";
     private static final int LOCK_WAIT_SECONDS = 3;
     // pending_key unique 제약명 — DataIntegrityViolationException 원인 식별에 사용
     private static final String PENDING_KEY_CONSTRAINT = "pending_key";
@@ -318,7 +318,7 @@ public class QrPayService {
      */
     private void invalidateMerchantHomeCache(Long merchantUserId) {
         try {
-            redisTemplate.delete(MERCHANT_HOME_CACHE_KEY_PREFIX + merchantUserId);
+            redisTemplate.delete(CACHE_KEY_PREFIX + merchantUserId);
         } catch (Exception e) {
             log.warn("[QR 결제 승인] 상인 홈 캐시 무효화 실패 (merchantUserId: {})", merchantUserId, e);
         }
