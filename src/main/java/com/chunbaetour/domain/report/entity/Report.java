@@ -106,8 +106,14 @@ public class Report extends BaseEntity {
     /**
      * 신고 무시 (DISMISS).
      * status = DISMISSED로 종결.
+     *
+     * <p>도메인 불변식 보호: 서비스 레이어에서 isPending() 체크를 하더라도
+     * 엔티티 자체도 방어 — 잘못된 직접 호출 시 상태 덮어쓰기 방지.
      */
     public void dismiss(String adminNote, String resolvedBy) {
+        if (!isPending()) {
+            throw new IllegalStateException("이미 처리된 신고입니다. reportId=" + this.id);
+        }
         this.status = ReportStatus.DISMISSED;
         this.action = ReportAction.DISMISS;
         this.adminNote = adminNote;
