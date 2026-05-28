@@ -1,3 +1,16 @@
+# Local-only spec docs (not for version control)
+docs/specs/
+
+# Claude Code agent files (local only)
+.agents/
+.claude/
+AGENTS.md
+skills-lock.json
+docs/agent-harness/
+docs/agent-entrypoint.md
+docs/agent-onboarding.md
+docs/park-kyunghwa-domain.md
+
 # Environment variables
 .env
 .env.local
