@@ -25,10 +25,13 @@ public class TranslationErrorLogWriter {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void save(TranslationClientException e) {
         try {
+            String message = (e.getMessage() == null || e.getMessage().isBlank())
+                    ? "Translation API 호출 실패"
+                    : e.getMessage();
             commonErrorLogRepository.save(CommonErrorLog.builder()
                     .domain(CommonErrorDomain.TRANSLATION)
                     .errorType(CommonErrorType.API_CALL_FAILURE)
-                    .message(e.getMessage())
+                    .message(message)
                     .detail(e.getCause() != null ? e.getCause().getMessage() : null)
                     .externalProvider(EXTERNAL_PROVIDER)
                     .build());
