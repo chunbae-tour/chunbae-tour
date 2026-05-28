@@ -2,6 +2,7 @@ package com.chunbaetour.domain.translation.client;
 
 import com.chunbaetour.domain.translation.type.LanguageCode;
 import java.util.List;
+import java.util.Locale;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,10 +29,13 @@ public class GoogleTranslationClient {
 
     // 텍스트를 targetLanguage로 번역. 실패 시 TranslationClientException
     public String translate(String text, LanguageCode targetLanguage) {
-        TranslateRequest request = new TranslateRequest(List.of(text), targetLanguage.name().toLowerCase());
+        TranslateRequest request = new TranslateRequest(List.of(text), targetLanguage.name().toLowerCase(Locale.ROOT));
         try {
             TranslateResponse response = restClient.post()
-                    .uri(TRANSLATE_URL + "?key=" + apiKey)
+                    .uri(uriBuilder -> uriBuilder
+                            .path(TRANSLATE_URL)
+                            .queryParam("key", apiKey)
+                            .build())
                     .body(request)
                     .retrieve()
                     .body(TranslateResponse.class);
@@ -42,7 +46,11 @@ public class GoogleTranslationClient {
                     || response.data().translations().isEmpty()) {
                 throw new TranslationClientException("Google Translation API returned empty response");
             }
-            return response.data().translations().get(0).translatedText();
+            String translatedText = response.data().translations().get(0).translatedText();
+            if (translatedText == null || translatedText.isBlank()) {
+                throw new TranslationClientException("Google Translation API returned invalid translated text");
+            }
+            return translatedText;
         } catch (TranslationClientException e) {
             throw e;
         } catch (RestClientException e) {
