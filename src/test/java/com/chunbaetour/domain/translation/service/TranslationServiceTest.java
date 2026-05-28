@@ -3,6 +3,7 @@ package com.chunbaetour.domain.translation.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -12,6 +13,8 @@ import com.chunbaetour.domain.common.entity.CommonErrorLog;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.repository.CommonErrorLogRepository;
+import com.chunbaetour.domain.common.type.CommonErrorDomain;
+import com.chunbaetour.domain.common.type.CommonErrorType;
 import com.chunbaetour.domain.translation.client.GoogleTranslationClient;
 import com.chunbaetour.domain.translation.client.TranslationClientException;
 import com.chunbaetour.domain.translation.dto.response.TranslationResponse;
@@ -57,7 +60,10 @@ class TranslationServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR));
 
-        verify(commonErrorLogRepository).save(any(CommonErrorLog.class));
+        verify(commonErrorLogRepository).save(argThat(log ->
+                log.getDomain() == CommonErrorDomain.TRANSLATION
+                && log.getErrorType() == CommonErrorType.API_CALL_FAILURE
+                && "Google Translation API".equals(log.getExternalProvider())));
     }
 
     // ErrorLog 저장 실패 — 원본 EXTERNAL_SERVICE_ERROR 그대로 전파 (저장 실패가 응답 덮지 않음)
