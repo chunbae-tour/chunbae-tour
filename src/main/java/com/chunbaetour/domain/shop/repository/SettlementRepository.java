@@ -38,11 +38,13 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
     List<Settlement> findByShopId(@Param("shopId") Long shopId,
             @Param("cursorId") Long cursorId, Pageable pageable);
 
-    /** 관리자 정산 목록 — cursor keyset (id DESC) */
+    /** 관리자 정산 목록 — cursor keyset (id DESC), status=null이면 전체 조회 */
     @Query("""
             SELECT s FROM Settlement s
             WHERE (:cursorId IS NULL OR s.id < :cursorId)
+            AND (:status IS NULL OR s.status = :status)
             ORDER BY s.id DESC
             """)
-    List<Settlement> findAllWithCursor(@Param("cursorId") Long cursorId, Pageable pageable);
+    List<Settlement> findAllWithCursor(@Param("cursorId") Long cursorId,
+            @Param("status") SettlementStatus status, Pageable pageable);
 }

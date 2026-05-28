@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.shop.dto.request.SettlementRejectRequest;
 import com.chunbaetour.domain.shop.dto.response.AdminSettlementResponse;
 import com.chunbaetour.domain.shop.service.AdminSettlementService;
+import com.chunbaetour.domain.shop.type.SettlementStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -30,12 +31,13 @@ public class AdminSettlementController {
 
     private final AdminSettlementService adminSettlementService;
 
-    /** GET /api/v1/admin/settlements — 정산 목록 조회 */
+    /** GET /api/v1/admin/settlements — 정산 목록 조회 (?status=PENDING|APPROVED|REJECTED, 미지정 시 전체) */
     @GetMapping
     public ApiResponse<CursorPageResponse<AdminSettlementResponse>> getSettlements(
             @RequestParam(required = false) String cursor,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return ApiResponse.success(adminSettlementService.getSettlements(cursor, size));
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @RequestParam(required = false) SettlementStatus status) {
+        return ApiResponse.success(adminSettlementService.getSettlements(cursor, size, status));
     }
 
     /** PATCH /api/v1/admin/settlements/{settlementId}/approve — 정산 승인 */

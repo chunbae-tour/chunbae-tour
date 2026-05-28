@@ -9,6 +9,7 @@ import com.chunbaetour.domain.shop.entity.Settlement;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.SettlementRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
+import com.chunbaetour.domain.shop.type.SettlementStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -65,14 +66,18 @@ public class AdminSettlementService {
         settlement.reject(reason);
     }
 
-    /** 관리자 정산 목록 조회 — cursor keyset 페이징 (id DESC) */
-    public CursorPageResponse<AdminSettlementResponse> getSettlements(String cursor, int size) {
+    /**
+     * 관리자 정산 목록 조회 — cursor keyset 페이징 (id DESC).
+     * status=null이면 전체 조회, status 지정 시 해당 상태만 필터링.
+     */
+    public CursorPageResponse<AdminSettlementResponse> getSettlements(
+            String cursor, int size, SettlementStatus status) {
         // cursor 디코딩 — null이면 첫 페이지
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
         // size+1 조회로 다음 페이지 존재 여부 판별
         List<Settlement> settlements = settlementRepository.findAllWithCursor(
-                cursorId, PageRequest.of(0, size + 1));
+                cursorId, status, PageRequest.of(0, size + 1));
 
         boolean hasNext = settlements.size() > size;
         List<Settlement> page = hasNext ? settlements.subList(0, size) : settlements;

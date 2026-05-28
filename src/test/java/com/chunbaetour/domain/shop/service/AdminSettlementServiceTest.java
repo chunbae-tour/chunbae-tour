@@ -3,6 +3,7 @@ package com.chunbaetour.domain.shop.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -154,11 +155,11 @@ class AdminSettlementServiceTest {
         Settlement s2 = createSettlement(SettlementStatus.PENDING);
         ReflectionTestUtils.setField(s2, "id", 1L);
 
-        given(settlementRepository.findAllWithCursor(isNull(), any(Pageable.class)))
+        given(settlementRepository.findAllWithCursor(isNull(), isNull(), any(Pageable.class)))
                 .willReturn(List.of(s1, s2));
 
         CursorPageResponse<AdminSettlementResponse> result =
-                adminSettlementService.getSettlements(null, 20);
+                adminSettlementService.getSettlements(null, 20, null);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isFalse();
@@ -174,14 +175,31 @@ class AdminSettlementServiceTest {
         Settlement s3 = createSettlement(SettlementStatus.PENDING);
         ReflectionTestUtils.setField(s3, "id", 1L);
 
-        given(settlementRepository.findAllWithCursor(isNull(), any(Pageable.class)))
+        given(settlementRepository.findAllWithCursor(isNull(), isNull(), any(Pageable.class)))
                 .willReturn(List.of(s1, s2, s3));
 
         CursorPageResponse<AdminSettlementResponse> result =
-                adminSettlementService.getSettlements(null, 2);
+                adminSettlementService.getSettlements(null, 2, null);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isTrue();
         assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("관리자 정산 목록 조회 — status=PENDING 필터")
+    void getSettlements_filterByPending() {
+        Settlement s1 = createSettlement(SettlementStatus.PENDING);
+        ReflectionTestUtils.setField(s1, "id", 1L);
+
+        given(settlementRepository.findAllWithCursor(isNull(), eq(SettlementStatus.PENDING), any(Pageable.class)))
+                .willReturn(List.of(s1));
+
+        CursorPageResponse<AdminSettlementResponse> result =
+                adminSettlementService.getSettlements(null, 20, SettlementStatus.PENDING);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).status()).isEqualTo(SettlementStatus.PENDING);
+        assertThat(result.hasNext()).isFalse();
     }
 }
