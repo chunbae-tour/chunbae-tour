@@ -26,6 +26,7 @@ public class StompChannelInterceptor implements ChannelInterceptor {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String CHAT_ROOM_TOPIC_PREFIX = "/sub/chat/rooms/";
+    private static final String NOTIFICATION_QUEUE = "/user/queue/notifications";
     private static final List<ChatMemberState> ACTIVE_STATES =
             List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
 
@@ -84,10 +85,16 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         return message;
     }
 
-    // SUBSCRIBE — 채팅방 구독 시 ACTIVE 멤버 검증 (비멤버·강퇴·퇴장 차단)
+    // SUBSCRIBE — 채팅방 구독: ACTIVE 멤버 검증 / 알림 큐 구독: USER 역할 검증
     private Message<?> handleSubscribe(Message<?> message, StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
-        if (destination == null || !destination.startsWith(CHAT_ROOM_TOPIC_PREFIX)) {
+        if (destination == null) {
+            return message;
+        }
+        if (destination.equals(NOTIFICATION_QUEUE)) {
+            return handleNotificationSubscribe(message, accessor);
+        }
+        if (!destination.startsWith(CHAT_ROOM_TOPIC_PREFIX)) {
             return message;
         }
 
@@ -109,6 +116,19 @@ public class StompChannelInterceptor implements ChannelInterceptor {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
+        return message;
+    }
+
+    // /user/queue/notifications 구독 — USER 역할만 허용 (MERCHANT/ADMIN 차단, REST 알림 API 정책 일치)
+    private Message<?> handleNotificationSubscribe(Message<?> message, StompHeaderAccessor accessor) {
+        if (!(accessor.getUser() instanceof UsernamePasswordAuthenticationToken auth)) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        boolean isUser = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_USER"));
+        if (!isUser) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
         return message;
     }
 }
