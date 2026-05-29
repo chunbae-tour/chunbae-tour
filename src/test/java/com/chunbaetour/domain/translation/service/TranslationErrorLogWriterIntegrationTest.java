@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.repository.CommonErrorLogRepository;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.translation.client.TranslationClientException;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +24,12 @@ class TranslationErrorLogWriterIntegrationTest extends AbstractIntegrationTest {
     @Autowired private TranslationErrorLogWriter errorLogWriter;
     @Autowired private CommonErrorLogRepository commonErrorLogRepository;
     @Autowired private PlatformTransactionManager transactionManager;
+
+    // 테스트 시작 전 격리 — 다른 테스트가 남긴 로그로 count() 검증이 깨지는 것 방지
+    @BeforeEach
+    void setUp() {
+        commonErrorLogRepository.deleteAll();
+    }
 
     // 테스트 간 격리 — 저장된 로그 전체 삭제
     @AfterEach

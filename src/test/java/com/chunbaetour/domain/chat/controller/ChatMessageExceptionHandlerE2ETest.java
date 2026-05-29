@@ -67,6 +67,8 @@ class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
                 errors.add((StompErrorResponse) payload);
             }
         });
+        // 구독 프레임이 서버에 등록된 후 SEND — 명시적 대기로 flaky 방지
+        Thread.sleep(200);
 
         // 비참여 채팅방으로 메시지 전송 → CHAT_NOT_JOINED 예외 → @MessageExceptionHandler
         session.send("/pub/chat/rooms/999999/messages", new ChatSendMessageRequest("테스트"));
@@ -94,6 +96,8 @@ class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
                 errors.add((StompErrorResponse) payload);
             }
         });
+        // 구독 프레임이 서버에 등록된 후 SEND — 명시적 대기로 flaky 방지
+        Thread.sleep(200);
 
         // 유효 principal이면 CHAT_005만 오고 라우팅 오류 없음
         session.send("/pub/chat/rooms/888888/messages", new ChatSendMessageRequest("테스트"));
