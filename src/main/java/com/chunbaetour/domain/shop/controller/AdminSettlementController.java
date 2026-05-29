@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 정산 처리 컨트롤러.
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
-@Tag(name = "정산 (관리자)", description = "정산 목록 조회·승인·거절 (/api/v1/admin/settlements/**)")
+@Tag(name = "정산 (ADMIN)", description = "정산 목록 조회·승인·거절 (/api/v1/admin/settlements/**)")
 @RestController
 @RequestMapping("/api/v1/admin/settlements")
 @RequiredArgsConstructor

@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 상인 신청 처리 API.
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
-@Tag(name = "상인 신청 (관리자)", description = "상인 신청 목록 조회·승인·거절 (/api/v1/admin/merchant-applications/**)")
+@Tag(name = "상인 신청 (ADMIN)", description = "상인 신청 목록 조회·승인·거절 (/api/v1/admin/merchant-applications/**)")
 @RestController
 @RequestMapping("/api/v1/admin/merchant-applications")
 @RequiredArgsConstructor

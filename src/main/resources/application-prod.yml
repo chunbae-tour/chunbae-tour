@@ -26,6 +26,13 @@ cookie:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
+# 운영: Swagger UI·API 문서 완전 비활성화. 엔드포인트 목록 외부 노출 차단.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 # 운영: Rate Limit는 항상 활성화. 로컬 개발 외에는 비활성화 금지 (sa-docs/11).
 # 정책 값은 base application.yml 기본값 사용. 변경 필요 시 운영 yml에 endpoints 블록 오버라이드.
 ratelimit:

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 환불 처리 API.
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
-@Tag(name = "환불 (관리자)", description = "환불 목록 조회·승인·거절 (/api/v1/admin/refunds/**)")
+@Tag(name = "환불 (ADMIN)", description = "환불 목록 조회·승인·거절 (/api/v1/admin/refunds/**)")
 @RestController
 @RequestMapping("/api/v1/admin/refunds")
 @RequiredArgsConstructor
