@@ -102,8 +102,8 @@ class ReportServiceTest {
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
                 REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID)).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
-        given(reportRepository.countByTargetTypeAndTargetId(
-                ReportTargetType.POST_FREE, FREE_POST_ID)).willReturn(1L);
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(
+                ReportTargetType.POST_FREE, FREE_POST_ID, ReportStatus.PENDING)).willReturn(1L);
 
         ReportCreateResponse response = reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.POST_FREE, FREE_POST_ID, ReportReason.SPAM, null));
@@ -217,7 +217,7 @@ class ReportServiceTest {
         given(freePostRepository.findByIdForUpdate(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
-        given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.POST_FREE, FREE_POST_ID))
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(ReportTargetType.POST_FREE, FREE_POST_ID, ReportStatus.PENDING))
                 .willReturn(2L);  // 임계값(3) 미달 → 내부 filter 탈락, hide() 미호출
 
         reportService.create(REPORTER_ID,
@@ -233,7 +233,7 @@ class ReportServiceTest {
         given(freePostRepository.findByIdForUpdate(FREE_POST_ID)).willReturn(Optional.of(activeFreePost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(pendingReport);
-        given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.POST_FREE, FREE_POST_ID))
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(ReportTargetType.POST_FREE, FREE_POST_ID, ReportStatus.PENDING))
                 .willReturn(3L);
 
         reportService.create(REPORTER_ID,
@@ -251,7 +251,7 @@ class ReportServiceTest {
         given(companionPostRepository.findByIdForUpdate(COMP_POST_ID)).willReturn(Optional.of(activeCompanionPost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(companionReport);
-        given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.POST_COMPANION, COMP_POST_ID))
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(ReportTargetType.POST_COMPANION, COMP_POST_ID, ReportStatus.PENDING))
                 .willReturn(3L);
 
         reportService.create(REPORTER_ID,
@@ -306,7 +306,7 @@ class ReportServiceTest {
         given(commentRepository.findByIdForUpdate(commentId)).willReturn(Optional.of(activeComment));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
         given(reportRepository.saveAndFlush(any())).willReturn(commentReport);
-        given(reportRepository.countByTargetTypeAndTargetId(ReportTargetType.COMMENT, commentId))
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(ReportTargetType.COMMENT, commentId, ReportStatus.PENDING))
                 .willReturn(3L);
 
         reportService.create(REPORTER_ID,

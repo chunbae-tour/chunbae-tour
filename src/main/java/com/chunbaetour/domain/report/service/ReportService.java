@@ -285,15 +285,15 @@ public class ReportService {
         switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE)
-                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= autoHideThreshold)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
                     .ifPresent(CompanionPost::hide);
             case POST_FREE -> freePostRepository.findByIdForUpdate(targetId)
                     .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
-                    .filter(p -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= autoHideThreshold)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
                     .ifPresent(FreePost::hide);
             case COMMENT -> commentRepository.findByIdForUpdate(targetId)
                     .filter(c -> c.getStatus() != CommentStatus.DELETED)
-                    .filter(c -> reportRepository.countByTargetTypeAndTargetId(targetType, targetId) >= autoHideThreshold)
+                    .filter(c -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
                     .ifPresent(Comment::delete);
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요

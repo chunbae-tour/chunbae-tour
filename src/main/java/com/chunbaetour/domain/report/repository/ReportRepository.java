@@ -38,5 +38,6 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             Pageable pageable);
 
     // ── 자동 숨김용 신고 건수 집계 (KAN-93) ─────────────────────────────
-    long countByTargetTypeAndTargetId(ReportTargetType targetType, Long targetId);
+    long countByTargetTypeAndTargetIdAndStatus(
+            ReportTargetType targetType, Long targetId, ReportStatus status);
 }
