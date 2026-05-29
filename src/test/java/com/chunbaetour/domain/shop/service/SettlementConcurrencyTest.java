@@ -84,7 +84,8 @@ class SettlementConcurrencyTest extends AbstractIntegrationTest {
         executor.submit(task);
         executor.submit(task);
         startLatch.countDown();
-        doneLatch.await(10, TimeUnit.SECONDS);
+        boolean completed = doneLatch.await(10, TimeUnit.SECONDS);
+        assertThat(completed).isTrue();
         executor.shutdownNow();
 
         // then: 정산 1건만 생성, 나머지 1건은 DUPLICATE로 차단
