@@ -104,7 +104,8 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
             executor.shutdownNow();
         }
 
-        long successCount = futures.stream().filter(CompletableFuture::join).count();
+        // join() 결과를 Boolean으로 먼저 추출 — 예외 완료 future가 있을 경우 filter 도중 throw 방지
+        long successCount = futures.stream().map(CompletableFuture::join).filter(Boolean::booleanValue).count();
         ChatRoom updated = chatRoomRepository.findById(chatRoomId).orElseThrow();
 
         // 2슬롯만 남았으므로 정확히 2건 수락, 정원 초과 없음
@@ -153,7 +154,8 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
             executor.shutdownNow();
         }
 
-        long successCount = futures.stream().filter(CompletableFuture::join).count();
+        // join() 결과를 Boolean으로 먼저 추출 — 예외 완료 future가 있을 경우 filter 도중 throw 방지
+        long successCount = futures.stream().map(CompletableFuture::join).filter(Boolean::booleanValue).count();
 
         // 동일 유저의 동시 중복 신청 → 정확히 1건만 PENDING 저장
         assertThat(successCount).isEqualTo(1);
