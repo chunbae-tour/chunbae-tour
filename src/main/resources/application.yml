@@ -114,6 +114,12 @@ management:
       application: chunbae-tour
       env: ${SPRING_PROFILES_ACTIVE:local}
 
+report:
+  auto-hide:
+    # 누적 신고 수 임계값 — 이 값 이상이면 콘텐츠 자동 숨김 (기본값 3)
+    # 배포 없이 운영 중 조정 가능 (AWS 환경변수 또는 application-prod.yml 오버라이드)
+    threshold: ${REPORT_AUTO_HIDE_THRESHOLD:3}
+
 google:
   translation:
     api-key: ${GOOGLE_TRANSLATION_API_KEY:}

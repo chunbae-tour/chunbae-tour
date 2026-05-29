@@ -133,6 +133,25 @@ public class Shop extends BaseEntity {
     }
 
     /**
+     * 관리자 신고 처리 정지 (status = SUSPENDED).
+     * 공개 노출 차단 + 상인 수정 불가 — CLOSED(폐업)와 구분.
+     */
+    public void hide() {
+        if (this.status == ShopStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+        this.status = ShopStatus.SUSPENDED;
+    }
+
+    /**
+     * 관리자 가게 상태 직접 변경 — ACTIVE ↔ SUSPENDED 전환.
+     * CLOSED 가게 변경 및 CLOSED로 변경은 서비스 레이어에서 사전 차단.
+     */
+    public void updateStatus(ShopStatus newStatus) {
+        this.status = newStatus;
+    }
+
+    /**
      * 상인이 수정 가능한 필드 업데이트 (STORY-10).
      * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
      * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.
