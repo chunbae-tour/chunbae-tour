@@ -112,11 +112,11 @@ public class CommentService {
     public void update(Long accountId, Long postId, PostType postType, Long commentId, CommentUpdateRequest request) {
         Comment comment = findComment(commentId);
         validateCommentScope(comment, postId, postType);
-        if (comment.getStatus() == CommentStatus.DELETED) {
-            throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
-        }
         if (!comment.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.COMMENT_FORBIDDEN);
+        }
+        if (comment.getStatus() == CommentStatus.DELETED) {
+            throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
         }
         comment.update(request.content());
     }
