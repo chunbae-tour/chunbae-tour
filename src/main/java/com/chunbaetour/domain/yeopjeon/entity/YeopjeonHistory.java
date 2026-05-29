@@ -116,4 +116,16 @@ public class YeopjeonHistory extends BaseEntity {
                 .description("스토어 구매 - " + productName)
                 .build();
     }
+
+    /** 광고 연장 엽전 차감 이력. */
+    public static YeopjeonHistory ofAdExtension(
+            Long userId, Long amount, Long balanceSnapshot, String adType) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.PAYMENT)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .description("광고 연장 - " + adType)
+                .build();
+    }
 }
