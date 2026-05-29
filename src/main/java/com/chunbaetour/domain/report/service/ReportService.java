@@ -16,6 +16,7 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.shop.service.ShopService;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -33,10 +34,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
@@ -48,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
  * KAN-90: 신고 접수 / 내 신고 조회
  * KAN-91: 관리자 신고 목록·상세 조회
  * KAN-92: 관리자 신고 처리 (콘텐츠·가게 분리)
+ * KAN-93: 누적 신고 자동 숨김
  */
 @Slf4j
 @Service
@@ -55,19 +57,23 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ReportService {
 
+    /** n건 이상 신고 시 콘텐츠 자동 숨김 임계값 — application.yml report.auto-hide.threshold (KAN-93) */
+    @Value("${report.auto-hide.threshold:3}")
+    private int autoHideThreshold;
+
     private final ReportRepository reportRepository;
     private final AccountRepository accountRepository;
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
+    private final ShopService shopService;
 
     // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
 
     @Transactional
     public ReportCreateResponse create(Long reporterId, ReportCreateRequest request) {
-        // USER·MERCHANT 자기신고 — DB 없이 즉시 차단
-        if ((request.targetType() == ReportTargetType.USER
-                || request.targetType() == ReportTargetType.MERCHANT)
+        // USER 자기신고 — DB 없이 즉시 차단
+        if (request.targetType() == ReportTargetType.USER
                 && request.targetId().equals(reporterId)) {
             throw new BusinessException(ErrorCode.REPORT_SELF);
         }
@@ -85,7 +91,12 @@ public class ReportService {
                     reporterId, request.targetType(), request.targetId(),
                     request.reason(), request.description());
             // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
-            return ReportCreateResponse.of(reportRepository.saveAndFlush(report));
+            ReportCreateResponse response = ReportCreateResponse.of(reportRepository.saveAndFlush(report));
+
+            // KAN-93: 누적 신고 수가 임계값 도달 시 콘텐츠 자동 숨김
+            autoHideIfThresholdReached(request.targetType(), request.targetId());
+
+            return response;
         } catch (DataIntegrityViolationException e) {
             String msg = e.getMostSpecificCause().getMessage();
             if (msg != null && msg.contains("uk_reports_reporter_target")) {
@@ -114,12 +125,12 @@ public class ReportService {
     }
 
     /**
-     * 내 신고 단건 조회 — 신고 없음·타인 신고 모두 RESOURCE_NOT_FOUND (reportId enumeration 차단).
+     * 내 신고 단건 조회 — 신고 없음·타인 신고 모두 REPORT_NOT_FOUND (reportId enumeration 차단).
      */
     public MyReportResponse getMyReport(Long reportId, Long requesterId) {
         Report report = reportRepository.findById(reportId)
                 .filter(r -> r.getReporterId().equals(requesterId))
-                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
         return MyReportResponse.of(report);
     }
 
@@ -170,8 +181,9 @@ public class ReportService {
     public ReportDetailResponse getReport(Long reportId) {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
-        String targetContent = resolveTargetContent(report.getTargetType(), report.getTargetId());
-        return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()), targetContent);
+        TargetDetail detail = resolveTargetDetail(report.getTargetType(), report.getTargetId());
+        return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()),
+                detail.title(), detail.content(), detail.imageUrls());
     }
 
     // ── KAN-92: 관리자 신고 처리 ──────────────────────────────────────────
@@ -179,10 +191,6 @@ public class ReportService {
     /**
      * 콘텐츠 신고 처리 (POST·COMMENT·USER).
      * MERCHANT 신고에 이 엔드포인트를 사용하면 REPORT_WRONG_ENDPOINT 에러.
-     *
-     * @param reportId 처리할 신고 ID
-     * @param adminId  처리 관리자 (@AuthenticationPrincipal)
-     * @param request  처리 요청 (action, adminNote)
      */
     @Transactional
     public ReportResolveResponse resolveReport(Long reportId, Long adminId,
@@ -197,9 +205,12 @@ public class ReportService {
             if (report.getTargetType() == ReportTargetType.MERCHANT) {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
             }
+            // TODO(KAN-152): REVIEW enum 추가 후 명시적 가드 추가
+            // if (report.getTargetType() == ReportTargetType.REVIEW) {
+            //     throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+            // }
 
             ReportAction action = request.action();
-            // 가게 전용 액션을 콘텐츠 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
             if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
             }
@@ -212,12 +223,10 @@ public class ReportService {
             } else {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
-            // saveAndFlush: @Version 충돌을 커밋 시점이 아닌 즉시 발생시켜 try-catch에서 포착
             reportRepository.saveAndFlush(report);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
-            // 관리자 동시 처리 경쟁 — 먼저 처리된 요청이 이미 상태를 변경
             throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
         }
     }
@@ -225,10 +234,6 @@ public class ReportService {
     /**
      * 가게 신고 처리 (MERCHANT 전용).
      * 콘텐츠 신고에 이 엔드포인트를 사용하면 REPORT_WRONG_ENDPOINT 에러.
-     *
-     * @param reportId 처리할 신고 ID
-     * @param adminId  처리 관리자 (@AuthenticationPrincipal)
-     * @param request  처리 요청 (HIDE_SHOP·REVOKE_MERCHANT·DISMISS, adminNote)
      */
     @Transactional
     public ReportResolveResponse resolveMerchantReport(Long reportId, Long adminId,
@@ -245,7 +250,6 @@ public class ReportService {
             }
 
             ReportAction action = request.action();
-            // 콘텐츠 전용 액션을 가게 신고 엔드포인트에서 사용 → REPORT_WRONG_ENDPOINT
             if (action == ReportAction.WARNING || action == ReportAction.SUSPEND
                     || action == ReportAction.DELETE) {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
@@ -267,12 +271,39 @@ public class ReportService {
         }
     }
 
-    // ── 내부 유틸 ─────────────────────────────────────────────────────────
+    // ── KAN-93: 자동 숨김 ─────────────────────────────────────────────────
 
     /**
-     * 콘텐츠 신고 액션 적용.
-     * DELETE: 콘텐츠 삭제. SUSPEND: 작성자 계정 정지. WARNING/DISMISS: 상태 기록만.
+     * 누적 신고 수가 autoHideThreshold 이상이면 콘텐츠 자동 숨김.
+     * USER·MERCHANT는 자동 조치 생략 — 계정 정지·가게 비공개는 관리자가 직접 판단.
+     * 이미 삭제된 콘텐츠는 filter 조건으로 중복 처리 방지.
      */
+    private void autoHideIfThresholdReached(ReportTargetType targetType, Long targetId) {
+        // 외부 카운트 체크 제거 — 락 바깥에서 count를 확인하면 동시 트랜잭션이 모두
+        // 임계값 미만으로 읽어 아무도 hide를 호출하지 않는 race condition 발생.
+        // 락 획득(findByIdForUpdate) 후 내부에서 count를 재확인해 정확히 한 번만 실행.
+        switch (targetType) {
+            case POST_COMPANION -> companionPostRepository.findByIdForUpdate(targetId)
+                    .filter(p -> p.getStatus() == CompanionPostStatus.ACTIVE)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
+                    .ifPresent(CompanionPost::hide);
+            case POST_FREE -> freePostRepository.findByIdForUpdate(targetId)
+                    .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                    .filter(p -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
+                    .ifPresent(FreePost::hide);
+            case COMMENT -> commentRepository.findByIdForUpdate(targetId)
+                    .filter(c -> c.getStatus() != CommentStatus.DELETED)
+                    .filter(c -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
+                    .ifPresent(Comment::delete);
+            case USER, MERCHANT -> {
+                // 자동 조치 생략 — 관리자 수동 처리 필요
+            }
+            // TODO(KAN-152): REVIEW enum 추가 후 case REVIEW -> { /* 자동 숨김 처리 */ } 추가
+        }
+    }
+
+    // ── 내부 유틸 ─────────────────────────────────────────────────────────
+
     private void applyContentAction(ReportAction action, ReportTargetType targetType, Long targetId) {
         switch (action) {
             case DELETE -> deleteTargetContent(targetType, targetId);
@@ -282,31 +313,27 @@ public class ReportService {
         }
     }
 
-    /**
-     * 가게 신고 액션 적용.
-     * HIDE_SHOP: Shop 도메인 구현 후 연결(TODO). REVOKE_MERCHANT: 상인 인증 취소.
-     */
-    private void applyMerchantAction(ReportAction action, Long targetId) {
+    private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
-            case HIDE_SHOP -> {
-                // Shop 도메인 미연동 — 연동 전까지 요청 거절 (무음 처리 방지)
-                throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-            }
+            // HIDE_SHOP: 신고 대상 가게만 임시 정지 (SUSPENDED, 복구 가능). role 유지.
+            case HIDE_SHOP -> shopService.hideShop(shopId);
+            // REVOKE_MERCHANT: 계정 단위 처리 — owner의 모든 가게 SUSPENDED + MERCHANT → USER 권한 회수.
+            //   다중 가게 운영 시 신고 대상 외 가게도 모두 정지됨.
             case REVOKE_MERCHANT -> {
-                Account merchant = accountRepository.findById(targetId)
-                        .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-                merchant.revokeToUser();
+                Long ownerId = shopService.findMerchantAccountId(shopId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                shopService.hideAllShopsByOwnerId(ownerId);
+                Account owner = accountRepository.findById(ownerId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (owner.getRole() == Role.MERCHANT) {
+                    owner.revokeToUser();
+                }
             }
             case DISMISS -> { /* 무시, 상태 기록만 */ }
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 
-    /**
-     * 콘텐츠 비공개/삭제 처리.
-     * 게시글 → HIDDEN(비공개, 관리자 조치), 댓글 → DELETED(HIDDEN 상태 없음),
-     * USER → 계정 정지(SUSPENDED). 완전 삭제는 별도 절차.
-     */
     private void deleteTargetContent(ReportTargetType targetType, Long targetId) {
         switch (targetType) {
             case POST_COMPANION -> {
@@ -325,8 +352,6 @@ public class ReportService {
                 }
             }
             case USER -> {
-                // DELETE 액션 시 계정을 완전 삭제하지 않고 SUSPENDED 처리.
-                // 법적 의무(개인정보 보존 기간) 및 추후 복구 가능성을 위해 Soft 정지.
                 if (accountRepository.findById(targetId).map(acc -> { acc.suspend(); return true; }).isEmpty()) {
                     log.warn("deleteTargetContent: USER not found, targetId={}", targetId);
                 }
@@ -335,12 +360,6 @@ public class ReportService {
         }
     }
 
-    /**
-     * 콘텐츠 작성자 계정 정지.
-     *
-     * <p>TODO(KAN-92): 명세 4-3 "ReportService → UserService 호출" — 현재 AccountRepository 직접 접근.
-     * 향후 정지 로직(알림 발송, 로그인 토큰 무효화 등) 추가 시 UserService.suspend()로 위임 필요.
-     */
     private void suspendTargetAuthor(ReportTargetType targetType, Long targetId) {
         Long authorId = switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findById(targetId)
@@ -350,7 +369,6 @@ public class ReportService {
             case COMMENT -> commentRepository.findById(targetId)
                     .map(Comment::getAuthorId).orElse(null);
             case USER -> targetId;
-            // USER case: targetId가 곧 작성자 ID — 직접 정지 대상
             default -> null;
         };
 
@@ -363,22 +381,48 @@ public class ReportService {
         }
     }
 
-    private String resolveTargetContent(ReportTargetType targetType, Long targetId) {
+    /**
+     * 신고 대상 상세 정보 조회 — title·content·imageUrls.
+     * POST_FREE: title·content·imageUrls 모두 반환.
+     * POST_COMPANION: title·content 반환, imageUrls=null.
+     * COMMENT: content만 반환, title·imageUrls=null.
+     * USER·MERCHANT: content(닉네임)만 반환, title·imageUrls=null.
+     */
+    private TargetDetail resolveTargetDetail(ReportTargetType targetType, Long targetId) {
         return switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId)
-                    .map(CompanionPost::getContent).orElse(null);
             case POST_FREE -> freePostRepository.findById(targetId)
-                    .map(FreePost::getContent).orElse(null);
+                    .map(p -> new TargetDetail(p.getTitle(), p.getContent(),
+                            List.copyOf(p.getImageUrls())))
+                    .orElse(TargetDetail.deleted());
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .map(p -> new TargetDetail(p.getTitle(), p.getContent(), null))
+                    .orElse(TargetDetail.deleted());
             case COMMENT -> commentRepository.findById(targetId)
-                    .map(Comment::getContent).orElse(null);
-            case USER, MERCHANT -> accountRepository.findById(targetId)
-                    .map(Account::getNickname).orElse(null);
+                    .map(c -> new TargetDetail(null, c.getContent(), null))
+                    .orElse(TargetDetail.deleted());
+            case USER -> accountRepository.findById(targetId)
+                    .map(a -> new TargetDetail(null, a.getNickname(), null))
+                    .orElse(TargetDetail.deleted());
+            // MERCHANT: targetId = shopId → accountId 변환 후 닉네임 조회
+            case MERCHANT -> shopService.findMerchantAccountId(targetId)
+                    .flatMap(accountRepository::findById)
+                    .map(a -> new TargetDetail(null, a.getNickname(), null))
+                    .orElse(TargetDetail.deleted());
+            // TODO(KAN-152): REVIEW 도메인 구현 후 case 추가 — title·content·imageUrls 반환
         };
     }
 
-    /**
-     * reporterId → 닉네임. 탈퇴 계정이면 "탈퇴한 사용자" 반환.
-     */
+    /** 신고 대상 콘텐츠 정보 내부 전달 객체. */
+    private record TargetDetail(String title, String content, java.util.List<String> imageUrls) {
+        static TargetDetail empty() {
+            return new TargetDetail(null, null, null);
+        }
+        /** 신고 접수 후 대상 콘텐츠가 삭제된 경우 — 관리자 UI에 "(삭제됨)" 표시. */
+        static TargetDetail deleted() {
+            return new TargetDetail("(삭제됨)", "(삭제됨)", null);
+        }
+    }
+
     private String resolveNickname(Long accountId) {
         return accountRepository.findById(accountId)
                 .map(Account::getNickname)
@@ -416,12 +460,10 @@ public class ReportService {
                 }
             }
             case MERCHANT -> {
-                Account merchant = accountRepository.findById(targetId)
+                // targetId = shopId — 다중 가게 지원: 신고 대상 가게를 명시적으로 지정
+                Long ownerId = shopService.findMerchantAccountId(targetId)
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
-                if (merchant.getRole() != Role.MERCHANT) {
-                    throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
-                }
-                if (merchant.getId().equals(reporterId)) {
+                if (ownerId.equals(reporterId)) {
                     throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }

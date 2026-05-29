@@ -1,0 +1,49 @@
+package com.chunbaetour.domain.shop.repository;
+
+import com.chunbaetour.domain.shop.entity.AdApplication;
+import com.chunbaetour.domain.shop.type.AdApplicationStatus;
+import jakarta.persistence.LockModeType;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+/**
+ * 광고 신청 레포지토리.
+ * PENDING 중복 체크(비관적 락), 관리자 목록 cursor 페이징, 상태 전이용 단건 락 조회 담당.
+ */
+public interface AdApplicationRepository extends JpaRepository<AdApplication, Long> {
+
+    /**
+     * PENDING 중복 체크용 SELECT FOR UPDATE (current read).
+     * REPEATABLE READ에서 일반 SELECT는 스냅샷을 읽으므로 동시 신청 시 중복을 놓칠 수 있다.
+     *
+     * <p>도메인 불변식: 하나의 shopId는 동시에 PENDING 1건만 존재. 본 메서드는 0건 또는 1건만 반환.
+     * List 반환은 isEmpty() 체크와의 자연스러운 매칭 + Spring Data JPA 명명 일관성 위함.
+     * 향후 동일 shop 다중 슬롯 광고 정책 변경 시 본 메서드도 재검토 필요.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM AdApplication a WHERE a.shopId = :shopId AND a.status = :status")
+    List<AdApplication> findByShopIdAndStatusWithLock(
+            @Param("shopId") Long shopId, @Param("status") AdApplicationStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM AdApplication a WHERE a.id = :id")
+    Optional<AdApplication> findByIdWithLock(@Param("id") Long id);
+
+    /** 관리자 광고 신청 목록 — 전체 첫 페이지 */
+    List<AdApplication> findAllByOrderByIdDesc(Pageable pageable);
+
+    /** 관리자 광고 신청 목록 — 전체 cursor 다음 페이지 */
+    List<AdApplication> findByIdLessThanOrderByIdDesc(Long cursorId, Pageable pageable);
+
+    /** 관리자 광고 신청 목록 — 상태 필터 첫 페이지 */
+    List<AdApplication> findByStatusOrderByIdDesc(AdApplicationStatus status, Pageable pageable);
+
+    /** 관리자 광고 신청 목록 — 상태 필터 cursor 다음 페이지 */
+    List<AdApplication> findByStatusAndIdLessThanOrderByIdDesc(
+            AdApplicationStatus status, Long cursorId, Pageable pageable);
+}

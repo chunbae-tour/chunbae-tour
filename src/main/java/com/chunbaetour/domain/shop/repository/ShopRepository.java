@@ -1,9 +1,13 @@
 package com.chunbaetour.domain.shop.repository;
 
 import com.chunbaetour.domain.shop.entity.Shop;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface ShopRepository extends JpaRepository<Shop, Long> {
 
@@ -12,6 +16,14 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
 
     /** 소유권 검증용 — shopId + userId 조합으로 본인 가게인지 확인 */
     Optional<Shop> findByIdAndUserId(Long id, Long userId);
+
+    /**
+     * 광고 신청 중복 방지용 직렬화 락.
+     * Shop 행을 SELECT FOR UPDATE로 잠가 동시 신청의 PENDING 중복 체크를 원자적으로 보장.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Shop s WHERE s.id = :id")
+    Optional<Shop> findByIdWithLock(@Param("id") Long id);
 
     /**
      * 특정 관광지 기반 주변 상점 조회 (Bounding Box + Haversine 최적화)
