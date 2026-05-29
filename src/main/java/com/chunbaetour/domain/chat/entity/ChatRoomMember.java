@@ -46,6 +46,9 @@ public class ChatRoomMember extends BaseEntity {
     @Column(name = "member_state", nullable = false, length = 20)
     private ChatMemberState memberState;
 
+    @Column(name = "joined_at", nullable = false)
+    private LocalDateTime joinedAt;
+
     @Column(name = "left_at")
     private LocalDateTime leftAt;
 
@@ -58,6 +61,7 @@ public class ChatRoomMember extends BaseEntity {
         this.chatRoom = chatRoom;
         this.userId = userId;
         this.memberState = memberState;
+        this.joinedAt = LocalDateTime.now();
     }
 
     public static ChatRoomMember ofOwner(ChatRoom chatRoom, Long userId) {
@@ -76,6 +80,20 @@ public class ChatRoomMember extends BaseEntity {
                 .build();
     }
 
+    public boolean isOwner() {
+        return this.memberState == ChatMemberState.OWNER_ACTIVE;
+    }
+
+    // ACTIVE 멤버(방장·일반 참여자 모두) 여부 — 비참여·퇴장·강퇴는 false
+    public boolean isActiveMember() {
+        return ChatMemberState.activeStates().contains(this.memberState);
+    }
+
+    // 강퇴 이력 여부 — 재참여 신청 차단 판단에 사용
+    public boolean isKicked() {
+        return this.memberState == ChatMemberState.MEMBER_KICKED;
+    }
+
     // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
         if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
@@ -87,6 +105,16 @@ public class ChatRoomMember extends BaseEntity {
         }
         this.memberState = ChatMemberState.MEMBER_LEFT;
         this.leftAt = LocalDateTime.now();
+    }
+
+    // MEMBER_LEFT 상태 유저 재참여 수락 시 호출 — 새 레코드 INSERT 대신 기존 레코드 업데이트
+    public void reactivate() {
+        if (this.memberState != ChatMemberState.MEMBER_LEFT) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        this.memberState = ChatMemberState.MEMBER_ACTIVE;
+        this.joinedAt = LocalDateTime.now();
+        this.leftAt = null;
     }
 
     // OWNER는 강퇴 불가 — close()로만 방 종료 가능

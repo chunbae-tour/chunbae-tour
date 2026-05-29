@@ -1,15 +1,19 @@
 package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
+import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
+import com.chunbaetour.domain.chat.dto.response.ChatRoomMemberResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
+import com.chunbaetour.domain.chat.service.ChatMessageService;
 import com.chunbaetour.domain.chat.service.ChatRoomService;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,7 +36,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
+    private final ChatMessageService chatMessageService;
 
+    // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복 시 CHAT_ROOM_DUPLICATE
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CreateChatRoomResponse> createRoom(
@@ -41,6 +47,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.createRoom(userId, request));
     }
 
+    // 내 채팅방 목록 — ACTIVE 멤버 상태 기준 커서 페이지네이션, CLOSED 방도 포함
     @GetMapping
     public ApiResponse<CursorPageResponse<MyChatRoomResponse>> getMyRooms(
             @AuthenticationPrincipal Long userId,
@@ -49,6 +56,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getMyRooms(userId, cursor, size));
     }
 
+    // 채팅방 상세 조회 — ACTIVE 멤버만 접근 가능, 비멤버·강퇴·퇴장은 CHAT_NOT_JOINED
     @GetMapping("/{roomId}")
     public ApiResponse<ChatRoomDetailResponse> getRoomDetail(
             @AuthenticationPrincipal Long userId,
@@ -56,19 +64,49 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getRoomDetail(userId, roomId));
     }
 
+    // 채팅방 종료 — 방장 전용, room.status만 CLOSED로 전이, 멤버 상태 유지
     @PatchMapping("/{roomId}/close")
-    public ApiResponse<Void> closeRoom(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void closeRoom(
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId) {
         chatRoomService.closeRoom(userId, roomId);
-        return ApiResponse.success(null);
     }
 
+    // 참여자 목록 — ACTIVE 멤버만 반환, 비참여자 접근 시 CHAT_NOT_JOINED
+    @GetMapping("/{roomId}/members")
+    public ApiResponse<List<ChatRoomMemberResponse>> getMembers(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId) {
+        return ApiResponse.success(chatRoomService.getMembers(userId, roomId));
+    }
+
+    // 참여자 강퇴 — 방장 전용, OWNER_ACTIVE 대상 강퇴 불가(CHAT_017), MVP에서 방장 자기 강퇴 불가
+    @DeleteMapping("/{roomId}/members/{targetUserId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void kickMember(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId,
+            @Min(1) @PathVariable Long targetUserId) {
+        chatRoomService.kickMember(userId, roomId, targetUserId);
+    }
+
+    // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
     @DeleteMapping("/{roomId}/members/me")
-    public ApiResponse<Void> leaveRoom(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void leaveRoom(
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId) {
         chatRoomService.leaveRoom(userId, roomId);
-        return ApiResponse.success();
+    }
+
+    // 메시지 내역 조회 — ACTIVE 멤버만 접근, id DESC 커서 페이징(최신순)
+    @GetMapping("/{roomId}/messages")
+    public ApiResponse<CursorPageResponse<ChatMessageResponse>> getMessages(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId,
+            @RequestParam(required = false) String cursor,
+            @Min(1) @Max(100) @RequestParam(defaultValue = "50") int size) {
+        return ApiResponse.success(chatMessageService.getMessages(userId, roomId, cursor, size));
     }
 }

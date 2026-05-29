@@ -93,4 +93,27 @@ public class YeopjeonHistory extends BaseEntity {
                 .description(null)
                 .build();
     }
+
+    /** 환불 이력 전용 팩토리. 관리자 승인 후 차감된 엽전 이력 기록. */
+    public static YeopjeonHistory ofRefund(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.REFUND)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .paymentOrderId(paymentOrderId)
+                .build();
+    }
+
+    /** 스토어 상품 구매 차감 이력. paymentOrderId/shopId는 스토어 구매와 직접 연결되지 않아 비워둔다. */
+    public static YeopjeonHistory ofStorePurchase(
+            Long userId, Long amount, Long balanceSnapshot, String productName) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.PAYMENT)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .description("스토어 구매 - " + productName)
+                .build();
+    }
 }

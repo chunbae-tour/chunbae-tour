@@ -18,6 +18,8 @@ public enum ErrorCode {
     // cursor 값이 Base64 디코딩 실패 또는 1 미만(IDENTITY id 범위 위반)일 때 사용
     INVALID_CURSOR(HttpStatus.BAD_REQUEST,                   "COMMON_008", "유효하지 않은 커서 값입니다."),
     CONCURRENT_UPDATE(HttpStatus.CONFLICT,                   "COMMON_009", "동시 수정 충돌이 발생했습니다. 다시 시도해주세요."),
+    // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
+    INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
@@ -52,8 +54,9 @@ public enum ErrorCode {
     POST_DELETE_FORBIDDEN(HttpStatus.FORBIDDEN,         "COMMUNITY_004", "해당 게시글을 삭제할 권한이 없습니다."),
     COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND,             "COMMUNITY_005", "존재하지 않는 댓글입니다."),
     COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN,             "COMMUNITY_006", "댓글 작성자만 수정·삭제할 수 있습니다."),
-    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,     "COMMUNITY_007", "이미 삭제된 댓글입니다."),
+    COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,      "COMMUNITY_007", "이미 삭제된 댓글입니다."),
     COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
+    POST_NOT_COMMENTABLE(HttpStatus.FORBIDDEN,          "COMMUNITY_009", "댓글을 작성할 수 없는 게시글입니다."),
 
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
@@ -65,6 +68,8 @@ public enum ErrorCode {
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
+    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
+    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
@@ -87,6 +92,13 @@ public enum ErrorCode {
     REFUND_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_018", "존재하지 않는 환불 요청입니다."),
     REFUND_CANCEL_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_019", "대기 중인 환불 요청만 취소할 수 있습니다."),
     REFUND_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_020", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
+    DUPLICATE_QR_PAY_REQUEST(HttpStatus.CONFLICT,          "PAY_022", "이미 대기 중인 QR 결제 요청이 있습니다."),
+    SELF_PAYMENT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_023", "본인 가게에는 결제할 수 없습니다."),
+    ZERO_AMOUNT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,        "PAY_024", "결제 금액은 0원보다 커야 합니다."),
+    QR_PAY_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_025", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
+    QR_PAY_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND,         "PAY_026", "존재하지 않는 QR 결제 요청입니다."),
+    SHOP_WALLET_NOT_FOUND(HttpStatus.NOT_FOUND,            "PAY_027", "상인 엽전 지갑을 찾을 수 없습니다."),
+    QR_PAY_CONFIRM_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_028", "본인 가게의 결제 요청만 승인/거절할 수 있습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
@@ -101,14 +113,23 @@ public enum ErrorCode {
     MERCHANT_CERT_ALREADY_PENDING(HttpStatus.CONFLICT,      "MERCHANT_001", "이미 상인 인증 신청이 진행 중입니다."),
     INVALID_BUSINESS_NUMBER(HttpStatus.BAD_REQUEST,         "MERCHANT_002", "유효하지 않은 사업자등록번호입니다."),
     MERCHANT_NOT_CERTIFIED(HttpStatus.FORBIDDEN,            "MERCHANT_003", "상인 인증이 필요합니다."),
+    DUPLICATE_BUSINESS_NUMBER(HttpStatus.CONFLICT,          "MERCHANT_004", "이미 등록된 사업자등록번호입니다."),
+    MERCHANT_APPLICATION_STATUS_INVALID(HttpStatus.CONFLICT,"MERCHANT_005", "현재 상태에서는 허용되지 않는 작업입니다."),
+    MERCHANT_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND,    "MERCHANT_006", "존재하지 않는 상인 신청입니다."),
 
     // ===== SHOP (담당: 신현민) =====
     SHOP_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_001", "존재하지 않는 가게입니다."),
     SHOP_UPDATE_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_002", "본인 가게 정보만 수정할 수 있습니다."),
     SHOP_ALREADY_EXISTS(HttpStatus.CONFLICT,                "SHOP_003", "이미 등록된 가게가 있습니다."),
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND,                    "SHOP_004", "존재하지 않는 메뉴입니다."),
-    INVALID_MENU_PRICE(HttpStatus.BAD_REQUEST,              "SHOP_005", "메뉴 가격은 0원 이상이어야 합니다."),
-    SHOP_NAME_TOO_LONG(HttpStatus.BAD_REQUEST,              "SHOP_006", "가게명은 최대 50자까지 입력 가능합니다."),
+    SHOP_INACTIVE(HttpStatus.FORBIDDEN,                     "SHOP_005", "정지 또는 폐업 상태의 가게입니다."),
+    MENU_DUPLICATE(HttpStatus.CONFLICT,                     "SHOP_006", "이미 동일한 이름의 메뉴가 존재합니다."),
+    MENU_UNAVAILABLE(HttpStatus.CONFLICT,                   "SHOP_007", "현재 주문할 수 없는 메뉴입니다."),
+    SETTLEMENT_NOT_FOUND(HttpStatus.NOT_FOUND,              "SHOP_008", "존재하지 않는 정산 요청입니다."),
+    DUPLICATE_SETTLEMENT_REQUEST(HttpStatus.CONFLICT,       "SHOP_009", "이미 처리 대기 중인 정산 요청이 있습니다."),
+    SETTLEMENT_INVALID_STATUS(HttpStatus.CONFLICT,          "SHOP_010", "현재 상태에서는 처리할 수 없는 정산 요청입니다."),
+    SETTLEMENT_BALANCE_EMPTY(HttpStatus.BAD_REQUEST,        "SHOP_011", "정산 가능한 잔액이 없습니다."),
+    SETTLEMENT_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,       "SHOP_012", "정산 신청 최소 금액은 5,000엽전입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
@@ -127,7 +148,23 @@ public enum ErrorCode {
     CHAT_ROOM_DUPLICATE(HttpStatus.CONFLICT,                "CHAT_014", "해당 게시글에 이미 개설된 채팅방이 있습니다."),
     CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 직접 퇴장할 수 없습니다."),
     CHAT_MEMBER_ALREADY_INACTIVE(HttpStatus.CONFLICT,       "CHAT_016", "이미 퇴장하거나 강퇴된 멤버입니다."),
-    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다.");
+    CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
+    CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
+
+    // ===== NOTIFICATION (담당: 임하은) =====
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
+
+    // ===== REPORT (담당: 박경화) =====
+    // REPORT_001~004: 신고 접수 유효성 검증 (KAN-90)
+    REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND,            "REPORT_001", "신고 대상을 찾을 수 없습니다."),
+    DUPLICATE_REPORT(HttpStatus.CONFLICT,                    "REPORT_002", "이미 신고한 대상입니다."),
+    REPORT_SELF(HttpStatus.BAD_REQUEST,                      "REPORT_003", "자기 자신을 신고할 수 없습니다."),
+    REPORT_TARGET_INACTIVE(HttpStatus.BAD_REQUEST,           "REPORT_004", "신고할 수 없는 대상입니다."),
+    // REPORT_005~007: 관리자 신고 처리 (KAN-91/92)
+    REPORT_NOT_FOUND(HttpStatus.NOT_FOUND,                   "REPORT_005", "존재하지 않는 신고 내역입니다."),
+    REPORT_ALREADY_RESOLVED(HttpStatus.CONFLICT,             "REPORT_006", "이미 처리된 신고 내역입니다."),
+    // REPORT_007: targetType 불일치 엔드포인트 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시
+    REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,            "REPORT_007", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다.");
 
     private final HttpStatus status;
     private final String code;

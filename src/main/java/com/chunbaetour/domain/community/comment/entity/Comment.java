@@ -1,8 +1,9 @@
 package com.chunbaetour.domain.community.comment.entity;
 
+import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.community.common.PostType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
@@ -13,16 +14,12 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(name = "comments")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
-public class Comment {
+public class Comment extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -48,14 +45,8 @@ public class Comment {
     @Column(nullable = false, length = 10)
     private CommentStatus status;
 
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
-
+    // soft delete 시각 기록 — status=DELETED로 숨기되 행은 보존 (대댓글 parent 참조 무결성 유지)
+    // LocalDateTime.now()는 서버 타임존에 의존 — 테스트 시각 제어 필요 시 Clock 주입 고려
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  KAN-105 보안 감사 로그 표준 (Epic KAN-64 S4).
+
+  audit.security logger를 일반 application 로그와 분리:
+  - 로컬/테스트: logs/audit-security.log 회전 파일
+  - 운영(prod): 동일 파일 + JSON stdout 추가 (ECS/CloudWatch Logs 수집기가 stdout 캡처)
+
+  분리 사유:
+  - 로그 보존 정책(1년) 별도 적용
+  - 외부 log aggregator/SIEM이 audit 인덱스만 별도 수집 가능
+  - 일반 INFO/DEBUG와 섞이지 않아 forensic 검색 효율 + grep 노이즈 최소화
+
+  additivity="false" — root logger로 전파 차단해 console에 중복 출력 방지.
+  민감 정보(비밀번호/JWT/refresh token)는 SecurityAuditEvent 자료형에 부재 → 누락 사고 원천 차단.
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!--
+      audit 전용 파일 appender — 모든 프로파일 공통.
+      회전 정책: 100MB 단위 + 일 단위. 최대 365일 보존 (운영 정책 조정 가능).
+
+      ⚠️ 두 appender(AUDIT_FILE / AUDIT_JSON_STDOUT)는 동일 encoder 설정(LogstashEncoder + 기본 providers) 사용.
+         설정 변경(customFields, fieldNames 등) 시 양쪽 동기 유지 필수.
+         audit-log-catalog.md § 로그 인코딩 정책 참조.
+    -->
+    <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/audit-security.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/audit-security.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>365</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
+    <!--
+      운영(prod) 전용 stdout JSON appender — ECS Task / CloudWatch Logs 수집기가 stdout을 캡처.
+      파일 appender와 병행해 컨테이너 재시작 시 in-memory 로그 손실 방지.
+    -->
+    <springProfile name="prod">
+        <appender name="AUDIT_JSON_STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        </appender>
+    </springProfile>
+
+    <!--
+      audit.security logger — SecurityAuditLogger가 사용하는 단일 logger name.
+      additivity=false로 root console 전파 차단 (일반 application 로그와 분리).
+    -->
+    <springProfile name="prod">
+        <logger name="audit.security" level="INFO" additivity="false">
+            <appender-ref ref="AUDIT_FILE"/>
+            <appender-ref ref="AUDIT_JSON_STDOUT"/>
+        </logger>
+    </springProfile>
+
+    <springProfile name="!prod">
+        <logger name="audit.security" level="INFO" additivity="false">
+            <appender-ref ref="AUDIT_FILE"/>
+        </logger>
+    </springProfile>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+</configuration>

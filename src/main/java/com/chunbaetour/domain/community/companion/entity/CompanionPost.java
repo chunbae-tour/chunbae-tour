@@ -101,7 +101,19 @@ public class CompanionPost extends BaseEntity {
         this.deletedAt = LocalDateTime.now();
     }
 
+    /** 관리자 신고 처리 비공개 (status = HIDDEN). 사용자 삭제(DELETED)와 구분. */
+    public void hide() {
+        if (this.status == CompanionPostStatus.DELETED) {
+            throw new IllegalStateException("삭제된 게시글은 숨김 처리할 수 없습니다. postId=" + this.id);
+        }
+        this.status = CompanionPostStatus.HIDDEN;
+    }
+
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
+    }
+
+    public boolean isVisible() {
+        return status != CompanionPostStatus.DELETED && status != CompanionPostStatus.HIDDEN;
     }
 }

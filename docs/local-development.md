@@ -77,6 +77,14 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
   - Axios: `axios.create({ withCredentials: true })` 또는 요청별 `{ withCredentials: true }`
 - 재발급은 `POST /api/v1/auth/reissue` 호출 (위 credentials 옵션으로 Cookie 전송 + 새 Access Token 응답).
 
+### SameSite 정책 (KAN-125 S5)
+
+- 기본값 `Lax` — 환경변수 `COOKIE_SAMESITE`로 오버라이드 가능
+- 운영 프론트/백엔드 도메인이 같은 eTLD+1이면 그대로 `Lax` 유지 (CSRF 기본 방어 + 권장)
+- 다른 eTLD+1이면 deploy 환경에서 `COOKIE_SAMESITE=None` 주입 필수 (Secure=true와 정합 필수)
+- **`SameSite=None` + `Secure=false` 조합은 `CookieProperties` compact ctor가 부팅 시 차단** (브라우저 silent 실패 사고 방지)
+- 의사결정 트리 + 환경별 조합 표: [samesite-policy.md](operations/samesite-policy.md)
+
 ## Rate Limit
 
 회원가입/로그인 endpoint에 IP 기반 rate limit이 적용되어 있습니다 (sa-docs/11 운영 보안 정책 §Rate Limit).
@@ -126,6 +134,67 @@ RATELIMIT_ENABLED=false
 ### 통합 테스트와의 격리
 
 `AbstractIntegrationTest`가 기본적으로 `ratelimit.enabled=false`로 설정하여 같은 IP로 반복 호출하는 다른 통합 테스트가 자기 한도에 부딪히지 않게 합니다. Rate Limit 자체 동작은 `RateLimitIntegrationTest`가 `@DynamicPropertySource`로 별도 활성화하여 검증.
+
+## 모니터링 (Actuator + Prometheus)
+
+운영 메트릭 카탈로그는 [metrics-catalog.md](operations/metrics-catalog.md)에 정리되어 있습니다 (KAN-104).
+
+### 로컬에서 확인
+
+애플리케이션 실행 후 다음 endpoint 접속 가능:
+
+- **Health**: <http://localhost:8080/actuator/health> — DB/Redis component UP/DOWN
+- **Info**: <http://localhost:8080/actuator/info> — 빌드 정보
+- **Prometheus**: <http://localhost:8080/actuator/prometheus> — 모든 메트릭 (text format)
+
+### 메트릭 확인 예시
+
+```bash
+# JWT 검증 메트릭 (호출 후 호출 횟수 누적)
+curl http://localhost:8080/actuator/prometheus | grep auth_jwt_verify_duration_seconds_count
+
+# Rate Limit 판정 메트릭
+curl http://localhost:8080/actuator/prometheus | grep ratelimit_decision_total
+
+# 로그인 시도 메트릭
+curl http://localhost:8080/actuator/prometheus | grep auth_login_attempt_total
+```
+
+### 미노출 endpoint
+
+`env`/`beans`/`mappings`/`configprops` 등은 SecurityConfig에서 `denyAll` + yml `exposure.include`에서 제외 → 외부 정보 노출 차단. 디버깅이 필요해 추가 노출하려면 `application-local.yml`에 한정해 추가 후 운영 yml에는 절대 추가 금지.
+
+### 운영 배포 전 필수
+
+`/actuator/prometheus`는 본 PR에서 `permitAll`. 운영 배포 전 IP allowlist 또는 별도 management port 분리 필수. 상세는 [metrics-catalog.md](operations/metrics-catalog.md) § 노출 정책 참조.
+
+## 보안 감사 로그 (KAN-105)
+
+인증 도메인의 보안 이벤트(로그인/로그아웃/토큰 변조/rate limit 거부 등)는 별도 `audit.security` logger로 구조화 출력됩니다. 일반 application 로그와 분리되어 SIEM 수집/포렌식에 활용.
+
+전체 이벤트 카탈로그 + 알람 룰 권장값: [audit-log-catalog.md](operations/audit-log-catalog.md)
+
+### 로컬에서 확인
+
+애플리케이션 실행 시 자동으로 `logs/audit-security.log` 파일 생성 (logstash JSON 포맷):
+
+```bash
+# tail로 실시간 추적
+tail -f logs/audit-security.log
+
+# 특정 eventType 필터
+grep '"audit.eventType":"LOGIN_FAILURE"' logs/audit-security.log
+```
+
+회전 정책: 100MB 단위 + 일 단위 + 최대 365일 보존 + 10GB 전체 cap.
+
+### 운영(prod) 출력 추가
+
+prod 프로파일은 파일 + **stdout JSON** 동시 출력. ECS Task / CloudWatch Logs 수집기가 stdout을 캡처해 별도 인덱스로 수집.
+
+### 민감 정보 금지
+
+`SecurityAuditEvent` 자료형에 비밀번호 / JWT 본문 / Refresh Token 본문 / Cookie 값 필드 자체가 없음 → 컴파일 단계에서 노출 차단. `metadata` 맵에도 절대 넣지 말 것.
 
 ## 실행 방법
 

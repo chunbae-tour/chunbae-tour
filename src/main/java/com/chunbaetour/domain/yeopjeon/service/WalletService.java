@@ -59,6 +59,46 @@ public class WalletService {
     }
 
     /**
+     * 환불 승인 시 엽전 회수(차감) + 환불 이력 저장.
+     * 충전과 반대 방향: PG가 실제 돈을 카드로 돌려주고, 앱은 엽전을 회수한다.
+     * 락 획득 순서: Refund → PaymentOrder → Wallet (호출자 AdminRefundService가 준수해야 데드락 방지).
+     */
+    @Transactional
+    public void reclaimForRefund(Long userId, Long amount, Long paymentOrderId) {
+        // SELECT FOR UPDATE로 지갑 행 락 획득
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        // 잔액 확인 (충전 후 소비했을 경우 부족 가능)
+        if (wallet.getBalance() < amount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
+        }
+        // 엽전 차감
+        wallet.debit(amount);
+        // 환불 이력 DB 저장 (balanceSnapshot = debit 후 잔액)
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofRefund(userId, amount, wallet.getBalance(), paymentOrderId)
+        );
+    }
+
+    /**
+     * 스토어 상품 구매 시 엽전 차감 + 구매 이력 저장.
+     * SELECT FOR UPDATE로 지갑 행 락 획득 후 잔액 차감.
+     * 락 획득 순서: Product → Wallet (StorePurchaseService에서 Product 락 먼저 획득).
+     */
+    @Transactional
+    public void spendForPurchase(Long userId, long amount, String productName) {
+        // SELECT FOR UPDATE로 지갑 행 락 획득
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        // 잔액 차감 (부족 시 Wallet.debit()에서 INSUFFICIENT_BALANCE 던짐)
+        wallet.debit(amount);
+        // 구매 이력 저장
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofStorePurchase(userId, amount, wallet.getBalance(), productName)
+        );
+    }
+
+    /**
      * 신규 유저 지갑 생성 (멱등).
      * existsByUserId 체크 후 없으면 saveAndFlush.
      * 동시 요청으로 UK_WALLETS_USER_ID 제약 위반 시 정상 처리(return) — 다른 DB 에러는 그대로 던짐.

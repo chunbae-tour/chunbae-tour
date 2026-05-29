@@ -8,22 +8,29 @@ import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
 import com.chunbaetour.domain.festival.type.FestivalProgressStatus;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.search.constant.SearchRedisKeys;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 검색 서비스.
  * <p>
- * Phase 2-2 관광지 검색, Phase 2-3 축제 검색 등의 검색 기능을 담당한다.
+ * Phase 2-2 관광지 검색, Phase 2-3 축제 검색, Phase 2-4 검색어 자동완성 기능을 담당한다.
  * 각 검색 메서드는 내부적으로 {@link PopularSearchService#incrementSearchCount(String)}를
  * 호출하여 인기 검색어 집계에 기여한다.
  * </p>
@@ -37,7 +44,20 @@ public class SearchService {
     private final PlaceQueryRepository placeQueryRepository;
     private final FestivalQueryRepository festivalQueryRepository;
     private final PopularSearchService popularSearchService;
+    private final StringRedisTemplate stringRedisTemplate;
     private final Clock clock;
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 상수
+    // ──────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 관광지 검색 (Phase 2-2)
+    // ──────────────────────────────────────────────────────────────────────────
 
     /**
      * 관광지 키워드 검색 (Phase 2-2).
@@ -72,10 +92,9 @@ public class SearchService {
         if (normalized.length() > 50) {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
         }
-        keyword = normalized;
 
         // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
-        List<SearchPlaceResponse> items = placeQueryRepository.searchByKeyword(keyword, category, region, cursorId, size);
+        List<SearchPlaceResponse> items = placeQueryRepository.searchByKeyword(normalized, category, region, cursorId, size);
 
         // 2. hasNext 및 nextCursor 계산
         boolean hasNext = items.size() > size;
@@ -87,11 +106,15 @@ public class SearchService {
         // 3. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
         // 페이지네이션(cursorId != null) 시 검색 횟수가 중복으로 증가하는 어뷰징(Abuse)을 원천 차단한다.
         if (!resultItems.isEmpty() && cursorId == null) {
-            popularSearchService.incrementSearchCount(keyword, clientIp);
+            popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
         return new CursorPageResponse<>(resultItems, nextCursorStr, hasNext, resultItems.size());
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 축제 검색 (Phase 2-3)
+    // ──────────────────────────────────────────────────────────────────────────
 
     /**
      * 축제 검색 (Phase 2-3).
@@ -119,17 +142,19 @@ public class SearchService {
             throw new BusinessException(ErrorCode.SEARCH_INVALID_DATE_RANGE);
         }
 
+        String normalized = keyword;
         // 검색어 길이 제한 (최대 50자) (PLACE_006)
         if (keyword != null) {
-            String normalized = keyword.strip();
+            normalized = keyword.strip();
             if (StringUtils.hasText(normalized) && normalized.length() > 50) {
                 throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
             }
-            keyword = StringUtils.hasText(normalized) ? normalized : keyword;
+            // 리뷰 반영: 공백만 있는 경우 null 처리하여 DB 쿼리 전송 방지
+            normalized = StringUtils.hasText(normalized) ? normalized : null;
         }
 
         // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
-        List<Festival> items = festivalQueryRepository.searchFestivals(keyword, startDate, endDate, region, cursorId, size);
+        List<Festival> items = festivalQueryRepository.searchFestivals(normalized, startDate, endDate, region, cursorId, size);
 
         // 2. hasNext 및 nextCursor 계산
         boolean hasNext = items.size() > size;
@@ -144,11 +169,12 @@ public class SearchService {
                 .map(item -> SearchFestivalResponse.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                 .toList();
 
-        // 4. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
-        if (StringUtils.hasText(keyword) && !updatedItems.isEmpty() && cursorId == null) {
-            popularSearchService.incrementSearchCount(keyword, clientIp);
+        if (StringUtils.hasText(normalized) && !updatedItems.isEmpty() && cursorId == null) {
+            popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
         return new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
     }
+
+
 }

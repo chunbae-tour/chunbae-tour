@@ -11,9 +11,12 @@ import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
 import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.MalformedJwtException;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpHeaders;
@@ -57,6 +61,14 @@ class JwtAuthenticationFilterTest {
     @Mock
     private FilterChain filterChain;
 
+    /** KAN-104 메트릭 in-memory registry. */
+    @Spy
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    /** KAN-105 감사 로그 mock. */
+    @Mock
+    private SecurityAuditLogger auditLogger;
+
     @InjectMocks
     private JwtAuthenticationFilter filter;
 
@@ -75,6 +87,11 @@ class JwtAuthenticationFilterTest {
         verify(filterChain).doFilter(request, response);
         verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        // sample 시작 전 return하므로 어떤 outcome도 카운트되면 안 됨 + unexpected sentinel 가드
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "success").count())
+                .isEqualTo(0L);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -97,6 +114,12 @@ class JwtAuthenticationFilterTest {
 
         // S4: Controller에서 재파싱 없이 claims를 가져올 수 있도록 attribute로 노출되어야 함
         assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isSameAs(claims);
+
+        // KAN-104: 정상 분기는 outcome=success 한 번만 기록. unexpected sentinel은 0이어야 함 (단일 stop 회귀 가드)
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "success").count())
+                .isEqualTo(1L);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -111,6 +134,12 @@ class JwtAuthenticationFilterTest {
         verify(tokenIssuer, never()).verifyAccess("expired");
         verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
         verify(filterChain).doFilter(request, response);
+
+        // public path → doFilterInternal 미진입. 어떤 outcome도 카운트 0.
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "success").count())
+                .isEqualTo(0L);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -129,6 +158,12 @@ class JwtAuthenticationFilterTest {
         // verify가 호출되었어야 한다 (public 매칭으로 우회되지 않음)
         verify(tokenIssuer).verifyAccess("valid-token");
         verify(filterChain).doFilter(request, response);
+
+        // logout 경로도 정상 토큰 → success 분기로 통과. unexpected sentinel 가드.
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "success").count())
+                .isEqualTo(1L);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -144,6 +179,14 @@ class JwtAuthenticationFilterTest {
         verify(responseWriter).write(response, ErrorCode.ACCESS_TOKEN_EXPIRED);
         verify(filterChain, never()).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+
+        // KAN-104: expired 분기 Timer + AUTH_002 Counter 각 1회. unexpected 절대 0.
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "expired").count())
+                .isEqualTo(1L);
+        assertThat(meterRegistry.counter("auth.jwt.failure.total", "code", "AUTH_002").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -159,6 +202,14 @@ class JwtAuthenticationFilterTest {
         verify(responseWriter).write(response, ErrorCode.ACCESS_TOKEN_INVALID);
         verify(filterChain, never()).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+
+        // KAN-104: tampered 분기 Timer + AUTH_003 Counter 각 1회. unexpected 절대 0.
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "tampered").count())
+                .isEqualTo(1L);
+        assertThat(meterRegistry.counter("auth.jwt.failure.total", "code", "AUTH_003").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -178,6 +229,14 @@ class JwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         // attribute도 안 채워져야 한다 (controller가 logout 흐름 외에 claims 사용 못 함)
         assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isNull();
+
+        // KAN-104: blacklisted 분기 Timer + AUTH_013 Counter 각 1회. unexpected 절대 0.
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "blacklisted").count())
+                .isEqualTo(1L);
+        assertThat(meterRegistry.counter("auth.jwt.failure.total", "code", "AUTH_013").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -196,6 +255,12 @@ class JwtAuthenticationFilterTest {
         verify(filterChain, never()).doFilter(request, response);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         assertThat(request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS)).isNull();
+
+        // KAN-104: Redis 조회 실패 분기 Timer 1회. unexpected 절대 0 (단일 stop 가드).
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "redis_failure").count())
+                .isEqualTo(1L);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 
     @Test
@@ -208,5 +273,11 @@ class JwtAuthenticationFilterTest {
 
         verify(filterChain).doFilter(request, response);
         verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+
+        // Bearer 다음 토큰 비어있어 sample 시작 전 return. 어떤 outcome도 카운트 0.
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "success").count())
+                .isEqualTo(0L);
+        assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
+                .isEqualTo(0L);
     }
 }

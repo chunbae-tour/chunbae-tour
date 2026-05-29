@@ -15,6 +15,9 @@ public interface PaymentGatewayClient {
     // 결제 검증 — 콜백 수신 후 포트원에서 실제 결제 상태/금액 확인 (위변조 방지)
     PortOnePaymentInfo verifyPayment(String paymentId);
 
+    // 결제 취소(환불) — 관리자 환불 승인 시 포트원에 전액 취소 요청
+    void cancelPayment(String pgTransactionId, Long amount, String reason);
+
     record PortOnePaymentInfo(String status, Long totalAmount) {
         public boolean isPaid() {
             return "PAID".equals(status);

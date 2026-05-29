@@ -13,12 +13,13 @@ import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
-import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.comment.service.CommentService;
-import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.community.common.service.PostQueryService;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +39,9 @@ class CommentServiceTest {
 
     @Mock
     private AccountRepository accountRepository;
+
+    @Mock
+    private PostQueryService postQueryService;
 
     @InjectMocks
     private CommentService commentService;
@@ -96,6 +100,21 @@ class CommentServiceTest {
     }
 
     @Test
+    void 삭제된_부모_댓글에_대댓글_작성_400() {
+        Comment deletedParent = Comment.create(1L, PostType.FREE, 1L, "삭제된 부모");
+        ReflectionTestUtils.setField(deletedParent, "id", 10L);
+        deletedParent.delete();
+        given(accountRepository.findById(1L)).willReturn(Optional.of(author));
+        given(commentRepository.findById(10L)).willReturn(Optional.of(deletedParent));
+
+        assertThatThrownBy(() -> commentService.create(1L, 1L, PostType.FREE,
+                new CommentCreateRequest("대댓글 시도", 10L)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));
+    }
+
+    @Test
     void 댓글_목록_빈_결과() {
         given(commentRepository.findByPost(1L, PostType.FREE, CommentStatus.ACTIVE, null, Pageable.ofSize(11)))
                 .willReturn(List.of());
@@ -125,6 +144,18 @@ class CommentServiceTest {
 
         assertThat(result.content()).hasSize(10);
         assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    void 댓글_작성_존재하지않는_사용자_404() {
+        given(accountRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.create(999L, 1L, PostType.FREE,
+                new CommentCreateRequest("내용", null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.USER_NOT_FOUND));
     }
 
     @Test
@@ -210,21 +241,6 @@ class CommentServiceTest {
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(1L, 1L, new CommentUpdateRequest("수정 시도")))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
-                        .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));
-    }
-
-    @Test
-    void 삭제된_부모_댓글에_대댓글_작성_400() {
-        Comment deletedParent = Comment.create(1L, PostType.FREE, 1L, "삭제된 부모");
-        ReflectionTestUtils.setField(deletedParent, "id", 10L);
-        deletedParent.delete();
-        given(accountRepository.findById(1L)).willReturn(Optional.of(author));
-        given(commentRepository.findById(10L)).willReturn(Optional.of(deletedParent));
-
-        assertThatThrownBy(() -> commentService.create(1L, 1L, PostType.FREE,
-                new CommentCreateRequest("대댓글 시도", 10L)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));

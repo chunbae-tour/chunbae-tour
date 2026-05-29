@@ -13,17 +13,11 @@ public record CommentCreateResponse(
         LocalDateTime createdAt
 ) {
     public static CommentCreateResponse of(Comment comment, Account author) {
-        WriterInfo writer = new WriterInfo(
-                author.getId(),
-                author.getNickname(),
-                author.getProfileImageUrl(),
-                null
-        );
         return new CommentCreateResponse(
                 comment.getId(),
                 comment.getParentCommentId(),
                 comment.getContent(),
-                writer,
+                WriterInfo.fromComment(author),
                 comment.getCreatedAt()
         );
     }

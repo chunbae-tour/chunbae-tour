@@ -99,6 +99,21 @@ public class ChatRoom extends BaseEntity {
         this.status = ChatRoomStatus.OPEN;
     }
 
+    // 방장 여부 확인 — NPE 방지를 위해 ownerId 기준으로 equals 호출
+    public boolean isOwnedBy(Long userId) {
+        return this.ownerId.equals(userId);
+    }
+
+    // 신청 가능 상태인지 검증 — CLOSED/FULL 방은 참여 신청 자체를 차단
+    public void validateJoinable() {
+        if (this.status == ChatRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
+        }
+        if (this.status == ChatRoomStatus.FULL) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_FULL);
+        }
+    }
+
     public void close() {
         if (this.status == ChatRoomStatus.CLOSED) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);

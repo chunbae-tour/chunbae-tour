@@ -5,7 +5,7 @@ import com.chunbaetour.domain.community.comment.dto.CommentCreateRequest;
 import com.chunbaetour.domain.community.comment.dto.CommentCreateResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
 import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
-import com.chunbaetour.domain.community.comment.entity.PostType;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import jakarta.validation.Valid;
@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -25,6 +26,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+// GET(댓글 목록)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/posts/companions/**, /posts/free/** permitAll 처리
+// POST(댓글 작성)는 USER·ADMIN 인증 필요
+@Validated
 @RestController
 @RequestMapping("/api/v1/community/posts/{postType}/{postId}/comments")
 @RequiredArgsConstructor
