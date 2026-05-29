@@ -40,6 +40,7 @@ public class CommentService {
         Account author = findAccount(authorId);
         if (request.parentCommentId() != null) {
             Comment parent = findComment(request.parentCommentId());
+            validateCommentScope(parent, postId, postType);
             if (parent.getStatus() == CommentStatus.DELETED) {
                 throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
             }
