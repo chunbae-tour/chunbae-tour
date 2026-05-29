@@ -37,6 +37,7 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             @Param("cursorId") Long cursorId,
             Pageable pageable);
 
-    // ── 자동 숨김용 신고 건수 집계 (KAN-93) — KAN-92 머지 후 활성화 ──────
-    // long countByTargetTypeAndTargetId(ReportTargetType targetType, Long targetId);
+    // ── 자동 숨김용 신고 건수 집계 (KAN-93) ─────────────────────────────
+    long countByTargetTypeAndTargetIdAndStatus(
+            ReportTargetType targetType, Long targetId, ReportStatus status);
 }

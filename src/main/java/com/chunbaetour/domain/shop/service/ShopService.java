@@ -14,6 +14,7 @@ import com.chunbaetour.domain.shop.type.ShopStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -106,10 +107,66 @@ public class ShopService {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
+        // SUSPENDED 가게는 공개 노출 차단 — 관리자 신고 처리 정지 (SHOP_001로 통일, 존재 여부 노출 방지)
+        // CLOSED는 기존 정책 유지(조회 허용) — SUSPENDED만 차단
+        if (shop.getStatus() == ShopStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.SHOP_NOT_FOUND);
+        }
+
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
         List<Menu> menus = menuRepository.findByShopIdOrderByIdAsc(shopId);
 
         return ShopInfoResponse.from(shop, menus);
+    }
+
+    /**
+     * 관리자 가게 상태 변경 (ACTIVE ↔ SUSPENDED).
+     * CLOSED 상태 가게 변경 불가 — SHOP_INACTIVE.
+     * CLOSED로 변경 불가 — INVALID_INPUT_VALUE (폐업은 별도 처리).
+     */
+    @Transactional
+    public void updateShopStatus(Long shopId, ShopStatus newStatus) {
+        if (newStatus == ShopStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+        if (shop.getStatus() == ShopStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+        shop.updateStatus(newStatus);
+    }
+
+    /**
+     * 신고 처리: 가게 숨김 (shopId 기준).
+     * report 도메인이 ShopRepository를 직접 참조하지 않도록 위임 진입점 역할.
+     */
+    @Transactional
+    public void hideShop(Long shopId) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+        shop.hide();
+    }
+
+    /**
+     * REVOKE_MERCHANT 신고 처리: owner의 모든 활성 가게를 일괄 SUSPENDED.
+     * CLOSED(폐업) 가게는 이미 운영 종료 상태이므로 skip — hide() 호출 시 SHOP_INACTIVE 예외 방지.
+     * 다중 가게 운영 상인의 계정 단위 권한 회수 시 호출.
+     */
+    @Transactional
+    public void hideAllShopsByOwnerId(Long ownerId) {
+        shopRepository.findAllByUserId(ownerId).stream()
+                .filter(shop -> shop.getStatus() != ShopStatus.CLOSED)
+                .forEach(Shop::hide);
+    }
+
+    /**
+     * shopId → 상인 accountId(userId) 반환.
+     * 신고 처리(REVOKE_MERCHANT) 및 신고 대상 자기신고 검증에 사용.
+     * 가게 없으면 Optional.empty() — 에러 코드는 호출 측에서 결정.
+     */
+    public Optional<Long> findMerchantAccountId(Long shopId) {
+        return shopRepository.findById(shopId).map(Shop::getUserId);
     }
 
     /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */

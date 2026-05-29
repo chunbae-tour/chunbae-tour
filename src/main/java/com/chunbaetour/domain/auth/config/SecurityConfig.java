@@ -147,6 +147,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/chat/**").hasRole("USER")
                         // 알림은 USER 전용 — 채팅 알림 등 일반 사용자 기능
                         .requestMatchers("/api/v1/notifications/**").hasRole("USER")
+                        // 번역은 USER 전용 — 채팅 메시지 번역 기능
+                        .requestMatchers("/api/v1/translations/**").hasRole("USER")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

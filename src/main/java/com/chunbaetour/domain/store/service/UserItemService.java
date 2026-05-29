@@ -24,6 +24,9 @@ public class UserItemService {
 
     /** 내 보유 아이템 조회 — cursor keyset 페이징 (id DESC) */
     public CursorPageResponse<UserItemResponse> getMyItems(Long userId, String cursor, int size) {
+        if (size <= 0) {
+            return new CursorPageResponse<>(List.of(), null, false, 0);
+        }
         // cursor 디코딩 — null이면 첫 페이지
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
