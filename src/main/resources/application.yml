@@ -79,6 +79,11 @@ ratelimit:
       path: /api/v1/admin/auth/login
       limit: 5
       window: PT1M
+    - id: translation
+      method: POST
+      path: /api/v1/translations
+      limit: 15
+      window: PT1M
 
 portone:
   secret: ${PORTONE_SECRET:}
