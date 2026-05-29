@@ -47,7 +47,9 @@ class TranslationErrorLogWriterIntegrationTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> outer.execute(status -> {
             errorLogWriter.save(exception);
             throw new RuntimeException("강제 롤백");
-        })).isInstanceOf(RuntimeException.class);
+        })).isInstanceOf(RuntimeException.class)
+                .withFailMessage("외부 TX 롤백 경로가 아닌 다른 예외 발생")
+                .hasMessage("강제 롤백");
 
         // 외부 TX가 롤백됐어도 REQUIRES_NEW 로그는 커밋 상태
         assertThat(commonErrorLogRepository.count()).isEqualTo(1);
