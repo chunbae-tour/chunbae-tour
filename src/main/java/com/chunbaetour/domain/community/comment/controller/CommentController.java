@@ -11,6 +11,7 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -26,8 +27,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-// GET(댓글 목록)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/posts/companions/**, /posts/free/** permitAll 처리
-// POST(댓글 작성)는 USER·ADMIN 인증 필요
+// GET(댓글 목록·대댓글)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/** permitAll 처리
+// POST·PATCH·DELETE는 USER·ADMIN 인증 필요
 @Validated
 @RestController
 @RequestMapping("/api/v1/community/posts/{postType}/{postId}/comments")
@@ -53,6 +54,15 @@ public class CommentController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size) {
         return ApiResponse.success(commentService.findAll(postId, PostType.from(postType), cursor, size));
+    }
+
+    // 더보기 — 특정 루트 댓글의 대댓글 전체 조회
+    @GetMapping("/{commentId}/replies")
+    public ApiResponse<List<CommentGetListResponse>> findReplies(
+            @PathVariable String postType,
+            @PathVariable Long postId,
+            @PathVariable Long commentId) {
+        return ApiResponse.success(commentService.findReplies(commentId));
     }
 
     @PatchMapping("/{commentId}")

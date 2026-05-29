@@ -51,30 +51,59 @@ public class CommentService {
         return CommentCreateResponse.of(commentRepository.save(comment), author);
     }
 
+    // 루트 댓글 cursor 페이징 — 삭제된 루트 댓글은 대댓글이 있는 경우만 placeholder로 포함
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
         postQueryService.validateExists(postId, postType);
         Long cursorId = decodeCursor(cursor);
-        // size + 1개 조회: 별도 COUNT 쿼리 없이 다음 페이지 존재 여부를 판단하기 위함
-        List<Comment> comments = commentRepository.findByPost(
-                postId, postType, CommentStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = comments.size() > size;
-        List<Comment> content = hasNext ? comments.subList(0, size) : comments;
+        List<Comment> roots = commentRepository.findRootComments(
+                postId, postType, cursorId, PageRequest.of(0, size + 1));
 
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
-                : null;
+        boolean hasNext = roots.size() > size;
+        List<Comment> content = hasNext ? roots.subList(0, size) : roots;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
-        // authorId를 Set으로 모아 한 번에 조회 — 댓글마다 개별 조회 시 N+1 발생
-        Set<Long> authorIds = content.stream().map(Comment::getAuthorId).collect(Collectors.toSet());
+        // 삭제된 루트 댓글은 작성자 조회 불필요
+        Set<Long> authorIds = content.stream()
+                .filter(c -> c.getStatus() != CommentStatus.DELETED)
+                .map(Comment::getAuthorId)
+                .collect(Collectors.toSet());
         Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
+        // 대댓글 수 일괄 집계 — N+1 방지
+        List<Long> rootIds = content.stream().map(Comment::getId).toList();
+        Map<Long, Long> replyCountMap = rootIds.isEmpty() ? Map.of() :
+                commentRepository.countRepliesByParentIds(rootIds).stream()
+                        .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+
         List<CommentGetListResponse> items = content.stream()
-                .map(c -> CommentGetListResponse.of(c, authors.get(c.getAuthorId())))
+                .map(c -> CommentGetListResponse.ofRoot(
+                        c,
+                        authors.get(c.getAuthorId()),
+                        replyCountMap.getOrDefault(c.getId(), 0L)))
                 .toList();
 
-        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
+        return new CursorPageResponse<>(items, nextCursor, hasNext, items.size());
+    }
+
+    // 특정 루트 댓글의 대댓글 전체 조회 (더보기)
+    public List<CommentGetListResponse> findReplies(Long commentId) {
+        Comment parent = findComment(commentId);
+        if (parent.getParentCommentId() != null) {
+            throw new BusinessException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
+        }
+
+        List<Comment> replies = commentRepository.findByParentCommentIdAndStatusOrderByIdAsc(
+                commentId, CommentStatus.ACTIVE);
+
+        Set<Long> authorIds = replies.stream().map(Comment::getAuthorId).collect(Collectors.toSet());
+        Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+        return replies.stream()
+                .map(r -> CommentGetListResponse.ofReply(r, authors.get(r.getAuthorId())))
+                .toList();
     }
 
     @Transactional
