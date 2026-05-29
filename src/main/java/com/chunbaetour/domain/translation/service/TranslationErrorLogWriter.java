@@ -32,7 +32,7 @@ public class TranslationErrorLogWriter {
                     .domain(CommonErrorDomain.TRANSLATION)
                     .errorType(CommonErrorType.API_CALL_FAILURE)
                     .message(message)
-                    .detail(e.getCause() != null ? e.getCause().getMessage() : null)
+                    .detail(e.getCause() != null ? e.getCause().getMessage() : e.getMessage())
                     .externalProvider(EXTERNAL_PROVIDER)
                     .build());
         } catch (Exception logEx) {

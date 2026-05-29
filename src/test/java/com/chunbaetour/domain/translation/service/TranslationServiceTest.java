@@ -58,16 +58,17 @@ class TranslationServiceTest {
         verify(errorLogWriter).save(any(TranslationClientException.class));
     }
 
-    // ErrorLog 저장 실패 — 원본 EXTERNAL_SERVICE_ERROR 그대로 전파 (저장 실패가 응답 덮지 않음)
+    // ErrorLog 저장 실패(커밋 실패 등) — 바깥 try/catch 흡수 후 원본 EXTERNAL_SERVICE_ERROR 전파
     @Test
     void translate_errorLogSaveFails_stillThrowsExternalServiceError() {
         given(googleTranslationClient.translate("안녕", LanguageCode.EN))
                 .willThrow(new TranslationClientException("호출 실패"));
-        willThrow(new RuntimeException("DB 장애")).given(errorLogWriter).save(any());
+        willThrow(new RuntimeException("트랜잭션 커밋 실패")).given(errorLogWriter).save(any());
 
         assertThatThrownBy(() -> translationService.translate("안녕", LanguageCode.EN))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR));
     }
+
 }
