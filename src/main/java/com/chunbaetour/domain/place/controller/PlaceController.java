@@ -10,6 +10,7 @@ import com.chunbaetour.domain.place.service.PlaceLikeService;
 import com.chunbaetour.domain.place.service.PlaceService;
 import com.chunbaetour.domain.place.service.RecommendService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class PlaceController {
     private final PlaceLikeService placeLikeService;
     private final RecommendService recommendService;
 
+    @SecurityRequirements
     @Operation(summary = "주변 관광지 조회")
     @GetMapping("/nearby")
     public ApiResponse<NearbyPlacePageResponse> getNearbyPlaces(@Valid @ModelAttribute NearbyPlaceRequest request) {
@@ -63,6 +65,7 @@ public class PlaceController {
      * - @AuthenticationPrincipal은 JWT 필터가 SecurityContext에 userId(Long)를 넣으므로 Long으로 주입.
      *   비로그인 요청(Bearer 토큰 없음)이면 null이 주입된다.
      */
+    @SecurityRequirements
     @Operation(summary = "관광지 상세 조회")
     @GetMapping("/{placeId}")
     public ApiResponse<PlaceDetailResponse> getPlaceDetail(
@@ -112,6 +115,7 @@ public class PlaceController {
      * - 동일 카테고리 + 거리순 가까운 곳 TOP 5 (자신 제외)
      * - 비로그인 허용 (permitAll)
      */
+    @SecurityRequirements
     @Operation(summary = "관광지 기반 추천")
     @GetMapping("/{placeId}/recommend")
     public ApiResponse<List<RecommendPlaceResponse>> getPlaceBasedRecommendations(
@@ -124,6 +128,7 @@ public class PlaceController {
      * <p>
      * - 비로그인 허용 (permitAll)
      */
+    @SecurityRequirements
     @Operation(summary = "관광지 주변 상점 조회")
     @GetMapping("/{placeId}/nearby-shops")
     public ApiResponse<List<NearbyShopResponse>> getNearbyShops(

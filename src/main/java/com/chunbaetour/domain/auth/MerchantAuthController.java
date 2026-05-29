@@ -6,6 +6,7 @@ import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,7 @@ public class MerchantAuthController {
      * <p>{@link UserAuthController#login}과 동일한 응답 형태 (Body=accessToken+role, Cookie=refreshToken).
      * 차이점: {@code requiredRole=MERCHANT} 고정 전달 → USER/ADMIN 계정은 AUTH_007.
      */
+    @SecurityRequirements
     @Operation(summary = "상인 로그인")
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {

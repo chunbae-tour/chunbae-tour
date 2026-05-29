@@ -12,6 +12,7 @@ import com.chunbaetour.domain.search.service.RecentSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -85,6 +86,7 @@ public class SearchController {
      *
      * @return 200 OK + 인기 검색어 목록 (0건 이상)
      */
+    @SecurityRequirements
     @Operation(summary = "인기 검색어 TOP10 조회")
     @GetMapping("/popular")
     public ApiResponse<List<PopularSearchResponse>> getPopularKeywords() {
@@ -107,6 +109,7 @@ public class SearchController {
      * @param size     페이지 사이즈 (기본값 10)
      * @return 200 OK + 커서 페이지네이션이 적용된 관광지 목록
      */
+    @SecurityRequirements
     @Operation(summary = "관광지 검색")
     @GetMapping("/places")
     public ApiResponse<CursorPageResponse<SearchPlaceResponse>> searchPlaces(
@@ -138,6 +141,7 @@ public class SearchController {
      * @param size      페이지 사이즈 (기본값 10)
      * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록
      */
+    @SecurityRequirements
     @Operation(summary = "축제 검색")
     @GetMapping("/festivals")
     public ApiResponse<CursorPageResponse<SearchFestivalResponse>> searchFestivals(
@@ -177,6 +181,7 @@ public class SearchController {
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 null/blank인 경우 PLACE_005
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 50자를 초과하는 경우 PLACE_006
      */
+    @SecurityRequirements
     @Operation(summary = "검색어 자동완성")
     @GetMapping("/suggest")
     public ApiResponse<List<String>> suggest(

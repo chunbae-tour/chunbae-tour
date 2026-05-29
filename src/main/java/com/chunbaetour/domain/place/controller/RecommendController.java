@@ -5,6 +5,7 @@ import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.service.RecommendService;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,6 +30,7 @@ public class RecommendController {
     /**
      * 인기 관광지 추천 (Top 10)
      */
+    @SecurityRequirements
     @Operation(summary = "인기 관광지 추천")
     @GetMapping("/popular")
     public ApiResponse<List<RecommendPlaceResponse>> getPopularRecommendations() {
@@ -38,6 +40,7 @@ public class RecommendController {
     /**
      * 반경 내 주변 관광지 추천 (랜덤 샘플링)
      */
+    @SecurityRequirements
     @Operation(summary = "위치 기반 관광지 추천")
     @GetMapping("/nearby")
     public ApiResponse<List<RecommendPlaceResponse>> getNearbyRecommendations(
@@ -51,6 +54,7 @@ public class RecommendController {
     /**
      * 카테고리별 관광지 추천
      */
+    @SecurityRequirements
     @Operation(summary = "카테고리별 관광지 추천")
     @GetMapping("/category")
     public ApiResponse<List<RecommendPlaceResponse>> getCategoryRecommendations(

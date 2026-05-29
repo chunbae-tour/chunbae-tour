@@ -8,6 +8,7 @@ import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class UserAuthController {
     /**
      * 회원가입. 변경 없음 (S1에서 정의).
      */
+    @SecurityRequirements
     @Operation(summary = "회원가입")
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
@@ -64,6 +66,7 @@ public class UserAuthController {
      *
      * <p>클라이언트는 Cookie를 직접 다루지 않는다. 브라우저가 자동으로 다음 요청에 첨부.
      */
+    @SecurityRequirements
     @Operation(summary = "USER 로그인")
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {

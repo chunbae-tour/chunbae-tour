@@ -7,6 +7,7 @@ import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.service.CallbackService;
 import com.chunbaetour.domain.payment.service.WebhookVerifier;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ public class WebhookController {
     private final CallbackService callbackService;
     private final ObjectMapper objectMapper;
 
+    @SecurityRequirements
     @Operation(summary = "PortOne 결제 웹훅 수신")
     @PostMapping("/webhook")
     public ApiResponse<Void> webhook(
