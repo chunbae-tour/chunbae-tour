@@ -93,7 +93,7 @@ public class CommentService {
         Comment parent = findComment(commentId);
         validateCommentScope(parent, postId, postType);
         if (parent.getParentCommentId() != null) {
-            throw new BusinessException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
+            throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
         }
 
         List<Comment> replies = commentRepository.findByParentCommentIdAndStatusOrderByIdAsc(

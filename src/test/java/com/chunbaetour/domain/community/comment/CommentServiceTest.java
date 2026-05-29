@@ -228,7 +228,7 @@ class CommentServiceTest {
     }
 
     @Test
-    void 대댓글에_대댓글_조회_요청_400() {
+    void 대댓글에_대댓글_조회_요청_404() {
         Comment reply = Comment.create(1L, PostType.FREE, 1L, "대댓글", 5L);
         ReflectionTestUtils.setField(reply, "id", 10L);
         given(commentRepository.findById(10L)).willReturn(Optional.of(reply));
@@ -236,7 +236,7 @@ class CommentServiceTest {
         assertThatThrownBy(() -> commentService.findReplies(1L, PostType.FREE, 10L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
-                        .isEqualTo(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED));
+                        .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
     }
 
     // ── 댓글 수정 ─────────────────────────────────────────────────────────
@@ -279,6 +279,16 @@ class CommentServiceTest {
         given(commentRepository.findById(99L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.update(1L, 1L, PostType.FREE, 99L, new CommentUpdateRequest("내용")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
+    }
+
+    @Test
+    void 존재하지_않는_댓글_삭제_404() {
+        given(commentRepository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.delete(1L, 1L, PostType.FREE, 99L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
