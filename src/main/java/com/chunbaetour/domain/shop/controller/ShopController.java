@@ -4,6 +4,8 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.service.ShopService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * PATCH /api/v1/merchants/me/shops/{shopId} — 내 가게 정보 수정 (MERCHANT)
  * SecurityConfig: /api/v1/merchants/** → MERCHANT 권한 필요.
  */
+@Tag(name = "가게 (MERCHANT)", description = "내 가게 조회·수정 (/api/v1/merchants/me/shops/**)")
 @RestController
 @RequestMapping("/api/v1/merchants/me/shops")
 @RequiredArgsConstructor
@@ -31,7 +34,7 @@ public class ShopController {
 
     private final ShopService shopService;
 
-    /** 내 가게 목록 조회: 상인이 운영하는 모든 가게 반환 */
+    @Operation(summary = "내 가게 목록 조회")
     @GetMapping
     public ApiResponse<List<ShopResponse>> getMyShops(
             @AuthenticationPrincipal Long userId
@@ -39,7 +42,7 @@ public class ShopController {
         return ApiResponse.success(shopService.getMyShops(userId));
     }
 
-    /** 내 가게 단건 조회: shopId + userId 소유권 검증 */
+    @Operation(summary = "내 가게 단건 조회")
     @GetMapping("/{shopId}")
     public ApiResponse<ShopResponse> getMyShop(
             @AuthenticationPrincipal Long userId,
@@ -48,7 +51,7 @@ public class ShopController {
         return ApiResponse.success(shopService.getMyShop(userId, shopId));
     }
 
-    /** 내 가게 정보 수정: null 필드는 기존 값 유지 (부분 수정) */
+    @Operation(summary = "내 가게 정보 수정")
     @PatchMapping("/{shopId}")
     public ApiResponse<ShopResponse> updateMyShop(
             @AuthenticationPrincipal Long userId,

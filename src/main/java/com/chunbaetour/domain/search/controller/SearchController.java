@@ -11,6 +11,9 @@ import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.RecentSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -50,6 +53,7 @@ import java.util.List;
  * 인증 불필요(❌) 공개 API이므로 {@code permitAll()}로 개방되어 있어야 한다.
  * </p>
  */
+@Tag(name = "검색", description = "관광지·축제 검색, 자동완성, 인기·최근 검색어 (/api/v1/search/**)")
 @RestController
 @RequestMapping("/api/v1/search")
 @RequiredArgsConstructor
@@ -82,6 +86,8 @@ public class SearchController {
      *
      * @return 200 OK + 인기 검색어 목록 (0건 이상)
      */
+    @SecurityRequirements
+    @Operation(summary = "인기 검색어 TOP10 조회")
     @GetMapping("/popular")
     public ApiResponse<List<PopularSearchResponse>> getPopularKeywords() {
         List<PopularSearchResponse> result = popularSearchService.getPopularKeywords();
@@ -103,6 +109,8 @@ public class SearchController {
      * @param size     페이지 사이즈 (기본값 10)
      * @return 200 OK + 커서 페이지네이션이 적용된 관광지 목록
      */
+    @SecurityRequirements
+    @Operation(summary = "관광지 검색")
     @GetMapping("/places")
     public ApiResponse<CursorPageResponse<SearchPlaceResponse>> searchPlaces(
             @RequestParam(name = "q", required = false) String q,
@@ -133,6 +141,8 @@ public class SearchController {
      * @param size      페이지 사이즈 (기본값 10)
      * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록
      */
+    @SecurityRequirements
+    @Operation(summary = "축제 검색")
     @GetMapping("/festivals")
     public ApiResponse<CursorPageResponse<SearchFestivalResponse>> searchFestivals(
             @RequestParam(name = "q", required = false) String q,
@@ -171,6 +181,8 @@ public class SearchController {
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 null/blank인 경우 PLACE_005
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 50자를 초과하는 경우 PLACE_006
      */
+    @SecurityRequirements
+    @Operation(summary = "검색어 자동완성")
     @GetMapping("/suggest")
     public ApiResponse<List<String>> suggest(
             @RequestParam(name = "q") String q
@@ -191,6 +203,7 @@ public class SearchController {
      * @param request 검색어
      * @return 200 OK
      */
+    @Operation(summary = "최근 검색어 저장")
     @PostMapping
     public ApiResponse<Void> saveRecentSearch(
             @AuthenticationPrincipal Long userId,
@@ -211,6 +224,7 @@ public class SearchController {
      * @param userId 인증된 사용자 ID
      * @return 200 OK + 최근 검색어 목록
      */
+    @Operation(summary = "최근 검색어 조회")
     @GetMapping("/recent")
     public ApiResponse<List<String>> getRecentSearches(
             @AuthenticationPrincipal Long userId
@@ -231,6 +245,7 @@ public class SearchController {
      * @param keyword 삭제할 검색어 (선택)
      * @return 204 No Content
      */
+    @Operation(summary = "최근 검색어 삭제 (단건/전체)")
     @DeleteMapping("/recent")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteRecentSearch(

@@ -7,6 +7,9 @@ import com.chunbaetour.domain.auth.dto.SignupResponse;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -30,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>상인/관리자 로그인은 별도 컨트롤러로 분리 예정 (S5).
  * reissue/logout 같은 공통 토큰 처리 endpoint는 {@code AuthTokenController}에서 담당.
  */
+@Tag(name = "USER 인증", description = "회원가입·로그인 (POST /api/v1/users/auth/**)")
 @RestController
 @RequestMapping("/api/v1/users/auth")
 @RequiredArgsConstructor
@@ -42,6 +46,8 @@ public class UserAuthController {
     /**
      * 회원가입. 변경 없음 (S1에서 정의).
      */
+    @SecurityRequirements
+    @Operation(summary = "회원가입")
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
@@ -60,6 +66,8 @@ public class UserAuthController {
      *
      * <p>클라이언트는 Cookie를 직접 다루지 않는다. 브라우저가 자동으로 다음 요청에 첨부.
      */
+    @SecurityRequirements
+    @Operation(summary = "USER 로그인")
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         // 도메인 서비스에 위임. requiredRole=USER로 고정 (이 컨트롤러가 USER 전용이므로)

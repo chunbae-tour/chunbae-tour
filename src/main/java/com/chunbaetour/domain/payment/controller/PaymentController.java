@@ -10,6 +10,8 @@ import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
 import com.chunbaetour.domain.payment.service.ChargeService;
 import com.chunbaetour.domain.payment.service.RefundService;
 import com.chunbaetour.domain.payment.type.RefundStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,6 +31,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 결제 API: 엽전 충전 요청 및 환불 요청 */
+@Tag(name = "결제 (USER)", description = "엽전 충전·환불 요청·환불 취소 (/api/v1/payments/**)")
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
@@ -38,7 +41,7 @@ public class PaymentController {
     private final ChargeService chargeService;
     private final RefundService refundService;
 
-    /** 엽전 충전 요청 → 포트원 V2 사전등록 후 orderUid 반환 */
+    @Operation(summary = "엽전 충전 요청")
     @PostMapping("/charge")
     public ApiResponse<ChargeResponse> charge(
             @AuthenticationPrincipal Long userId,
@@ -53,6 +56,7 @@ public class PaymentController {
      * orderId = 충전 시 발급된 orderUid (UUID).
      * 환불 요청은 PENDING 상태로 생성되며 관리자 승인(STORY-07) 후 실 환불 처리.
      */
+    @Operation(summary = "환불 요청 생성")
     @PostMapping("/{orderId}/refund")
     public ApiResponse<RefundResponse> requestRefund(
             @AuthenticationPrincipal Long userId,
@@ -62,7 +66,7 @@ public class PaymentController {
         return ApiResponse.success(refundService.requestRefund(userId, orderId, request));
     }
 
-    /** 환불 요청 취소 — PENDING 상태인 본인 환불 요청만 취소 가능. */
+    @Operation(summary = "환불 요청 취소")
     @PatchMapping("/refund/{refundId}/cancel")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancelRefund(
@@ -76,6 +80,7 @@ public class PaymentController {
      * 사용자 환불 내역 조회 (KAN-115).
      * status 생략 시 전체 상태 조회. cursor 기반 페이징.
      */
+    @Operation(summary = "내 환불 내역 조회")
     @GetMapping("/refunds")
     public ApiResponse<CursorPageResponse<UserRefundResponse>> getUserRefundHistory(
             @AuthenticationPrincipal Long userId,

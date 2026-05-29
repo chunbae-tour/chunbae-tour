@@ -6,6 +6,9 @@ import com.chunbaetour.domain.payment.dto.request.WebhookPayload;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.service.CallbackService;
 import com.chunbaetour.domain.payment.service.WebhookVerifier;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "결제 웹훅", description = "PortOne 결제 웹훅 수신 (서버→서버, 인증 불필요)")
 @RestController
 @RequestMapping("/api/v1/payments")
 @RequiredArgsConstructor
@@ -24,6 +28,8 @@ public class WebhookController {
     private final CallbackService callbackService;
     private final ObjectMapper objectMapper;
 
+    @SecurityRequirements
+    @Operation(summary = "PortOne 결제 웹훅 수신")
     @PostMapping("/webhook")
     public ApiResponse<Void> webhook(
             @RequestHeader("webhook-id") String webhookId,
