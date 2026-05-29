@@ -50,6 +50,18 @@ public class AdminMerchantApplicationController {
         return ApiResponse.success(adminMerchantApplicationService.getApplications(cursor, size, status));
     }
 
+    /**
+     * 상인 신청 단건 상세 조회 (KAN-182).
+     * 운영자가 승인/거절 결정 전 신청 상세 정보 확인용. 응답 DTO는 목록/승인/거절 흐름과 동일하게
+     * {@link MerchantApplicationDetailResponse} 재사용 — 본 슬라이스는 DTO 신규 필드 미추가.
+     * 거절된 신청 조회 시 rejectReason 필드가 포함된 그대로 노출되어 운영자가 재처리 판단에 활용.
+     */
+    @Operation(summary = "상인 신청 단건 상세 조회")
+    @GetMapping("/{applicationId}")
+    public ApiResponse<MerchantApplicationDetailResponse> getApplication(@PathVariable Long applicationId) {
+        return ApiResponse.success(adminMerchantApplicationService.getApplication(applicationId));
+    }
+
     @Operation(summary = "상인 신청 승인")
     @PatchMapping("/{applicationId}/approve")
     public ApiResponse<MerchantApplicationDetailResponse> approve(@PathVariable Long applicationId) {
