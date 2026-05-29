@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.service.ShopService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class ShopPublicController {
      * {@link com.chunbaetour.domain.auth.security.JwtAuthenticationFilter} PUBLIC_PATH_PATTERNS에
      * {@code /api/v1/shops/*} 등록 필수 — 누락 시 만료 토큰 보유 유저가 결제창 접근 불가.
      */
+    @SecurityRequirements
     @Operation(summary = "가게 공개 정보 조회")
     @GetMapping("/{shopId}")
     public ApiResponse<ShopInfoResponse> getShopInfo(@PathVariable @Positive Long shopId) {

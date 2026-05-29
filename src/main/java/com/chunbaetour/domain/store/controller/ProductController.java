@@ -6,6 +6,7 @@ import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.service.ProductService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -27,6 +28,7 @@ public class ProductController {
 
     private final ProductService productService;
 
+    @SecurityRequirements
     @Operation(summary = "상품 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<ProductSummaryResponse>> getProducts(
@@ -37,6 +39,7 @@ public class ProductController {
         return ApiResponse.success(productService.getProducts(category, cursor, size));
     }
 
+    @SecurityRequirements
     @Operation(summary = "상품 상세 조회")
     @GetMapping("/{productId}")
     public ApiResponse<ProductDetailResponse> getProduct(@PathVariable Long productId) {
