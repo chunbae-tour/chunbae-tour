@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.translation.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -53,7 +54,8 @@ class TranslationControllerTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_BODY))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.translatedContent").value("Hello"));
+                .andExpect(jsonPath("$.data.translatedContent").value("Hello"))
+                .andExpect(jsonPath("$.data.targetLanguage").value("EN"));
     }
 
     // 미인증 → 401 AUTH_006, service 미호출
@@ -144,7 +146,8 @@ class TranslationControllerTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("외부 API 실패 → 503 COMMON_007")
     void translate_whenExternalApiFails_returnsCommon007() throws Exception {
-        given(translationService.translate(eq("안녕"), eq(LanguageCode.EN)))
+        // any(), any() — 이 케이스는 인자 무관하게 어떤 번역 호출이든 실패해야 함
+        given(translationService.translate(any(), any()))
                 .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
 
         String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
