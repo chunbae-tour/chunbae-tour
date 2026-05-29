@@ -13,10 +13,10 @@ public record CommentGetListResponse(
         WriterInfo writer,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        long replyCount,
+        Long replyCount,   // 대댓글은 null (루트 댓글 전용 필드)
         boolean deleted
 ) {
-    // 루트 댓글용 — 삭제 시 content·writer 마스킹, replyCount 포함
+    // 루트 댓글용 — 삭제 시 content·writer·updatedAt 마스킹, replyCount 포함
     public static CommentGetListResponse ofRoot(Comment comment, Account author, long replyCount) {
         boolean deleted = comment.getStatus() == CommentStatus.DELETED;
         return new CommentGetListResponse(
@@ -25,13 +25,13 @@ public record CommentGetListResponse(
                 deleted ? "(삭제된 댓글)" : comment.getContent(),
                 deleted ? null : WriterInfo.fromComment(author),
                 comment.getCreatedAt(),
-                comment.getUpdatedAt(),
+                deleted ? null : comment.getUpdatedAt(),
                 replyCount,
                 deleted
         );
     }
 
-    // 대댓글용 — replyCount 불필요 (1단계 제한)
+    // 대댓글용 — replyCount null (1단계 제한으로 대댓글에 replies 없음)
     public static CommentGetListResponse ofReply(Comment comment, Account author) {
         return new CommentGetListResponse(
                 comment.getId(),
@@ -40,7 +40,7 @@ public record CommentGetListResponse(
                 WriterInfo.fromComment(author),
                 comment.getCreatedAt(),
                 comment.getUpdatedAt(),
-                0,
+                null,
                 false
         );
     }

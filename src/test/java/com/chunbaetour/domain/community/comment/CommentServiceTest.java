@@ -138,7 +138,6 @@ class CommentServiceTest {
     void 댓글_목록_빈_결과() {
         given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
                 .willReturn(List.of());
-        given(accountRepository.findAllById(any())).willReturn(List.of());
 
         CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 
@@ -176,7 +175,6 @@ class CommentServiceTest {
 
         given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
                 .willReturn(List.of(deleted));
-        given(accountRepository.findAllById(any())).willReturn(List.of());
         given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of());
 
         CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
@@ -185,6 +183,7 @@ class CommentServiceTest {
         assertThat(result.content().get(0).deleted()).isTrue();
         assertThat(result.content().get(0).content()).isEqualTo("(삭제된 댓글)");
         assertThat(result.content().get(0).writer()).isNull();
+        assertThat(result.content().get(0).updatedAt()).isNull();
     }
 
     @Test
@@ -199,7 +198,6 @@ class CommentServiceTest {
 
         given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
                 .willReturn(List.of(deleted));
-        given(accountRepository.findAllById(any())).willReturn(List.of());
         given(commentRepository.countRepliesByParentIds(any())).willReturn(countResult);
 
         CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);

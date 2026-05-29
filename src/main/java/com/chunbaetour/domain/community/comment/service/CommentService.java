@@ -69,8 +69,9 @@ public class CommentService {
                 .filter(c -> c.getStatus() != CommentStatus.DELETED)
                 .map(Comment::getAuthorId)
                 .collect(Collectors.toSet());
-        Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
-                .collect(Collectors.toMap(Account::getId, Function.identity()));
+        Map<Long, Account> authors = authorIds.isEmpty() ? Map.of() :
+                accountRepository.findAllById(authorIds).stream()
+                        .collect(Collectors.toMap(Account::getId, Function.identity()));
 
         // 대댓글 수 일괄 집계 — N+1 방지
         List<Long> rootIds = content.stream().map(Comment::getId).toList();
@@ -121,6 +122,7 @@ public class CommentService {
         comment.update(request.content());
     }
 
+    // 작성자 본인만 삭제 가능 — 관리자 직접 삭제는 ReportService.applyContentAction에서 처리
     @Transactional
     public void delete(Long accountId, Long postId, PostType postType, Long commentId) {
         Comment comment = findComment(commentId);
