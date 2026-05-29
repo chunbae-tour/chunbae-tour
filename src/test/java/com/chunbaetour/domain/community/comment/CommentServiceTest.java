@@ -168,6 +168,45 @@ class CommentServiceTest {
         assertThat(result.nextCursor()).isNotNull();
     }
 
+    @Test
+    void 삭제된_루트_댓글_placeholder_표시() {
+        Comment deleted = Comment.create(1L, PostType.FREE, 1L, "삭제될 내용");
+        ReflectionTestUtils.setField(deleted, "id", 1L);
+        deleted.delete();
+
+        given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
+                .willReturn(List.of(deleted));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of());
+
+        CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).deleted()).isTrue();
+        assertThat(result.content().get(0).content()).isEqualTo("(삭제된 댓글)");
+        assertThat(result.content().get(0).writer()).isNull();
+    }
+
+    @Test
+    void 삭제된_루트_댓글_replyCount_포함() {
+        Comment deleted = Comment.create(1L, PostType.FREE, 1L, "삭제될 내용");
+        ReflectionTestUtils.setField(deleted, "id", 1L);
+        deleted.delete();
+
+        // countRepliesByParentIds 반환값 — Object[] { parentCommentId, count }
+        List<Object[]> countResult = new java.util.ArrayList<>();
+        countResult.add(new Object[]{1L, 2L});
+
+        given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
+                .willReturn(List.of(deleted));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentRepository.countRepliesByParentIds(any())).willReturn(countResult);
+
+        CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
+
+        assertThat(result.content().get(0).replyCount()).isEqualTo(2L);
+    }
+
     // ── 대댓글 더보기 ─────────────────────────────────────────────────────
 
     @Test
