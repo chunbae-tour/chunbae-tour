@@ -10,6 +10,7 @@ import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +36,10 @@ import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
 
+    // DB에 존재하지 않는 userId — 채팅방 멤버십 없음을 강제해 CHAT_NOT_JOINED 유발
+    private static final long NON_EXISTENT_USER_ID = 999_999L;
+    private static final long NON_EXISTENT_ROOM_ID = 999_999L;
+
     @LocalServerPort int port;
     @Autowired private TokenIssuer tokenIssuer;
 
@@ -51,7 +56,7 @@ class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
     // 비참여 채팅방 메시지 전송 → CHAT_005 에러가 /user/queue/errors로 수신
     @Test
     void sendToNonJoinedRoom_errorRoutedToUserQueue() throws Exception {
-        String token = tokenIssuer.issueAccess(999999L, Role.USER, "test@test.com");
+        String token = tokenIssuer.issueAccess(NON_EXISTENT_USER_ID, Role.USER, "test@test.com");
         BlockingQueue<StompErrorResponse> errors = new LinkedBlockingQueue<>();
 
         session = connect(token);
@@ -67,40 +72,13 @@ class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
                 errors.add((StompErrorResponse) payload);
             }
         });
-        // 구독 프레임이 서버에 등록된 후 SEND — 명시적 대기로 flaky 방지
-        Thread.sleep(200);
+        // Spring simple broker가 RECEIPT 프레임 미지원 — sleep으로 SUBSCRIBE 처리 완료 대기
+        // STOMP 프레임은 TCP 순서 보장이지만 서버 side 등록 완료 전 SEND 도달 방지
+        Thread.sleep(500);
 
         // 비참여 채팅방으로 메시지 전송 → CHAT_NOT_JOINED 예외 → @MessageExceptionHandler
-        session.send("/pub/chat/rooms/999999/messages", new ChatSendMessageRequest("테스트"));
-
-        StompErrorResponse error = errors.poll(5, TimeUnit.SECONDS);
-        assertThat(error).isNotNull();
-        assertThat(error.errorCode()).isEqualTo("CHAT_005");
-    }
-
-    // 유효 Principal + 비참여 방 → CHAT_005가 /user/queue/errors로 라우팅됨 (NullPointer 없음)
-    @Test
-    void sendWithValidPrincipal_noNullPointerFromRouting() throws Exception {
-        String token = tokenIssuer.issueAccess(888888L, Role.USER, "test2@test.com");
-        BlockingQueue<StompErrorResponse> errors = new LinkedBlockingQueue<>();
-
-        session = connect(token);
-        session.subscribe("/user/queue/errors", new StompFrameHandler() {
-            @Override
-            public Type getPayloadType(StompHeaders headers) {
-                return StompErrorResponse.class;
-            }
-
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                errors.add((StompErrorResponse) payload);
-            }
-        });
-        // 구독 프레임이 서버에 등록된 후 SEND — 명시적 대기로 flaky 방지
-        Thread.sleep(200);
-
-        // 유효 principal이면 CHAT_005만 오고 라우팅 오류 없음
-        session.send("/pub/chat/rooms/888888/messages", new ChatSendMessageRequest("테스트"));
+        session.send("/pub/chat/rooms/" + NON_EXISTENT_ROOM_ID + "/messages",
+                new ChatSendMessageRequest("테스트"));
 
         StompErrorResponse error = errors.poll(5, TimeUnit.SECONDS);
         assertThat(error).isNotNull();
