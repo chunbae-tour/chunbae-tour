@@ -139,7 +139,6 @@ class CommentServiceTest {
         given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
                 .willReturn(List.of());
         given(accountRepository.findAllById(any())).willReturn(List.of());
-        given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of());
 
         CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 
