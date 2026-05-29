@@ -150,7 +150,7 @@ class AdApplicationServiceTest {
     private RLock mockLock() throws InterruptedException {
         RLock lock = mock(RLock.class);
         given(redissonClient.getLock(any(String.class))).willReturn(lock);
-        given(lock.tryLock(3, TimeUnit.SECONDS)).willReturn(true);
+        given(lock.tryLock(3, 10, TimeUnit.SECONDS)).willReturn(true);
         given(lock.isHeldByCurrentThread()).willReturn(true);
         return lock;
     }
@@ -166,6 +166,8 @@ class AdApplicationServiceTest {
     @DisplayName("광고 연장 성공 — endDate 연장 및 엽전 차감 호출")
     void extendAd_success() throws InterruptedException {
         mockLock();
+        given(clock.instant()).willReturn(Instant.parse("2026-05-29T00:00:00Z"));
+        given(clock.getZone()).willReturn(ZoneOffset.UTC);
         Shop shop = createShop();
         AdApplication approved = createApproved(AD_ID);
 
@@ -210,6 +212,8 @@ class AdApplicationServiceTest {
     @DisplayName("광고 연장 — APPROVED 아닌 상태 AD_APPLICATION_INVALID_STATUS")
     void extendAd_invalidStatus() throws InterruptedException {
         mockLock();
+        given(clock.instant()).willReturn(Instant.parse("2026-05-29T00:00:00Z"));
+        given(clock.getZone()).willReturn(ZoneOffset.UTC);
         Shop shop = createShop();
         AdApplication pending = createAdApplication(AD_ID); // PENDING 상태
 

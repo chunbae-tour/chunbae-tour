@@ -36,6 +36,7 @@ public class AdApplicationService {
     /** 광고 연장 분산 락 키: ad:extend:lock:{adId} — 동일 광고 동시 연장 직렬화 */
     private static final String AD_EXTEND_LOCK_KEY = "ad:extend:lock:%d";
     private static final int LOCK_WAIT_SECONDS = 3;
+    private static final int LOCK_LEASE_SECONDS = 10;
 
     private final AdApplicationRepository adApplicationRepository;
     private final ShopRepository shopRepository;
@@ -97,7 +98,7 @@ public class AdApplicationService {
         RLock lock = redissonClient.getLock(AD_EXTEND_LOCK_KEY.formatted(adId));
         boolean unlockRegistered = false;
         try {
-            if (!lock.tryLock(LOCK_WAIT_SECONDS, TimeUnit.SECONDS)) {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
             unlockRegistered = registerUnlockAfterTransaction(lock, adId);
@@ -120,8 +121,8 @@ public class AdApplicationService {
             // 엽전 차감 — SELECT FOR UPDATE on Wallet (락 순서 2번: Wallet)
             walletService.spendForAdExtension(userId, extensionCost, application.getAdType().name());
 
-            // endDate 연장 — APPROVED 상태 아니면 AD_APPLICATION_INVALID_STATUS
-            application.extend(extensionDays);
+            // endDate 연장 — APPROVED 상태 + 만료 전이어야 함
+            application.extend(extensionDays, LocalDate.now(clock));
 
             return AdApplicationResponse.from(application);
 

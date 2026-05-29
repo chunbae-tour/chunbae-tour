@@ -18,8 +18,12 @@ import org.springframework.data.repository.query.Param;
 public interface AdApplicationRepository extends JpaRepository<AdApplication, Long> {
 
     /**
-     * PENDING 중복 체크용 — SELECT FOR UPDATE (current read).
+     * PENDING 중복 체크용 SELECT FOR UPDATE (current read).
      * REPEATABLE READ에서 일반 SELECT는 스냅샷을 읽으므로 동시 신청 시 중복을 놓칠 수 있다.
+     *
+     * <p>도메인 불변식: 하나의 shopId는 동시에 PENDING 1건만 존재. 본 메서드는 0건 또는 1건만 반환.
+     * List 반환은 isEmpty() 체크와의 자연스러운 매칭 + Spring Data JPA 명명 일관성 위함.
+     * 향후 동일 shop 다중 슬롯 광고 정책 변경 시 본 메서드도 재검토 필요.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM AdApplication a WHERE a.shopId = :shopId AND a.status = :status")

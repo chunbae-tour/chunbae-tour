@@ -92,9 +92,12 @@ public class AdApplication extends BaseEntity {
         return Math.ceilDiv(Math.multiplyExact(cost, extensionDays), durationDays);
     }
 
-    /** 광고 기간 연장 — APPROVED 상태에서만 허용. */
-    public void extend(int extensionDays) {
+    /** 광고 기간 연장 — APPROVED 상태 + 아직 만료되지 않은 경우에만 허용. */
+    public void extend(int extensionDays, LocalDate today) {
         if (this.status != AdApplicationStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.AD_APPLICATION_INVALID_STATUS);
+        }
+        if (this.endDate.isBefore(today)) {
             throw new BusinessException(ErrorCode.AD_APPLICATION_INVALID_STATUS);
         }
         this.endDate = this.endDate.plusDays(extensionDays);
