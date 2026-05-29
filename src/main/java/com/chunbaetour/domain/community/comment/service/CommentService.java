@@ -12,6 +12,7 @@ import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository.ReplyCount;
 import com.chunbaetour.domain.community.common.service.PostQueryService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
@@ -77,7 +78,7 @@ public class CommentService {
         List<Long> rootIds = content.stream().map(Comment::getId).toList();
         Map<Long, Long> replyCountMap = rootIds.isEmpty() ? Map.of() :
                 commentRepository.countRepliesByParentIds(rootIds).stream()
-                        .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+                        .collect(Collectors.toMap(ReplyCount::getParentCommentId, ReplyCount::getCount));
 
         List<CommentGetListResponse> items = content.stream()
                 .map(c -> CommentGetListResponse.ofRoot(

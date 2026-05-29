@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
@@ -15,6 +16,7 @@ import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository.ReplyCount;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.community.common.service.PostQueryService;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -192,13 +194,13 @@ class CommentServiceTest {
         ReflectionTestUtils.setField(deleted, "id", 1L);
         deleted.delete();
 
-        // countRepliesByParentIds 반환값 — Object[] { parentCommentId, count }
-        List<Object[]> countResult = new java.util.ArrayList<>();
-        countResult.add(new Object[]{1L, 2L});
+        CommentRepository.ReplyCount replyCount = mock(CommentRepository.ReplyCount.class);
+        given(replyCount.getParentCommentId()).willReturn(1L);
+        given(replyCount.getCount()).willReturn(2L);
 
         given(commentRepository.findRootComments(1L, PostType.FREE, null, Pageable.ofSize(11)))
                 .willReturn(List.of(deleted));
-        given(commentRepository.countRepliesByParentIds(any())).willReturn(countResult);
+        given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of(replyCount));
 
         CursorPageResponse<CommentGetListResponse> result = commentService.findAll(1L, PostType.FREE, null, 10);
 

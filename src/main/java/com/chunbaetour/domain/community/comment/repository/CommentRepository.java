@@ -41,10 +41,15 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     );
 
     // 루트 댓글 id 목록의 대댓글 수 일괄 집계 — N+1 방지
-    @Query("SELECT c.parentCommentId, COUNT(c) FROM Comment c " +
+    @Query("SELECT c.parentCommentId as parentCommentId, COUNT(c) as count FROM Comment c " +
            "WHERE c.parentCommentId IN :parentIds AND c.status = 'ACTIVE' " +
            "GROUP BY c.parentCommentId")
-    List<Object[]> countRepliesByParentIds(@Param("parentIds") List<Long> parentIds);
+    List<ReplyCount> countRepliesByParentIds(@Param("parentIds") List<Long> parentIds);
+
+    interface ReplyCount {
+        Long getParentCommentId();
+        Long getCount();
+    }
 
     // 특정 루트 댓글의 대댓글 전체 조회 (더보기)
     List<Comment> findByParentCommentIdAndStatusOrderByIdAsc(Long parentCommentId, CommentStatus status);
