@@ -6,6 +6,8 @@ import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
 import com.chunbaetour.domain.report.service.ReportService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>USER 전용 — ADMIN은 신고 처리자(KAN-91/92)이며 신고자가 아니다.
  * SecurityConfig에서 {@code /api/v1/reports/** → hasRole("USER")} 로 강제.
  */
+@Tag(name = "신고 (USER)", description = "신고 접수·내 신고 내역 조회 (/api/v1/reports/**)")
 @RestController
 @RequestMapping("/api/v1/reports")
 @RequiredArgsConstructor
@@ -36,7 +39,7 @@ public class ReportController {
 
     private final ReportService reportService;
 
-    /** 신고 접수 */
+    @Operation(summary = "신고 접수")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ReportCreateResponse> create(
@@ -45,7 +48,7 @@ public class ReportController {
         return ApiResponse.success(reportService.create(accountId, request));
     }
 
-    /** 내 신고 내역 목록 조회 (cursor 페이징) */
+    @Operation(summary = "내 신고 내역 목록 조회")
     @GetMapping("/me")
     public ApiResponse<CursorPageResponse<MyReportResponse>> getMyReports(
             @AuthenticationPrincipal Long accountId,
@@ -54,7 +57,7 @@ public class ReportController {
         return ApiResponse.success(reportService.getMyReports(accountId, cursor, size));
     }
 
-    /** 내 신고 단건 조회 — 본인 신고 아니면 AUTH_007 */
+    @Operation(summary = "내 신고 단건 조회")
     @GetMapping("/{reportId}")
     public ApiResponse<MyReportResponse> getMyReport(
             @AuthenticationPrincipal Long accountId,

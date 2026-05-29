@@ -9,6 +9,8 @@ import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ import org.springframework.web.util.WebUtils;
  *   <li>나머지 {@code /api/v1/auth/**} → permitAll (인증 전에도 호출 가능)</li>
  * </ul>
  */
+@Tag(name = "공통 토큰", description = "Access Token 재발급·로그아웃 (POST /api/v1/auth/**)")
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -54,6 +57,7 @@ public class AuthTokenController {
      * <p>쿠키 이름은 발급과 조회가 반드시 같은 설정을 써야 한다. {@code @CookieValue}는 런타임 설정값을
      * name에 넣을 수 없으므로 request에서 직접 꺼내고, 누락/빈 값은 AUTH_005로 통일한다.
      */
+    @Operation(summary = "Access Token 재발급")
     @PostMapping("/reissue")
     public ResponseEntity<ApiResponse<ReissueResponse>> reissue(HttpServletRequest request) {
         String refreshToken = extractRefreshToken(request);
@@ -83,6 +87,7 @@ public class AuthTokenController {
      * <p>request attribute가 비어 있는 경우는 정상 흐름에서 발생할 수 없지만 (필터가 SecurityContext와 attribute를
      * 같은 분기에서 채우므로), 방어 코드로 AUTH_006을 던진다.
      */
+    @Operation(summary = "로그아웃")
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request) {
         Object attr = request.getAttribute(JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS);

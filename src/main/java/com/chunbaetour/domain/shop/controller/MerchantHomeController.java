@@ -5,6 +5,8 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.MerchantHomeResponse;
 import com.chunbaetour.domain.shop.service.MerchantHomeService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 상인 홈 대시보드 API.
  * 오늘 매출 합계와 최근 QR 결제 목록을 조회한다.
  */
+@Tag(name = "상인 홈 (MERCHANT)", description = "상인 홈 대시보드 조회 (/api/v1/merchants/me/home)")
 @RestController
 @RequestMapping("/api/v1/merchants/me/home")
 @RequiredArgsConstructor
@@ -28,6 +31,7 @@ public class MerchantHomeController {
      * @param userId 인증된 상인 사용자 ID
      * @return 오늘 매출 합계와 최근 결제 목록
      */
+    @Operation(summary = "상인 홈 대시보드 조회")
     @GetMapping
     public ApiResponse<MerchantHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
         // SecurityConfig가 인증을 보장하지만, null principal이 들어오는 비정상 상황은

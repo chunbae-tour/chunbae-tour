@@ -5,6 +5,8 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.store.dto.request.StorePurchaseRequest;
 import com.chunbaetour.domain.store.dto.response.StoreOrderResponse;
 import com.chunbaetour.domain.store.service.StorePurchaseService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 스토어 주문 API (STORY-17) */
+@Tag(name = "스토어 주문", description = "상품 구매·내 주문 내역 조회 (/api/v1/store/orders/**)")
 @RestController
 @RequestMapping("/api/v1/store/orders")
 @RequiredArgsConstructor
@@ -29,7 +32,7 @@ public class StoreOrderController {
 
     private final StorePurchaseService storePurchaseService;
 
-    /** 상품 구매 — 3단계 동시성 제어 (Redis 선점 + 분산 락 + 비관적 락) */
+    @Operation(summary = "상품 구매")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<StoreOrderResponse> purchase(
@@ -38,7 +41,7 @@ public class StoreOrderController {
         return ApiResponse.success(storePurchaseService.purchase(userId, request));
     }
 
-    /** 내 주문 내역 조회 — cursor 페이징 */
+    @Operation(summary = "내 주문 내역 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<StoreOrderResponse>> getMyOrders(
             @AuthenticationPrincipal Long userId,

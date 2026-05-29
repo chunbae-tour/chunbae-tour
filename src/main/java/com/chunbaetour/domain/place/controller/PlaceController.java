@@ -9,6 +9,9 @@ import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
 import com.chunbaetour.domain.place.service.PlaceService;
 import com.chunbaetour.domain.place.service.RecommendService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -28,6 +31,7 @@ import jakarta.validation.constraints.Min;
 
 import java.util.List;
 
+@Tag(name = "관광지", description = "관광지 조회·찜·주변 상점·추천 (/api/v1/places/**)")
 @RestController
 @RequestMapping("/api/v1/places")
 @RequiredArgsConstructor
@@ -38,6 +42,8 @@ public class PlaceController {
     private final PlaceLikeService placeLikeService;
     private final RecommendService recommendService;
 
+    @SecurityRequirements
+    @Operation(summary = "주변 관광지 조회")
     @GetMapping("/nearby")
     public ApiResponse<NearbyPlacePageResponse> getNearbyPlaces(@Valid @ModelAttribute NearbyPlaceRequest request) {
         NearbyPlacePageResponse response = placeService.findNearby(
@@ -59,6 +65,8 @@ public class PlaceController {
      * - @AuthenticationPrincipal은 JWT 필터가 SecurityContext에 userId(Long)를 넣으므로 Long으로 주입.
      *   비로그인 요청(Bearer 토큰 없음)이면 null이 주입된다.
      */
+    @SecurityRequirements
+    @Operation(summary = "관광지 상세 조회")
     @GetMapping("/{placeId}")
     public ApiResponse<PlaceDetailResponse> getPlaceDetail(
             @PathVariable Long placeId,
@@ -74,6 +82,7 @@ public class PlaceController {
      * - 인증 필요 (USER). SecurityConfig에서 보호.
      * - 중복 찜 시 PLACE_010 에러 응답.
      */
+    @Operation(summary = "관광지 찜 추가")
     @PostMapping("/{placeId}/like")
     public ApiResponse<Void> addLike(
             @PathVariable Long placeId,
@@ -89,6 +98,7 @@ public class PlaceController {
      * - 인증 필요 (USER). SecurityConfig에서 보호.
      * - 찜하지 않은 경우 PLACE_011 에러 응답.
      */
+    @Operation(summary = "관광지 찜 취소")
     @DeleteMapping("/{placeId}/like")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public ApiResponse<Void> removeLike(
@@ -105,6 +115,8 @@ public class PlaceController {
      * - 동일 카테고리 + 거리순 가까운 곳 TOP 5 (자신 제외)
      * - 비로그인 허용 (permitAll)
      */
+    @SecurityRequirements
+    @Operation(summary = "관광지 기반 추천")
     @GetMapping("/{placeId}/recommend")
     public ApiResponse<List<RecommendPlaceResponse>> getPlaceBasedRecommendations(
             @PathVariable Long placeId) {
@@ -116,6 +128,8 @@ public class PlaceController {
      * <p>
      * - 비로그인 허용 (permitAll)
      */
+    @SecurityRequirements
+    @Operation(summary = "관광지 주변 상점 조회")
     @GetMapping("/{placeId}/nearby-shops")
     public ApiResponse<List<NearbyShopResponse>> getNearbyShops(
             @PathVariable Long placeId,

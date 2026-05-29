@@ -8,6 +8,8 @@ import com.chunbaetour.domain.community.comment.dto.CommentUpdateRequest;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 // GET(댓글 목록·대댓글)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/** permitAll 처리
 // POST·PATCH·DELETE는 USER·ADMIN 인증 필요
+@Tag(name = "댓글", description = "게시글 댓글 작성·목록 조회·수정·삭제·대댓글 더보기 (/api/v1/community/posts/{postType}/{postId}/comments/**)")
 @Validated
 @RestController
 @RequestMapping("/api/v1/community/posts/{postType}/{postId}/comments")
@@ -37,6 +40,7 @@ public class CommentController {
 
     private final CommentService commentService;
 
+    @Operation(summary = "댓글 작성")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CommentCreateResponse> create(
@@ -47,6 +51,7 @@ public class CommentController {
         return ApiResponse.success(commentService.create(accountId, postId, PostType.from(postType), request));
     }
 
+    @Operation(summary = "댓글 목록 조회 (루트 댓글 cursor 페이징)")
     @GetMapping
     public ApiResponse<CursorPageResponse<CommentGetListResponse>> findAll(
             @PathVariable String postType,
@@ -56,7 +61,7 @@ public class CommentController {
         return ApiResponse.success(commentService.findAll(postId, PostType.from(postType), cursor, size));
     }
 
-    // 더보기 — 특정 루트 댓글의 대댓글 전체 조회
+    @Operation(summary = "대댓글 더보기 — 특정 루트 댓글의 대댓글 전체 조회")
     @GetMapping("/{commentId}/replies")
     public ApiResponse<List<CommentGetListResponse>> findReplies(
             @PathVariable String postType,
@@ -65,6 +70,7 @@ public class CommentController {
         return ApiResponse.success(commentService.findReplies(postId, PostType.from(postType), commentId));
     }
 
+    @Operation(summary = "댓글 수정")
     @PatchMapping("/{commentId}")
     public ApiResponse<Void> update(
             @AuthenticationPrincipal Long accountId,
@@ -76,6 +82,7 @@ public class CommentController {
         return ApiResponse.success();
     }
 
+    @Operation(summary = "댓글 삭제")
     @DeleteMapping("/{commentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(

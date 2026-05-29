@@ -5,6 +5,8 @@ import com.chunbaetour.domain.shop.dto.request.MenuCreateRequest;
 import com.chunbaetour.domain.shop.dto.request.MenuUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.MenuResponse;
 import com.chunbaetour.domain.shop.service.MenuService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  * DELETE /api/v1/merchants/me/shops/{shopId}/menus/{menuId} — 메뉴 삭제 (MERCHANT)
  * SecurityConfig: /api/v1/merchants/** → MERCHANT 권한 필요.
  */
+@Tag(name = "메뉴 (MERCHANT)", description = "메뉴 등록·수정·삭제 (/api/v1/merchants/me/shops/{shopId}/menus/**)")
 @RestController
 @RequestMapping("/api/v1/merchants/me/shops/{shopId}/menus")
 @RequiredArgsConstructor
@@ -34,6 +37,7 @@ public class MenuController {
 
     private final MenuService menuService;
 
+    @Operation(summary = "메뉴 등록")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<MenuResponse> createMenu(
@@ -44,6 +48,7 @@ public class MenuController {
         return ApiResponse.success(menuService.createMenu(userId, shopId, request));
     }
 
+    @Operation(summary = "메뉴 수정")
     @PatchMapping("/{menuId}")
     public ApiResponse<MenuResponse> updateMenu(
             @AuthenticationPrincipal Long userId,
@@ -54,6 +59,7 @@ public class MenuController {
         return ApiResponse.success(menuService.updateMenu(userId, shopId, menuId, request));
     }
 
+    @Operation(summary = "메뉴 삭제")
     @DeleteMapping("/{menuId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteMenu(

@@ -4,6 +4,8 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
 import com.chunbaetour.domain.notification.service.NotificationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "알림", description = "알림 목록 조회·읽음 처리·삭제 (/api/v1/notifications/**)")
 @RestController
 @RequestMapping("/api/v1/notifications")
 @RequiredArgsConstructor
@@ -27,7 +30,7 @@ public class NotificationController {
 
     private final NotificationService notificationService;
 
-    // 알림 목록 조회 — 로그인 사용자 본인 알림만, id DESC 커서 페이징
+    @Operation(summary = "알림 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<NotificationResponse>> getNotifications(
             @AuthenticationPrincipal Long userId,
@@ -36,14 +39,14 @@ public class NotificationController {
         return ApiResponse.success(notificationService.getNotifications(userId, cursor, size));
     }
 
-    // 전체 알림 읽음 처리 — /{notificationId}/read 보다 먼저 선언해 리터럴 경로 우선 매칭
+    @Operation(summary = "전체 알림 읽음 처리")
     @PatchMapping("/read-all")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void markAllAsRead(@AuthenticationPrincipal Long userId) {
         notificationService.markAllAsRead(userId);
     }
 
-    // 단건 알림 읽음 처리 — 본인 알림 아닌 경우 404 반환 (정보 비노출)
+    @Operation(summary = "단건 알림 읽음 처리")
     @PatchMapping("/{notificationId}/read")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void markAsRead(
@@ -52,7 +55,7 @@ public class NotificationController {
         notificationService.markAsRead(userId, notificationId);
     }
 
-    // 알림 삭제 — soft delete, 이미 삭제된 경우 204 멱등, 본인 알림 아닌 경우 404 반환 (정보 비노출)
+    @Operation(summary = "알림 삭제")
     @DeleteMapping("/{notificationId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteNotification(
