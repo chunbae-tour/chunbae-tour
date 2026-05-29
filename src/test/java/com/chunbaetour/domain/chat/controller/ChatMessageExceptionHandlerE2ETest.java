@@ -76,7 +76,7 @@ class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
         assertThat(error.errorCode()).isEqualTo("CHAT_005");
     }
 
-    // Principal null 시 에러 라우팅 실패하지 않음 — 인터셉터가 SEND 프레임 차단하므로 핸들러 미도달
+    // 유효 Principal + 비참여 방 → CHAT_005가 /user/queue/errors로 라우팅됨 (NullPointer 없음)
     @Test
     void sendWithValidPrincipal_noNullPointerFromRouting() throws Exception {
         String token = tokenIssuer.issueAccess(888888L, Role.USER, "test2@test.com");
