@@ -221,7 +221,7 @@ class CommentServiceTest {
                 .willReturn(List.of(reply));
         given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
-        List<CommentGetListResponse> result = commentService.findReplies(1L);
+        List<CommentGetListResponse> result = commentService.findReplies(1L, PostType.FREE, 1L);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).parentCommentId()).isEqualTo(1L);
@@ -233,7 +233,7 @@ class CommentServiceTest {
         ReflectionTestUtils.setField(reply, "id", 10L);
         given(commentRepository.findById(10L)).willReturn(Optional.of(reply));
 
-        assertThatThrownBy(() -> commentService.findReplies(10L))
+        assertThatThrownBy(() -> commentService.findReplies(1L, PostType.FREE, 10L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED));
@@ -246,7 +246,7 @@ class CommentServiceTest {
         Comment comment = Comment.create(1L, PostType.FREE, 1L, "원본 내용");
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
-        commentService.update(1L, 1L, new CommentUpdateRequest("수정된 내용"));
+        commentService.update(1L, 1L, PostType.FREE, 1L, new CommentUpdateRequest("수정된 내용"));
 
         assertThat(comment.getContent()).isEqualTo("수정된 내용");
     }
@@ -256,7 +256,7 @@ class CommentServiceTest {
         Comment comment = Comment.create(1L, PostType.FREE, 1L, "원본 내용");
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> commentService.update(2L, 1L, new CommentUpdateRequest("수정 시도")))
+        assertThatThrownBy(() -> commentService.update(2L, 1L, PostType.FREE, 1L, new CommentUpdateRequest("수정 시도")))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_FORBIDDEN));
@@ -268,7 +268,7 @@ class CommentServiceTest {
         comment.delete();
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> commentService.update(1L, 1L, new CommentUpdateRequest("수정 시도")))
+        assertThatThrownBy(() -> commentService.update(1L, 1L, PostType.FREE, 1L, new CommentUpdateRequest("수정 시도")))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));
@@ -278,7 +278,7 @@ class CommentServiceTest {
     void 존재하지_않는_댓글_수정_404() {
         given(commentRepository.findById(99L)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> commentService.update(1L, 99L, new CommentUpdateRequest("내용")))
+        assertThatThrownBy(() -> commentService.update(1L, 1L, PostType.FREE, 99L, new CommentUpdateRequest("내용")))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
@@ -291,7 +291,7 @@ class CommentServiceTest {
         Comment comment = Comment.create(1L, PostType.FREE, 1L, "삭제될 댓글");
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
-        commentService.delete(1L, 1L);
+        commentService.delete(1L, 1L, PostType.FREE, 1L);
 
         assertThat(comment.getStatus()).isEqualTo(CommentStatus.DELETED);
     }
@@ -301,7 +301,7 @@ class CommentServiceTest {
         Comment comment = Comment.create(1L, PostType.FREE, 1L, "삭제될 댓글");
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> commentService.delete(2L, 1L))
+        assertThatThrownBy(() -> commentService.delete(2L, 1L, PostType.FREE, 1L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_FORBIDDEN));
@@ -313,7 +313,7 @@ class CommentServiceTest {
         comment.delete();
         given(commentRepository.findById(1L)).willReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> commentService.delete(1L, 1L))
+        assertThatThrownBy(() -> commentService.delete(1L, 1L, PostType.FREE, 1L))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_ALREADY_DELETED));

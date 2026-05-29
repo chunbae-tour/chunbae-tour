@@ -88,8 +88,9 @@ public class CommentService {
     }
 
     // 특정 루트 댓글의 대댓글 전체 조회 (더보기)
-    public List<CommentGetListResponse> findReplies(Long commentId) {
+    public List<CommentGetListResponse> findReplies(Long postId, PostType postType, Long commentId) {
         Comment parent = findComment(commentId);
+        validateCommentScope(parent, postId, postType);
         if (parent.getParentCommentId() != null) {
             throw new BusinessException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
         }
@@ -107,8 +108,9 @@ public class CommentService {
     }
 
     @Transactional
-    public void update(Long accountId, Long commentId, CommentUpdateRequest request) {
+    public void update(Long accountId, Long postId, PostType postType, Long commentId, CommentUpdateRequest request) {
         Comment comment = findComment(commentId);
+        validateCommentScope(comment, postId, postType);
         if (comment.getStatus() == CommentStatus.DELETED) {
             throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
         }
@@ -119,8 +121,9 @@ public class CommentService {
     }
 
     @Transactional
-    public void delete(Long accountId, Long commentId) {
+    public void delete(Long accountId, Long postId, PostType postType, Long commentId) {
         Comment comment = findComment(commentId);
+        validateCommentScope(comment, postId, postType);
         if (!comment.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.COMMENT_FORBIDDEN);
         }
@@ -128,6 +131,13 @@ public class CommentService {
             throw new BusinessException(ErrorCode.COMMENT_ALREADY_DELETED);
         }
         comment.delete();
+    }
+
+    // URL 경로의 postId·postType과 댓글 실제 소속 불일치 차단 — 크로스 게시글 접근 방지
+    private void validateCommentScope(Comment comment, Long postId, PostType postType) {
+        if (!comment.getPostId().equals(postId) || comment.getPostType() != postType) {
+            throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
+        }
     }
 
     private Account findAccount(Long accountId) {

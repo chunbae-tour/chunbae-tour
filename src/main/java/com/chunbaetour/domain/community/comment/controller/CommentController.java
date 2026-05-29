@@ -62,7 +62,7 @@ public class CommentController {
             @PathVariable String postType,
             @PathVariable Long postId,
             @PathVariable Long commentId) {
-        return ApiResponse.success(commentService.findReplies(commentId));
+        return ApiResponse.success(commentService.findReplies(postId, PostType.from(postType), commentId));
     }
 
     @PatchMapping("/{commentId}")
@@ -72,7 +72,7 @@ public class CommentController {
             @PathVariable Long postId,
             @PathVariable Long commentId,
             @Valid @RequestBody CommentUpdateRequest request) {
-        commentService.update(accountId, commentId, request);
+        commentService.update(accountId, postId, PostType.from(postType), commentId, request);
         return ApiResponse.success();
     }
 
@@ -83,6 +83,6 @@ public class CommentController {
             @PathVariable String postType,
             @PathVariable Long postId,
             @PathVariable Long commentId) {
-        commentService.delete(accountId, commentId);
+        commentService.delete(accountId, postId, PostType.from(postType), commentId);
     }
 }
