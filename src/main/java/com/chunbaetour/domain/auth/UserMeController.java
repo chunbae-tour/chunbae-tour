@@ -11,6 +11,8 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Set;
@@ -55,6 +57,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@link com.chunbaetour.domain.auth.MultiRoleAuthIntegrationTest}가 test scope의
  * {@code TestAuthFixtureController}를 사용해 커버. 시드 데이터 의존 없이 SecurityConfig 매핑만 검증.
  */
+@Tag(name = "내 정보 (USER)", description = "본인 프로필 조회·수정·탈퇴, 찜 목록 (/api/v1/users/me/**)")
 @RestController
 @RequestMapping("/api/v1/users/me")
 @RequiredArgsConstructor
@@ -78,6 +81,7 @@ public class UserMeController {
      * @param userId SecurityContext에 저장된 본인 ID (JwtAuthenticationFilter가 채움)
      * @return 본인 마이페이지 정보 (민감 필드 제외)
      */
+    @Operation(summary = "내 프로필 조회")
     @GetMapping
     public ApiResponse<UserMeResponse> getMe(@AuthenticationPrincipal Long userId) {
         // SecurityConfig hasRole(USER)로 보호되므로 정상 흐름에서는 null이 도달할 수 없지만,
@@ -97,6 +101,7 @@ public class UserMeController {
      * @param request partial update 요청 (모든 필드 optional)
      * @return 갱신 후 사용자 정보 (GET /me와 동일 포맷)
      */
+    @Operation(summary = "내 프로필 수정")
     @PatchMapping
     public ApiResponse<UserMeResponse> updateMe(
             @AuthenticationPrincipal Long userId,
@@ -114,6 +119,7 @@ public class UserMeController {
      * @param userId SecurityContext에 저장된 본인 ID
      * @return 프로필 + wallet 통합 응답
      */
+    @Operation(summary = "마이페이지 홈")
     @GetMapping("/home")
     public ApiResponse<UserMeHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
         requireAuthenticated(userId);
@@ -142,6 +148,7 @@ public class UserMeController {
      * @param pageable {@code ?page=0&size=20} 파라미터 — Spring Data Pageable 자동 바인딩
      * @return 찜한 관광지 페이지 (UserLikedPlaceResponse 페이징)
      */
+    @Operation(summary = "내 찜 목록 조회")
     @GetMapping("/likes")
     public ApiResponse<Page<UserLikedPlaceResponse>> getLikedPlaces(
             @AuthenticationPrincipal Long userId,
@@ -188,6 +195,7 @@ public class UserMeController {
      * @param request 인증 필터가 채운 {@link AccessClaims}를 attribute에서 꺼내기 위해 받음 (JWT 재파싱 회피)
      * @return 204 No Content + Set-Cookie 만료 헤더
      */
+    @Operation(summary = "회원 탈퇴")
     @DeleteMapping
     public ResponseEntity<Void> deleteMe(
             @AuthenticationPrincipal Long userId,

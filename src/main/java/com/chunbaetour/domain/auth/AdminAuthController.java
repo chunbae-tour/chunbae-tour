@@ -5,6 +5,8 @@ import com.chunbaetour.domain.auth.dto.LoginResponse;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>reissue/logout은 {@link AuthTokenController}의 {@code /api/v1/auth/**} 공통 endpoint를 사용.
  */
+@Tag(name = "ADMIN 인증", description = "관리자 로그인 (POST /api/v1/admin/auth/**)")
 @RestController
 @RequestMapping("/api/v1/admin/auth")
 @RequiredArgsConstructor
@@ -41,6 +44,7 @@ public class AdminAuthController {
      *
      * <p>{@code requiredRole=ADMIN} 고정 전달 → USER/MERCHANT 계정은 AUTH_007.
      */
+    @Operation(summary = "관리자 로그인")
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         TokenPair pair = loginService.login(request.email(), request.password(), Role.ADMIN);

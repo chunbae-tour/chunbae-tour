@@ -4,6 +4,8 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.shop.dto.response.SettlementResponse;
 import com.chunbaetour.domain.shop.service.SettlementService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 상인 정산 컨트롤러.
  * /api/v1/merchants/** 경로는 SecurityConfig에서 MERCHANT 권한 필수로 설정됨.
  */
+@Tag(name = "정산 (MERCHANT)", description = "정산 신청·내역 조회 (/api/v1/merchants/me/shops/{shopId}/settlements/**)")
 @RestController
 @RequestMapping("/api/v1/merchants/me/shops/{shopId}/settlements")
 @RequiredArgsConstructor
@@ -30,7 +33,7 @@ public class SettlementController {
 
     private final SettlementService settlementService;
 
-    /** POST /api/v1/merchants/me/shops/{shopId}/settlements — 정산 신청 */
+    @Operation(summary = "정산 신청")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<SettlementResponse> requestSettlement(
@@ -39,7 +42,7 @@ public class SettlementController {
         return ApiResponse.success(settlementService.requestSettlement(userId, shopId));
     }
 
-    /** GET /api/v1/merchants/me/shops/{shopId}/settlements — 내 정산 내역 조회 */
+    @Operation(summary = "내 정산 내역 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<SettlementResponse>> getMySettlements(
             @AuthenticationPrincipal Long userId,

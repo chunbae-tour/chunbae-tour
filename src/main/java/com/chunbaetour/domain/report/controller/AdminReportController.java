@@ -8,6 +8,8 @@ import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.service.ReportService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 신고 조회/처리 API (KAN-91, KAN-92).
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
+@Tag(name = "신고 (관리자)", description = "신고 목록 조회·처리 (/api/v1/admin/reports/**)")
 @RestController
 @RequestMapping("/api/v1/admin/reports")
 @RequiredArgsConstructor
@@ -41,6 +44,7 @@ public class AdminReportController {
      * @param cursor Base64 인코딩된 cursor (null = 첫 페이지)
      * @param size   페이지 크기 (1~100, 기본 20)
      */
+    @Operation(summary = "신고 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<ReportResponse>> getReports(
             @RequestParam(required = false) String status,
@@ -55,6 +59,7 @@ public class AdminReportController {
      *
      * @param reportId 신고 ID
      */
+    @Operation(summary = "신고 상세 조회")
     @GetMapping("/{reportId}")
     public ApiResponse<ReportDetailResponse> getReport(@PathVariable Long reportId) {
         return ApiResponse.success(reportService.getReport(reportId));
@@ -69,6 +74,7 @@ public class AdminReportController {
      * @param adminId  인증된 관리자 계정
      * @param request  처리 요청 (action, adminNote)
      */
+    @Operation(summary = "콘텐츠 신고 처리")
     @PostMapping("/{reportId}/resolve")
     public ApiResponse<ReportResolveResponse> resolveReport(
             @PathVariable Long reportId,
@@ -87,6 +93,7 @@ public class AdminReportController {
      * @param adminId  인증된 관리자 ID
      * @param request  처리 요청 (HIDE_SHOP·REVOKE_MERCHANT·DISMISS, adminNote)
      */
+    @Operation(summary = "가게 신고 처리")
     @PostMapping("/{reportId}/resolve/merchant")
     public ApiResponse<ReportResolveResponse> resolveMerchantReport(
             @PathVariable Long reportId,

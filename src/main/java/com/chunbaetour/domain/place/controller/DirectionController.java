@@ -9,6 +9,9 @@ import com.chunbaetour.domain.place.dto.Coord;
 import com.chunbaetour.domain.place.dto.request.DirectionRequest;
 import com.chunbaetour.domain.place.dto.response.DirectionResponse;
 import com.chunbaetour.domain.place.service.DirectionService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
 
+@Tag(name = "길찾기", description = "카카오맵 길찾기 URL 생성 (/api/v1/directions)")
 @RestController
 // [MEDIUM] 이 API는 카카오맵 길찾기 링크 생성을 제공하므로 비회원(permitAll) 접근을 의도함
 @RequestMapping("/api/v1/directions")
@@ -33,6 +37,8 @@ public class DirectionController {
     // [MEDIUM] 악의적인 반복 호출에 의한 카카오 유료 API 쿼터 고갈을 막기 위한 Rate Limit 정책 (분당 10회)
     private static final RateLimitPolicy RATE_LIMIT_POLICY = new RateLimitPolicy(10, Duration.ofMinutes(1));
 
+    @SecurityRequirements
+    @Operation(summary = "카카오맵 길찾기 URL 생성")
     @GetMapping
     public ResponseEntity<ApiResponse<DirectionResponse>> getDirections(
             @Valid @ModelAttribute DirectionRequest request,

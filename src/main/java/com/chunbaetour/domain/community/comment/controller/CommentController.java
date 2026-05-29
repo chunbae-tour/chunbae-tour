@@ -7,6 +7,8 @@ import com.chunbaetour.domain.community.comment.dto.CommentGetListResponse;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.comment.service.CommentService;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 // GET(댓글 목록)은 비인증 허용 — SecurityConfig에서 GET /api/v1/community/posts/companions/**, /posts/free/** permitAll 처리
 // POST(댓글 작성)는 USER·ADMIN 인증 필요
+@Tag(name = "댓글", description = "게시글 댓글 작성·목록 조회 (/api/v1/community/posts/{postType}/{postId}/comments/**)")
 @Validated
 @RestController
 @RequestMapping("/api/v1/community/posts/{postType}/{postId}/comments")
@@ -33,6 +36,7 @@ public class CommentController {
 
     private final CommentService commentService;
 
+    @Operation(summary = "댓글 작성")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CommentCreateResponse> create(
@@ -43,6 +47,7 @@ public class CommentController {
         return ApiResponse.success(commentService.create(accountId, postId, PostType.from(postType), request));
     }
 
+    @Operation(summary = "댓글 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<CommentGetListResponse>> findAll(
             @PathVariable String postType,

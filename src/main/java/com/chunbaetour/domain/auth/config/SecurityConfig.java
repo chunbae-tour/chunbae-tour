@@ -75,6 +75,8 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Swagger UI / OpenAPI 스펙 — 개발 환경 문서 접근
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         // 인증 전에도 호출 가능해야 하는 endpoint (회원가입/로그인)
                         .requestMatchers("/api/v1/users/auth/**").permitAll()
                         .requestMatchers("/api/v1/merchants/auth/**").permitAll()

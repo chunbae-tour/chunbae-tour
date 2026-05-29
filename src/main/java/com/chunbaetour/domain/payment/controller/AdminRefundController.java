@@ -5,6 +5,8 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.payment.dto.response.RefundDetailResponse;
 import com.chunbaetour.domain.payment.service.AdminRefundService;
 import com.chunbaetour.domain.payment.dto.request.RefundRejectRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 환불 처리 API.
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
+@Tag(name = "환불 (ADMIN)", description = "환불 목록 조회·승인·거절 (/api/v1/admin/refunds/**)")
 @RestController
 @RequestMapping("/api/v1/admin/refunds")
 @RequiredArgsConstructor
@@ -29,7 +32,7 @@ public class AdminRefundController {
 
     private final AdminRefundService adminRefundService;
 
-    /** 환불 목록 조회 (cursor 페이징) */
+    @Operation(summary = "환불 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<RefundDetailResponse>> getRefunds(
             @RequestParam(required = false) String cursor,
@@ -38,13 +41,13 @@ public class AdminRefundController {
         return ApiResponse.success(adminRefundService.getRefunds(cursor, size));
     }
 
-    /** 환불 승인: 엽전 차감 → 상태 APPROVED → PG 취소 */
+    @Operation(summary = "환불 승인")
     @PatchMapping("/{refundId}/approve")
     public ApiResponse<RefundDetailResponse> approveRefund(@PathVariable Long refundId) {
         return ApiResponse.success(adminRefundService.approveRefund(refundId));
     }
 
-    /** 환불 거절: 상태 REJECTED로 변경 + 거절 사유 저장 (PG 호출 없음). body 없이 호출 시 reason=null. */
+    @Operation(summary = "환불 거절")
     @PatchMapping("/{refundId}/reject")
     public ApiResponse<RefundDetailResponse> rejectRefund(
             @PathVariable Long refundId,

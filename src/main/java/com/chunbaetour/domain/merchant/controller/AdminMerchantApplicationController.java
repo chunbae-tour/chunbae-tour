@@ -6,6 +6,8 @@ import com.chunbaetour.domain.merchant.dto.request.MerchantApplicationRejectRequ
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.service.AdminMerchantApplicationService;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 관리자 상인 신청 처리 API.
  * /api/v1/admin/** 경로는 SecurityConfig에서 ADMIN 권한 필수로 설정됨.
  */
+@Tag(name = "상인 신청 (ADMIN)", description = "상인 신청 목록 조회·승인·거절 (/api/v1/admin/merchant-applications/**)")
 @RestController
 @RequestMapping("/api/v1/admin/merchant-applications")
 @RequiredArgsConstructor
@@ -37,6 +40,7 @@ public class AdminMerchantApplicationController {
      * 거절된 신청자 재신청 시 거절 사유 확인, 승인된 상인 중복 신청 감사에 활용.
      * 기본값 PENDING.
      */
+    @Operation(summary = "상인 신청 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<MerchantApplicationDetailResponse>> getApplications(
             @RequestParam(required = false) String cursor,
@@ -46,13 +50,13 @@ public class AdminMerchantApplicationController {
         return ApiResponse.success(adminMerchantApplicationService.getApplications(cursor, size, status));
     }
 
-    /** 상인 신청 승인: application APPROVED → user MERCHANT → Shop 생성 */
+    @Operation(summary = "상인 신청 승인")
     @PatchMapping("/{applicationId}/approve")
     public ApiResponse<MerchantApplicationDetailResponse> approve(@PathVariable Long applicationId) {
         return ApiResponse.success(adminMerchantApplicationService.approve(applicationId));
     }
 
-    /** 상인 신청 거절: 거절 사유 필수 입력 — 상인이 재신청 기준 파악 가능해야 함 */
+    @Operation(summary = "상인 신청 거절")
     @PatchMapping("/{applicationId}/reject")
     public ApiResponse<MerchantApplicationDetailResponse> reject(
             @PathVariable Long applicationId,

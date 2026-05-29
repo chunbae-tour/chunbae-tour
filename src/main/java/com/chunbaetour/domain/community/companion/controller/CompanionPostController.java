@@ -9,6 +9,8 @@ import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListRespon
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
 import com.chunbaetour.domain.community.companion.service.CompanionPostService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "동행 게시판", description = "동행 모집 게시글 CRUD (/api/v1/community/posts/companions/**)")
 @RestController
 @RequestMapping("/api/v1/community/posts/companions")
 @RequiredArgsConstructor
@@ -35,6 +38,7 @@ public class CompanionPostController {
 
     private final CompanionPostService postService;
 
+    @Operation(summary = "동행 게시글 작성")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CompanionPostCreateResponse> create(
@@ -43,6 +47,7 @@ public class CompanionPostController {
         return ApiResponse.success(postService.create(accountId, request));
     }
 
+    @Operation(summary = "동행 게시글 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<CompanionPostGetListResponse>> findAll(
             @RequestParam(required = false) String region,
@@ -52,11 +57,13 @@ public class CompanionPostController {
         return ApiResponse.success(postService.findAll(region, meetingDate, cursor, size));
     }
 
+    @Operation(summary = "동행 게시글 단건 조회")
     @GetMapping("/{postId}")
     public ApiResponse<CompanionPostGetOneResponse> findById(@PathVariable Long postId) {
         return ApiResponse.success(postService.findById(postId));
     }
 
+    @Operation(summary = "동행 게시글 수정")
     @PatchMapping("/{postId}")
     public ApiResponse<CompanionPostUpdateResponse> update(
             @AuthenticationPrincipal Long accountId,
@@ -65,6 +72,7 @@ public class CompanionPostController {
         return ApiResponse.success(postService.update(accountId, postId, request));
     }
 
+    @Operation(summary = "동행 게시글 삭제")
     @DeleteMapping("/{postId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(

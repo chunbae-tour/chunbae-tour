@@ -10,6 +10,8 @@ import com.chunbaetour.domain.chat.service.ChatMessageService;
 import com.chunbaetour.domain.chat.service.ChatRoomService;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "채팅방", description = "채팅방 생성·조회·종료·퇴장·강퇴·메시지 조회 (/api/v1/chat/rooms/**)")
 @RestController
 @RequestMapping("/api/v1/chat/rooms")
 @RequiredArgsConstructor
@@ -38,7 +41,7 @@ public class ChatRoomController {
     private final ChatRoomService chatRoomService;
     private final ChatMessageService chatMessageService;
 
-    // 채팅방 생성 — 동행 게시글 작성자만 개설 가능, postId 중복 시 CHAT_ROOM_DUPLICATE
+    @Operation(summary = "채팅방 생성")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CreateChatRoomResponse> createRoom(
@@ -47,7 +50,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.createRoom(userId, request));
     }
 
-    // 내 채팅방 목록 — ACTIVE 멤버 상태 기준 커서 페이지네이션, CLOSED 방도 포함
+    @Operation(summary = "내 채팅방 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<MyChatRoomResponse>> getMyRooms(
             @AuthenticationPrincipal Long userId,
@@ -56,7 +59,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getMyRooms(userId, cursor, size));
     }
 
-    // 채팅방 상세 조회 — ACTIVE 멤버만 접근 가능, 비멤버·강퇴·퇴장은 CHAT_NOT_JOINED
+    @Operation(summary = "채팅방 상세 조회")
     @GetMapping("/{roomId}")
     public ApiResponse<ChatRoomDetailResponse> getRoomDetail(
             @AuthenticationPrincipal Long userId,
@@ -64,7 +67,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getRoomDetail(userId, roomId));
     }
 
-    // 채팅방 종료 — 방장 전용, room.status만 CLOSED로 전이, 멤버 상태 유지
+    @Operation(summary = "채팅방 종료")
     @PatchMapping("/{roomId}/close")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void closeRoom(
@@ -73,7 +76,7 @@ public class ChatRoomController {
         chatRoomService.closeRoom(userId, roomId);
     }
 
-    // 참여자 목록 — ACTIVE 멤버만 반환, 비참여자 접근 시 CHAT_NOT_JOINED
+    @Operation(summary = "채팅방 참여자 목록 조회")
     @GetMapping("/{roomId}/members")
     public ApiResponse<List<ChatRoomMemberResponse>> getMembers(
             @AuthenticationPrincipal Long userId,
@@ -81,7 +84,7 @@ public class ChatRoomController {
         return ApiResponse.success(chatRoomService.getMembers(userId, roomId));
     }
 
-    // 참여자 강퇴 — 방장 전용, OWNER_ACTIVE 대상 강퇴 불가(CHAT_017), MVP에서 방장 자기 강퇴 불가
+    @Operation(summary = "참여자 강퇴")
     @DeleteMapping("/{roomId}/members/{targetUserId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void kickMember(
@@ -91,7 +94,7 @@ public class ChatRoomController {
         chatRoomService.kickMember(userId, roomId, targetUserId);
     }
 
-    // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
+    @Operation(summary = "채팅방 퇴장")
     @DeleteMapping("/{roomId}/members/me")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void leaveRoom(
@@ -100,7 +103,7 @@ public class ChatRoomController {
         chatRoomService.leaveRoom(userId, roomId);
     }
 
-    // 메시지 내역 조회 — ACTIVE 멤버만 접근, id DESC 커서 페이징(최신순)
+    @Operation(summary = "채팅 메시지 내역 조회")
     @GetMapping("/{roomId}/messages")
     public ApiResponse<CursorPageResponse<ChatMessageResponse>> getMessages(
             @AuthenticationPrincipal Long userId,

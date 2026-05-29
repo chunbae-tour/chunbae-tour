@@ -6,6 +6,8 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.yeopjeon.dto.response.YeopjeonHistoryResponse;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import com.chunbaetour.domain.yeopjeon.service.YeopjeonHistoryService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 명시성을 위해 /yeopjeon/balance, /yeopjeon/histories로 분리 구현.
  * </p>
  */
+@Tag(name = "엽전", description = "엽전 잔액·사용 내역 조회 (/api/v1/yeopjeon/**)")
 @RestController
 @RequestMapping("/api/v1/yeopjeon")
 @RequiredArgsConstructor
@@ -34,12 +37,14 @@ public class YeopjeonController {
     private final YeopjeonHistoryService yeopjeonHistoryService;
 
     // 내 엽전 잔액 조회 (명세: GET /wallets/me) -> (yeopjeon/balance) 엔드포인트 수정
+    @Operation(summary = "엽전 잔액 조회")
     @GetMapping("/balance")
     public ApiResponse<WalletBalanceResponse> getMyWallet(@AuthenticationPrincipal Long userId) {
         return ApiResponse.success(walletService.getWallet(userId));
     }
 
     // 엽전 사용 내역 cursor 페이징 조회 (명세: GET /wallets/me/histories) -> (yeopjeon/histories) 엔드포인트 수정
+    @Operation(summary = "엽전 사용 내역 조회")
     @GetMapping("/histories")
     public ApiResponse<CursorPageResponse<YeopjeonHistoryResponse>> getHistories(
             @AuthenticationPrincipal Long userId,
