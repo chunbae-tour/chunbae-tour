@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.store.dto.request.AdminProductCreateRequest;
+import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,5 +75,61 @@ class ProductTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.PRODUCT_SOLD_OUT);
+    }
+
+    @Test
+    @DisplayName("create — 초기 status = ON_SALE, originalStock = stock")
+    void create_initialStatus_onSaleAndOriginalStockSet() {
+        AdminProductCreateRequest req = new AdminProductCreateRequest(
+                "테스트 상품", "설명", "COUPON", 2000L, 3000L, 50, null, "상인", 30, 5);
+        Product product = Product.create(req);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+        assertThat(product.getStock()).isEqualTo(50);
+        assertThat(product.getOriginalStock()).isEqualTo(50);
+        assertThat(product.getPrice()).isEqualTo(2000L);
+    }
+
+    @Test
+    @DisplayName("adminUpdate — null 필드는 기존 값 유지")
+    void adminUpdate_nullFields_keepOriginalValues() {
+        Product product = createProduct(10);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, null, null, null, null, null, null);
+        product.adminUpdate(req);
+        assertThat(product.getName()).isEqualTo("테스트 상품");
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+    }
+
+    @Test
+    @DisplayName("adminUpdate — stock 추가 + SOLD_OUT이면 ON_SALE 복구")
+    void adminUpdate_stockAdded_soldOutRecoveredToOnSale() {
+        Product product = Product.builder()
+                .name("품절상품").description("").category("X").price(1000L)
+                .originalPrice(null).stock(0).originalStock(10)
+                .merchantName(null).validityDays(null)
+                .status(ProductStatus.SOLD_OUT).maxPerPerson(1).build();
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, 20, null, null, null, null, null);
+        product.adminUpdate(req);
+        assertThat(product.getStock()).isEqualTo(20);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+    }
+
+    @Test
+    @DisplayName("adminUpdate — status 명시 시 직접 전환")
+    void adminUpdate_statusExplicit_overrides() {
+        Product product = createProduct(10);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, null, null, null, null, null, ProductStatus.HIDDEN);
+        product.adminUpdate(req);
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.HIDDEN);
+    }
+
+    @Test
+    @DisplayName("softDelete — status HIDDEN 전환")
+    void softDelete_setsStatusHidden() {
+        Product product = createProduct(10);
+        product.softDelete();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.HIDDEN);
     }
 }
