@@ -12,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -48,7 +50,7 @@ public class AdminProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.adminUpdate(request);
-        evictCache(productId);
+        evictCacheAfterCommit(productId);
         return toDetail(product);
     }
 
@@ -61,7 +63,25 @@ public class AdminProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.softDelete();
-        evictCache(productId);
+        evictCacheAfterCommit(productId);
+    }
+
+    /**
+     * 트랜잭션 커밋 후 캐시 무효화 등록.
+     * 커밋 전 삭제 시 커밋~삭제 사이 조회가 stale 값을 재적재하는 문제 방지.
+     * 트랜잭션 컨텍스트 없으면 즉시 무효화(테스트 등 비트랜잭션 호출 대응).
+     */
+    private void evictCacheAfterCommit(Long productId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictCache(productId);
+                }
+            });
+        } else {
+            evictCache(productId);
+        }
     }
 
     private void evictCache(Long productId) {

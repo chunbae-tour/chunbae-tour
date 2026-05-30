@@ -10,7 +10,7 @@ public record AdminProductCreateRequest(
         String description,
         @NotBlank @Size(max = 50) String category,
         @NotNull @Min(1) Long price,
-        Long originalPrice,
+        @Min(0) Long originalPrice,
         @NotNull @Min(0) Integer stock,
         String imageUrls,
         @Size(max = 100) String merchantName,

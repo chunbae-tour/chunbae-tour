@@ -14,7 +14,7 @@ public record AdminProductUpdateRequest(
         String description,
         @Size(min = 1, max = 50) String category,
         @Min(1) Long price,
-        Long originalPrice,
+        @Min(0) Long originalPrice,
         @Min(0) Integer stock,
         String imageUrls,
         @Size(max = 100) String merchantName,

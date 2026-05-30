@@ -89,8 +89,11 @@ public class Product extends BaseEntity {
 
     /**
      * 관리자 상품 수정 — null 필드는 기존 값 유지.
-     * stock 증가 + SOLD_OUT 상태면 ON_SALE 자동 복구.
-     * status 명시 시 직접 전환 (ON_SALE·SOLD_OUT·HIDDEN).
+     * stock 수정 시 status 자동 전환(status 미명시):
+     *   - 재고 > 0 + SOLD_OUT → ON_SALE 복구
+     *   - 재고 = 0 + ON_SALE → SOLD_OUT 전환
+     * stock 증가(재입고) 시 originalStock도 갱신 — soldCount(originalStock-stock)가 마지막 재입고 이후 판매량을 의미.
+     * status 명시 시 자동 전환 대신 명시값 우선 적용.
      */
     public void adminUpdate(AdminProductUpdateRequest req) {
         if (req.name() != null) this.name = req.name();
@@ -99,10 +102,18 @@ public class Product extends BaseEntity {
         if (req.price() != null) this.price = req.price();
         if (req.originalPrice() != null) this.originalPrice = req.originalPrice();
         if (req.stock() != null) {
+            // 재입고(stock 증가) 시 originalStock 갱신 — soldCount 기준점 리셋
+            if (req.stock() > this.stock) {
+                this.originalStock = req.stock();
+            }
             this.stock = req.stock();
-            // status 명시 없고 재고 추가됐는데 SOLD_OUT이면 ON_SALE 복구
-            if (req.status() == null && this.stock > 0 && this.status == ProductStatus.SOLD_OUT) {
-                this.status = ProductStatus.ON_SALE;
+            if (req.status() == null) {
+                // 재고 추가 + SOLD_OUT이면 ON_SALE 복구, 재고 0이면 SOLD_OUT 전환
+                if (this.stock > 0 && this.status == ProductStatus.SOLD_OUT) {
+                    this.status = ProductStatus.ON_SALE;
+                } else if (this.stock == 0 && this.status == ProductStatus.ON_SALE) {
+                    this.status = ProductStatus.SOLD_OUT;
+                }
             }
         }
         if (req.imageUrls() != null) this.imageUrls = req.imageUrls();

@@ -101,7 +101,7 @@ class ProductTest {
     }
 
     @Test
-    @DisplayName("adminUpdate — stock 추가 + SOLD_OUT이면 ON_SALE 복구")
+    @DisplayName("adminUpdate — stock 추가 + SOLD_OUT이면 ON_SALE 복구, originalStock 갱신")
     void adminUpdate_stockAdded_soldOutRecoveredToOnSale() {
         Product product = Product.builder()
                 .name("품절상품").description("").category("X").price(1000L)
@@ -112,7 +112,19 @@ class ProductTest {
                 null, null, null, null, null, 20, null, null, null, null, null);
         product.adminUpdate(req);
         assertThat(product.getStock()).isEqualTo(20);
+        assertThat(product.getOriginalStock()).isEqualTo(20); // 재입고 시 originalStock 갱신
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
+    }
+
+    @Test
+    @DisplayName("adminUpdate — stock=0으로 설정 시 ON_SALE → SOLD_OUT 자동 전환")
+    void adminUpdate_stockSetToZero_onSaleToSoldOut() {
+        Product product = createProduct(10);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, 0, null, null, null, null, null);
+        product.adminUpdate(req);
+        assertThat(product.getStock()).isZero();
+        assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD_OUT);
     }
 
     @Test
