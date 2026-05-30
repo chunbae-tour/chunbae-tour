@@ -52,6 +52,13 @@ public class ShopWallet extends BaseEntity {
         return w;
     }
 
+    /** 정산 계좌 등록/변경 — 기존 계좌 전체 교체 (PUT 의미) */
+    public void updateAccount(String bankName, String accountNumber, String accountHolder) {
+        this.bankName = bankName;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
+    }
+
     /** QR 결제 승인 시 상인 잔액 증가 */
     public void credit(long amount) {
         if (amount <= 0) {
