@@ -764,7 +764,8 @@ class QrPayServiceTest {
         given(req1.getExpiredAt()).willReturn(NOT_EXPIRED);
 
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
-        given(qrPayRequestRepository.findPendingByShopIds(List.of(SHOP_ID), QrPayStatus.PENDING))
+        given(qrPayRequestRepository.findPendingByShopIds(
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class)))
                 .willReturn(List.of(req1));
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
@@ -782,7 +783,8 @@ class QrPayServiceTest {
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
 
         assertThat(result).isEmpty();
-        then(qrPayRequestRepository).should(never()).findPendingByShopIds(any(), any());
+        then(qrPayRequestRepository).should(never())
+                .findPendingByShopIds(any(), any(), any());
     }
 
     @Test
@@ -790,11 +792,28 @@ class QrPayServiceTest {
     void getPendingQrPayments_noPendingRequests_returnsEmpty() {
         Shop shop = createActiveShop();
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
-        given(qrPayRequestRepository.findPendingByShopIds(List.of(SHOP_ID), QrPayStatus.PENDING))
+        given(qrPayRequestRepository.findPendingByShopIds(
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class)))
                 .willReturn(List.of());
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("대기중 QR 결제 목록 조회 — expiredAt > now 조건 전달하여 만료 건 DB에서 제외")
+    void getPendingQrPayments_passesNowToRepository() {
+        Shop shop = createActiveShop();
+        given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
+        given(qrPayRequestRepository.findPendingByShopIds(
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class)))
+                .willReturn(List.of());
+
+        qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
+
+        // now 파라미터가 null 아닌 값으로 전달됐는지 검증 — null이면 만료 건 필터링 안 됨
+        then(qrPayRequestRepository).should()
+                .findPendingByShopIds(eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class));
     }
 }

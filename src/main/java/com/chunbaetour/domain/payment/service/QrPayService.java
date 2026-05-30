@@ -325,8 +325,8 @@ public class QrPayService {
         if (shopIds.isEmpty()) {
             return List.of();
         }
-        // PENDING 결제 요청 조회 — 만료 임박 순 정렬
-        return qrPayRequestRepository.findPendingByShopIds(shopIds, QrPayStatus.PENDING)
+        // 미만료 PENDING 결제 요청 조회 — expiredAt > now로 스케줄러 60초 지연 구간 만료 건 제외
+        return qrPayRequestRepository.findPendingByShopIds(shopIds, QrPayStatus.PENDING, LocalDateTime.now(clock))
                 .stream()
                 .map(PendingQrPayResponse::from)
                 .toList();
