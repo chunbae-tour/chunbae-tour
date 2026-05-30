@@ -747,4 +747,54 @@ class QrPayServiceTest {
                 .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
         then(lock).should(never()).unlock(); // 락 미획득 시 unlock 호출 없음
     }
+
+    // ── getPendingQrPayments ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("대기중 QR 결제 목록 조회 — PENDING 요청 목록 반환")
+    void getPendingQrPayments_returnsPendingList() {
+        Shop shop = createActiveShop(); // SHOP_ID = 10L
+        QrPayRequest req1 = mock(QrPayRequest.class);
+        given(req1.getPayRequestId()).willReturn("req-pending-1");
+        given(req1.getShopId()).willReturn(SHOP_ID);
+        given(req1.getUserId()).willReturn(USER_ID);
+        given(req1.getAmount()).willReturn(3_000L);
+        given(req1.getMenuItems()).willReturn("[{\"menuId\":100}]");
+        given(req1.getCreatedAt()).willReturn(NOT_EXPIRED.minusMinutes(3));
+        given(req1.getExpiredAt()).willReturn(NOT_EXPIRED);
+
+        given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
+        given(qrPayRequestRepository.findPendingByShopIds(List.of(SHOP_ID), QrPayStatus.PENDING))
+                .willReturn(List.of(req1));
+
+        var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).payRequestId()).isEqualTo("req-pending-1");
+        assertThat(result.get(0).shopId()).isEqualTo(SHOP_ID);
+    }
+
+    @Test
+    @DisplayName("대기중 QR 결제 목록 조회 — 가게 없으면 빈 목록")
+    void getPendingQrPayments_noShops_returnsEmpty() {
+        given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of());
+
+        var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
+
+        assertThat(result).isEmpty();
+        then(qrPayRequestRepository).should(never()).findPendingByShopIds(any(), any());
+    }
+
+    @Test
+    @DisplayName("대기중 QR 결제 목록 조회 — PENDING 요청 없으면 빈 목록")
+    void getPendingQrPayments_noPendingRequests_returnsEmpty() {
+        Shop shop = createActiveShop();
+        given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
+        given(qrPayRequestRepository.findPendingByShopIds(List.of(SHOP_ID), QrPayStatus.PENDING))
+                .willReturn(List.of());
+
+        var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
+
+        assertThat(result).isEmpty();
+    }
 }
