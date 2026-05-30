@@ -6,10 +6,13 @@ import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -31,6 +34,7 @@ public class ShopService {
 
     private final ShopRepository shopRepository;
     private final MenuRepository menuRepository;
+    private final ShopWalletRepository shopWalletRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -94,6 +98,22 @@ public class ShopService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         return QrCodeResponse.from(shop);
+    }
+
+    /**
+     * 가게 수익 지갑 조회.
+     * 본인 가게 소유권 확인 후 ShopWallet 잔액 반환.
+     */
+    public ShopWalletResponse getShopWallet(Long userId, Long shopId) {
+        // 소유권 확인 — 타인 가게 접근 시 SHOP_001
+        shopRepository.findByIdAndUserId(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // ShopWallet 조회 — 가게 승인 시 자동 생성되므로 없으면 서버 오류
+        ShopWallet wallet = shopWalletRepository.findByShopId(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
+
+        return ShopWalletResponse.from(wallet);
     }
 
     /**
