@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.dto.request.QrPayConfirmRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayCreateRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayItemRequest;
+import com.chunbaetour.domain.payment.dto.response.PendingQrPayResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse.MenuSnapshotItem;
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
@@ -310,6 +311,25 @@ public class QrPayService {
                 lock.unlock();
             }
         }
+    }
+
+    /**
+     * 상인 대기중 QR 결제 목록 조회.
+     * 상인 소유 가게 전체의 PENDING 요청을 만료 시각 오름차순으로 반환.
+     */
+    @Transactional(readOnly = true)
+    public List<PendingQrPayResponse> getPendingQrPayments(Long merchantUserId) {
+        // 상인 소유 가게 ID 목록 조회
+        List<Long> shopIds = shopRepository.findAllByUserId(merchantUserId)
+                .stream().map(Shop::getId).toList();
+        if (shopIds.isEmpty()) {
+            return List.of();
+        }
+        // PENDING 결제 요청 조회 — 만료 임박 순 정렬
+        return qrPayRequestRepository.findPendingByShopIds(shopIds, QrPayStatus.PENDING)
+                .stream()
+                .map(PendingQrPayResponse::from)
+                .toList();
     }
 
     /**
