@@ -9,7 +9,7 @@
 
 ### 1.1 사전 확인 (배포 전)
 
-운영 prod MySQL에 접속해 아래 두 조건 모두 확인:
+운영 prod MySQL에 접속해 아래 세 조건 모두 확인:
 
 ```sql
 -- (1) 기존 schema가 정상 존재
@@ -19,9 +19,17 @@ SHOW TABLES;
 -- (2) flyway_schema_history 부재
 SHOW TABLES LIKE 'flyway_schema_history';
 -- → Empty set 이어야 함
+
+-- (3) 운영 prod collation이 V1__baseline.sql과 일치 — utf8mb4_0900_ai_ci 기준
+SHOW VARIABLES LIKE 'collation%';
+-- → collation_database / collation_server 모두 utf8mb4_0900_ai_ci 인지 확인
+-- → 다르면 V1 적용은 가능하지만 향후 V2~ 마이그레이션에서 join/sort 결과 차이 가능
+--   → 운영 책임자와 collation 통일 정책 합의 후 진행
 ```
 
 > 만약 `flyway_schema_history` 테이블이 이미 존재한다면 절대 본 배포 진행 금지. 즉시 운영 책임자와 상의 (다른 인스턴스에서 Flyway가 먼저 동작했을 가능성).
+>
+> collation이 V1과 다르면 즉시 배포 진행 금지가 아니라 후속 V2~ 작성 시 운영 prod collation을 기준으로 통일해야 한다. ADR 또는 운영 의사결정 후 본 runbook §1.1 기준값을 갱신.
 
 ### 1.2 배포 + 자동 적용
 
@@ -62,7 +70,7 @@ ORDER BY installed_rank;
 
 ### 2.1 파일명 규칙
 
-```
+```text
 src/main/resources/db/migration/V{버전}__{snake_case_설명}.sql
 ```
 
@@ -74,7 +82,7 @@ src/main/resources/db/migration/V{버전}__{snake_case_설명}.sql
 
 PR 본문에 `Flyway: V{N}__xxx.sql` 한 줄 명시. 리뷰어가 SQL 변경을 빠르게 확인 가능.
 
-```
+```markdown
 ## Flyway
 - V2__create_admin_action_logs.sql (신규)
 ```
@@ -111,17 +119,19 @@ WHERE success = 0;
 **(A) 수동 수정 후 repair**
 
 1. 실패한 SQL을 운영 DBA가 수동으로 정정 적용
-2. `DELETE FROM flyway_schema_history WHERE success = 0;` 또는 `flyway repair` 실행
-3. 앱 재배포 → 다음 마이그레이션 자동 적용
+2. **먼저 `flyway repair` 실행** — 공식 명령으로 실패 row 정리 (권장)
+3. 그래도 해결되지 않으면 fallback으로 `DELETE FROM flyway_schema_history WHERE success = 0;` 수동 실행
+4. 앱 재배포 → 다음 마이그레이션 자동 적용
 
 **(B) 부분 적용 롤백**
 
 실패 마이그레이션이 부분 적용된 경우 (예: 테이블 생성됐는데 인덱스 실패):
 
 1. 운영 DBA가 부분 적용 상태를 수동 정리 (테이블 DROP 등)
-2. `DELETE FROM flyway_schema_history WHERE success = 0;`
-3. V파일 정정 (필요 시 V{N+1}로 분리)
-4. 재배포
+2. **먼저 `flyway repair` 실행** (실패 row 정리)
+3. 그래도 해결되지 않으면 fallback으로 `DELETE FROM flyway_schema_history WHERE success = 0;` 수동 실행
+4. V파일 정정 (필요 시 V{N+1}로 분리)
+5. 재배포
 
 ### 3.2 checksum mismatch
 
@@ -182,7 +192,8 @@ spring:
 
 ## 6. 관련 문서
 
-- Admin Epic 마스터: `tmp/jira-drafts/kan-177-admin-domain/INDEX.md`
-- S00 PRD: `tmp/jira-drafts/kan-177-admin-domain/S00-flyway-setup.md`
+- Admin Epic 마스터: Jira **KAN-177**
+- S00 본 슬라이스: Jira **KAN-178** (본 runbook은 본 슬라이스 산출물)
+- S01 AdminActionLog (다음 슬라이스): Jira **KAN-179**
 - KAN-88 secrets-catalog (운영 인프라 결정 ADR 패턴): `docs/operations/secrets-catalog.md`
 - KAN-105 audit log 운영 가이드: `docs/operations/audit-log-catalog.md`
