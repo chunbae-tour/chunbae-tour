@@ -136,6 +136,7 @@ class AdminMerchantApplicationServiceTest {
         assertThat(response.status()).isEqualTo(MerchantApplicationStatus.APPROVED);
         assertThat(merchantAccount.getRole()).isEqualTo(com.chunbaetour.domain.auth.Role.MERCHANT);
         verify(shopRepository).save(any(Shop.class));
+        verify(shopWalletRepository).save(any(ShopWallet.class));
     }
 
     @Test
