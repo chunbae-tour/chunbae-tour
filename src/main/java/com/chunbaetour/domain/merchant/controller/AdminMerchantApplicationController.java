@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,20 +59,22 @@ public class AdminMerchantApplicationController {
      */
     @Operation(summary = "상인 신청 단건 상세 조회")
     @GetMapping("/{applicationId}")
-    public ApiResponse<MerchantApplicationDetailResponse> getApplication(@PathVariable Long applicationId) {
+    public ApiResponse<MerchantApplicationDetailResponse> getApplication(
+            @PathVariable @Positive Long applicationId) {
         return ApiResponse.success(adminMerchantApplicationService.getApplication(applicationId));
     }
 
     @Operation(summary = "상인 신청 승인")
     @PatchMapping("/{applicationId}/approve")
-    public ApiResponse<MerchantApplicationDetailResponse> approve(@PathVariable Long applicationId) {
+    public ApiResponse<MerchantApplicationDetailResponse> approve(
+            @PathVariable @Positive Long applicationId) {
         return ApiResponse.success(adminMerchantApplicationService.approve(applicationId));
     }
 
     @Operation(summary = "상인 신청 거절")
     @PatchMapping("/{applicationId}/reject")
     public ApiResponse<MerchantApplicationDetailResponse> reject(
-            @PathVariable Long applicationId,
+            @PathVariable @Positive Long applicationId,
             @Valid @RequestBody MerchantApplicationRejectRequest request
     ) {
         return ApiResponse.success(adminMerchantApplicationService.reject(applicationId, request.rejectReason()));

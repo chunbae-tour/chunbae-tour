@@ -1,6 +1,6 @@
 package com.chunbaetour.domain.merchant.controller;
 
-import static org.mockito.ArgumentMatchers.eq;
+import static org.hamcrest.core.IsNull.nullValue;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -96,8 +96,10 @@ class AdminMerchantApplicationControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.applicationId").value(APPLICATION_ID))
                 .andExpect(jsonPath("$.data.shopName").value("테스트가게"))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
-                // 승인 응답의 rejectReason은 null — 응답 직렬화에서 키는 존재하지만 값이 null이어야 함
-                .andExpect(jsonPath("$.data.rejectReason").doesNotExist());
+                // rejectReason은 null. MerchantApplicationDetailResponse(record)에 @JsonInclude 미부착 +
+                // 글로벌 NON_NULL 정책 미설정이라 Jackson 기본 정책으로 키는 응답에 포함되며 값만 null.
+                // 따라서 doesNotExist()가 아닌 value(null)로 검증해야 의도와 실제 응답이 일치.
+                .andExpect(jsonPath("$.data.rejectReason").value(nullValue()));
     }
 
     @Test
@@ -127,7 +129,8 @@ class AdminMerchantApplicationControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get(URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("MERCHANT_006"));
+                // ErrorCode 값 변경 회귀 가드 — 하드코딩 대신 enum 참조
+                .andExpect(jsonPath("$.code").value(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND.getCode()));
     }
 
     @Test
@@ -138,7 +141,7 @@ class AdminMerchantApplicationControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get(URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_007"));
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
 
         verifyNoInteractions(adminMerchantApplicationService);
     }
@@ -151,7 +154,7 @@ class AdminMerchantApplicationControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get(URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_007"));
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
 
         verifyNoInteractions(adminMerchantApplicationService);
     }
@@ -161,7 +164,21 @@ class AdminMerchantApplicationControllerTest extends AbstractIntegrationTest {
     void getApplication_whenUnauthenticated_returns401() throws Exception {
         mockMvc.perform(get(URL))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("AUTH_006"));
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.getCode()));
+
+        verifyNoInteractions(adminMerchantApplicationService);
+    }
+
+    @Test
+    @DisplayName("음수 applicationId → 400, service 미호출 (@Positive 가드)")
+    void getApplication_whenNegativeId_returns400() throws Exception {
+        // PathVariable @Positive 위반 → ConstraintViolationException → GlobalExceptionHandler가 400 매핑.
+        // service 단계 미진입 검증으로 입력 검증이 controller 경계에서 차단됨을 확인.
+        String token = tokenIssuer.issueAccess(ADMIN_USER_ID, Role.ADMIN, "admin@test.com");
+
+        mockMvc.perform(get("/api/v1/admin/merchant-applications/-1")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
 
         verifyNoInteractions(adminMerchantApplicationService);
     }
