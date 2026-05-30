@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.request.RefundRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
+import com.chunbaetour.domain.payment.dto.response.PaymentHistoryResponse;
 import com.chunbaetour.domain.payment.dto.response.RefundResponse;
 import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
 import com.chunbaetour.domain.payment.service.ChargeService;
@@ -40,6 +41,16 @@ public class PaymentController {
 
     private final ChargeService chargeService;
     private final RefundService refundService;
+
+    @Operation(summary = "결제(충전) 내역 조회")
+    @GetMapping("/history")
+    public ApiResponse<CursorPageResponse<PaymentHistoryResponse>> getPaymentHistory(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ApiResponse.success(chargeService.getPaymentHistory(userId, cursor, size));
+    }
 
     @Operation(summary = "엽전 충전 요청")
     @PostMapping("/charge")

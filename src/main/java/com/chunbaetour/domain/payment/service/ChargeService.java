@@ -1,14 +1,19 @@
 package com.chunbaetour.domain.payment.service;
 
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
+import com.chunbaetour.domain.payment.dto.response.PaymentHistoryResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +57,28 @@ public class ChargeService {
             idempotencyService.unmark(idempotencyKey);
             throw ex;
         }
+    }
+
+    /**
+     * 결제(충전) 내역 cursor 페이징 조회.
+     * id DESC 기준. cursor 없으면 첫 페이지.
+     */
+    @Transactional(readOnly = true)
+    public CursorPageResponse<PaymentHistoryResponse> getPaymentHistory(Long userId, String cursor, int size) {
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        // size+1 조회 — 다음 페이지 존재 여부 판별
+        List<PaymentOrder> orders = paymentOrderRepository.findByUserIdWithCursor(
+                userId, cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = orders.size() > size;
+        List<PaymentOrder> content = hasNext ? orders.subList(0, size) : orders;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
+
+        List<PaymentHistoryResponse> responses = content.stream()
+                .map(PaymentHistoryResponse::from)
+                .toList();
+
+        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
     }
 
     private void validateAmount(Long amount) {
