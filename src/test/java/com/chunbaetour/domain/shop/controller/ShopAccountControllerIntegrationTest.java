@@ -101,7 +101,8 @@ class ShopAccountControllerIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_BODY))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
     }
 
     private void deleteKeysByScan(String pattern) {
