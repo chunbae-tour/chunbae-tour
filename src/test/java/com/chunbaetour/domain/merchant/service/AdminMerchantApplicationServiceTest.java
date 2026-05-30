@@ -17,7 +17,9 @@ import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import java.math.BigDecimal;
 import java.util.List;
@@ -49,6 +51,9 @@ class AdminMerchantApplicationServiceTest {
     @Mock
     private ShopRepository shopRepository;
 
+    @Mock
+    private ShopWalletRepository shopWalletRepository;
+
     private MerchantApplication pendingApplication() {
         MerchantApplication app = MerchantApplication.create(USER_ID,
                 new com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest(
@@ -78,13 +83,19 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 100L);
+            return s;
+        });
+        given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
 
         MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
 
         assertThat(response.status()).isEqualTo(MerchantApplicationStatus.APPROVED);
         assertThat(account.getRole()).isEqualTo(com.chunbaetour.domain.auth.Role.MERCHANT);
         verify(shopRepository).save(any(Shop.class));
+        verify(shopWalletRepository).save(any(ShopWallet.class));
     }
 
     @Test
@@ -113,7 +124,12 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(merchantAccount));
-        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 100L);
+            return s;
+        });
+        given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
 
         MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
 
@@ -129,7 +145,12 @@ class AdminMerchantApplicationServiceTest {
         Account account = activeAccount();
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> inv.getArgument(0));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 100L);
+            return s;
+        });
+        given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
         adminMerchantApplicationService.approve(APPLICATION_ID); // 첫 번째 승인
 
         // 첫 번째 승인 후 application=APPROVED, account=MERCHANT — 두 번째 요청은 role 선제 검증에서 차단

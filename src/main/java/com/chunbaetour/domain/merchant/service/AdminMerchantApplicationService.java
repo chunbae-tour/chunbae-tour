@@ -12,7 +12,9 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +40,7 @@ public class AdminMerchantApplicationService {
     private final MerchantApplicationRepository applicationRepository;
     private final AccountRepository accountRepository;
     private final ShopRepository shopRepository;
+    private final ShopWalletRepository shopWalletRepository;
 
     /**
      * 상인 신청 목록 cursor 페이징 조회 (status 필터).
@@ -89,7 +92,9 @@ public class AdminMerchantApplicationService {
         application.approve();                // 신청 상태 PENDING → APPROVED
         account.promoteToMerchant();          // USER → MERCHANT 승격 (MERCHANT면 멱등 skip, ADMIN이면 예외)
         try {
-            shopRepository.save(Shop.fromApplication(application)); // 가게 엔티티 신규 생성
+            // Shop 생성 후 즉시 ShopWallet도 생성 — "Shop 존재 → ShopWallet 존재" 불변식 보장
+            Shop shop = shopRepository.save(Shop.fromApplication(application));
+            shopWalletRepository.save(ShopWallet.create(shop.getId()));
         } catch (DataIntegrityViolationException e) {
             // uk_shops_application_id 제약 위반 — 동일 신청서로 가게 2개 생성 방지 (동시 승인 race condition)
             String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();
