@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.cs.dto.response;
 
 import com.chunbaetour.domain.cs.entity.Faq;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 
 public record FaqResponse(
@@ -8,7 +9,7 @@ public record FaqResponse(
         String question,
         String answer,
         String category,
-        boolean isActive,
+        @JsonProperty("isActive") boolean isActive,
         LocalDateTime createdAt
 ) {
     public static FaqResponse from(Faq faq) {
