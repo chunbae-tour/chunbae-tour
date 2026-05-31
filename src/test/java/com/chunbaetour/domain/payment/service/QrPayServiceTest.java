@@ -106,6 +106,8 @@ class QrPayServiceTest {
     // 고정 Clock(10:00:00) 기준: NOT_EXPIRED > 10:00, EXPIRED_AT < 10:00
     private static final LocalDateTime NOT_EXPIRED = LocalDateTime.of(2026, 5, 25, 10, 30, 0);
     private static final LocalDateTime EXPIRED_AT = LocalDateTime.of(2026, 5, 25, 9, 55, 0);
+    // Clock.fixed("2026-05-25T10:00:00Z") 기준 LocalDateTime — findPendingByShopIds now 인자 정확성 검증
+    private static final LocalDateTime CLOCK_NOW = LocalDateTime.of(2026, 5, 25, 10, 0, 0);
 
     private Shop createActiveShop() {
         Shop shop = Shop.builder()
@@ -764,7 +766,7 @@ class QrPayServiceTest {
 
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
         given(qrPayRequestRepository.findPendingByShopIds(
-                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), eq(CLOCK_NOW), any()))
                 .willReturn(List.of(req1));
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
@@ -794,7 +796,7 @@ class QrPayServiceTest {
         Shop shop = createActiveShop();
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
         given(qrPayRequestRepository.findPendingByShopIds(
-                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), eq(CLOCK_NOW), any()))
                 .willReturn(List.of());
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
@@ -829,7 +831,7 @@ class QrPayServiceTest {
         org.mockito.ArgumentCaptor<List<Long>> shopIdsCaptor =
                 org.mockito.ArgumentCaptor.forClass((Class) List.class);
         given(qrPayRequestRepository.findPendingByShopIds(
-                shopIdsCaptor.capture(), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                shopIdsCaptor.capture(), eq(QrPayStatus.PENDING), eq(CLOCK_NOW), any()))
                 .willReturn(List.of());
 
         qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
@@ -866,7 +868,7 @@ class QrPayServiceTest {
 
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop1, shop2));
         given(qrPayRequestRepository.findPendingByShopIds(
-                eq(List.of(SHOP_ID, shopId2)), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                eq(List.of(SHOP_ID, shopId2)), eq(QrPayStatus.PENDING), eq(CLOCK_NOW), any()))
                 .willReturn(List.of(req1, req2));
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
@@ -902,7 +904,7 @@ class QrPayServiceTest {
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
         // 리포지토리는 ORDER BY expiredAt ASC, id ASC 보장 — 먼저 만료되는 req가 앞에 위치
         given(qrPayRequestRepository.findPendingByShopIds(
-                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), eq(CLOCK_NOW), any()))
                 .willReturn(List.of(earlier, later));
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
@@ -927,7 +929,7 @@ class QrPayServiceTest {
 
         given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
         given(qrPayRequestRepository.findPendingByShopIds(
-                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), eq(CLOCK_NOW), any()))
                 .willReturn(List.of(brokenReq));
 
         var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
