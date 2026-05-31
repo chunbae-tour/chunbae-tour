@@ -7,8 +7,8 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
-    hibernate:
-      ddl-auto: update
+    # KAN-178: ddl-auto는 base application.yml에서 validate로 통일. 로컬도 Flyway migration 의존.
+    # 로컬에서 entity 추가/변경 시 V{N+1} migration 파일 PR에 동봉 → 빈 DB testcontainers 부팅 시 자동 적용.
     show-sql: true
     properties:
       hibernate:
