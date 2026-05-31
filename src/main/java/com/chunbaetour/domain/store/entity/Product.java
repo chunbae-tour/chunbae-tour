@@ -3,8 +3,6 @@ package com.chunbaetour.domain.store.entity;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.store.dto.request.AdminProductCreateRequest;
-import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -70,45 +68,39 @@ public class Product extends BaseEntity {
     private int maxPerPerson;
 
     /** 관리자 상품 등록 팩토리 메서드 — 초기 status = ON_SALE */
-    public static Product create(AdminProductCreateRequest req) {
+    public static Product create(String name, String description, String category,
+                                 long price, Long originalPrice, int stock,
+                                 String imageUrlsJson, String merchantName,
+                                 Integer validityDays, int maxPerPerson) {
         return Product.builder()
-                .name(req.name())
-                .description(req.description())
-                .category(req.category())
-                .price(req.price())
-                .originalPrice(req.originalPrice())
-                .stock(req.stock())
-                .originalStock(req.stock())
-                .imageUrls(req.imageUrls())
-                .merchantName(req.merchantName())
-                .validityDays(req.validityDays())
-                .status(ProductStatus.ON_SALE)
-                .maxPerPerson(req.maxPerPerson())
-                .build();
+                .name(name).description(description).category(category)
+                .price(price).originalPrice(originalPrice)
+                .stock(stock).originalStock(stock)
+                .imageUrls(imageUrlsJson).merchantName(merchantName)
+                .validityDays(validityDays).status(ProductStatus.ON_SALE)
+                .maxPerPerson(maxPerPerson).build();
     }
 
     /**
      * 관리자 상품 수정 — null 필드는 기존 값 유지.
-     * stock 수정 시 status 자동 전환(status 미명시):
-     *   - 재고 > 0 + SOLD_OUT → ON_SALE 복구
-     *   - 재고 = 0 + ON_SALE → SOLD_OUT 전환
-     * stock 증가(재입고) 시 originalStock도 갱신 — soldCount(originalStock-stock)가 마지막 재입고 이후 판매량을 의미.
-     * status 명시 시 자동 전환 대신 명시값 우선 적용.
+     * stock 수정 시 originalStock도 항상 갱신 — stock 감소 정정(과다 입고 수정) 시 허위 soldCount 방지.
+     * status 미명시 시 stock 기준 자동 전환, 명시 시 명시값 우선.
+     * 불변식(invariant): status=ON_SALE + stock=0 조합 금지.
      */
-    public void adminUpdate(AdminProductUpdateRequest req) {
-        if (req.name() != null) this.name = req.name();
-        if (req.description() != null) this.description = req.description();
-        if (req.category() != null) this.category = req.category();
-        if (req.price() != null) this.price = req.price();
-        if (req.originalPrice() != null) this.originalPrice = req.originalPrice();
-        if (req.stock() != null) {
-            // 재입고(stock 증가) 시 originalStock 갱신 — soldCount 기준점 리셋
-            if (req.stock() > this.stock) {
-                this.originalStock = req.stock();
-            }
-            this.stock = req.stock();
-            if (req.status() == null) {
-                // 재고 추가 + SOLD_OUT이면 ON_SALE 복구, 재고 0이면 SOLD_OUT 전환
+    public void adminUpdate(String name, String description, String category,
+                            Long price, Long originalPrice, Integer stock,
+                            String imageUrlsJson, String merchantName,
+                            Integer validityDays, Integer maxPerPerson, ProductStatus status) {
+        if (name != null) this.name = name;
+        if (description != null) this.description = description;
+        if (category != null) this.category = category;
+        if (price != null) this.price = price;
+        if (originalPrice != null) this.originalPrice = originalPrice;
+        if (stock != null) {
+            // 증가·감소 모두 originalStock 갱신 — soldCount 기준점을 마지막 관리자 조정 시점으로 리셋
+            this.originalStock = stock;
+            this.stock = stock;
+            if (status == null) {
                 if (this.stock > 0 && this.status == ProductStatus.SOLD_OUT) {
                     this.status = ProductStatus.ON_SALE;
                 } else if (this.stock == 0 && this.status == ProductStatus.ON_SALE) {
@@ -116,11 +108,16 @@ public class Product extends BaseEntity {
                 }
             }
         }
-        if (req.imageUrls() != null) this.imageUrls = req.imageUrls();
-        if (req.merchantName() != null) this.merchantName = req.merchantName();
-        if (req.validityDays() != null) this.validityDays = req.validityDays();
-        if (req.maxPerPerson() != null) this.maxPerPerson = req.maxPerPerson();
-        if (req.status() != null) this.status = req.status();
+        if (imageUrlsJson != null) this.imageUrls = imageUrlsJson;
+        if (merchantName != null) this.merchantName = merchantName;
+        if (validityDays != null) this.validityDays = validityDays;
+        if (maxPerPerson != null) this.maxPerPerson = maxPerPerson;
+        if (status != null) this.status = status;
+
+        // invariant: ON_SALE 상태에서 재고 0 금지
+        if (this.status == ProductStatus.ON_SALE && this.stock == 0) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
     }
 
     /** 관리자 상품 삭제 — status = HIDDEN (soft delete, 공개 조회에서 제외) */

@@ -16,6 +16,7 @@ import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,13 +40,14 @@ class AdminProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        adminProductService = new AdminProductService(productRepository, redisTemplate, new ObjectMapper());
+        ProductMapper productMapper = new ProductMapper(new ObjectMapper());
+        adminProductService = new AdminProductService(productRepository, redisTemplate, productMapper);
     }
 
-    private Product createProduct(Long id, ProductStatus status) {
+    private Product createProduct(Long id, int stock, ProductStatus status) {
         Product p = Product.builder()
                 .name("테스트 상품").description("설명").category("COUPON")
-                .price(2000L).originalPrice(3000L).stock(50).originalStock(100)
+                .price(2000L).originalPrice(3000L).stock(stock).originalStock(stock)
                 .imageUrls(null).merchantName("상인").validityDays(30)
                 .status(status).maxPerPerson(5).build();
         ReflectionTestUtils.setField(p, "id", id);
@@ -74,10 +76,10 @@ class AdminProductServiceTest {
     @Test
     @DisplayName("상품 수정 — 수정 후 Redis 캐시 무효화")
     void updateProduct_success_evictsCache() {
-        Product product = createProduct(10L, ProductStatus.ON_SALE);
+        Product product = createProduct(10L, 50, ProductStatus.ON_SALE);
         AdminProductUpdateRequest req = new AdminProductUpdateRequest(
                 "수정 상품", null, null, null, null, null, null, null, null, null, null);
-        given(productRepository.findById(10L)).willReturn(Optional.of(product));
+        given(productRepository.findByIdWithLock(10L)).willReturn(Optional.of(product));
 
         ProductDetailResponse response = adminProductService.updateProduct(10L, req);
 
@@ -88,7 +90,7 @@ class AdminProductServiceTest {
     @Test
     @DisplayName("상품 수정 — 존재하지 않는 상품 → PRODUCT_NOT_FOUND")
     void updateProduct_notFound_throws() {
-        given(productRepository.findById(999L)).willReturn(Optional.empty());
+        given(productRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
         AdminProductUpdateRequest req = new AdminProductUpdateRequest(
                 null, null, null, null, null, null, null, null, null, null, null);
 
@@ -103,8 +105,8 @@ class AdminProductServiceTest {
     @Test
     @DisplayName("상품 삭제 — status HIDDEN + Redis 캐시 무효화")
     void deleteProduct_success_hiddenAndEvictsCache() {
-        Product product = createProduct(10L, ProductStatus.ON_SALE);
-        given(productRepository.findById(10L)).willReturn(Optional.of(product));
+        Product product = createProduct(10L, 50, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(10L)).willReturn(Optional.of(product));
 
         adminProductService.deleteProduct(10L);
 
@@ -115,7 +117,7 @@ class AdminProductServiceTest {
     @Test
     @DisplayName("상품 삭제 — 존재하지 않는 상품 → PRODUCT_NOT_FOUND")
     void deleteProduct_notFound_throws() {
-        given(productRepository.findById(999L)).willReturn(Optional.empty());
+        given(productRepository.findByIdWithLock(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> adminProductService.deleteProduct(999L))
                 .isInstanceOf(BusinessException.class)
@@ -123,5 +125,37 @@ class AdminProductServiceTest {
                 .isEqualTo(ErrorCode.PRODUCT_NOT_FOUND);
 
         then(redisTemplate).should(never()).delete(anyString());
+    }
+
+    @Test
+    @DisplayName("상품 수정 — stock 감소(정정) 시 originalStock도 재조정, soldCount 허위 방지 (#2)")
+    void updateProduct_stockDecrease_recalibratesOriginalStock() {
+        // originalStock=100, stock=100인 상품을 stock=50으로 감소 정정
+        Product product = createProduct(10L, 100, ProductStatus.ON_SALE);
+        ReflectionTestUtils.setField(product, "originalStock", 100);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, 50, null, null, null, null, null);
+        given(productRepository.findByIdWithLock(10L)).willReturn(Optional.of(product));
+
+        adminProductService.updateProduct(10L, req);
+
+        // originalStock도 50으로 재조정 → soldCount = 50-50 = 0 (허위 50 판매 방지)
+        assertThat(product.getOriginalStock()).isEqualTo(50);
+        assertThat(product.getStock()).isEqualTo(50);
+    }
+
+    @Test
+    @DisplayName("상품 수정 — status=ON_SALE + stock=0 조합 명시 시 INVALID_REQUEST (#3)")
+    void updateProduct_onSaleWithZeroStock_throwsInvalidRequest() {
+        Product product = createProduct(10L, 50, ProductStatus.ON_SALE);
+        // stock=0으로 줄이면서 status=ON_SALE 명시 → invariant 위반
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, 0, null, null, null, null, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(10L)).willReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> adminProductService.updateProduct(10L, req))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 }

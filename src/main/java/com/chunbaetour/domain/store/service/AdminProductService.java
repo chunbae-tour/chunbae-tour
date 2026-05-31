@@ -14,14 +14,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
-import java.util.List;
 
 /**
  * 관리자 상품 CRUD 서비스.
  * 등록/수정/삭제 후 Redis 상품 상세 캐시 무효화.
+ * 수정/삭제는 PESSIMISTIC_WRITE 락 사용 — 동시 구매 decrement와의 lost-update 방지.
  */
 @Slf4j
 @Service
@@ -32,13 +29,18 @@ public class AdminProductService {
 
     private final ProductRepository productRepository;
     private final StringRedisTemplate redisTemplate;
-    private final ObjectMapper objectMapper;
+    private final ProductMapper productMapper;
 
     /** 상품 등록 — status = ON_SALE, originalStock = stock */
     @Transactional
     public ProductDetailResponse createProduct(AdminProductCreateRequest request) {
-        Product product = productRepository.save(Product.create(request));
-        return toDetail(product);
+        String imageUrlsJson = productMapper.serializeImageUrls(request.imageUrls());
+        Product product = productRepository.save(Product.create(
+                request.name(), request.description(), request.category(),
+                request.price(), request.originalPrice(), request.stock(),
+                imageUrlsJson, request.merchantName(), request.validityDays(), request.maxPerPerson()
+        ));
+        return productMapper.toDetail(product);
     }
 
     /**
@@ -47,11 +49,18 @@ public class AdminProductService {
      */
     @Transactional
     public ProductDetailResponse updateProduct(Long productId, AdminProductUpdateRequest request) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findByIdWithLock(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-        product.adminUpdate(request);
+        String imageUrlsJson = request.imageUrls() != null
+                ? productMapper.serializeImageUrls(request.imageUrls()) : null;
+        product.adminUpdate(
+                request.name(), request.description(), request.category(),
+                request.price(), request.originalPrice(), request.stock(),
+                imageUrlsJson, request.merchantName(), request.validityDays(),
+                request.maxPerPerson(), request.status()
+        );
         evictCacheAfterCommit(productId);
-        return toDetail(product);
+        return productMapper.toDetail(product);
     }
 
     /**
@@ -60,7 +69,7 @@ public class AdminProductService {
      */
     @Transactional
     public void deleteProduct(Long productId) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findByIdWithLock(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.softDelete();
         evictCacheAfterCommit(productId);
@@ -89,28 +98,6 @@ public class AdminProductService {
             redisTemplate.delete(CACHE_KEY_PREFIX + productId);
         } catch (Exception e) {
             log.warn("[관리자 상품] 캐시 무효화 실패 (productId: {})", productId, e);
-        }
-    }
-
-    private ProductDetailResponse toDetail(Product p) {
-        return new ProductDetailResponse(
-                p.getId(), p.getName(), p.getDescription(), p.getCategory(),
-                p.getPrice(), p.getOriginalPrice(), parseImageUrls(p.getImageUrls()),
-                p.getMerchantName(), p.getStock(),
-                Math.max(0, p.getOriginalStock() - p.getStock()),
-                p.getValidityDays(), p.getStatus());
-    }
-
-    private List<String> parseImageUrls(String imageUrlsJson) {
-        if (imageUrlsJson == null || imageUrlsJson.isBlank()) return List.of();
-        try {
-            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {})
-                    .stream()
-                    .filter(url -> url != null && !url.isBlank())
-                    .toList();
-        } catch (JacksonException e) {
-            log.warn("[관리자 상품] imageUrls 파싱 실패: {}", imageUrlsJson);
-            return List.of();
         }
     }
 }

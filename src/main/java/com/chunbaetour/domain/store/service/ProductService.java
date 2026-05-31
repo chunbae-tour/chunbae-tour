@@ -19,7 +19,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -36,6 +35,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ProductMapper productMapper;
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
     private static final String CACHE_KEY_PREFIX = "product:";
@@ -122,7 +122,7 @@ public class ProductService {
 
     /** 목록 조회용 경량 DTO 변환 — 이미지는 첫 번째 URL만, soldCount = originalStock - stock */
     private ProductSummaryResponse toSummary(Product p) {
-        List<String> urls = parseImageUrls(p.getImageUrls());
+        List<String> urls = productMapper.parseImageUrls(p.getImageUrls());
         return new ProductSummaryResponse(
                 p.getId(), p.getName(), p.getCategory(), p.getPrice(), p.getOriginalPrice(),
                 urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
@@ -132,25 +132,6 @@ public class ProductService {
 
     /** 상세 조회용 풀 DTO 변환 — 이미지 전체 목록, description/validityDays/status 포함 */
     private ProductDetailResponse toDetail(Product p) {
-        return new ProductDetailResponse(
-                p.getId(), p.getName(), p.getDescription(), p.getCategory(),
-                p.getPrice(), p.getOriginalPrice(), parseImageUrls(p.getImageUrls()),
-                p.getMerchantName(), p.getStock(),
-                Math.max(0, p.getOriginalStock() - p.getStock()),
-                p.getValidityDays(), p.getStatus());
-    }
-
-    /** imageUrls JSON 배열 문자열 → List<String> 파싱 (실패 시 빈 리스트 반환) */
-    private List<String> parseImageUrls(String imageUrlsJson) {
-        if (imageUrlsJson == null || imageUrlsJson.isBlank()) return List.of();
-        try {
-            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {})
-                    .stream()
-                    .filter(url -> url != null && !url.isBlank())
-                    .toList();
-        } catch (JacksonException e) {
-            log.warn("[상품] imageUrls 파싱 실패: {}", imageUrlsJson);
-            return List.of();
-        }
+        return productMapper.toDetail(p);
     }
 }
