@@ -74,6 +74,9 @@ public class ChargeService {
      */
     public CursorPageResponse<PaymentHistoryResponse> getPaymentHistory(Long userId, String cursor, int size) {
         // 서비스 경계 방어 검증 — controller @Min/@Max 외 직접 호출 경로 보호
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         if (size < 1 || size > 100) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }

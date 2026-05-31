@@ -11,7 +11,8 @@ public record PaymentHistoryResponse(
         Long amount,
         PaymentMethod paymentMethod,
         PaymentOrderStatus status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
 ) {
     public static PaymentHistoryResponse from(PaymentOrder order) {
         return new PaymentHistoryResponse(
@@ -20,7 +21,8 @@ public record PaymentHistoryResponse(
                 order.getAmount(),
                 order.getPaymentMethod(),
                 order.getStatus(),
-                order.getCreatedAt()
+                order.getCreatedAt(),
+                order.getUpdatedAt()
         );
     }
 }
