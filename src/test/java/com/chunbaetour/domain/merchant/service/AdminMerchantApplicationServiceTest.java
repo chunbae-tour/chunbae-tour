@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -73,6 +75,15 @@ class AdminMerchantApplicationServiceTest {
         return account;
     }
 
+    /** shopRepository.save stub — 저장된 Shop에 id=100L 세팅 후 반환 */
+    private void givenShopSavedWithId() {
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 100L);
+            return s;
+        });
+    }
+
     // ===== approve =====
 
     @Test
@@ -83,11 +94,7 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
-            Shop s = inv.getArgument(0);
-            ReflectionTestUtils.setField(s, "id", 100L);
-            return s;
-        });
+        givenShopSavedWithId();
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
 
         MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
@@ -124,11 +131,7 @@ class AdminMerchantApplicationServiceTest {
 
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(merchantAccount));
-        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
-            Shop s = inv.getArgument(0);
-            ReflectionTestUtils.setField(s, "id", 100L);
-            return s;
-        });
+        givenShopSavedWithId();
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
 
         MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
@@ -146,11 +149,7 @@ class AdminMerchantApplicationServiceTest {
         Account account = activeAccount();
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
-            Shop s = inv.getArgument(0);
-            ReflectionTestUtils.setField(s, "id", 100L);
-            return s;
-        });
+        givenShopSavedWithId();
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
         adminMerchantApplicationService.approve(APPLICATION_ID); // 첫 번째 승인
 
@@ -161,6 +160,25 @@ class AdminMerchantApplicationServiceTest {
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID.getMessage());
+    }
+
+    @Test
+    @DisplayName("승인 실패: ShopWallet uk_shop_wallets_shop_id 중복 → SHOP_ALREADY_EXISTS")
+    void approve_shopWalletDuplicate_throwsShopAlreadyExists() {
+        MerchantApplication app = pendingApplication();
+        Account account = activeAccount();
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        givenShopSavedWithId();
+
+        RuntimeException cause = new RuntimeException("Duplicate entry for key 'uk_shop_wallets_shop_id'");
+        given(shopWalletRepository.save(any(ShopWallet.class)))
+                .willThrow(new DataIntegrityViolationException("constraint violation", cause));
+
+        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_ALREADY_EXISTS);
     }
 
     // ===== reject =====

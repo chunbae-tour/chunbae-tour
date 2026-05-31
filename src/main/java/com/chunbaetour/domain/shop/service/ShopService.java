@@ -109,9 +109,9 @@ public class ShopService {
         shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // ShopWallet 조회 — approve() 시 Shop과 함께 생성되므로 없으면 불변식 위반 → 5xx
+        // ShopWallet 조회 — approve() 시 Shop과 함께 생성되므로 없으면 불변식 위반
         ShopWallet wallet = shopWalletRepository.findByShopId(shopId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR));
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_WALLET_NOT_FOUND));
 
         return ShopWalletResponse.from(wallet);
     }

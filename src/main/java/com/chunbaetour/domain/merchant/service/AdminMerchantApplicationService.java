@@ -96,9 +96,13 @@ public class AdminMerchantApplicationService {
             Shop shop = shopRepository.save(Shop.fromApplication(application));
             shopWalletRepository.save(ShopWallet.create(shop.getId()));
         } catch (DataIntegrityViolationException e) {
-            // uk_shops_application_id 제약 위반 — 동일 신청서로 가게 2개 생성 방지 (동시 승인 race condition)
             String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();
+            // uk_shops_application_id: 동일 신청서로 가게 2개 생성 방지 (동시 승인 race condition)
             if (msg != null && msg.contains("uk_shops_application_id")) {
+                throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
+            }
+            // uk_shop_wallets_shop_id: 동일 가게에 ShopWallet 중복 생성 방지 (동시 승인 replay)
+            if (msg != null && msg.contains("uk_shop_wallets_shop_id")) {
                 throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
             }
             log.error("Shop 저장 중 예상치 못한 DB 제약 위반 발생. applicationId={}", application.getId(), e);

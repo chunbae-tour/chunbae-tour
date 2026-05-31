@@ -18,14 +18,14 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @Tag(name = "가게 수익 지갑 (MERCHANT)", description = "가게별 수익 지갑 잔액 조회 (/api/v1/merchants/me/shops/{shopId}/wallet)")
 @RestController
-@RequestMapping("/api/v1/merchants/me/shops/{shopId}/wallet")
+@RequestMapping("/api/v1/merchants/me/shops")
 @RequiredArgsConstructor
 public class ShopWalletController {
 
     private final ShopService shopService;
 
     @Operation(summary = "가게 수익 지갑 조회")
-    @GetMapping
+    @GetMapping("/{shopId}/wallet")
     public ApiResponse<ShopWalletResponse> getShopWallet(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long shopId) {

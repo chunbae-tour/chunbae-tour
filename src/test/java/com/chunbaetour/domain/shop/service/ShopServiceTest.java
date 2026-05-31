@@ -454,7 +454,7 @@ class ShopServiceTest {
     }
 
     @Test
-    @DisplayName("가게 수익 지갑 조회 — 지갑 없음 → INTERNAL_SERVER_ERROR (불변식 위반)")
+    @DisplayName("가게 수익 지갑 조회 — 지갑 없음 → SHOP_WALLET_NOT_FOUND")
     void getShopWallet_walletNotFound_throws() {
         Shop shop = createShop();
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
@@ -463,6 +463,6 @@ class ShopServiceTest {
         assertThatThrownBy(() -> shopService.getShopWallet(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
+                .isEqualTo(ErrorCode.SHOP_WALLET_NOT_FOUND);
     }
 }
