@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.cs.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.FaqCreateRequest;
 import com.chunbaetour.domain.cs.dto.request.FaqUpdateRequest;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
@@ -8,9 +9,11 @@ import com.chunbaetour.domain.cs.service.FaqService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,16 +29,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/admin/faqs")
 @RequiredArgsConstructor
+@Validated
 public class AdminFaqController {
 
     private final FaqService faqService;
 
-    // FAQ 전체 목록 조회 — 활성/비활성 포함, category 파라미터로 필터링 가능
+    // FAQ 목록 조회 — 활성/비활성 포함, cursor 페이징
     @Operation(summary = "FAQ 목록 조회 (ADMIN)")
     @GetMapping
-    public ApiResponse<List<FaqResponse>> getAll(
-            @RequestParam(required = false) String category) {
-        return ApiResponse.success(faqService.getAll(category));
+    public ApiResponse<CursorPageResponse<FaqResponse>> getAll(
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ApiResponse.success(faqService.getAll(cursor, size));
     }
 
     // FAQ 등록

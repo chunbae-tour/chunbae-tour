@@ -2,6 +2,8 @@ package com.chunbaetour.domain.cs.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.cs.dto.request.FaqCreateRequest;
 import com.chunbaetour.domain.cs.dto.request.FaqUpdateRequest;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
@@ -9,6 +11,7 @@ import com.chunbaetour.domain.cs.entity.Faq;
 import com.chunbaetour.domain.cs.repository.FaqRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,12 +22,19 @@ public class FaqService {
 
     private final FaqRepository faqRepository;
 
-    // ADMIN: 전체 FAQ 목록 조회 (활성/비활성 포함, 카테고리 필터 선택)
-    public List<FaqResponse> getAll(String category) {
-        List<Faq> faqs = (category != null && !category.isBlank())
-                ? faqRepository.findByCategoryOrderByIdAsc(category)
-                : faqRepository.findAll();
-        return faqs.stream().map(FaqResponse::from).toList();
+    // ADMIN: FAQ 목록 커서 페이징 (활성/비활성 포함)
+    public CursorPageResponse<FaqResponse> getAll(String cursor, int size) {
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        List<Faq> page = faqRepository.findWithCursor(cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = page.size() > size;
+        List<FaqResponse> content = page.stream()
+                .limit(size)
+                .map(FaqResponse::from)
+                .toList();
+        String nextCursor = hasNext ? CursorUtils.encode(page.get(size - 1).getId()) : null;
+
+        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
 
     // ADMIN: FAQ 등록
