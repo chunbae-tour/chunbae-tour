@@ -64,6 +64,13 @@ public class ChargeService {
     /**
      * 결제(충전) 내역 cursor 페이징 조회.
      * id DESC 기준. cursor 없으면 첫 페이지.
+     *
+     * <p>nextCursor 포맷: 마지막 항목의 id(Long)를 Base64URL 인코딩한 문자열 (padding 없음, URL-safe).
+     * 클라이언트는 받은 nextCursor 값을 그대로 ?cursor= query param으로 전달하면 되며, 별도 파싱·변환 불필요.
+     *
+     * <p>status 노출 범위: PENDING·COMPLETED·FAILED·CANCELLED·REFUNDED 전체 상태를 포함한다.
+     * FAILED·CANCELLED는 사용자가 충전 실패 원인을 확인할 수 있도록 의도적으로 노출.
+     * 내부 처리 필터링이 필요하다면 API 버전 업 또는 쿼리 파라미터로 별도 제공.
      */
     public CursorPageResponse<PaymentHistoryResponse> getPaymentHistory(Long userId, String cursor, int size) {
         // 서비스 경계 방어 검증 — controller @Min/@Max 외 직접 호출 경로 보호
