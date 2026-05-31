@@ -7,6 +7,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
@@ -39,11 +41,14 @@ import org.springframework.web.servlet.HandlerMapping;
  * {@code admin_action_logs} 테이블 자동 생성. 더미 service에 {@link LogAdminAction}을 부착해 advice가
  * 실제로 동작하는지 검증한다. MockMvc 없이 service를 직접 호출하므로 컨트롤러 매핑 부담 없음.
  *
- * <p>검증 케이스 3개
+ * <p>검증 케이스
  * <ol>
  *   <li>정상 호출 → {@code admin_action_logs} row 1건 + 필드 정확</li>
  *   <li>service 메서드가 RuntimeException → row 0건 (advice가 record skip)</li>
  *   <li>repository.save 강제 실패 → 호출자 예외 없이 흡수 + log.error 캡처</li>
+ *   <li>SecurityContext 없음 → adminUserId null → record skip → row 0건</li>
+ *   <li>readOnly 트랜잭션 → record 가드 미발행 → row 0건</li>
+ *   <li>BusinessException(4xx) 전파 → record 호출 X → row 0건</li>
  * </ol>
  */
 @SpringBootTest
@@ -122,6 +127,33 @@ class AdminActionLogAspectIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("SecurityContext 없음 → adminUserId null → record skip → row 0건")
+    void unauthenticated_context_skips_record() {
+        SecurityContextHolder.clearContext();
+
+        dummyService.suspend();
+
+        assertThat(repository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("readOnly 트랜잭션 → record 가드가 미발행 → row 0건")
+    void readOnly_transaction_skips_record() {
+        dummyService.suspendReadOnly();
+
+        assertThat(repository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("BusinessException(4xx) 전파 → advice가 record 호출 X → row 0건")
+    void business_exception_propagates_and_skips_record() {
+        assertThatThrownBy(() -> dummyService.suspendBusinessFail())
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(repository.findAll()).isEmpty();
+    }
+
+    @Test
     @DisplayName("repository.save 강제 실패 → 호출자 예외 없음 + 로그 흡수")
     void save_failure_absorbed_silently() {
         org.mockito.Mockito.doThrow(new RuntimeException("simulated DB outage"))
@@ -158,6 +190,20 @@ class AdminActionLogAspectIntegrationTest extends AbstractIntegrationTest {
         @LogAdminAction(actionType = AdminActionType.USER_SUSPEND, targetType = AdminTargetType.USER)
         public void suspendAndFail() {
             throw new RuntimeException("simulated service failure");
+        }
+
+        /** readOnly 트랜잭션 — record() 가드가 미발행 처리해야 한다. */
+        @Transactional(readOnly = true)
+        @LogAdminAction(actionType = AdminActionType.USER_SUSPEND, targetType = AdminTargetType.USER)
+        public void suspendReadOnly() {
+            // 조회성 메서드 자리 — no-op
+        }
+
+        /** 4xx 비즈니스 예외 — advice가 record 호출 전에 그대로 전파해야 한다. */
+        @Transactional
+        @LogAdminAction(actionType = AdminActionType.USER_SUSPEND, targetType = AdminTargetType.USER)
+        public void suspendBusinessFail() {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
         @Bean

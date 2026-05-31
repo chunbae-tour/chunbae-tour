@@ -130,6 +130,27 @@ class AdminActionLogServiceTest {
     }
 
     @Test
+    @DisplayName("afterCommit 경로: AdminActionLog.from IllegalArgumentException 흡수 — 호출자 예외 없음")
+    void record_afterCommit_builderFailure_isAbsorbedSilently() {
+        stubTemplateToRunLambdaImmediately();
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            // targetId=null → saveInNewTx 안 AdminActionLog.from()의 builder가 IllegalArgumentException
+            AdminActionContext invalid = new AdminActionContext(
+                    1L, AdminActionType.USER_SUSPEND, AdminTargetType.USER, null, null, null, null);
+            service.record(invalid);
+
+            // 콜백 발화 — from()이 save 전에 IAE를 던지지만 saveInNewTx catch가 흡수해 전파 0
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+
+            verify(repository, never()).save(any());
+        } finally {
+            TransactionSynchronizationManager.clear();
+        }
+    }
+
+    @Test
     @DisplayName("template 자체가 예외 던져도 흡수")
     void record_templateFailure_isAbsorbedSilently() {
         doThrow(new RuntimeException("transaction manager broken"))

@@ -59,6 +59,23 @@
 
 ---
 
+## 3.5. 필드 보강 전략
+
+AdminActionLog 1건의 필드는 출처가 다르다. S01(인프라)은 어노테이션 + path variable만 채우고, 나머지는 후속 슬라이스가 보강한다.
+
+| 필드 | 출처 | S01 채움 여부 |
+|---|---|---|
+| `actionType` / `targetType` | `@LogAdminAction` 어노테이션 속성 | ✅ |
+| `targetId` | URI path variable (`targetIdVar` 지정 시 결정적, 미지정 시 Long 후보 1개일 때만) | ✅ |
+| `reason` | request body | ❌ 항상 null — 후속 슬라이스 보강 |
+| `beforeStatus` / `afterStatus` | 액션 전후 도메인 상태 | ❌ 항상 null — 후속 슬라이스 보강 |
+
+> `reason` / `beforeStatus` / `afterStatus` 보강은 후속 슬라이스가 request body/result에서 추출하는 **별도 전략**이다. `@LogAdminAction`에 `reason()` 등의 속성을 추가하지 않는다(미사용 YAGNI).
+
+> **status를 String으로 두는 이유** — 13개 targetType마다 상태 도메인(UserStatus / ShopStatus / CertificationStatus ...)이 상이하다. 공통 enum화는 불가능하므로 의도적으로 polymorphic String을 채택한다.
+
+---
+
 ## 4. 새 actionType / targetType 추가 절차
 
 1. `AdminActionType` 또는 `AdminTargetType` enum에 항목 추가

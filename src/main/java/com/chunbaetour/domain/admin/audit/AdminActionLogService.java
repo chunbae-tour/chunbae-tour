@@ -47,20 +47,35 @@ public class AdminActionLogService {
     /**
      * 운영 액션 1건을 기록한다.
      *
-     * <p>호출자가 트랜잭션 안이면 → afterCommit 콜백 등록. 호출자가 트랜잭션 밖이면 → 즉시 save.
-     * 두 경우 모두 save 자체는 별도 REQUIRES_NEW 트랜잭션에서 실행되며, 실패 시 흡수된다.
+     * <p>분기
+     * <ul>
+     *   <li><b>쓰기 트랜잭션 안</b>(active && !readOnly) → afterCommit 콜백 등록. commit 직후 별도
+     *       REQUIRES_NEW 트랜잭션에서 save.</li>
+     *   <li><b>트랜잭션 밖</b>(!active) → 즉시 save (테스트/스케줄러 등).</li>
+     *   <li><b>readOnly 트랜잭션 안</b>(active && readOnly) → <b>미발행</b>. 쓰기 액션이 아니므로 audit을
+     *       남기지 않는다. {@code @LogAdminAction}이 readOnly 메서드에 잘못 부착된 경우의 안전 가드.</li>
+     * </ul>
+     *
+     * <p>{@code context}가 null이면 즉시 return — 이후 흡수 catch가 {@code context.adminUserId()}를 재참조해
+     * 2차 NPE를 던지는 것을 차단한다.
      */
     public void record(AdminActionContext context) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+        if (context == null) {
+            log.warn("AdminActionLog skipped — null context");
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()
+                && !TransactionSynchronizationManager.isCurrentTransactionReadOnly()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
                     saveInNewTx(context);
                 }
             });
-        } else {
+        } else if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             saveInNewTx(context);
         }
+        // readOnly 트랜잭션이면 미발행 (write 액션이 아님)
     }
 
     /**

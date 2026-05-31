@@ -26,7 +26,8 @@ import org.springframework.web.servlet.HandlerMapping;
  *       <ul>
  *         <li>adminUserId — {@link SecurityContextHolder} principal에서 Long 추출.</li>
  *         <li>actionType / targetType — 어노테이션 속성 그대로.</li>
- *         <li>targetId — URI path 변수에서 첫 번째 Long 값을 추출 (예: {@code /users/{userId}/suspensions} → userId).</li>
+ *         <li>targetId — URI path 변수에서 추출. {@code @LogAdminAction.targetIdVar} 지정 시 해당 변수를
+ *             결정적으로 조회, 미지정 시 Long 후보가 정확히 1개일 때만 채택(2개 이상은 모호 → 기록 생략).</li>
  *         <li>reason / beforeStatus / afterStatus — 본 슬라이스는 null (후속 슬라이스가 보강).</li>
  *       </ul>
  *   </li>
@@ -34,7 +35,8 @@ import org.springframework.web.servlet.HandlerMapping;
  * </ol>
  *
  * <p>본 advice는 path variable에서만 targetId를 추출한다 — admin endpoint 표준이 PathVariable로 대상 id를 받는
- * 패턴이므로(예: {@code /admin/users/{userId}}) 충분. request body 파라미터 등에서 추출은 후속 검토.
+ * 패턴이므로(예: {@code /admin/users/{userId}}) 충분. 다중 path 변수 endpoint는 {@code targetIdVar}로 대상을
+ * 명시. request body 파라미터 등에서 추출은 후속 검토.
  */
 @Slf4j
 @Aspect
@@ -51,7 +53,7 @@ public class AdminActionLogAspect {
 
         try {
             Long adminUserId = extractAdminUserId();
-            Long targetId = extractTargetIdFromPath();
+            Long targetId = extractTargetIdFromPath(logAdminAction.targetIdVar());
             if (adminUserId == null || targetId == null) {
                 // 추출 실패 = 인증/URL 패턴 비표준. 로그 기록을 강제로 시도해 잘못된 데이터를 남기는 것보다
                 // 흡수 + 운영자 후속 확인이 안전 (record 호출 자체를 생략).
@@ -99,17 +101,23 @@ public class AdminActionLogAspect {
     }
 
     /**
-     * Servlet URI path 변수에서 첫 번째 Long 타입 변수를 추출한다.
+     * Servlet URI path 변수에서 targetId를 추출한다.
      *
      * <p>Spring MVC는 path variable을 request attribute {@code HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE}에
-     * Map 형태로 저장한다. 본 메서드는 그 Map을 읽어 Long으로 parse 가능한 첫 값을 반환.
+     * Map 형태로 저장한다. 본 메서드는 그 Map을 읽어 추출한다.
      *
-     * <p>가정 — admin endpoint는 URL에 대상 id 1개를 노출하는 표준 패턴
-     * (예: {@code /admin/users/{userId}}, {@code /admin/shop-certifications/{applicationId}}).
-     * 여러 path variable이 있으면 첫 Long을 사용 — 호출자가 URL 설계 시 대상 id를 첫 변수로 두는 관례 유지 필요.
+     * <ul>
+     *   <li><b>{@code targetIdVar} 지정 시</b> — 해당 이름의 path 변수를 정확히 조회 → Long parse. 없거나
+     *       parse 실패 시 null. URL 컨벤션/Map 순회 순서에 의존하지 않는 결정적 추출.</li>
+     *   <li><b>{@code targetIdVar} 미지정("") 시</b> — Long으로 parse 가능한 후보를 탐색한다. 후보가 정확히
+     *       1개면 그 값, <b>2개 이상이면 대상 식별이 모호하므로 null</b>(기록 생략). path variable Map의 순회
+     *       순서는 비보장이므로 "첫 Long" 휴리스틱은 다중 변수 endpoint에서 깨질 수 있어 채택하지 않는다.</li>
+     * </ul>
+     *
+     * <p>변수가 여러 개인 endpoint(예: {@code /shops/{shopId}/products/{productId}})는 {@code targetIdVar}로
+     * 명시할 것 — 미지정 시 모호 판정으로 targetId=null이 되어 record가 skip된다.
      */
-    @SuppressWarnings("unchecked")
-    private Long extractTargetIdFromPath() {
+    private Long extractTargetIdFromPath(String targetIdVar) {
         ServletRequestAttributes attributes =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attributes == null) {
@@ -120,16 +128,37 @@ public class AdminActionLogAspect {
         if (!(pathVarsAttr instanceof Map<?, ?> pathVars)) {
             return null;
         }
+
+        if (!targetIdVar.isBlank()) {
+            // 결정적 경로 — 지정된 변수만 조회
+            return parseLongOrNull(pathVars.get(targetIdVar));
+        }
+
+        // 휴리스틱 경로 — Long 후보 정확히 1개일 때만 채택, 2개 이상은 모호 → null
+        Long candidate = null;
         for (Object value : pathVars.values()) {
-            if (value == null) {
+            Long parsed = parseLongOrNull(value);
+            if (parsed == null) {
                 continue;
             }
-            try {
-                return Long.parseLong(value.toString());
-            } catch (NumberFormatException ignored) {
-                // 다음 path variable 후보로 진행
+            if (candidate != null) {
+                // Long path variable 2개 이상 → 대상 식별 모호 → 기록 생략
+                return null;
             }
+            candidate = parsed;
         }
-        return null;
+        return candidate;
+    }
+
+    /** path 변수 값을 Long으로 parse. null/비Long 시 null. */
+    private Long parseLongOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }
