@@ -98,7 +98,12 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.data.redis.password", () -> "");
 
         // 테스트 격리: 스키마는 매 컨텍스트 시작 시 새로 생성. 데이터 누적 방지는 각 테스트의 @AfterEach 책임
+        // KAN-178: Flyway는 운영 prod baseline 모드(baseline-on-migrate=true + baseline-version=1)로 설정되어
+        // 빈 DB에서도 V1을 BASELINE marker로 기록만 하고 실제 SQL을 실행하지 않는다(Flyway 표준 동작).
+        // 따라서 일반 통합 테스트는 ddl-auto: create-drop으로 entity 기반 schema 자동 생성 + Flyway 비활성화 유지.
+        // Flyway 적용 자체 검증은 FlywayBaselineIntegrationTest가 별도 설정(baseline-on-migrate=false)으로 수행.
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+        registry.add("spring.flyway.enabled", () -> "false");
 
         // JWT: 테스트 전용 더미 시크릿 (32 바이트 이상 검증 통과 필요)
         registry.add("jwt.secret", () -> "test-only-secret-32-bytes-min-xxxxxx");

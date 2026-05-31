@@ -71,6 +71,24 @@ public class AdminMerchantApplicationService {
     }
 
     /**
+     * 상인 신청 단건 상세 조회 (KAN-182).
+     *
+     * <p>운영자가 승인/거절 결정 전 신청 상세 정보 확인용. 상태 전이가 없는 순수 조회라
+     * {@code @Transactional(readOnly = true)} (클래스 default 그대로) + 비관적 락 없이 단순 {@code findById}.
+     * 같은 신청을 다른 관리자가 동시 처리해도 본 GET 응답이 stale일 수는 있으나 그 자체는 사고가 아님 —
+     * 실제 상태 전이는 approve/reject가 PESSIMISTIC_WRITE로 직렬화하므로 정합성 손상 없음.
+     *
+     * @param applicationId 조회 대상 신청 ID
+     * @return 신청 상세 (목록/승인/거절과 동일 DTO 재사용 — 본 슬라이스는 필드 확장 없음)
+     * @throws BusinessException {@code MERCHANT_APPLICATION_NOT_FOUND} — 존재하지 않는 ID
+     */
+    public MerchantApplicationDetailResponse getApplication(Long applicationId) {
+        MerchantApplication application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND));
+        return MerchantApplicationDetailResponse.from(application);
+    }
+
+    /**
      * 상인 신청 승인.
      * 두 관리자가 동일 신청을 동시 승인할 경우, 두 트랜잭션 모두 PENDING을 읽고
      * 상태 가드를 통과해 Shop이 중복 생성될 수 있다. findByIdWithLock(SELECT FOR UPDATE)으로
