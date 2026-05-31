@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.payment.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ChargeService {
 
     private static final long MIN_AMOUNT = 5_000L;
@@ -63,8 +65,11 @@ public class ChargeService {
      * 결제(충전) 내역 cursor 페이징 조회.
      * id DESC 기준. cursor 없으면 첫 페이지.
      */
-    @Transactional(readOnly = true)
     public CursorPageResponse<PaymentHistoryResponse> getPaymentHistory(Long userId, String cursor, int size) {
+        // 서비스 경계 방어 검증 — controller @Min/@Max 외 직접 호출 경로 보호
+        if (size < 1 || size > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         Long cursorId = CursorUtils.decodeSafe(cursor);
         // size+1 조회 — 다음 페이지 존재 여부 판별
         List<PaymentOrder> orders = paymentOrderRepository.findByUserIdWithCursor(
