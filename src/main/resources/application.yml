@@ -18,6 +18,11 @@ spring:
         format_sql: true
     show-sql: true
 
+  servlet:
+    multipart:
+      max-file-size: 5MB    # 서비스 레벨 5MB cap과 일치 — 초과 시 MaxUploadSizeExceededException → 400
+      max-request-size: 5MB
+
 # Tomcat RemoteIpValve 활성화 — trusted internal proxy에서 전달된 X-Forwarded-For를 반영.
 # 본 설정은 최소 조치이며 완전한 Trusted Proxy allowlist 해결이 아님.
 # 운영 LB가 기본 internal-proxies 정규식(RFC 1918 사설 IP regex)에 포함되지 않으면

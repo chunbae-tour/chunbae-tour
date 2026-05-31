@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.shop.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -21,6 +23,9 @@ class ShopImageServiceTest {
 
     @Mock
     private ShopRepository shopRepository;
+
+    @Mock
+    private ShopImageStorage imageStorage;
 
     @InjectMocks
     private ShopImageService shopImageService;
@@ -50,7 +55,7 @@ class ShopImageServiceTest {
     }
 
     @Test
-    @DisplayName("이미지 업로드 — 5MB 초과 → INVALID_REQUEST")
+    @DisplayName("이미지 업로드 — 5MB 초과 → SHOP_IMAGE_FILE_TOO_LARGE")
     void uploadImage_fileTooLarge_throws() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
         MockMultipartFile largeFile = new MockMultipartFile(
@@ -59,11 +64,11 @@ class ShopImageServiceTest {
         assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, largeFile))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST);
+                .isEqualTo(ErrorCode.SHOP_IMAGE_FILE_TOO_LARGE);
     }
 
     @Test
-    @DisplayName("이미지 업로드 — 허용되지 않는 파일 타입 → INVALID_REQUEST")
+    @DisplayName("이미지 업로드 — 허용되지 않는 파일 타입 → SHOP_IMAGE_TYPE_UNSUPPORTED")
     void uploadImage_invalidContentType_throws() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
         MockMultipartFile gifFile = new MockMultipartFile(
@@ -72,11 +77,11 @@ class ShopImageServiceTest {
         assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, gifFile))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST);
+                .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
     }
 
     @Test
-    @DisplayName("이미지 업로드 — 빈 파일 → INVALID_REQUEST")
+    @DisplayName("이미지 업로드 — 빈 파일 → SHOP_IMAGE_FILE_EMPTY")
     void uploadImage_emptyFile_throws() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
         MockMultipartFile emptyFile = new MockMultipartFile(
@@ -85,13 +90,15 @@ class ShopImageServiceTest {
         assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, emptyFile))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST);
+                .isEqualTo(ErrorCode.SHOP_IMAGE_FILE_EMPTY);
     }
 
     @Test
     @DisplayName("이미지 업로드 — 유효한 파일이나 S3 미설정 → EXTERNAL_SERVICE_ERROR (stub)")
     void uploadImage_validFile_s3NotConfigured_throws() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
+        given(imageStorage.upload(eq(SHOP_ID), any()))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
 
         assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, validFile()))
                 .isInstanceOf(BusinessException.class)

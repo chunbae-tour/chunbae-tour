@@ -3,8 +3,10 @@ package com.chunbaetour.domain.shop.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopImageResponse;
 import com.chunbaetour.domain.shop.service.ShopImageService;
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -30,12 +32,13 @@ public class ShopImageController {
 
     private final ShopImageService shopImageService;
 
+    @Hidden // S3 미설정 stub — 클라이언트에 노출하지 않음. S3 통합 완료 후 제거
     @Operation(summary = "가게 사진 업로드")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ShopImageResponse> uploadImage(
             @AuthenticationPrincipal Long userId,
-            @PathVariable Long shopId,
+            @PathVariable @Positive Long shopId,
             @RequestParam("file") MultipartFile file) {
         return ApiResponse.success(shopImageService.uploadImage(userId, shopId, file));
     }
