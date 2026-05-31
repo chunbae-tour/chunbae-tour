@@ -66,7 +66,9 @@ public class ShopImageService {
             throw new BusinessException(ErrorCode.SHOP_IMAGE_FILE_TOO_LARGE);
         }
         // Content-Type은 user-supplied — magic-byte sniffing으로 보강 필요 (상단 TODO 참고)
-        if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
+        // null 방어: per-part Content-Type 헤더 없으면 getContentType()이 null 반환 → Set.contains(null) NPE 차단
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             throw new BusinessException(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
         }
     }
