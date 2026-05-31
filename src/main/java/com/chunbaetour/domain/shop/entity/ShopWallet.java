@@ -52,8 +52,13 @@ public class ShopWallet extends BaseEntity {
         return w;
     }
 
-    /** 정산 계좌 등록/변경 — 기존 계좌 전체 교체 (PUT 의미) */
+    /** 정산 계좌 등록/변경 — 기존 계좌 전체 교체 (PUT 의미). null/blank는 DTO 레이어에서 차단되지만 배치·마이그레이션 경로 방어 */
     public void updateAccount(String bankName, String accountNumber, String accountHolder) {
+        if (bankName == null || bankName.isBlank()
+                || accountNumber == null || accountNumber.isBlank()
+                || accountHolder == null || accountHolder.isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         this.bankName = bankName;
         this.accountNumber = accountNumber;
         this.accountHolder = accountHolder;

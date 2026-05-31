@@ -7,6 +7,7 @@ import com.chunbaetour.domain.shop.service.ShopAccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
@@ -33,7 +34,7 @@ public class ShopAccountController {
     @PutMapping
     public ApiResponse<ShopAccountResponse> updateAccount(
             @AuthenticationPrincipal Long userId,
-            @PathVariable Long shopId,
+            @PathVariable @Positive Long shopId,
             @Valid @RequestBody ShopAccountRequest request) {
         return ApiResponse.success(shopAccountService.updateAccount(userId, shopId, request));
     }

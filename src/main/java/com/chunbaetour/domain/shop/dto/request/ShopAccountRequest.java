@@ -10,8 +10,11 @@ import jakarta.validation.constraints.Size;
  */
 public record ShopAccountRequest(
         @NotBlank @Size(max = 50) String bankName,
-        @NotBlank @Pattern(regexp = "^[\\d\\-]+$", message = "계좌번호는 숫자와 하이픈만 허용합니다")
+        @NotBlank
+        @Pattern(regexp = "^(?=.*\\d)[\\d\\-]+$", message = "계좌번호는 숫자와 하이픈만 허용하며 숫자가 최소 1개 이상이어야 합니다")
         @Size(min = 10, max = 30) String accountNumber,
-        @NotBlank @Size(max = 50) String accountHolder
+        @NotBlank
+        @Pattern(regexp = "^[가-힣a-zA-Z ]+$", message = "예금주는 한글, 영문, 공백만 허용합니다")
+        @Size(max = 50) String accountHolder
 ) {
 }
