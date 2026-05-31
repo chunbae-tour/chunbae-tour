@@ -37,6 +37,14 @@ public class FaqService {
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
 
+    // USER: 활성 FAQ 조회 — isActive=true만 반환, category 필터 선택
+    public List<FaqResponse> getActiveFaqs(String category) {
+        List<Faq> faqs = (category != null && !category.isBlank())
+                ? faqRepository.findByCategoryAndIsActiveTrueOrderByIdAsc(category)
+                : faqRepository.findByIsActiveTrueOrderByIdAsc();
+        return faqs.stream().map(FaqResponse::from).toList();
+    }
+
     // ADMIN: FAQ 등록
     @Transactional
     public FaqResponse create(FaqCreateRequest request) {
