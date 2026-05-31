@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FaqRepository extends JpaRepository<Faq, Long> {
 
-    // CS-2 Admin: 카테고리별 전체 조회 (활성/비활성 포함)
+    // CS-2 Admin 전용 — 비활성(isActive=false) 포함. User 조회(CS-3)에 사용 금지.
     List<Faq> findByCategoryOrderByIdAsc(String category);
 
     // CS-3 User: 활성 FAQ만 카테고리별 조회

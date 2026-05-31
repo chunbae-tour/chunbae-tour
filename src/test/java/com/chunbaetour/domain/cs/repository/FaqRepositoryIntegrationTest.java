@@ -16,6 +16,8 @@ class FaqRepositoryIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private FaqRepository faqRepository;
 
+    // Faq는 현재 독립 엔티티(FK 없음) — 단순 deleteAll 가능
+    // 향후 FaqCategory 등 연관 엔티티 추가 시 FK 삭제 순서 반드시 고려할 것
     @AfterEach
     void tearDown() {
         faqRepository.deleteAll();
