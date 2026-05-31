@@ -12,11 +12,25 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      # KAN-178 Flyway 도입 후 전 환경 validate 고정. 절대 create/update 사용 금지.
+      # 신규 entity 추가/컬럼 변경 시에는 Flyway migration(V{N}__{설명}.sql)을 PR에 동봉 → entity ↔ DB 일치 검증.
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
     show-sql: true
+
+  # Flyway 마이그레이션 (KAN-178, Admin Epic KAN-177 S00).
+  # baseline-on-migrate=true + baseline-version=1: 기존 운영 prod DB는 V1 적용된 것으로 간주 (schema 변경 0).
+  #   → 첫 배포 시 Flyway가 flyway_schema_history 테이블만 신설 + V1 row 기록. 이후 V2~ 자동 적용.
+  # validate-on-migrate=true: 적용 이력과 V파일 checksum 불일치 시 부팅 차단 (의도치 않은 V파일 수정 방지).
+  # 빈 DB (local/dev/CI testcontainers)는 V1__baseline.sql이 그대로 실행됨.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 1
+    validate-on-migrate: true
 
 # Tomcat RemoteIpValve 활성화 — trusted internal proxy에서 전달된 X-Forwarded-For를 반영.
 # 본 설정은 최소 조치이며 완전한 Trusted Proxy allowlist 해결이 아님.
