@@ -162,6 +162,6 @@ class AdminFaqControllerTest extends AbstractIntegrationTest {
     }
 
     private FaqResponse buildFaqResponse(Long id) {
-        return new FaqResponse(id, "테스트 질문", "테스트 답변", "PAYMENT", true, LocalDateTime.now());
+        return new FaqResponse(id, "테스트 질문", "테스트 답변", "PAYMENT", true, LocalDateTime.now(), LocalDateTime.now());
     }
 }

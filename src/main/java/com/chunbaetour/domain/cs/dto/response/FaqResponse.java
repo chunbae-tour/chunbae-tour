@@ -10,7 +10,8 @@ public record FaqResponse(
         String answer,
         String category,
         @JsonProperty("isActive") boolean isActive,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt
 ) {
     public static FaqResponse from(Faq faq) {
         return new FaqResponse(
@@ -19,7 +20,8 @@ public record FaqResponse(
                 faq.getAnswer(),
                 faq.getCategory(),
                 faq.isActive(),
-                faq.getCreatedAt()
+                faq.getCreatedAt(),
+                faq.getUpdatedAt()
         );
     }
 }
