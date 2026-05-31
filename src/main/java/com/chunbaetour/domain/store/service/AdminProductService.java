@@ -7,6 +7,7 @@ import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -31,7 +32,10 @@ public class AdminProductService {
     private final StringRedisTemplate redisTemplate;
     private final ProductMapper productMapper;
 
-    /** 상품 등록 — status = ON_SALE, originalStock = stock */
+    /**
+     * 상품 등록 — status = ON_SALE, originalStock = stock.
+     * 응답 imageUrls는 request 원본 리스트를 직접 사용 — DB 재파싱으로 인한 응답 불일치 방지.
+     */
     @Transactional
     public ProductDetailResponse createProduct(AdminProductCreateRequest request) {
         String imageUrlsJson = productMapper.serializeImageUrls(request.imageUrls());
@@ -40,12 +44,14 @@ public class AdminProductService {
                 request.price(), request.originalPrice(), request.stock(),
                 imageUrlsJson, request.merchantName(), request.validityDays(), request.maxPerPerson()
         ));
-        return productMapper.toDetail(product);
+        List<String> imageUrls = request.imageUrls() != null ? request.imageUrls() : List.of();
+        return productMapper.toDetail(product, imageUrls);
     }
 
     /**
      * 상품 수정 — null 필드 무시, 수정 후 캐시 무효화.
      * HIDDEN 상품도 수정 가능 — 관리자가 복구 시 status = ON_SALE 명시.
+     * 응답 imageUrls: 수정 요청에 포함된 경우 원본 리스트, 미포함 시 기존 DB 값 파싱.
      */
     @Transactional
     public ProductDetailResponse updateProduct(Long productId, AdminProductUpdateRequest request) {
@@ -60,19 +66,23 @@ public class AdminProductService {
                 request.maxPerPerson(), request.status()
         );
         evictCacheAfterCommit(productId);
-        return productMapper.toDetail(product);
+        List<String> imageUrls = request.imageUrls() != null
+                ? request.imageUrls()
+                : productMapper.parseImageUrls(product.getImageUrls());
+        return productMapper.toDetail(product, imageUrls);
     }
 
     /**
      * 상품 삭제 — soft delete (status = HIDDEN).
-     * 캐시에 HIDDEN 상태로 저장되어 이후 조회 시 PRODUCT_NOT_FOUND 반환.
+     * 204 대신 200 + ProductDetailResponse(status=HIDDEN) 반환 — 실제 삭제가 아닌 숨김 처리임을 명시.
      */
     @Transactional
-    public void deleteProduct(Long productId) {
+    public ProductDetailResponse deleteProduct(Long productId) {
         Product product = productRepository.findByIdWithLock(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.softDelete();
         evictCacheAfterCommit(productId);
+        return productMapper.toDetail(product);
     }
 
     /**

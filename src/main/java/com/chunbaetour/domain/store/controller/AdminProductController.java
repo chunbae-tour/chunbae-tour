@@ -50,10 +50,9 @@ public class AdminProductController {
         return ApiResponse.success(adminProductService.updateProduct(productId, request));
     }
 
-    @Operation(summary = "상품 삭제 (HIDDEN 처리)")
+    @Operation(summary = "상품 숨김 처리 (soft delete) — status=HIDDEN으로 전환, 실제 삭제 아님")
     @DeleteMapping("/{productId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteProduct(@PathVariable @Positive Long productId) {
-        adminProductService.deleteProduct(productId);
+    public ApiResponse<ProductDetailResponse> deleteProduct(@PathVariable @Positive Long productId) {
+        return ApiResponse.success(adminProductService.deleteProduct(productId));
     }
 }

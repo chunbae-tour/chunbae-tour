@@ -21,9 +21,14 @@ public class ProductMapper {
     private final ObjectMapper objectMapper;
 
     public ProductDetailResponse toDetail(Product p) {
+        return toDetail(p, parseImageUrls(p.getImageUrls()));
+    }
+
+    /** 쓰기(create/update) 응답용 — imageUrls 재파싱 없이 원본 리스트 직접 사용해 DB↔응답 불일치 방지 */
+    public ProductDetailResponse toDetail(Product p, List<String> imageUrls) {
         return new ProductDetailResponse(
                 p.getId(), p.getName(), p.getDescription(), p.getCategory(),
-                p.getPrice(), p.getOriginalPrice(), parseImageUrls(p.getImageUrls()),
+                p.getPrice(), p.getOriginalPrice(), imageUrls,
                 p.getMerchantName(), p.getStock(),
                 Math.max(0, p.getOriginalStock() - p.getStock()),
                 p.getValidityDays(), p.getStatus());

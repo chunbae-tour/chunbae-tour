@@ -70,6 +70,8 @@ class AdminProductServiceTest {
 
         assertThat(response.name()).isEqualTo("새 상품");
         assertThat(response.status()).isEqualTo(ProductStatus.ON_SALE);
+        // create 시점 originalStock == stock → soldCount = 0 검증
+        assertThat(response.soldCount()).isEqualTo(0);
         then(productRepository).should().save(any(Product.class));
     }
 
@@ -103,14 +105,14 @@ class AdminProductServiceTest {
     }
 
     @Test
-    @DisplayName("상품 삭제 — status HIDDEN + Redis 캐시 무효화")
-    void deleteProduct_success_hiddenAndEvictsCache() {
+    @DisplayName("상품 삭제 — 200 + status=HIDDEN 응답 반환, Redis 캐시 무효화")
+    void deleteProduct_success_returnsHiddenResponseAndEvictsCache() {
         Product product = createProduct(10L, 50, ProductStatus.ON_SALE);
         given(productRepository.findByIdWithLock(10L)).willReturn(Optional.of(product));
 
-        adminProductService.deleteProduct(10L);
+        ProductDetailResponse response = adminProductService.deleteProduct(10L);
 
-        assertThat(product.getStatus()).isEqualTo(ProductStatus.HIDDEN);
+        assertThat(response.status()).isEqualTo(ProductStatus.HIDDEN);
         then(redisTemplate).should().delete("product:10");
     }
 
