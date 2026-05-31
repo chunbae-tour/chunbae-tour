@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 public record CommentCreateResponse(
         Long commentId,
+        Long parentCommentId,
         String content,
         WriterInfo writer,
         LocalDateTime createdAt
@@ -14,6 +15,7 @@ public record CommentCreateResponse(
     public static CommentCreateResponse of(Comment comment, Account author) {
         return new CommentCreateResponse(
                 comment.getId(),
+                comment.getParentCommentId(),
                 comment.getContent(),
                 WriterInfo.fromComment(author),
                 comment.getCreatedAt()

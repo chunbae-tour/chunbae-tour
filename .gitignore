@@ -21,6 +21,9 @@ src/main/resources/application-local.yml
 src/main/resources/application-local.yaml
 src/main/resources/application-local.properties
 
+# 로컬 개발 전용 시드 파일 — 커밋 금지
+src/main/java/com/chunbaetour/domain/auth/LocalAdminInitializer.java
+
 # Gradle
 .gradle/
 build/
