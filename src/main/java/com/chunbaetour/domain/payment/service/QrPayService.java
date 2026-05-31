@@ -73,6 +73,8 @@ public class QrPayService {
     private final MessageSource messageSource;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
+    /** PENDING QR 결제 조회 LIMIT — PENDING은 실시간 승인 대상이므로 50 초과는 비정상 상황 */
+    private static final int PENDING_QR_LIMIT = 50;
     /** 분산 락 키: qr:lock:{shopId}:{userId} — 동일 사용자·가게 동시 승인 시도 직렬화 */
     private static final String QR_LOCK_KEY = "qr:lock:%d:%d";
     private static final int LOCK_WAIT_SECONDS = 3;
@@ -329,7 +331,7 @@ public class QrPayService {
         }
         // 미만료 PENDING 결제 요청 조회 — expiredAt > now로 스케줄러 60초 지연 구간 만료 건 제외
         return qrPayRequestRepository.findPendingByShopIds(
-                        shopIds, QrPayStatus.PENDING, LocalDateTime.now(clock), Pageable.ofSize(50))
+                        shopIds, QrPayStatus.PENDING, LocalDateTime.now(clock), Pageable.ofSize(PENDING_QR_LIMIT))
                 .stream()
                 .map(req -> new PendingQrPayResponse(
                         req.getPayRequestId(),
@@ -346,8 +348,10 @@ public class QrPayService {
             return objectMapper.readValue(menuItemsJson,
                     objectMapper.getTypeFactory().constructCollectionType(List.class, MenuSnapshotItem.class));
         } catch (JacksonException e) {
-            log.error("[QR 결제 대기 목록] 메뉴 스냅샷 역직렬화 실패", e);
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+            // 서버 생성 스냅샷이므로 정상 상황에서는 발생하지 않음.
+            // 스키마 변경·수동 DB 수정 등 예외 상황에서 한 건 실패가 전체 목록 500으로 번지지 않도록 빈 리스트 폴백.
+            log.warn("[QR 결제 대기 목록] 메뉴 스냅샷 역직렬화 실패 — 해당 건 menuItems 빈 리스트 처리. json={}", menuItemsJson, e);
+            return List.of();
         }
     }
 

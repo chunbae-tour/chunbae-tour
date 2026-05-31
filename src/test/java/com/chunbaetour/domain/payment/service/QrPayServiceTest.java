@@ -911,4 +911,30 @@ class QrPayServiceTest {
                 .containsExactly("req-sooner", "req-later");
         assertThat(result.get(0).expiredAt()).isBefore(result.get(1).expiredAt());
     }
+
+    @Test
+    @DisplayName("대기중 QR 결제 목록 조회 — 메뉴 스냅샷 JSON 파싱 실패 시 해당 건 menuItems 빈 리스트, 나머지 건 정상 반환")
+    void getPendingQrPayments_deserializeFails_returnsEmptyMenuItems() {
+        Shop shop = createActiveShop();
+        QrPayRequest brokenReq = mock(QrPayRequest.class);
+        given(brokenReq.getPayRequestId()).willReturn("req-broken");
+        given(brokenReq.getShopId()).willReturn(SHOP_ID);
+        given(brokenReq.getAmount()).willReturn(1_000L);
+        // 깨진 JSON — 역직렬화 실패 유도
+        given(brokenReq.getMenuItems()).willReturn("not-valid-json");
+        given(brokenReq.getCreatedAt()).willReturn(NOT_EXPIRED.minusMinutes(3));
+        given(brokenReq.getExpiredAt()).willReturn(NOT_EXPIRED);
+
+        given(shopRepository.findAllByUserId(MERCHANT_USER_ID)).willReturn(List.of(shop));
+        given(qrPayRequestRepository.findPendingByShopIds(
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.PENDING), any(LocalDateTime.class), any()))
+                .willReturn(List.of(brokenReq));
+
+        var result = qrPayService.getPendingQrPayments(MERCHANT_USER_ID);
+
+        // 전체 500이 아닌 정상 응답 — 해당 건만 menuItems 빈 리스트로 폴백
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).payRequestId()).isEqualTo("req-broken");
+        assertThat(result.get(0).menuItems()).isEmpty();
+    }
 }
