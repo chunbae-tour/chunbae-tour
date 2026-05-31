@@ -26,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +44,11 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
     // approveJoinRequest는 chatRoomMemberRepository로 방장 확인 — accountRepository.findById 호출 없음
     private static final Long OWNER_ID = 98000L;
 
+    // chat_rooms.post_id unique constraint — 테스트별 충돌 방지용 구분값 (실제 post 존재 불필요, plain column)
+    private static final Long POST_ID_APPROVE_TEST = 1L;
+    private static final Long POST_ID_DUPLICATE_TEST = 2L;
+    private static final Long POST_ID_DIFFERENT_USERS_TEST = 3L;
+
     // 동시성 테스트 범위 외 — Redis Pub/Sub 발행을 막아 MessageListenerAdapter NPE 차단
     @MockitoBean NotificationRedisPubSubService notificationRedisPubSubService;
 
@@ -58,7 +64,8 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
         cleanup();
     }
 
-    // 테스트 간 격리 — 관련 엔티티 전체 삭제 + Redisson 락 키 정리
+    // FK 삭제 순서: joinRequest → chatRoomMember → chatRoom → account
+    // joinRequest가 chatRoom FK를 가지므로 chatRoom보다 먼저 삭제해야 ConstraintViolationException 방지
     @AfterEach
     void cleanup() {
         joinRequestRepository.deleteAll();
@@ -68,11 +75,11 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
         deleteRedisKeys("chatroom:lock:*");
     }
 
-    // 동시 수락 → 정원 초과 발생하지 않음 (분산 락 + TransactionTemplate 경계 보장)
     @Test
+    @DisplayName("5개 동시 승인 요청 → 정원 초과 없이 정확히 2건만 성공")
     void concurrentApproveJoinRequest_doesNotExceedCapacity() throws Exception {
         // maxMembers=3, currentMembers=1(owner) → 2 슬롯 남음
-        ChatRoom chatRoom = ChatRoom.createWithOwner(1L, OWNER_ID, "동시성 테스트 방", null, 3);
+        ChatRoom chatRoom = ChatRoom.createWithOwner(POST_ID_APPROVE_TEST, OWNER_ID, "동시성 테스트 방", null, 3);
         chatRoomRepository.saveAndFlush(chatRoom);
         Long chatRoomId = chatRoom.getId();
 
@@ -115,7 +122,9 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
             start.countDown();
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(15, TimeUnit.SECONDS);
         } finally {
+            start.countDown(); // ready 타임아웃 시 await(start) 대기 스레드 해제
             executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
         }
 
         // join() 결과를 Boolean으로 먼저 추출 — 예외 완료 future가 있을 경우 filter 도중 throw 방지
@@ -126,6 +135,7 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
         assertThat(successCount).isEqualTo(2);
         assertThat(updated.getCurrentMembers()).isEqualTo(3);
         assertThat(updated.getStatus()).isEqualTo(ChatRoomStatus.FULL);
+        // createWithOwner가 owner를 ChatRoomMember로 cascade 저장 → owner(1) + 승인된 멤버(2) = 3
         assertThat(chatRoomMemberRepository.findByChatRoomId(chatRoomId)).hasSize(3);
         // 실패 이유가 동시성 충돌·이미 처리됨·정원 초과 범위 내인지 검증
         assertThat(failedCodes).allSatisfy(code -> assertThat(code).isIn(
@@ -134,15 +144,15 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
                 ErrorCode.CONCURRENT_UPDATE));
     }
 
-    // 동시 중복 신청 → PENDING unique 제약으로 1건만 생성 (분산 락 직렬화 + DB 제약 이중 방어)
     @Test
+    @DisplayName("같은 사용자 5개 동시 신청 → 분산 락 + DB unique 제약으로 정확히 1건만 생성")
     void concurrentCreateJoinRequest_duplicatePending_onlyOneSucceeds() throws Exception {
         // Account 필요 — createJoinRequest가 accountRepository.findById() 호출
         Account account = accountRepository.saveAndFlush(
                 Account.registerUser("concurrent@test.com", "hashedPw", "동시테스트유저"));
         Long userId = account.getId();
 
-        ChatRoom chatRoom = ChatRoom.createWithOwner(2L, OWNER_ID, "중복 신청 테스트 방", null, 5);
+        ChatRoom chatRoom = ChatRoom.createWithOwner(POST_ID_DUPLICATE_TEST, OWNER_ID, "중복 신청 테스트 방", null, 5);
         chatRoomRepository.saveAndFlush(chatRoom);
         Long chatRoomId = chatRoom.getId();
 
@@ -174,7 +184,9 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
             start.countDown();
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(15, TimeUnit.SECONDS);
         } finally {
+            start.countDown();
             executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
         }
 
         // join() 결과를 Boolean으로 먼저 추출 — 예외 완료 future가 있을 경우 filter 도중 throw 방지
@@ -193,6 +205,7 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
     // 같은 userId 중복 신청은 DB unique 제약(pending_key)이 차단 — 서비스 락 회귀를 놓칠 수 있어 별도 검증.
     // 이 테스트는 DB 제약 없이도 서비스 락이 유효한 요청을 차단하지 않음(false-block 없음)을 검증한다.
     @Test
+    @DisplayName("서로 다른 사용자 5명 동시 신청 → DB unique 제약 없이도 서비스 락이 5건 모두 정상 처리")
     void concurrentCreateJoinRequest_differentUsers_allSucceed() throws Exception {
         // 5명 Account 저장 — createJoinRequest가 accountRepository.findById() 호출
         int threadCount = 5;
@@ -204,7 +217,7 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
         }
 
         // maxMembers=10 — 정원 여유 충분, FULL 상태 아님
-        ChatRoom chatRoom = ChatRoom.createWithOwner(3L, OWNER_ID, "다른유저 동시 신청 테스트 방", null, 10);
+        ChatRoom chatRoom = ChatRoom.createWithOwner(POST_ID_DIFFERENT_USERS_TEST, OWNER_ID, "다른유저 동시 신청 테스트 방", null, 10);
         chatRoomRepository.saveAndFlush(chatRoom);
         Long chatRoomId = chatRoom.getId();
 
@@ -236,7 +249,9 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
             start.countDown();
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(15, TimeUnit.SECONDS);
         } finally {
+            start.countDown();
             executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
         }
 
         long successCount = futures.stream().map(CompletableFuture::join).filter(Boolean::booleanValue).count();
