@@ -12,6 +12,7 @@ import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.notification.service.NotificationRedisPubSubService;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,16 +27,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * JoinRequestService 분산 락 + TransactionTemplate 트랜잭션 경계 동시성 검증.
  * lock → TX commit → unlock 순서는 단위 테스트로 검증 불가 — 실제 Redis + DB 환경 필요.
+ * NotificationRedisPubSubService는 동시성 검증 범위 외 — mock으로 Redis Pub/Sub 발행 차단.
  */
 @SpringBootTest
 class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
 
     private static final Long OWNER_ID = 98000L;
+
+    // 동시성 테스트 범위 외 — Redis Pub/Sub 발행을 막아 MessageListenerAdapter NPE 차단
+    @MockitoBean NotificationRedisPubSubService notificationRedisPubSubService;
 
     @Autowired private JoinRequestService joinRequestService;
     @Autowired private ChatRoomRepository chatRoomRepository;
