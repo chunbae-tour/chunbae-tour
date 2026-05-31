@@ -72,6 +72,10 @@ public class Product extends BaseEntity {
                                  long price, Long originalPrice, int stock,
                                  String imageUrlsJson, String merchantName,
                                  Integer validityDays, int maxPerPerson) {
+        // invariant: ON_SALE로 생성하므로 stock > 0 필수
+        if (stock <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         return Product.builder()
                 .name(name).description(description).category(category)
                 .price(price).originalPrice(originalPrice)
@@ -96,6 +100,10 @@ public class Product extends BaseEntity {
         if (category != null) this.category = category;
         if (price != null) this.price = price;
         if (originalPrice != null) this.originalPrice = originalPrice;
+        // price·originalPrice 독립 갱신 후 최종 상태 검증 — 순서 무관하게 불변식 보장
+        if (this.originalPrice != null && this.originalPrice < this.price) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         if (stock != null) {
             // 증가·감소 모두 originalStock 갱신 — soldCount 기준점을 마지막 관리자 조정 시점으로 리셋
             this.originalStock = stock;

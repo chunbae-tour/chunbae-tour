@@ -148,4 +148,30 @@ class ProductTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
+
+    @Test
+    @DisplayName("create — stock=0으로 생성 시 INVALID_REQUEST (ON_SALE 불변식)")
+    void create_zeroStock_throwsInvalidRequest() {
+        assertThatThrownBy(() ->
+                Product.create("상품", "설명", "COUPON", 2000L, null, 0, null, "상인", 30, 5))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("adminUpdate — price 인상 후 originalPrice < price 최종 상태 시 INVALID_REQUEST")
+    void adminUpdate_priceExceedsOriginalPrice_throwsInvalidRequest() {
+        // originalPrice=3000인 상품에서 price를 5000으로 인상 → originalPrice(3000) < price(5000) 위반
+        Product product = Product.builder()
+                .name("상품").description("").category("X").price(2000L)
+                .originalPrice(3000L).stock(10).originalStock(10)
+                .merchantName(null).validityDays(null)
+                .status(ProductStatus.ON_SALE).maxPerPerson(1).build();
+        assertThatThrownBy(() ->
+                product.adminUpdate(null, null, null, 5000L, null, null, null, null, null, null, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
 }

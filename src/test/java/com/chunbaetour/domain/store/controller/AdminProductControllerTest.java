@@ -83,11 +83,19 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("비인증 접근 시 401 Unauthorized")
+    @DisplayName("비인증 접근 시 401 Unauthorized — POST/PATCH/DELETE 모두 검증")
     void allEndpoints_withoutToken_returns401() throws Exception {
         mockMvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(patch(ENDPOINT + "/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(delete(ENDPOINT + "/1"))
                 .andExpect(status().isUnauthorized());
     }
 

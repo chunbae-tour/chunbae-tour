@@ -37,8 +37,9 @@ public class ProductMapper {
     public List<String> parseImageUrls(String imageUrlsJson) {
         if (imageUrlsJson == null || imageUrlsJson.isBlank()) return List.of();
         try {
-            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {})
-                    .stream()
+            List<String> parsed = objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {});
+            if (parsed == null) return List.of();
+            return parsed.stream()
                     .filter(url -> url != null && !url.isBlank())
                     .toList();
         } catch (JacksonException e) {
