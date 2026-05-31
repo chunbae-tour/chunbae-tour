@@ -37,12 +37,18 @@ public class FaqService {
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
 
-    // USER: 활성 FAQ 조회 — isActive=true만 반환, category 필터 선택
-    public List<FaqResponse> getActiveFaqs(String category) {
-        List<Faq> faqs = (category != null && !category.isBlank())
-                ? faqRepository.findByCategoryAndIsActiveTrueOrderByIdAsc(category)
-                : faqRepository.findByIsActiveTrueOrderByIdAsc();
-        return faqs.stream().map(FaqResponse::from).toList();
+    // USER: 활성 FAQ 커서 페이징 — isActive=true만 반환, category 필터 선택
+    public CursorPageResponse<FaqResponse> getActiveFaqs(String cursor, int size, String category) {
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        List<Faq> page = (category != null && !category.isBlank())
+                ? faqRepository.findByCategoryAndIsActiveTrueWithCursor(category, cursorId, PageRequest.of(0, size + 1))
+                : faqRepository.findByIsActiveTrueWithCursor(cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = page.size() > size;
+        List<FaqResponse> content = page.stream().limit(size).map(FaqResponse::from).toList();
+        String nextCursor = hasNext ? CursorUtils.encode(page.get(size - 1).getId()) : null;
+
+        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
 
     // ADMIN: FAQ 등록

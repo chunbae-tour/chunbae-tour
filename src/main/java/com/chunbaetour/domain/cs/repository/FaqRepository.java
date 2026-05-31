@@ -13,9 +13,11 @@ public interface FaqRepository extends JpaRepository<Faq, Long> {
     @Query("SELECT f FROM Faq f WHERE (:cursorId IS NULL OR f.id > :cursorId) ORDER BY f.id ASC")
     List<Faq> findWithCursor(@Param("cursorId") Long cursorId, Pageable pageable);
 
-    // CS-3 User: 활성 FAQ만 카테고리별 조회
-    List<Faq> findByCategoryAndIsActiveTrueOrderByIdAsc(String category);
+    // CS-3 User: 전체 활성 FAQ 커서 페이징
+    @Query("SELECT f FROM Faq f WHERE f.isActive = true AND (:cursorId IS NULL OR f.id > :cursorId) ORDER BY f.id ASC")
+    List<Faq> findByIsActiveTrueWithCursor(@Param("cursorId") Long cursorId, Pageable pageable);
 
-    // CS-3 User: 전체 활성 FAQ 조회
-    List<Faq> findByIsActiveTrueOrderByIdAsc();
+    // CS-3 User: 카테고리별 활성 FAQ 커서 페이징
+    @Query("SELECT f FROM Faq f WHERE f.isActive = true AND f.category = :category AND (:cursorId IS NULL OR f.id > :cursorId) ORDER BY f.id ASC")
+    List<Faq> findByCategoryAndIsActiveTrueWithCursor(@Param("category") String category, @Param("cursorId") Long cursorId, Pageable pageable);
 }
