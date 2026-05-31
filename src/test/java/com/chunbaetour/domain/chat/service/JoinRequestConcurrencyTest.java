@@ -40,6 +40,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @SpringBootTest
 class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
 
+    // approveJoinRequest는 chatRoomMemberRepository로 방장 확인 — accountRepository.findById 호출 없음
     private static final Long OWNER_ID = 98000L;
 
     // 동시성 테스트 범위 외 — Redis Pub/Sub 발행을 막아 MessageListenerAdapter NPE 차단
@@ -105,6 +106,8 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
                     } catch (BusinessException e) {
                         failedCodes.add(e.getErrorCode());
                         return false;
+                    } catch (Exception e) {
+                        return false;
                     }
                 }, executor));
             }
@@ -161,6 +164,8 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
                         return true;
                     } catch (BusinessException e) {
                         failedCodes.add(e.getErrorCode());
+                        return false;
+                    } catch (Exception e) {
                         return false;
                     }
                 }, executor));
@@ -221,6 +226,8 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
                         return true;
                     } catch (BusinessException e) {
                         failedCodes.add(e.getErrorCode());
+                        return false;
+                    } catch (Exception e) {
                         return false;
                     }
                 }, executor));
