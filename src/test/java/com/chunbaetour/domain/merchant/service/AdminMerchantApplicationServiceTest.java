@@ -240,4 +240,36 @@ class AdminMerchantApplicationServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.INVALID_CURSOR.getMessage());
     }
+
+    // ===== getApplication 단건 상세 조회 (KAN-182, Epic KAN-177 S13) =====
+
+    @Test
+    @DisplayName("단건 조회 성공: applicationId로 DTO 매핑 + 모든 필드 노출")
+    void getApplication_success_returnsDto() {
+        MerchantApplication app = pendingApplication();
+        given(applicationRepository.findById(APPLICATION_ID)).willReturn(Optional.of(app));
+
+        MerchantApplicationDetailResponse response = adminMerchantApplicationService.getApplication(APPLICATION_ID);
+
+        assertThat(response.applicationId()).isEqualTo(APPLICATION_ID);
+        assertThat(response.userId()).isEqualTo(USER_ID);
+        assertThat(response.shopName()).isEqualTo("테스트가게");
+        assertThat(response.businessNumber()).isEqualTo("1234567890");
+        assertThat(response.category()).isEqualTo("한식");
+        assertThat(response.address()).isEqualTo("서울시 강남구");
+        assertThat(response.status()).isEqualTo(MerchantApplicationStatus.PENDING);
+        assertThat(response.rejectReason()).isNull();
+        // approve/reject 흐름이 PESSIMISTIC_WRITE를 쓰는 것과 달리, 본 GET은 단순 readOnly 조회 — 락 호출 없음
+        verify(applicationRepository, never()).findByIdWithLock(any());
+    }
+
+    @Test
+    @DisplayName("단건 조회 실패: 미존재 ID → MERCHANT_APPLICATION_NOT_FOUND")
+    void getApplication_notFound_throws() {
+        given(applicationRepository.findById(APPLICATION_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminMerchantApplicationService.getApplication(APPLICATION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND.getMessage());
+    }
 }
