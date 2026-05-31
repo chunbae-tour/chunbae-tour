@@ -47,6 +47,13 @@ dependencies {
 	// MySQL
 	runtimeOnly 'com.mysql:mysql-connector-j'
 
+	// Flyway 마이그레이션 도구 (KAN-178, Admin Epic KAN-177 S00).
+	// MySQL 8.x는 flyway-mysql 모듈 분리됨 (Flyway 9.x+) — flyway-core 단독으로는 MySQL Dialect 미인식.
+	// 운영 prod 적용 정책: baseline-on-migrate=true + baseline-version=1 → 기존 schema는 V1 적용된 것으로 간주.
+	// Spring Boot 4.0이 Flyway 버전 자동 관리하므로 version 명시 X.
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-mysql'
+
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.redisson:redisson:3.35.0'
