@@ -42,6 +42,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -316,6 +317,7 @@ public class QrPayService {
     /**
      * 상인 대기중 QR 결제 목록 조회.
      * 상인 소유 가게 전체의 PENDING 요청을 만료 시각 오름차순으로 반환.
+     * LIMIT 50 — 동시 PENDING이 과도하게 누적되는 비정상 상황에서 페이로드 폭발 방지.
      */
     @Transactional(readOnly = true)
     public List<PendingQrPayResponse> getPendingQrPayments(Long merchantUserId) {
@@ -326,10 +328,27 @@ public class QrPayService {
             return List.of();
         }
         // 미만료 PENDING 결제 요청 조회 — expiredAt > now로 스케줄러 60초 지연 구간 만료 건 제외
-        return qrPayRequestRepository.findPendingByShopIds(shopIds, QrPayStatus.PENDING, LocalDateTime.now(clock))
+        return qrPayRequestRepository.findPendingByShopIds(
+                        shopIds, QrPayStatus.PENDING, LocalDateTime.now(clock), Pageable.ofSize(50))
                 .stream()
-                .map(PendingQrPayResponse::from)
+                .map(req -> new PendingQrPayResponse(
+                        req.getPayRequestId(),
+                        req.getShopId(),
+                        req.getAmount(),
+                        deserializeMenuItems(req.getMenuItems()),
+                        req.getCreatedAt(),
+                        req.getExpiredAt()))
                 .toList();
+    }
+
+    private List<MenuSnapshotItem> deserializeMenuItems(String menuItemsJson) {
+        try {
+            return objectMapper.readValue(menuItemsJson,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, MenuSnapshotItem.class));
+        } catch (JacksonException e) {
+            log.error("[QR 결제 대기 목록] 메뉴 스냅샷 역직렬화 실패", e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**

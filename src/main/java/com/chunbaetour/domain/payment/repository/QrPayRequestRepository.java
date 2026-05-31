@@ -47,11 +47,12 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
     @Query("""
             SELECT q FROM QrPayRequest q
             WHERE q.shopId IN :shopIds AND q.status = :status AND q.expiredAt > :now
-            ORDER BY q.expiredAt ASC
+            ORDER BY q.expiredAt ASC, q.id ASC
             """)
     List<QrPayRequest> findPendingByShopIds(@Param("shopIds") List<Long> shopIds,
                                             @Param("status") QrPayStatus status,
-                                            @Param("now") LocalDateTime now);
+                                            @Param("now") LocalDateTime now,
+                                            Pageable pageable);
 
     /** 상인 홈 대시보드 — 오늘 완료된 QR 결제 합계 */
     @Query("""
