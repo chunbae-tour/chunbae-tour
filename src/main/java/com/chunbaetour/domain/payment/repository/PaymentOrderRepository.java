@@ -16,6 +16,10 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
     @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
     Optional<PaymentOrder> findByOrderUid(@Param("orderUid") String orderUid);
 
+    /** 멱등성 키로 PENDING 주문 조회 — 재시도 시 기존 주문 재활용 */
+    @Query("SELECT p FROM PaymentOrder p WHERE p.idempotencyKey = :idempotencyKey AND p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING")
+    Optional<PaymentOrder> findPendingByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+
     /** 사용자 결제(충전) 내역 cursor 페이징 조회 — id DESC, cursorId IS NULL이면 첫 페이지 */
     @Query("""
             SELECT p FROM PaymentOrder p

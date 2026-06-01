@@ -59,6 +59,10 @@ dependencies {
 	// Spring Boot 4.0이 Flyway 버전 자동 관리하므로 version 명시 X.
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-mysql'
+	// Spring Boot 4에서 Flyway auto-configuration이 spring-boot-flyway 모듈로 분리됨.
+	// flyway-core/flyway-mysql만으로는 부팅 시 migration이 자동 실행되지 않음.
+	// ddl-auto=validate 환경에서 Flyway가 Hibernate 검증 전에 먼저 실행되어야 하므로 필수.
+	implementation 'org.springframework.boot:spring-boot-flyway'
 
 	// Redis
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'

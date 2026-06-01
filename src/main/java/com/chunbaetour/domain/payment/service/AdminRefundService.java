@@ -73,8 +73,9 @@ public class AdminRefundService {
 
         // 7. PG에 결제 취소 요청 — 실패 시 예외 전파 → order/refund/wallet 모두 롤백
         // PG 호출을 마지막에 두는 이유: DB가 커밋 준비된 상태에서 외부 호출해야 재시도 시 멱등 복구 가능
+        // PortOne V2 취소 API: POST /payments/{paymentId}/cancel — path에는 transactionId가 아닌 paymentId(=orderUid) 사용
         paymentGatewayClient.cancelPayment(
-            order.getPgTransactionId(),
+            order.getOrderUid(),
             refund.getAmount(),
             refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
         );

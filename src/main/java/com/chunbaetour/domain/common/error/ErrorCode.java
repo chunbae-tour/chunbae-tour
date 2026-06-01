@@ -179,7 +179,13 @@ public enum ErrorCode {
     REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,            "REPORT_007", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다."),
 
     // ===== CS / FAQ (담당: 임하은) =====
-    FAQ_NOT_FOUND(HttpStatus.NOT_FOUND,                     "FAQ_001", "존재하지 않는 FAQ입니다.");
+    FAQ_NOT_FOUND(HttpStatus.NOT_FOUND,                     "FAQ_001", "존재하지 않는 FAQ입니다."),
+
+    // ===== CS / SUPPORT (담당: 임하은) =====
+    SUPPORT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,            "CS_001", "존재하지 않는 상담방입니다."),
+    SUPPORT_ROOM_ALREADY_CLOSED(HttpStatus.CONFLICT,        "CS_002", "이미 종료된 상담방입니다."),
+    // CS_003: USER 본인 상담방 또는 ADMIN 전용 — 타인 접근 차단
+    SUPPORT_ROOM_FORBIDDEN(HttpStatus.FORBIDDEN,            "CS_003", "해당 상담방에 접근할 권한이 없습니다.");
 
     private final HttpStatus status;
     private final String code;
