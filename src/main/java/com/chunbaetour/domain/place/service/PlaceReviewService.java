@@ -131,6 +131,10 @@ public class PlaceReviewService {
      */
     @Transactional(readOnly = true)
     public Page<UserReviewResponse> getUserReviews(Long userId, Pageable pageable) {
+        if (pageable.getPageSize() > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
         return placeReviewRepository.findActiveByAuthorId(userId, pageable)
                 .map(r -> UserReviewResponse.from(r, parseImageUrls(r.getImageUrls(), r.getId())));
     }

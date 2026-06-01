@@ -66,11 +66,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserMeController {
 
     /**
-     * GET /likes에서 클라이언트가 {@code ?sort=}로 지정 가능한 필드 화이트리스트.
+     * GET /likes 및 /reviews에서 클라이언트가 {@code ?sort=}로 지정 가능한 필드 화이트리스트.
      * 비허용 필드(예: password, id 이외 entity 내부 필드)는 INVALID_REQUEST로 거부 — 의도치 않은
      * 정렬 노출 방지.
      */
-    private static final Set<String> ALLOWED_LIKES_SORT_FIELDS = Set.of("createdAt", "id");
+    private static final Set<String> ALLOWED_MY_PAGE_SORT_FIELDS = Set.of("createdAt", "id");
 
     private final UserMeService userMeService;
     private final UserMeHomeService userMeHomeService;
@@ -158,7 +158,7 @@ public class UserMeController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
         pageable.getSort().forEach(order -> {
-            if (!ALLOWED_LIKES_SORT_FIELDS.contains(order.getProperty())) {
+            if (!ALLOWED_MY_PAGE_SORT_FIELDS.contains(order.getProperty())) {
                 // 화이트리스트 외 필드(예: ?sort=password) — 의도치 않은 entity 내부 필드 정렬 차단
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
@@ -182,7 +182,7 @@ public class UserMeController {
             @PageableDefault(size = 10, sort = {"createdAt", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
         pageable.getSort().forEach(order -> {
-            if (!ALLOWED_LIKES_SORT_FIELDS.contains(order.getProperty())) {
+            if (!ALLOWED_MY_PAGE_SORT_FIELDS.contains(order.getProperty())) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
         });
