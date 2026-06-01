@@ -45,6 +45,9 @@ public class SupportRoom extends BaseEntity {
 
     @Builder
     private SupportRoom(Long userId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId must not be null");
+        }
         this.userId = userId;
         this.status = SupportRoomStatus.WAITING;
     }
