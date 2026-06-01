@@ -21,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
@@ -82,9 +83,14 @@ public class PlaceReviewService {
         // 4. 이미지 JSON 직렬화 (최대 5개는 DTO @Size 검증으로 이미 처리됨)
         String imageUrlsJson = serializeImageUrls(request.imageUrls());
 
-        // 5. 리뷰 엔티티 생성 및 저장 (DB 유니크 제약 대신 비관적 락으로 중복 쓰기 방어)
+        // 5. 리뷰 엔티티 생성 및 저장 (DB 유니크 제약 + 비관적 락으로 이중 방어)
         PlaceReview review = PlaceReview.create(place, author, request.rating(), request.content(), imageUrlsJson);
-        placeReviewRepository.save(review);
+        try {
+            placeReviewRepository.save(review);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("리뷰 작성 중복(UNIQUE 제약) 발생. placeId={}, userId={}", placeId, userId, e);
+            throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
+        }
 
         // 6. Place 평점 및 리뷰 수 재계산
         recalculatePlaceRating(place);
