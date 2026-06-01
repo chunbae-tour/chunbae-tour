@@ -41,8 +41,14 @@ public class CallbackService {
             switch (eventType) {
                 case TRANSACTION_PAID ->
                         handleSuccess(payload.data().paymentId(), payload.data().transactionId());
-                case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
+                case TRANSACTION_FAILED ->
                         handleFail(payload.data().paymentId());
+                case TRANSACTION_CANCELLED ->
+                        handleCancelled(payload.data().paymentId());
+                case TRANSACTION_PARTIAL_CANCELLED ->
+                        handlePartialCancelled(payload.data().paymentId());
+                case TRANSACTION_CANCEL_PENDING ->
+                        handleCancelPending(payload.data().paymentId());
                 default -> { }
             }
         } catch (PaymentException e) {
@@ -127,6 +133,56 @@ public class CallbackService {
         }
 
         scheduleUnmark(order.getIdempotencyKey());
+    }
+
+    @Transactional
+    public void handleCancelled(String paymentId) {
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+
+        if (order.getStatus() == PaymentOrderStatus.CANCELLED
+                || order.getStatus() == PaymentOrderStatus.REFUNDED) {
+            return;
+        }
+
+        if (order.getStatus() == PaymentOrderStatus.PENDING || order.getStatus() == PaymentOrderStatus.FAILED) {
+            order.cancel();
+            scheduleUnmark(order.getIdempotencyKey());
+            return;
+        }
+
+        if (order.getStatus() != PaymentOrderStatus.COMPLETED
+                && order.getStatus() != PaymentOrderStatus.PARTIAL_CANCELLED) {
+            return;
+        }
+
+        long reclaimed = walletService.reclaimAvailableForExternalCancel(
+                order.getUserId(),
+                order.getAmount(),
+                order.getId()
+        );
+        if (reclaimed == order.getAmount()) {
+            order.cancel();
+        } else {
+            order.requireAdjustment();
+        }
+        scheduleUnmark(order.getIdempotencyKey());
+    }
+
+    @Transactional
+    public void handlePartialCancelled(String paymentId) {
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+
+        if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
+            order.partialCancel();
+        }
+    }
+
+    @Transactional
+    public void handleCancelPending(String paymentId) {
+        paymentOrderRepository.findByOrderUid(paymentId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
     }
 
     /**

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * CallbackService 단위 테스트.
@@ -248,6 +249,49 @@ class CallbackServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("Transaction.Cancelled: COMPLETED 주문은 지급 엽전을 회수하고 CANCELLED 처리한다")
+    void handleCancelled_completed_order_reclaims_wallet_and_cancels_order() {
+        PaymentOrder order = pendingOrder();
+        ReflectionTestUtils.setField(order, "id", 100L);
+        order.complete("tx-1");
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(walletService.reclaimAvailableForExternalCancel(1L, 10_000L, 100L)).willReturn(10_000L);
+
+        callbackService.handleCancelled("order-uid-1");
+
+        assertThat(order.getStatus()).isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.CANCELLED);
+        verify(walletService).reclaimAvailableForExternalCancel(1L, 10_000L, 100L);
+        verify(idempotencyService).unmark("idem-key-1");
+    }
+
+    @Test
+    @DisplayName("Transaction.Cancelled: 회수 가능한 잔액이 부족하면 음수 잔액 없이 회수필요 상태로 남긴다")
+    void handleCancelled_insufficient_balance_marks_adjustment_required() {
+        PaymentOrder order = pendingOrder();
+        ReflectionTestUtils.setField(order, "id", 100L);
+        order.complete("tx-1");
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(walletService.reclaimAvailableForExternalCancel(1L, 10_000L, 100L)).willReturn(3_000L);
+
+        callbackService.handleCancelled("order-uid-1");
+
+        assertThat(order.getStatus()).isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.ADJUSTMENT_REQUIRED);
+        verify(walletService).reclaimAvailableForExternalCancel(1L, 10_000L, 100L);
+    }
+
+    @Test
+    @DisplayName("Transaction.Cancelled: 이미 취소된 주문은 멱등하게 처리한다")
+    void handleCancelled_already_cancelled_returns_silently() {
+        PaymentOrder order = pendingOrder();
+        order.cancel();
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+
+        callbackService.handleCancelled("order-uid-1");
+
+        verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
     }
 
     @Test

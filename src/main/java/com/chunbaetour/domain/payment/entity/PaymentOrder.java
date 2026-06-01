@@ -92,6 +92,26 @@ public class PaymentOrder extends BaseEntity {
         this.status = PaymentOrderStatus.FAILED;
     }
 
+    public void cancel() {
+        if (this.status == PaymentOrderStatus.REFUNDED) {
+            return;
+        }
+        this.status = PaymentOrderStatus.CANCELLED;
+    }
+
+    public void requireAdjustment() {
+        if (this.status == PaymentOrderStatus.CANCELLED || this.status == PaymentOrderStatus.REFUNDED) {
+            return;
+        }
+        this.status = PaymentOrderStatus.ADJUSTMENT_REQUIRED;
+    }
+
+    public void partialCancel() {
+        if (this.status == PaymentOrderStatus.COMPLETED) {
+            this.status = PaymentOrderStatus.PARTIAL_CANCELLED;
+        }
+    }
+
     /** 환불 승인 완료 후 주문 상태를 REFUNDED로 전이. COMPLETED 아니면 PaymentException. */
     public void refund() {
         if (this.status != PaymentOrderStatus.COMPLETED) {

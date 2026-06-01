@@ -80,6 +80,24 @@ public class WalletService {
         );
     }
 
+    @Transactional
+    public long reclaimAvailableForExternalCancel(Long userId, Long amount, Long paymentOrderId) {
+        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+
+        long reclaimed = wallet.debitUpTo(amount);
+        yeopjeonHistoryRepository.save(
+                YeopjeonHistory.ofExternalCancelReclaim(
+                        userId,
+                        reclaimed,
+                        wallet.getBalance(),
+                        paymentOrderId,
+                        reclaimed < amount
+                )
+        );
+        return reclaimed;
+    }
+
     /**
      * 스토어 상품 구매 시 엽전 차감 + 구매 이력 저장.
      * SELECT FOR UPDATE로 지갑 행 락 획득 후 잔액 차감.

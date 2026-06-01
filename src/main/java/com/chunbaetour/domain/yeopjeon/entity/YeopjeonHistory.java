@@ -105,6 +105,18 @@ public class YeopjeonHistory extends BaseEntity {
                 .build();
     }
 
+    public static YeopjeonHistory ofExternalCancelReclaim(
+            Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId, boolean adjustmentRequired) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.REFUND)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .paymentOrderId(paymentOrderId)
+                .description(adjustmentRequired ? "EXTERNAL_CANCEL_ADJUSTMENT_REQUIRED" : "EXTERNAL_CANCEL_RECLAIM")
+                .build();
+    }
+
     /** 스토어 상품 구매 차감 이력. paymentOrderId/shopId는 스토어 구매와 직접 연결되지 않아 비워둔다. */
     public static YeopjeonHistory ofStorePurchase(
             Long userId, Long amount, Long balanceSnapshot, String productName) {
