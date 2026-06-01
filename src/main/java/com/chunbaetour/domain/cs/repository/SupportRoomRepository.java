@@ -3,7 +3,6 @@ package com.chunbaetour.domain.cs.repository;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -21,7 +20,4 @@ public interface SupportRoomRepository extends JpaRepository<SupportRoom, Long> 
     // CS-6: ADMIN 상담방 cursor 페이징 — status 필터 선택
     @Query("SELECT r FROM SupportRoom r WHERE (:status IS NULL OR r.status = :status) AND (:cursorId IS NULL OR r.id < :cursorId) ORDER BY r.id DESC")
     List<SupportRoom> findAllRoomsWithCursor(@Param("status") SupportRoomStatus status, @Param("cursorId") Long cursorId, Pageable pageable);
-
-    // CS-6: 메시지 권한 체크용 — supportRoomId로 방 조회
-    Optional<SupportRoom> findById(Long supportRoomId);
 }

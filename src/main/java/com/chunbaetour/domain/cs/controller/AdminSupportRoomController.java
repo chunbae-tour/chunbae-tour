@@ -3,6 +3,7 @@ package com.chunbaetour.domain.cs.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse;
+import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.service.SupportRoomService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +13,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,5 +35,15 @@ public class AdminSupportRoomController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(required = false) SupportRoomStatus status) {
         return ApiResponse.success(supportRoomService.getAllRooms(cursor, size, status));
+    }
+
+    // 상담방 메시지 cursor 페이징 — 소유자 무관 접근 가능 (ADMIN 전용)
+    @Operation(summary = "상담 메시지 조회 (ADMIN)")
+    @GetMapping("/{supportRoomId}/messages")
+    public ApiResponse<CursorPageResponse<SupportMessageResponse>> getMessages(
+            @PathVariable Long supportRoomId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ApiResponse.success(supportRoomService.getMessagesAsAdmin(supportRoomId, cursor, size));
     }
 }

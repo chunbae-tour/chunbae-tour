@@ -15,7 +15,6 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,17 +55,14 @@ public class SupportRoomController {
         return ApiResponse.success(supportRoomService.getMyRooms(userId, cursor, size, status));
     }
 
-    // 상담방 메시지 cursor 페이징 — 상담 참여자(USER·MERCHANT) 또는 ADMIN 접근 가능
-    @Operation(summary = "상담 메시지 조회 (USER·MERCHANT/ADMIN)")
+    // 상담방 메시지 cursor 페이징 — 본인 방만 접근 (USER·MERCHANT)
+    @Operation(summary = "상담 메시지 조회 (USER·MERCHANT)")
     @GetMapping("/{supportRoomId}/messages")
     public ApiResponse<CursorPageResponse<SupportMessageResponse>> getMessages(
             @AuthenticationPrincipal Long userId,
-            Authentication authentication,
             @PathVariable Long supportRoomId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        boolean isAdmin = authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-        return ApiResponse.success(supportRoomService.getMessages(userId, isAdmin, supportRoomId, cursor, size));
+        return ApiResponse.success(supportRoomService.getMessages(userId, supportRoomId, cursor, size));
     }
 }

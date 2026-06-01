@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.cs.service;
 
+import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -18,7 +19,10 @@ import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,16 +36,21 @@ public class SupportRoomService {
     private final SupportMessageRepository supportMessageRepository;
     private final AccountRepository accountRepository;
 
-    // 상담방 생성 (USER·MERCHANT) — WAITING/IN_PROGRESS 중복 차단, initialMessage 제공 시 첫 메시지(TEXT) 함께 저장
+    // 상담방 생성 (USER·MERCHANT) — 활성 방 중복 차단(앱 레벨 선체크 + DB unique 제약 이중 방어)
     @Transactional
     public SupportRoomResponse createRoom(Long userId, SupportRoomCreateRequest request) {
         if (supportRoomRepository.existsByUserIdAndStatusIn(
                 userId, List.of(SupportRoomStatus.WAITING, SupportRoomStatus.IN_PROGRESS))) {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_EXISTS);
         }
-        SupportRoom room = supportRoomRepository.save(
-                SupportRoom.builder().userId(userId).build()
-        );
+
+        SupportRoom room;
+        try {
+            room = supportRoomRepository.save(SupportRoom.builder().userId(userId).build());
+        } catch (DataIntegrityViolationException e) {
+            // uk_support_rooms_active_user 위반 — 동시 요청으로 앱 레벨 체크를 통과한 경우
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_EXISTS);
+        }
 
         if (request.initialMessage() != null && !request.initialMessage().isBlank()) {
             supportMessageRepository.save(
@@ -72,27 +81,27 @@ public class SupportRoomService {
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
 
-    // 상담방 메시지 cursor 페이징 — 본인(USER) 또는 ADMIN만 접근 가능
-    public CursorPageResponse<SupportMessageResponse> getMessages(Long userId, boolean isAdmin, Long supportRoomId, String cursor, int size) {
+    // USER 상담방 메시지 cursor 페이징 — 본인 방만 접근 가능, id DESC (최신 먼저)
+    public CursorPageResponse<SupportMessageResponse> getMessages(Long userId, Long supportRoomId, String cursor, int size) {
         SupportRoom room = supportRoomRepository.findById(supportRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
 
-        if (!isAdmin && !room.getUserId().equals(userId)) {
+        if (!room.getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
         }
 
-        Long cursorId = CursorUtils.decodeSafe(cursor);
-        List<SupportMessage> page = supportMessageRepository.findMessagesWithCursor(
-                supportRoomId, cursorId, PageRequest.of(0, size + 1));
-
-        boolean hasNext = page.size() > size;
-        List<SupportMessageResponse> content = page.stream().limit(size).map(SupportMessageResponse::from).toList();
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).messageId()) : null;
-
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        return fetchMessages(supportRoomId, cursor, size);
     }
 
-    // ADMIN 전체 상담방 목록 cursor 페이징 — status 필터 선택, userNickname + lastMessage 포함
+    // ADMIN 상담방 메시지 cursor 페이징 — 소유자 무관 접근 가능, id DESC (최신 먼저)
+    public CursorPageResponse<SupportMessageResponse> getMessagesAsAdmin(Long supportRoomId, String cursor, int size) {
+        if (!supportRoomRepository.existsById(supportRoomId)) {
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND);
+        }
+        return fetchMessages(supportRoomId, cursor, size);
+    }
+
+    // ADMIN 전체 상담방 목록 cursor 페이징 — userNickname + lastMessage 배치 조회(N+1 방지)
     public CursorPageResponse<AdminSupportRoomResponse> getAllRooms(String cursor, int size, SupportRoomStatus status) {
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<SupportRoom> page = supportRoomRepository.findAllRoomsWithCursor(
@@ -101,18 +110,37 @@ public class SupportRoomService {
         boolean hasNext = page.size() > size;
         List<SupportRoom> rooms = page.stream().limit(size).toList();
 
+        List<Long> userIds = rooms.stream().map(SupportRoom::getUserId).toList();
+        List<Long> roomIds = rooms.stream().map(SupportRoom::getId).toList();
+
+        // 닉네임 배치 조회
+        Map<Long, String> nicknameByUserId = accountRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(Account::getId, Account::getNickname));
+
+        // 마지막 메시지 배치 조회
+        Map<Long, SupportMessage> lastMsgByRoomId = supportMessageRepository
+                .findLastMessagesByRoomIds(roomIds).stream()
+                .collect(Collectors.toMap(SupportMessage::getSupportRoomId, m -> m));
+
         List<AdminSupportRoomResponse> content = rooms.stream().map(room -> {
-            String nickname = accountRepository.findById(room.getUserId())
-                    .map(a -> a.getNickname())
-                    .orElse(null);
-            LastMessage lastMessage = supportMessageRepository
-                    .findTopBySupportRoomIdOrderBySentAtDesc(room.getId())
-                    .map(m -> new LastMessage(m.getContent(), m.getSentAt()))
-                    .orElse(null);
+            String nickname = nicknameByUserId.get(room.getUserId());
+            SupportMessage lastMsg = lastMsgByRoomId.get(room.getId());
+            LastMessage lastMessage = lastMsg != null ? new LastMessage(lastMsg.getContent(), lastMsg.getSentAt()) : null;
             return AdminSupportRoomResponse.of(room, nickname, lastMessage);
         }).toList();
 
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).supportRoomId()) : null;
+        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+    }
+
+    private CursorPageResponse<SupportMessageResponse> fetchMessages(Long supportRoomId, String cursor, int size) {
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        List<SupportMessage> page = supportMessageRepository.findMessagesWithCursor(
+                supportRoomId, cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = page.size() > size;
+        List<SupportMessageResponse> content = page.stream().limit(size).map(SupportMessageResponse::from).toList();
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).messageId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
