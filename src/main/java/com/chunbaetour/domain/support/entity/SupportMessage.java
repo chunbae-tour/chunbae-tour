@@ -1,4 +1,7 @@
-package com.chunbaetour.domain.cs.entity;
+package com.chunbaetour.domain.support.entity;
+
+import com.chunbaetour.domain.support.type.SupportMessageType;
+import com.chunbaetour.domain.support.type.SupportSenderRole;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.cs.entity;
+package com.chunbaetour.domain.support.type;
 
 public enum SupportSenderRole {
     USER,
