@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 
 @SpringBootTest
 class FaqRepositoryIntegrationTest extends AbstractIntegrationTest {
@@ -23,98 +24,115 @@ class FaqRepositoryIntegrationTest extends AbstractIntegrationTest {
         faqRepository.deleteAll();
     }
 
-    // ===== findByCategoryOrderByIdAsc =====
+    // ===== findWithCursor (Admin 커서 페이징) =====
 
-    // 지정 카테고리의 FAQ만 반환 — 다른 카테고리 제외, 활성/비활성 포함
+    // 활성/비활성 모두 포함, id ASC 정렬
     @Test
-    void findByCategoryOrderByIdAsc_returnsOnlyMatchingCategory() {
+    void findWithCursor_returnsAllFaqsInIdAscOrder() {
         faqRepository.saveAll(List.of(
                 buildFaq("PAYMENT", true),
                 buildFaq("PAYMENT", false),
                 buildFaq("ACCOUNT", true)
         ));
 
-        List<Faq> result = faqRepository.findByCategoryOrderByIdAsc("PAYMENT");
+        List<Faq> result = faqRepository.findWithCursor(null, PageRequest.of(0, 10));
 
-        assertThat(result).hasSize(2);
-        assertThat(result).allMatch(f -> f.getCategory().equals("PAYMENT"));
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0).getId()).isLessThan(result.get(1).getId());
     }
 
-    // id ASC 정렬 확인
+    // cursorId 이후 id만 반환
     @Test
-    void findByCategoryOrderByIdAsc_returnsIdAscOrder() {
-        faqRepository.saveAll(List.of(
+    void findWithCursor_returnsIdsAfterCursor() {
+        List<Faq> saved = faqRepository.saveAll(List.of(
                 buildFaq("PAYMENT", true),
                 buildFaq("PAYMENT", true),
                 buildFaq("PAYMENT", true)
         ));
+        Long cursorId = saved.get(0).getId();
 
-        List<Faq> result = faqRepository.findByCategoryOrderByIdAsc("PAYMENT");
+        List<Faq> result = faqRepository.findWithCursor(cursorId, PageRequest.of(0, 10));
 
-        assertThat(result).hasSize(3);
-        assertThat(result.get(0).getId()).isLessThan(result.get(1).getId());
-        assertThat(result.get(1).getId()).isLessThan(result.get(2).getId());
+        assertThat(result).allMatch(f -> f.getId() > cursorId);
     }
 
-    // ===== findByCategoryAndIsActiveTrueOrderByIdAsc =====
+    // Pageable size 제한 적용
+    @Test
+    void findWithCursor_respectsPageableLimit() {
+        for (int i = 0; i < 5; i++) {
+            faqRepository.save(buildFaq("PAYMENT", true));
+        }
+
+        List<Faq> result = faqRepository.findWithCursor(null, PageRequest.of(0, 3));
+
+        assertThat(result).hasSize(3);
+    }
+
+    // ===== findByIsActiveTrueWithCursor (User 전체 활성 FAQ 커서 페이징) =====
 
     // 비활성(isActive=false) FAQ는 제외됨
     @Test
-    void findByCategoryAndIsActiveTrueOrderByIdAsc_excludesInactiveFaqs() {
-        Faq active = faqRepository.save(buildFaq("PAYMENT", true));
-        faqRepository.save(buildFaq("PAYMENT", false));
-
-        List<Faq> result = faqRepository.findByCategoryAndIsActiveTrueOrderByIdAsc("PAYMENT");
-
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getId()).isEqualTo(active.getId());
-    }
-
-    // 다른 카테고리 FAQ는 제외됨
-    @Test
-    void findByCategoryAndIsActiveTrueOrderByIdAsc_excludesOtherCategories() {
-        faqRepository.saveAll(List.of(
-                buildFaq("PAYMENT", true),
-                buildFaq("ACCOUNT", true)
-        ));
-
-        List<Faq> result = faqRepository.findByCategoryAndIsActiveTrueOrderByIdAsc("PAYMENT");
-
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getCategory()).isEqualTo("PAYMENT");
-    }
-
-    // ===== findByIsActiveTrueOrderByIdAsc =====
-
-    // 비활성 FAQ는 전체 조회에서도 제외됨
-    @Test
-    void findByIsActiveTrueOrderByIdAsc_excludesInactiveFaqs() {
+    void findByIsActiveTrueWithCursor_excludesInactiveFaqs() {
         faqRepository.saveAll(List.of(
                 buildFaq("PAYMENT", true),
                 buildFaq("PAYMENT", false),
                 buildFaq("ACCOUNT", true)
         ));
 
-        List<Faq> result = faqRepository.findByIsActiveTrueOrderByIdAsc();
+        List<Faq> result = faqRepository.findByIsActiveTrueWithCursor(null, PageRequest.of(0, 10));
 
         assertThat(result).hasSize(2);
         assertThat(result).allMatch(Faq::isActive);
     }
 
-    // 카테고리 무관 전체 활성 FAQ 반환 + id ASC 정렬
+    // cursorId 이후 활성 FAQ만 반환
     @Test
-    void findByIsActiveTrueOrderByIdAsc_returnsAllCategoriesInIdAscOrder() {
-        faqRepository.saveAll(List.of(
+    void findByIsActiveTrueWithCursor_returnsIdsAfterCursor() {
+        List<Faq> saved = faqRepository.saveAll(List.of(
                 buildFaq("PAYMENT", true),
                 buildFaq("ACCOUNT", true),
                 buildFaq("SHIPPING", true)
         ));
+        Long cursorId = saved.get(0).getId();
 
-        List<Faq> result = faqRepository.findByIsActiveTrueOrderByIdAsc();
+        List<Faq> result = faqRepository.findByIsActiveTrueWithCursor(cursorId, PageRequest.of(0, 10));
 
-        assertThat(result).hasSize(3);
-        assertThat(result.get(0).getId()).isLessThan(result.get(1).getId());
-        assertThat(result.get(1).getId()).isLessThan(result.get(2).getId());
+        assertThat(result).allMatch(f -> f.getId() > cursorId);
+        assertThat(result).hasSize(2);
+    }
+
+    // ===== findByCategoryAndIsActiveTrueWithCursor (User 카테고리별 활성 FAQ 커서 페이징) =====
+
+    // 지정 카테고리의 활성 FAQ만 반환 — 비활성·다른 카테고리 제외
+    @Test
+    void findByCategoryAndIsActiveTrueWithCursor_returnsOnlyActiveFaqsInCategory() {
+        faqRepository.saveAll(List.of(
+                buildFaq("PAYMENT", true),
+                buildFaq("PAYMENT", false),
+                buildFaq("ACCOUNT", true)
+        ));
+
+        List<Faq> result = faqRepository.findByCategoryAndIsActiveTrueWithCursor("PAYMENT", null, PageRequest.of(0, 10));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getCategory()).isEqualTo("PAYMENT");
+        assertThat(result.get(0).isActive()).isTrue();
+    }
+
+    // cursorId 이후 해당 카테고리 활성 FAQ만 반환
+    @Test
+    void findByCategoryAndIsActiveTrueWithCursor_returnsIdsAfterCursor() {
+        List<Faq> saved = faqRepository.saveAll(List.of(
+                buildFaq("PAYMENT", true),
+                buildFaq("PAYMENT", true),
+                buildFaq("PAYMENT", true)
+        ));
+        Long cursorId = saved.get(0).getId();
+
+        List<Faq> result = faqRepository.findByCategoryAndIsActiveTrueWithCursor("PAYMENT", cursorId, PageRequest.of(0, 10));
+
+        assertThat(result).hasSize(2);
+        assertThat(result).allMatch(f -> f.getId() > cursorId);
     }
 
     private Faq buildFaq(String category, boolean active) {
