@@ -24,8 +24,8 @@ public class SupportRoomController {
 
     private final SupportRoomService supportRoomService;
 
-    // 상담방 생성 — initialMessage 선택 제공 시 첫 메시지 함께 저장 (USER 전용)
-    @Operation(summary = "상담방 생성 (USER)")
+    // 상담방 생성 — initialMessage 선택 제공 시 첫 메시지 함께 저장 (USER·MERCHANT 공용)
+    @Operation(summary = "상담방 생성 (USER·MERCHANT)")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<SupportRoomResponse> createRoom(

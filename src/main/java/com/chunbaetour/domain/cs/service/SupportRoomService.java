@@ -19,7 +19,7 @@ public class SupportRoomService {
     private final SupportRoomRepository supportRoomRepository;
     private final SupportMessageRepository supportMessageRepository;
 
-    // USER 상담방 생성 — initialMessage 제공 시 첫 메시지(TEXT) 함께 저장
+    // 상담방 생성 (USER·MERCHANT) — initialMessage 제공 시 첫 메시지(TEXT) 함께 저장
     @Transactional
     public SupportRoomResponse createRoom(Long userId, SupportRoomCreateRequest request) {
         SupportRoom room = supportRoomRepository.save(
