@@ -101,15 +101,15 @@ class FlywayBaselineIntegrationTest {
         MigrateResult result = flyway.migrate();
 
         assertThat(result.success).as("마이그레이션이 성공해야 한다").isTrue();
-        // KAN-179 V2 admin_action_logs 합류 → 본 슬라이스 시점 누적 2건이 일반 마이그레이션으로 실행.
-        // 후속 V3~ 추가 시 본 가드의 기댓값도 함께 갱신해야 한다 (그 슬라이스 PR이 책임).
+        // V1 + V2 + V9 세 건이 일반 마이그레이션으로 실행.
+        // 후속 버전 추가 시 본 가드의 기댓값도 함께 갱신해야 한다 (그 슬라이스 PR이 책임).
         assertThat(result.migrationsExecuted)
-                .as("V1 + V2 두 건 모두 적용되어야 한다")
-                .isEqualTo(2);
+                .as("V1 + V2 + V9 세 건 모두 적용되어야 한다")
+                .isEqualTo(3);
 
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
-        // V1 + V2 row 모두 success 검증.
+        // V1 + V2 + V9 row 모두 success 검증.
         // flyway_schema_history.success는 MySQL TINYINT(1) — Spring JdbcTemplate의 Boolean.class 자동
         // 변환은 Flyway 버전별 컬럼 타입 변경 시 깨질 위험. Integer.class로 받아 == 1로 비교가 안전.
         Integer v1Success = jdbc.queryForObject(
@@ -120,6 +120,10 @@ class FlywayBaselineIntegrationTest {
                 "SELECT success FROM flyway_schema_history WHERE version = '2'",
                 Integer.class);
         assertThat(v2Success).isEqualTo(1);
+        Integer v9Success = jdbc.queryForObject(
+                "SELECT success FROM flyway_schema_history WHERE version = '9'",
+                Integer.class);
+        assertThat(v9Success).isEqualTo(1);
 
         // V1 SQL이 실제 실행되어 테이블이 생성되었는지 sample 검증 (29개 중 대표 3개)
         assertTableExists(jdbc, "users");
@@ -127,6 +131,8 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbc, "ad_applications");
         // V2가 추가한 admin_action_logs 테이블도 검증 (KAN-179 회귀 가드)
         assertTableExists(jdbc, "admin_action_logs");
+        // V9가 추가한 faqs 테이블도 검증 (KAN-189 회귀 가드)
+        assertTableExists(jdbc, "faqs");
     }
 
     @Test
