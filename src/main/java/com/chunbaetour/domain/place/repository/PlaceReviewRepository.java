@@ -33,8 +33,21 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
      * countQuery 분리: Fetch Join + Pageable 조합 시 HHH90003004 경고(in-memory pagination) 방지.
      */
     @Query(
-        value = "SELECT r FROM PlaceReview r JOIN FETCH r.place WHERE r.author.id = :userId AND r.status = 'ACTIVE'",
-        countQuery = "SELECT COUNT(r) FROM PlaceReview r WHERE r.author.id = :userId AND r.status = 'ACTIVE'"
+        value = """
+            SELECT r
+            FROM PlaceReview r
+            JOIN FETCH r.place p
+            WHERE r.author.id = :userId
+              AND r.status = 'ACTIVE'
+              AND p.status = 'ACTIVE'
+            """,
+        countQuery = """
+            SELECT COUNT(r)
+            FROM PlaceReview r
+            WHERE r.author.id = :userId
+              AND r.status = 'ACTIVE'
+              AND r.place.status = 'ACTIVE'
+            """
     )
     Page<PlaceReview> findActiveByAuthorId(@Param("userId") Long userId, Pageable pageable);
 

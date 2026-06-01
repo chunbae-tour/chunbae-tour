@@ -10,7 +10,9 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
+import com.chunbaetour.domain.place.service.PlaceReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code PATCH /api/v1/users/me} — 닉네임/언어/프로필 partial update (Epic A S2, KAN-127)</li>
  *   <li>{@code GET /api/v1/users/me/home} — 마이페이지 홈 통합 응답 (Epic A S3, KAN-128)</li>
  *   <li>{@code GET /api/v1/users/me/likes} — 찜한 관광지 페이징 (Epic A S5, KAN-130)</li>
+ *   <li>{@code GET /api/v1/users/me/reviews} — 내가 작성한 리뷰 페이징 (Epic A S6, KAN-173)</li>
  *   <li>{@code DELETE /api/v1/users/me} — 회원 탈퇴 + 토큰 cascade 무효화 (Epic C S1, KAN-143)</li>
  * </ul>
  *
@@ -57,7 +60,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@link com.chunbaetour.domain.auth.MultiRoleAuthIntegrationTest}가 test scope의
  * {@code TestAuthFixtureController}를 사용해 커버. 시드 데이터 의존 없이 SecurityConfig 매핑만 검증.
  */
-@Tag(name = "내 정보 (USER)", description = "본인 프로필 조회·수정·탈퇴, 찜 목록 (/api/v1/users/me/**)")
+@Tag(name = "내 정보 (USER)", description = "본인 프로필 조회·수정·탈퇴, 찜/리뷰 목록 (/api/v1/users/me/**)")
 @RestController
 @RequestMapping("/api/v1/users/me")
 @RequiredArgsConstructor
@@ -65,14 +68,19 @@ public class UserMeController {
 
     /**
      * GET /likes에서 클라이언트가 {@code ?sort=}로 지정 가능한 필드 화이트리스트.
-     * 비허용 필드(예: password, id 이외 entity 내부 필드)는 INVALID_REQUEST로 거부 — 의도치 않은
-     * 정렬 노출 방지.
+     * 비허용 필드(예: password, id 이외 entity 내부 필드)는 INVALID_REQUEST로 거부 — 의도치 않은 정렬 노출 방지.
      */
     private static final Set<String> ALLOWED_LIKES_SORT_FIELDS = Set.of("createdAt", "id");
+
+    /**
+     * GET /reviews에서 클라이언트가 {@code ?sort=}로 지정 가능한 필드 화이트리스트.
+     */
+    private static final Set<String> ALLOWED_REVIEW_SORT_FIELDS = Set.of("createdAt", "id");
 
     private final UserMeService userMeService;
     private final UserMeHomeService userMeHomeService;
     private final PlaceLikeService placeLikeService;
+    private final PlaceReviewService placeReviewService;
     private final RefreshCookieFactory refreshCookieFactory;
 
     /**
@@ -161,6 +169,29 @@ public class UserMeController {
             }
         });
         return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
+    }
+
+    /**
+     * 본인이 작성한 관광지 리뷰 목록 페이징 조회 (Epic A S6, 4-6).
+     *
+     * <p>마이페이지에서 노출되는 리뷰 목록. 최신순 정렬 기본 적용.
+     *
+     * @param userId   SecurityContext에 저장된 본인 ID
+     * @param pageable 페이징 파라미터
+     * @return 작성한 리뷰 목록 페이지
+     */
+    @Operation(summary = "내 리뷰 목록 조회")
+    @GetMapping("/reviews")
+    public ApiResponse<Page<UserReviewResponse>> getMyReviews(
+            @AuthenticationPrincipal Long userId,
+            @PageableDefault(size = 10, sort = {"createdAt", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
+        requireAuthenticated(userId);
+        pageable.getSort().forEach(order -> {
+            if (!ALLOWED_REVIEW_SORT_FIELDS.contains(order.getProperty())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+        });
+        return ApiResponse.success(placeReviewService.getUserReviews(userId, pageable));
     }
 
     /**

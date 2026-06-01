@@ -10,6 +10,7 @@ import com.chunbaetour.domain.place.PlaceReviewStatus;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.request.ReviewCreateRequest;
 import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
+import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
@@ -119,6 +120,23 @@ public class PlaceReviewService {
         }
         return placeReviewRepository.findActiveByPlaceId(placeId, pageable)
                 .map(r -> PlaceReviewResponse.from(r, parseImageUrls(r.getImageUrls(), r.getId())));
+    }
+
+    /**
+     * 내 리뷰 목록 페이징 조회 (마이페이지용).
+     *
+     * @param userId   작성자(본인) ID
+     * @param pageable 페이징 정보
+     * @return 리뷰 목록 (Page)
+     */
+    @Transactional(readOnly = true)
+    public Page<UserReviewResponse> getUserReviews(Long userId, Pageable pageable) {
+        if (pageable.getPageSize() > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        return placeReviewRepository.findActiveByAuthorId(userId, pageable)
+                .map(r -> UserReviewResponse.from(r, parseImageUrls(r.getImageUrls(), r.getId())));
     }
 
     // ── private 헬퍼 ────────────────────────────────────────────────────
