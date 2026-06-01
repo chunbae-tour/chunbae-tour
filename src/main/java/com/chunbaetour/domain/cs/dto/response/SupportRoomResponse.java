@@ -9,6 +9,8 @@ public record SupportRoomResponse(
         Long userId,
         Long adminId,
         SupportRoomStatus status,
+        String summary,
+        LocalDateTime closedAt,
         LocalDateTime createdAt
 ) {
     public static SupportRoomResponse from(SupportRoom room) {
@@ -17,6 +19,8 @@ public record SupportRoomResponse(
                 room.getUserId(),
                 room.getAdminId(),
                 room.getStatus(),
+                room.getSummary(),
+                room.getClosedAt(),
                 room.getCreatedAt()
         );
     }
