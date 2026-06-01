@@ -32,7 +32,8 @@ public class FaqService {
                 .limit(size)
                 .map(FaqResponse::from)
                 .toList();
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(size - 1).getId()) : null;
+        // content 기준으로 nextCursor 인코딩 — mapping/필터링 변경 시에도 안전
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).faqId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
@@ -46,7 +47,8 @@ public class FaqService {
 
         boolean hasNext = page.size() > size;
         List<FaqResponse> content = page.stream().limit(size).map(FaqResponse::from).toList();
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(size - 1).getId()) : null;
+        // content 기준으로 nextCursor 인코딩 — mapping/필터링 변경 시에도 안전
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).faqId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }

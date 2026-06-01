@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,9 +51,9 @@ public class AdminFaqController {
         return ApiResponse.success(faqService.create(request));
     }
 
-    // FAQ 수정 — question/answer/category 부분 수정 가능
+    // FAQ 부분 수정 — question/answer/category 중 전달된 필드만 변경 (PATCH 의미론)
     @Operation(summary = "FAQ 수정 (ADMIN)")
-    @PutMapping("/{faqId}")
+    @PatchMapping("/{faqId}")
     public ApiResponse<FaqResponse> update(
             @PathVariable Long faqId,
             @Valid @RequestBody FaqUpdateRequest request) {

@@ -1,16 +1,23 @@
 package com.chunbaetour.domain.cs.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.cs.dto.request.FaqCreateRequest;
+import com.chunbaetour.domain.cs.dto.request.FaqUpdateRequest;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
 import com.chunbaetour.domain.cs.entity.Faq;
 import com.chunbaetour.domain.cs.repository.FaqRepository;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,7 +31,37 @@ class FaqServiceTest {
     @InjectMocks private FaqService faqService;
     @Mock private FaqRepository faqRepository;
 
-    // ===== getActiveFaqs (USER 커서 페이징) =====
+    // ===== getAll (ADMIN cursor 페이징) =====
+
+    // size보다 많은 결과 → hasNext=true, nextCursor 존재
+    @Test
+    void getAll_hasNextTrue_whenResultExceedsSize() {
+        int size = 2;
+        List<Faq> page = List.of(buildFaq(1L), buildFaq(2L), buildFaq(3L)); // size+1개
+        given(faqRepository.findWithCursor(any(), any(PageRequest.class))).willReturn(page);
+
+        CursorPageResponse<FaqResponse> result = faqService.getAll(null, size);
+
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+        assertThat(result.content()).hasSize(size);
+    }
+
+    // size 이하 결과 → hasNext=false, nextCursor null
+    @Test
+    void getAll_hasNextFalse_whenResultWithinSize() {
+        int size = 5;
+        List<Faq> page = List.of(buildFaq(1L), buildFaq(2L)); // size 미만
+        given(faqRepository.findWithCursor(any(), any(PageRequest.class))).willReturn(page);
+
+        CursorPageResponse<FaqResponse> result = faqService.getAll(null, size);
+
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.content()).hasSize(2);
+    }
+
+    // ===== getActiveFaqs (USER cursor 페이징) =====
 
     // category null → findByIsActiveTrueWithCursor 호출
     @Test
@@ -85,6 +122,57 @@ class FaqServiceTest {
 
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
+    }
+
+    // ===== update =====
+
+    // null 필드는 기존 값 유지 — 부분 갱신 검증
+    @Test
+    void update_preservesExistingValuesForNullFields() {
+        Faq faq = buildFaq(1L);
+        given(faqRepository.findById(1L)).willReturn(Optional.of(faq));
+
+        FaqUpdateRequest request = new FaqUpdateRequest(null, null, null);
+        FaqResponse result = faqService.update(1L, request);
+
+        assertThat(result.question()).isEqualTo("테스트 질문");
+        assertThat(result.answer()).isEqualTo("테스트 답변");
+        assertThat(result.category()).isEqualTo("PAYMENT");
+    }
+
+    // 존재하지 않는 FAQ → FAQ_NOT_FOUND
+    @Test
+    void update_throwsFaqNotFound_whenFaqNotExists() {
+        given(faqRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> faqService.update(999L, new FaqUpdateRequest("q", "a", "c")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.FAQ_NOT_FOUND));
+    }
+
+    // ===== delete (soft) =====
+
+    // soft delete — isActive=false, DB 레코드 유지
+    @Test
+    void delete_deactivatesFaq_notPhysicalDelete() {
+        Faq faq = buildFaq(1L);
+        given(faqRepository.findById(1L)).willReturn(Optional.of(faq));
+
+        faqService.delete(1L);
+
+        assertThat(faq.isActive()).isFalse();
+    }
+
+    // 존재하지 않는 FAQ → FAQ_NOT_FOUND
+    @Test
+    void delete_throwsFaqNotFound_whenFaqNotExists() {
+        given(faqRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> faqService.delete(999L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.FAQ_NOT_FOUND));
     }
 
     private Faq buildFaq(Long id) {
