@@ -46,6 +46,8 @@ public enum ErrorCode {
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_015", "존재하지 않는 사용자입니다."),
+    // AUTH_016: 탈퇴(soft-delete)된 계정에 운영자 정지/해제를 시도한 경우. 운영자 입력 오류이므로 400.
+    USER_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "AUTH_016", "탈퇴한 계정입니다."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),

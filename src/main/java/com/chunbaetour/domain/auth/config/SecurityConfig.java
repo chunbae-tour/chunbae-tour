@@ -8,6 +8,7 @@ import com.chunbaetour.domain.common.ratelimit.RateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -56,6 +57,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * <p>Stateless session: JWT 기반이라 서버 세션 미사용.
  */
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
