@@ -104,6 +104,9 @@ public class PlaceReview {
         if (content == null || content.isBlank()) {
             throw new IllegalArgumentException("리뷰 내용은 필수입니다.");
         }
+        if (content.length() > 500) {
+            throw new IllegalArgumentException("리뷰 내용은 최대 500자까지 입력 가능합니다.");
+        }
         PlaceReview review = new PlaceReview();
         review.place     = place;
         review.author    = author;

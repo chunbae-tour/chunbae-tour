@@ -12,11 +12,11 @@ import com.chunbaetour.domain.place.dto.request.ReviewCreateRequest;
 import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 관광지 리뷰 서비스.
@@ -83,7 +84,11 @@ public class PlaceReviewService {
 
         // 5. 리뷰 엔티티 생성 및 저장
         PlaceReview review = PlaceReview.create(place, author, request.rating(), request.content(), imageUrlsJson);
-        placeReviewRepository.save(review);
+        try {
+            placeReviewRepository.saveAndFlush(review);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
+        }
 
         // 6. Place 평점 및 리뷰 수 재계산
         recalculatePlaceRating(place);
@@ -147,14 +152,21 @@ public class PlaceReviewService {
     /**
      * 이미지 URL 목록을 JSON 문자열로 직렬화.
      * null이거나 비어있으면 null 반환 (DB 저장 시 NULL).
+     * null 원소 필터링 포함.
      */
     private String serializeImageUrls(List<String> imageUrls) {
         if (imageUrls == null || imageUrls.isEmpty()) {
             return null;
         }
+        List<String> filtered = imageUrls.stream()
+                .filter(Objects::nonNull)
+                .toList();
+        if (filtered.isEmpty()) {
+            return null;
+        }
         try {
-            return objectMapper.writeValueAsString(imageUrls);
-        } catch (JsonProcessingException e) {
+            return objectMapper.writeValueAsString(filtered);
+        } catch (Exception e) {
             log.warn("이미지 URL 직렬화 실패. imageUrls={}", imageUrls, e);
             return null;
         }
