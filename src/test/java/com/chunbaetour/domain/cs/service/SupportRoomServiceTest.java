@@ -12,6 +12,10 @@ import static org.mockito.Mockito.verify;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.cs.dto.request.SupportRoomCloseRequest;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
@@ -35,7 +39,10 @@ import org.springframework.data.domain.PageRequest;
 @ExtendWith(MockitoExtension.class)
 class SupportRoomServiceTest {
 
+    private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC);
+
     @InjectMocks private SupportRoomService supportRoomService;
+    @Mock private Clock clock;
     @Mock private SupportRoomRepository supportRoomRepository;
     @Mock private SupportMessageRepository supportMessageRepository;
     @Mock private AccountRepository accountRepository;
@@ -107,6 +114,34 @@ class SupportRoomServiceTest {
         SupportRoomResponse result = supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null));
 
         assertThat(result.status()).isEqualTo(SupportRoomStatus.WAITING);
+    }
+
+    // ===== closeRoom =====
+
+    // 정상 종료 → CLOSED + closedAt 설정
+    @Test
+    void closeRoom_success_returnsClosedRoom() {
+        SupportRoom room = buildRoom(1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+
+        SupportRoomResponse result = supportRoomService.closeRoom(1L, new SupportRoomCloseRequest("해결 완료"));
+
+        assertThat(result.status()).isEqualTo(SupportRoomStatus.CLOSED);
+        assertThat(result.summary()).isEqualTo("해결 완료");
+        assertThat(result.closedAt()).isNotNull();
+    }
+
+    // 존재하지 않는 방 → CS_001
+    @Test
+    void closeRoom_whenNotFound_throwsNotFound() {
+        given(supportRoomRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> supportRoomService.closeRoom(999L, new SupportRoomCloseRequest(null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
     }
 
     // ===== getMessages =====

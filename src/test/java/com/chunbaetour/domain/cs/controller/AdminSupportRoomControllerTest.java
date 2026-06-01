@@ -4,15 +4,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
+import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.entity.SupportMessageType;
@@ -28,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -111,5 +117,60 @@ class AdminSupportRoomControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
         verifyNoInteractions(supportRoomService);
+    }
+
+    // ===== POST /admin/support/rooms/{id}/close =====
+
+    // ADMIN 인증 → 200 + 종료된 방 반환
+    @Test
+    @DisplayName("상담 종료 — ADMIN 200")
+    void closeRoom_whenAdmin_returns200() throws Exception {
+        SupportRoomResponse closed = new SupportRoomResponse(
+                10L, 1L, 1L, SupportRoomStatus.CLOSED, "해결 완료", LocalDateTime.now(), LocalDateTime.now());
+        given(supportRoomService.closeRoom(eq(10L), any()))
+                .willReturn(closed);
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+
+        mockMvc.perform(post(BASE_URL + "/10/close")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"summary\":\"해결 완료\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CLOSED"))
+                .andExpect(jsonPath("$.data.summary").value("해결 완료"));
+    }
+
+    // 이미 CLOSED → 409 CS_002
+    @Test
+    @DisplayName("상담 종료 — 이미 CLOSED 409")
+    void closeRoom_whenAlreadyClosed_returns409() throws Exception {
+        willThrow(new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED))
+                .given(supportRoomService).closeRoom(eq(10L), any());
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+
+        mockMvc.perform(post(BASE_URL + "/10/close")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED.getCode()));
+    }
+
+    // USER 인증 → 403
+    @Test
+    @DisplayName("상담 종료 — USER 403")
+    void closeRoom_whenUser_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+        mockMvc.perform(post(BASE_URL + "/10/close")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
+        verifyNoInteractions(supportRoomService);
+    }
+
+    private SupportRoomResponse buildRoomResponse(Long id, SupportRoomStatus status) {
+        return new SupportRoomResponse(id, 1L, null, status, null, null, LocalDateTime.now());
     }
 }
