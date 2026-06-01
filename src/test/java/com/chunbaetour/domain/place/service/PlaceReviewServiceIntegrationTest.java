@@ -31,6 +31,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
+import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
 
 @SpringBootTest
 class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
@@ -134,7 +135,7 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
         accountRepository.save(testUser2);
         placeReviewService.createReview(testUser2.getId(), testPlace.getId(), new ReviewCreateRequest(3, "남의 리뷰", null));
 
-        org.springframework.data.domain.Page<com.chunbaetour.domain.place.dto.response.UserReviewResponse> myReviews = 
+        Page<UserReviewResponse> myReviews = 
             placeReviewService.getUserReviews(
                 testUser.getId(), 
                 PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
