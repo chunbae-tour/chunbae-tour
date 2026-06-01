@@ -36,7 +36,7 @@ public class ChargeService {
     private final PortOneProperties portOneProperties;
 
     // 충전 플로우:
-    // [1] 금액 검증 → [2] 멱등성 키 점유 → [3] 포트원 사전등록 → [4] 주문 PENDING 저장 → [5] orderUid 반환
+    // [1] 금액 검증 → [1.5] PortOne 설정 검증 → [2] 멱등성 키 점유 → [3] 포트원 사전등록 → [4] 주문 PENDING 저장 → [5] orderUid 반환
     // → 프론트: orderUid로 포트원 SDK 결제창 오픈 → 사용자 결제
     // → 포트원 웹훅(POST /payments/webhook) 수신 → CallbackService 검증 → COMPLETED/FAILED 전환
     // → COMPLETED: WalletService.charge()로 엽전 충전 / FAILED: idempotencyService.unmark()로 키 해제
@@ -44,6 +44,13 @@ public class ChargeService {
     public ChargeResponse charge(Long userId, String idempotencyKey, ChargeRequest request) {
         // [1] 금액 2차 검증 (최소 5,000원 / 1,000원 단위 / 최대 100,000원)
         validateAmount(request.amount());
+
+        // [1.5] PortOne 설정 누락 검증 — 키 점유 전에 실행해 불필요한 멱등성 키 소모 방지
+        String storeId = portOneProperties.getStoreId();
+        if (storeId == null || storeId.isBlank()) {
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+        String channelKey = resolveChannelKey(request.paymentMethod());
 
         // [2] 멱등성 키 점유 — 중복 요청 차단 (Redis 24시간 TTL)
         idempotencyService.checkAndMark(idempotencyKey);
@@ -61,8 +68,8 @@ public class ChargeService {
                 orderUid,
                 request.amount(),
                 request.paymentMethod(),
-                portOneProperties.getStoreId(),
-                resolveChannelKey(request.paymentMethod())
+                storeId,
+                channelKey
             );
         } catch (RuntimeException ex) {
             // preRegister 또는 save 실패 시 키 해제 → 사용자 재시도 가능

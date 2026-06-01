@@ -129,6 +129,30 @@ class WebhookVerifierTest {
     }
 
     @Test
+    @DisplayName("webhookSecret null 시 PAYMENT_SERVICE_UNAVAILABLE")
+    void verify_null_secret_throws() {
+        given(properties.getWebhookSecret()).willReturn(null);
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+
+        assertThatThrownBy(() -> webhookVerifier.verify(WEBHOOK_ID, "v1,anysig", timestamp, RAW_BODY))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("webhookSecret 공백 시 PAYMENT_SERVICE_UNAVAILABLE")
+    void verify_blank_secret_throws() {
+        given(properties.getWebhookSecret()).willReturn("   ");
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+
+        assertThatThrownBy(() -> webhookVerifier.verify(WEBHOOK_ID, "v1,anysig", timestamp, RAW_BODY))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+    }
+
+    @Test
     @DisplayName("경계값: 정확히 300초 전 타임스탬프 → 검증 통과")
     void verify_boundary_300s_passes() throws Exception {
         String timestamp = String.valueOf(Instant.now().getEpochSecond() - 300);

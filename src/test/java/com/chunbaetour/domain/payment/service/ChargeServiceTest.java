@@ -85,6 +85,33 @@ class ChargeServiceTest {
     }
 
     @Test
+    @DisplayName("storeId 미설정(null) 시 멱등성 키 점유 전에 PAYMENT_SERVICE_UNAVAILABLE을 던진다")
+    void charge_storeId_null_throws_before_idempotency_mark() {
+        given(portOneProperties.getStoreId()).willReturn(null);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        verify(idempotencyService, never()).checkAndMark(anyString());
+    }
+
+    @Test
+    @DisplayName("채널키 미설정(맵 없음) 시 멱등성 키 점유 전에 PAYMENT_SERVICE_UNAVAILABLE을 던진다")
+    void charge_channelKey_missing_throws_before_idempotency_mark() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(null);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        verify(idempotencyService, never()).checkAndMark(anyString());
+    }
+
+    @Test
     @DisplayName("동일 멱등성 키로 재요청 시 PAY_007(중복 결제)을 던진다")
     void charge_duplicate_idempotency_throws_PAY_007() {
         willThrow(new PaymentException(ErrorCode.DUPLICATE_PAYMENT_REQUEST))

@@ -6,6 +6,8 @@ public record ChargeResponse(
     // 내부 주문 식별자. PaymentOrder.orderUid와 동일하다.
     String orderUid,
     // PortOne requestPayment의 paymentId. 사전등록한 orderUid와 동일하게 사용한다.
+    // 동일값으로 내려가는 이유: PortOne V2 SDK가 paymentId를 결제 식별자로 사용하고, 서버가 사전등록한 orderUid와 일치해야 위변조 검증이 가능.
+    // 두 필드를 분리 유지하는 이유: 향후 paymentId가 orderUid와 달라지는 정책 변경에 대비.
     String paymentId,
     // PortOne 상점 ID. portone.store-id 설정값이다.
     String storeId,
