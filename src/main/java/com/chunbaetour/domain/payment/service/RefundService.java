@@ -46,6 +46,8 @@ public class RefundService {
     private final Clock clock;
     private final TransactionTemplate transactionTemplate;
 
+    // 외부 PortOne API 호출 중 DB 트랜잭션/락을 오래 잡지 않도록 메서드 전체 트랜잭션을 사용하지 않는다.
+    // 필요한 DB 작업은 TransactionTemplate으로 짧게 나눠 실행한다.
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
         // 환불 가능 여부를 먼저 짧은 트랜잭션에서 검증하고 PENDING 환불 이력을 생성한다.
