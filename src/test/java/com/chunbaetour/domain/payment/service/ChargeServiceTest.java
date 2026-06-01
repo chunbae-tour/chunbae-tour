@@ -15,16 +15,18 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+import com.chunbaetour.domain.payment.config.PortOneProperties;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
 import com.chunbaetour.domain.payment.dto.response.PaymentHistoryResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,23 +48,67 @@ class ChargeServiceTest {
     @Mock
     private PaymentOrderRepository paymentOrderRepository;
 
+    @Mock
+    private PortOneProperties portOneProperties;
+
     @InjectMocks
     private ChargeService chargeService;
 
     @Test
-    @DisplayName("정상 충전 요청 시 orderUid를 반환한다")
-    void charge_success_returns_orderUid() {
+    @DisplayName("정상 충전 요청 시 프론트 결제창 호출에 필요한 값을 반환한다")
+    void charge_success_returns_payment_window_parameters() {
         willDoNothing().given(paymentGatewayClient).preRegister(anyString(), anyLong());
         willDoNothing().given(idempotencyService).checkAndMark(anyString());
         given(paymentOrderRepository.save(any(PaymentOrder.class)))
                 .willAnswer(inv -> inv.getArgument(0));
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of(
+                "card", "channel-card",
+                "kakao-pay", "channel-kakao-pay",
+                "toss-pay", "channel-toss-pay",
+                "foreign-card", "channel-foreign-card"
+        ));
 
         ChargeResponse response = chargeService.charge(1L, "idem-key-1", new ChargeRequest(10_000L, PaymentMethod.CARD));
 
         assertThat(response.orderUid()).isNotNull();
+        assertThat(response.paymentId()).isEqualTo(response.orderUid());
+        assertThat(response.storeId()).isEqualTo("store-id");
+        assertThat(response.channelKey()).isEqualTo("channel-card");
+        assertThat(response.orderName()).isEqualTo("춘배투어 엽전 10000원 충전");
+        assertThat(response.totalAmount()).isEqualTo(10_000L);
+        assertThat(response.currency()).isEqualTo("CURRENCY_KRW");
+        assertThat(response.payMethod()).isEqualTo("CARD");
         verify(paymentOrderRepository).save(any(PaymentOrder.class));
         verify(paymentGatewayClient).preRegister(anyString(), anyLong());
         verify(idempotencyService, never()).unmark(anyString());
+    }
+
+    @Test
+    @DisplayName("storeId 미설정(null) 시 멱등성 키 점유 전에 PAYMENT_SERVICE_UNAVAILABLE을 던진다")
+    void charge_storeId_null_throws_before_idempotency_mark() {
+        given(portOneProperties.getStoreId()).willReturn(null);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        verify(idempotencyService, never()).checkAndMark(anyString());
+    }
+
+    @Test
+    @DisplayName("채널키 미설정(맵 없음) 시 멱등성 키 점유 전에 PAYMENT_SERVICE_UNAVAILABLE을 던진다")
+    void charge_channelKey_missing_throws_before_idempotency_mark() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(null);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        verify(idempotencyService, never()).checkAndMark(anyString());
     }
 
     @Test

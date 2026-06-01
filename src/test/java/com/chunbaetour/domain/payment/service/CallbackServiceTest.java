@@ -158,9 +158,9 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("txId null → amountValid=false → PAY_013 (failIfPending=1 시 정상 unmark)")
+    @DisplayName("transactionId null → amountValid=false → PAY_013 (failIfPending=1 시 정상 unmark)")
     void handleSuccess_null_txId_fails_order_and_throws_PAY_013() {
-        // CodeRabbit 지적 반영: PG webhook이 txId 누락한 비정상 payload 전송 시,
+        // CodeRabbit 지적 반영: PG webhook이 transactionId 누락한 비정상 payload 전송 시,
         // walletService.charge가 빈 transaction id로 실행되는 것을 차단.
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
@@ -179,7 +179,7 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("txId blank(빈 문자열) → amountValid=false → PAY_013")
+    @DisplayName("transactionId blank(빈 문자열) → amountValid=false → PAY_013")
     void handleSuccess_blank_txId_fails_order_and_throws_PAY_013() {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));

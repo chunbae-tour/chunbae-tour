@@ -9,8 +9,11 @@ import com.chunbaetour.domain.payment.service.WebhookVerifier;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,6 +30,7 @@ public class WebhookController {
     private final WebhookVerifier webhookVerifier;
     private final CallbackService callbackService;
     private final ObjectMapper objectMapper;
+    private final Validator validator;
 
     @SecurityRequirements
     @Operation(summary = "PortOne 결제 웹훅 수신")
@@ -44,6 +48,11 @@ public class WebhookController {
         try {
             payload = objectMapper.readValue(rawBody, WebhookPayload.class);
         } catch (JacksonException e) {
+            throw new PaymentException(ErrorCode.INVALID_REQUEST);
+        }
+        // objectMapper.readValue는 @NotBlank/@NotNull을 자동 검증하지 않으므로 명시적 검증
+        Set<ConstraintViolation<WebhookPayload>> violations = validator.validate(payload);
+        if (!violations.isEmpty()) {
             throw new PaymentException(ErrorCode.INVALID_REQUEST);
         }
         callbackService.handle(webhookId, payload);
