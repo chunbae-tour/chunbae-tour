@@ -58,8 +58,10 @@ public class ChargeService {
         Optional<PaymentOrder> existingOrder = paymentOrderRepository.findPendingByIdempotencyKey(idempotencyKey);
         if (existingOrder.isPresent()) {
             PaymentOrder order = existingOrder.get();
+            // 기존 주문의 결제수단으로 채널키 재해석 — request.paymentMethod()와 다를 수 있으므로 일관성 보장
             return ChargeResponse.from(order.getOrderUid(), order.getAmount(),
-                    order.getPaymentMethod(), storeId, channelKey);
+                    order.getPaymentMethod(), storeId,
+                    resolveChannelKey(order.getPaymentMethod()));
         }
 
         // [2] 멱등성 키 점유 — 중복 요청 차단 (Redis 24시간 TTL)
