@@ -27,6 +27,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
 
 @SpringBootTest
 class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
@@ -79,6 +83,31 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
         assertThatThrownBy(() -> placeReviewService.createReview(testUser.getId(), testPlace.getId(), request))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.PLACE_NOT_FOUND.getMessage());
+
+        assertThatThrownBy(() -> placeReviewService.getPlaceReviews(testPlace.getId(), PageRequest.of(0, 10)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.PLACE_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("관광지 리뷰 목록을 정상적으로 조회할 수 있어야 한다 (최신순)")
+    void can_read_place_reviews() {
+        ReviewCreateRequest request1 = new ReviewCreateRequest(5, "첫 번째 리뷰", null);
+        placeReviewService.createReview(testUser.getId(), testPlace.getId(), request1);
+
+        Account testUser2 = Account.registerUser("test2@test.com", "password", "테스터2");
+        accountRepository.save(testUser2);
+        ReviewCreateRequest request2 = new ReviewCreateRequest(4, "두 번째 리뷰", null);
+        placeReviewService.createReview(testUser2.getId(), testPlace.getId(), request2);
+
+        Page<PlaceReviewResponse> reviews = placeReviewService.getPlaceReviews(
+                testPlace.getId(), 
+                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+
+        assertThat(reviews.getContent()).hasSize(2);
+        assertThat(reviews.getContent().get(0).content()).isEqualTo("두 번째 리뷰"); // 최신순
+        assertThat(reviews.getContent().get(1).content()).isEqualTo("첫 번째 리뷰");
     }
 
     @Test
