@@ -57,11 +57,25 @@ public class SupportMessage {
     @Builder
     private SupportMessage(Long supportRoomId, Long senderId, SupportSenderRole senderRole,
                            SupportMessageType messageType, String content, String fileUrl) {
+        validatePayload(messageType, content, fileUrl);
         this.supportRoomId = supportRoomId;
         this.senderId = senderId;
         this.senderRole = senderRole;
         this.messageType = messageType;
         this.content = content;
         this.fileUrl = fileUrl;
+    }
+
+    private static void validatePayload(SupportMessageType messageType, String content, String fileUrl) {
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("content는 비어 있을 수 없습니다.");
+        }
+        if (messageType == SupportMessageType.TEXT && fileUrl != null) {
+            throw new IllegalArgumentException("TEXT 메시지는 fileUrl을 가질 수 없습니다.");
+        }
+        if ((messageType == SupportMessageType.IMAGE || messageType == SupportMessageType.FILE)
+                && (fileUrl == null || fileUrl.isBlank())) {
+            throw new IllegalArgumentException("IMAGE/FILE 메시지는 fileUrl이 필요합니다.");
+        }
     }
 }

@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.cs.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -49,11 +51,17 @@ public class SupportRoom extends BaseEntity {
 
     // ADMIN 배정 — @Transactional 경계 안 영속 상태에서 호출해야 updatedAt 갱신 보장
     public void assignAdmin(Long adminId) {
+        if (adminId == null) {
+            throw new IllegalArgumentException("adminId must not be null");
+        }
         this.adminId = adminId;
     }
 
     // 상담 종료 — @Transactional 경계 안 영속 상태에서 호출해야 updatedAt 갱신 보장
     public void close() {
+        if (this.status == SupportRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
+        }
         this.status = SupportRoomStatus.CLOSED;
         this.closedAt = LocalDateTime.now();
     }
