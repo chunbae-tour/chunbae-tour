@@ -101,11 +101,12 @@ class FlywayBaselineIntegrationTest {
         MigrateResult result = flyway.migrate();
 
         assertThat(result.success).as("마이그레이션이 성공해야 한다").isTrue();
-        // KAN-179 V2 admin_action_logs 합류 → 본 슬라이스 시점 누적 2건이 일반 마이그레이션으로 실행.
-        // 후속 V3~ 추가 시 본 가드의 기댓값도 함께 갱신해야 한다 (그 슬라이스 PR이 책임).
+        // KAN-179 V2 admin_action_logs + KAN-180 V3 users.suspended_reason 합류 →
+        // 본 슬라이스 시점 누적 3건이 일반 마이그레이션으로 실행.
+        // 후속 V4~ 추가 시 본 가드의 기댓값도 함께 갱신해야 한다 (그 슬라이스 PR이 책임).
         assertThat(result.migrationsExecuted)
-                .as("V1 + V2 두 건 모두 적용되어야 한다")
-                .isEqualTo(2);
+                .as("V1 + V2 + V3 세 건 모두 적용되어야 한다")
+                .isEqualTo(3);
 
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
@@ -127,6 +128,8 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbc, "ad_applications");
         // V2가 추가한 admin_action_logs 테이블도 검증 (KAN-179 회귀 가드)
         assertTableExists(jdbc, "admin_action_logs");
+        // V3가 users에 추가한 suspended_reason 컬럼도 검증 (KAN-180 회귀 가드)
+        assertColumnExists(jdbc, "users", "suspended_reason");
     }
 
     @Test
@@ -136,6 +139,9 @@ class FlywayBaselineIntegrationTest {
         // (Flyway가 schema 비어있지 않다고 판단 → baseline-on-migrate 발동)
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE TABLE existing_legacy_table (id BIGINT PRIMARY KEY)");
+        // V3(KAN-180)가 users를 ALTER하므로 baseline 대상 기존 schema에 users가 존재해야 한다.
+        // 실제 운영 prod baseline 시점엔 users 등 전체 schema가 이미 존재 — 이를 최소 테이블로 시뮬레이션.
+        jdbc.execute("CREATE TABLE users (id BIGINT PRIMARY KEY)");
 
         // 운영 prod 설정 (application.yml 그대로): baseline-on-migrate=true + baseline-version=1
         Flyway flyway = Flyway.configure()
@@ -148,12 +154,12 @@ class FlywayBaselineIntegrationTest {
         MigrateResult result = flyway.migrate();
 
         assertThat(result.success).as("baseline 적용이 성공해야 한다").isTrue();
-        // V1은 BASELINE marker(실 실행 X). V2(KAN-179 admin_action_logs)는 baseline-version=1보다 위 →
-        // 일반 마이그레이션으로 실 실행 → migrationsExecuted=1.
-        // 후속 V3~ 추가 시 본 가드 기댓값도 함께 갱신해야 한다.
+        // V1은 BASELINE marker(실 실행 X). V2(admin_action_logs) + V3(users.suspended_reason)는
+        // baseline-version=1보다 위 → 일반 마이그레이션으로 실 실행 → migrationsExecuted=2.
+        // 후속 V4~ 추가 시 본 가드 기댓값도 함께 갱신해야 한다.
         assertThat(result.migrationsExecuted)
-                .as("V1 baseline + V2 실 실행 → 1건")
-                .isEqualTo(1);
+                .as("V1 baseline + V2·V3 실 실행 → 2건")
+                .isEqualTo(2);
 
         // schema_history에 V1은 BASELINE, V2는 SQL 타입으로 기록되어야 함
         String v1Type = jdbc.queryForObject(
@@ -168,14 +174,21 @@ class FlywayBaselineIntegrationTest {
         assertThat(v2Type)
                 .as("V2 row의 type이 SQL이어야 한다 (baseline 외 일반 마이그레이션)")
                 .isEqualTo("SQL");
+        String v3Type = jdbc.queryForObject(
+                "SELECT type FROM flyway_schema_history WHERE version = '3'",
+                String.class);
+        assertThat(v3Type)
+                .as("V3 row의 type이 SQL이어야 한다 (baseline 외 일반 마이그레이션)")
+                .isEqualTo("SQL");
 
-        // V1 SQL이 실행되지 않았는지 검증 — ad_applications 등 dump 테이블이 없어야 함
-        // (existing_legacy_table만 있고 V1의 어떤 테이블도 생성되지 않음)
+        // V1 SQL이 실행되지 않았는지 검증 — ad_applications 등 V1 dump 테이블이 없어야 함
+        // (existing_legacy_table + 사전 생성 users만 존재, V1이 만드는 나머지 테이블은 부재)
         assertTableDoesNotExist(jdbc, "ad_applications");
-        assertTableDoesNotExist(jdbc, "users");
         assertTableExists(jdbc, "existing_legacy_table"); // 기존 schema는 보존
         // V2는 baseline-version=1보다 위라 실 실행되므로 admin_action_logs 테이블은 존재해야 함
         assertTableExists(jdbc, "admin_action_logs");
+        // V3도 실 실행되어 사전 생성 users에 suspended_reason 컬럼이 추가돼야 함 (KAN-180 회귀 가드)
+        assertColumnExists(jdbc, "users", "suspended_reason");
     }
 
     private static HikariDataSource newHikariDataSource() {
@@ -196,6 +209,18 @@ class FlywayBaselineIntegrationTest {
                 tableName);
         assertThat(count)
                 .as(tableName + " 테이블이 존재해야 한다")
+                .isEqualTo(1L);
+    }
+
+    private static void assertColumnExists(JdbcTemplate jdbc, String tableName, String columnName) {
+        Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+                Long.class,
+                tableName,
+                columnName);
+        assertThat(count)
+                .as(tableName + "." + columnName + " 컬럼이 존재해야 한다")
                 .isEqualTo(1L);
     }
 

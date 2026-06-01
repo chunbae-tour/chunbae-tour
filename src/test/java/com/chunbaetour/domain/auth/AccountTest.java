@@ -3,6 +3,8 @@ package com.chunbaetour.domain.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
@@ -81,5 +83,78 @@ class AccountTest {
         // 가드가 status 세팅보다 먼저 실행돼야 함 — partial 전이 차단 검증
         assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(account.getDeletedAt()).isNull();
+    }
+
+    // ===== KAN-180 Admin S02 — 운영자 정지/해제 =====
+
+    @Test
+    void suspend_with_reason_and_until_sets_status_and_fields() {
+        Account account = Account.registerUser("suspend@example.com", "hash", "정지대상");
+
+        account.suspend("욕설 신고 누적", NOW);
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(account.getSuspendedReason()).isEqualTo("욕설 신고 누적");
+        assertThat(account.getSuspendedUntil()).isEqualTo(NOW);
+    }
+
+    @Test
+    void suspend_with_null_until_is_indefinite() {
+        Account account = Account.registerUser("perma@example.com", "hash", "무기한");
+
+        account.suspend("반복 위반", null);
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(account.getSuspendedReason()).isEqualTo("반복 위반");
+        assertThat(account.getSuspendedUntil()).isNull();
+    }
+
+    @Test
+    void suspend_on_already_suspended_updates_reason_and_until_without_exception() {
+        // 재정지 = 갱신 허용 (IllegalStateException 던지지 않음). 사유/기간 덮어쓰기.
+        Account account = Account.registerUser("resuspend@example.com", "hash", "재정지");
+        LocalDateTime firstUntil = LocalDateTime.of(2026, 5, 28, 0, 0, 0);
+        account.suspend("1차 사유", firstUntil);
+
+        LocalDateTime secondUntil = LocalDateTime.of(2026, 6, 30, 0, 0, 0);
+        account.suspend("연장 사유", secondUntil);
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(account.getSuspendedReason()).isEqualTo("연장 사유");
+        assertThat(account.getSuspendedUntil()).isEqualTo(secondUntil);
+    }
+
+    @Test
+    void suspend_with_reason_on_deleted_account_throws() {
+        Account account = Account.createForSeed(
+                "deleted@example.com", "hash", "탈퇴자", Role.USER, AccountStatus.DELETED);
+
+        assertThatThrownBy(() -> account.suspend("사유", NOW))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_ALREADY_DELETED);
+    }
+
+    @Test
+    void unsuspend_resets_status_and_clears_fields() {
+        Account account = Account.registerUser("unsuspend@example.com", "hash", "해제대상");
+        account.suspend("사유", NOW);
+
+        account.unsuspend();
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(account.getSuspendedReason()).isNull();
+        assertThat(account.getSuspendedUntil()).isNull();
+    }
+
+    @Test
+    void unsuspend_on_deleted_account_throws() {
+        Account account = Account.createForSeed(
+                "deletedunsuspend@example.com", "hash", "탈퇴해제", Role.USER, AccountStatus.DELETED);
+
+        assertThatThrownBy(account::unsuspend)
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_ALREADY_DELETED);
     }
 }
