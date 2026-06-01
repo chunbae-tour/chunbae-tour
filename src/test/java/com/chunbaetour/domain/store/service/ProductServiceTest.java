@@ -48,7 +48,8 @@ class ProductServiceTest {
 
     @BeforeEach
     void setUp() {
-        productService = new ProductService(productRepository, redisTemplate, new ObjectMapper());
+        ObjectMapper objectMapper = new ObjectMapper();
+        productService = new ProductService(productRepository, redisTemplate, objectMapper, new ProductMapper(objectMapper));
     }
 
     private Product createProduct(Long id, ProductStatus status) {

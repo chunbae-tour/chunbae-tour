@@ -13,6 +13,9 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
+import com.chunbaetour.domain.shop.entity.ShopWallet;
+import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.entity.Menu;
@@ -39,6 +42,9 @@ class ShopServiceTest {
 
     @Mock
     private MenuRepository menuRepository;
+
+    @Mock
+    private ShopWalletRepository shopWalletRepository;
 
     @Mock
     private ObjectMapper objectMapper;
@@ -412,5 +418,51 @@ class ShopServiceTest {
         Optional<Long> result = shopService.findMerchantAccountId(SHOP_ID);
 
         assertThat(result).isEmpty();
+    }
+
+    // ── getShopWallet ─────────────────────────────────────────────────────────
+
+    private ShopWallet createWallet(long balance) {
+        ShopWallet wallet = ShopWallet.create(SHOP_ID);
+        ReflectionTestUtils.setField(wallet, "balance", balance);
+        return wallet;
+    }
+
+    @Test
+    @DisplayName("가게 수익 지갑 조회 — 정상 반환")
+    void getShopWallet_success() {
+        Shop shop = createShop();
+        ShopWallet wallet = createWallet(15_000L);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.of(wallet));
+
+        ShopWalletResponse result = shopService.getShopWallet(USER_ID, SHOP_ID);
+
+        assertThat(result.shopId()).isEqualTo(SHOP_ID);
+        assertThat(result.balance()).isEqualTo(15_000L);
+    }
+
+    @Test
+    @DisplayName("가게 수익 지갑 조회 — 타인 가게 → SHOP_NOT_FOUND")
+    void getShopWallet_notOwner_throwsShopNotFound() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.getShopWallet(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("가게 수익 지갑 조회 — 지갑 없음 → SHOP_WALLET_NOT_FOUND")
+    void getShopWallet_walletNotFound_throws() {
+        Shop shop = createShop();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(shopWalletRepository.findByShopId(SHOP_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.getShopWallet(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_WALLET_NOT_FOUND);
     }
 }

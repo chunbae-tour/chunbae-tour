@@ -9,6 +9,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 
 public interface PlaceRepository extends JpaRepository<Place, Long> {
 
@@ -51,5 +54,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     /**
      * 상태 기반 단건 관광지 조회
      */
-    java.util.Optional<Place> findByIdAndStatus(Long id, PlaceStatus status);
+    Optional<Place> findByIdAndStatus(Long id, PlaceStatus status);
+
+    /**
+     * 상태 기반 단건 관광지 조회 (비관적 쓰기 락 - 동시성 제어용)
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Place p WHERE p.id = :id AND p.status = :status")
+    Optional<Place> findByIdAndStatusForUpdate(@Param("id") Long id, @Param("status") PlaceStatus status);
 }

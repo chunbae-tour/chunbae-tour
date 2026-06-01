@@ -136,6 +136,8 @@ public class SecurityConfig {
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
+                        // 관광지 리뷰 작성은 USER 인증 필요 — GET permitAll보다 먼저 선언
+                        .requestMatchers(HttpMethod.POST, "/api/v1/places/*/reviews").hasRole("USER")
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
                         // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용 — KAN-157
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
