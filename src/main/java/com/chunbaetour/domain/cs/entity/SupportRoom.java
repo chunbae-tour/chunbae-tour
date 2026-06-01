@@ -1,7 +1,6 @@
-package com.chunbaetour.domain.support.entity;
+package com.chunbaetour.domain.cs.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
-import com.chunbaetour.domain.support.type.SupportRoomStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

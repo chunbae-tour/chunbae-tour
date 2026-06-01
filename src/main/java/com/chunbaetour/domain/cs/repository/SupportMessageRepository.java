@@ -1,6 +1,6 @@
-package com.chunbaetour.domain.support.repository;
+package com.chunbaetour.domain.cs.repository;
 
-import com.chunbaetour.domain.support.entity.SupportMessage;
+import com.chunbaetour.domain.cs.entity.SupportMessage;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 
