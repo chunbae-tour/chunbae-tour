@@ -52,7 +52,7 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
         verifyNoInteractions(supportRoomService);
     }
 
-    // ADMIN 인증 → 403 AUTH_007 (USER 전용)
+    // ADMIN 인증 → 403 AUTH_007 (USER·MERCHANT 전용)
     @Test
     @DisplayName("ADMIN 인증 → 403")
     void createRoom_whenAdmin_returns403() throws Exception {
@@ -66,18 +66,19 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
         verifyNoInteractions(supportRoomService);
     }
 
-    // MERCHANT 인증 → 403 AUTH_007 (USER 전용)
+    // MERCHANT 인증 → 201 (USER·MERCHANT 공용)
     @Test
-    @DisplayName("MERCHANT 인증 → 403")
-    void createRoom_whenMerchant_returns403() throws Exception {
+    @DisplayName("MERCHANT 인증 → 201")
+    void createRoom_whenMerchant_returns201() throws Exception {
+        given(supportRoomService.createRoom(eq(1L), any(SupportRoomCreateRequest.class)))
+                .willReturn(buildResponse(12L));
         String token = tokenIssuer.issueAccess(1L, Role.MERCHANT, "merchant@test.com");
         mockMvc.perform(post(BASE_URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
-        verifyNoInteractions(supportRoomService);
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.supportRoomId").value(12));
     }
 
     // USER 인증 + initialMessage 없음 → 201
