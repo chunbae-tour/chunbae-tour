@@ -15,6 +15,7 @@ import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -51,6 +52,15 @@ public class ChargeService {
             throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
         String channelKey = resolveChannelKey(request.paymentMethod());
+
+        // [1.7] 기존 PENDING 주문 재활용 — 네트워크 실패 후 재시도 시 동일 ChargeResponse 반환
+        // 정상 멱등성 동작: 같은 키로 응답을 못 받은 경우 기존 주문 정보로 동일한 응답 재생성
+        Optional<PaymentOrder> existingOrder = paymentOrderRepository.findPendingByIdempotencyKey(idempotencyKey);
+        if (existingOrder.isPresent()) {
+            PaymentOrder order = existingOrder.get();
+            return ChargeResponse.from(order.getOrderUid(), order.getAmount(),
+                    order.getPaymentMethod(), storeId, channelKey);
+        }
 
         // [2] 멱등성 키 점유 — 중복 요청 차단 (Redis 24시간 TTL)
         idempotencyService.checkAndMark(idempotencyKey);
@@ -125,8 +135,17 @@ public class ChargeService {
         }
     }
     // 결제수단에 대응하는 PortOne 채널키를 application.yml channel 맵에서 조회해 반환
+    // 맵 미설정 또는 키 오타 시 즉시 예외로 원인 고정 — null이 결제창 필수값으로 내려가는 것 방지
     private String resolveChannelKey(PaymentMethod paymentMethod) {
-        return portOneProperties.getChannel().get(toChannelPropertyKey(paymentMethod));
+        Map<String, String> channel = portOneProperties.getChannel();
+        if (channel == null) {
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+        String channelKey = channel.get(toChannelPropertyKey(paymentMethod));
+        if (channelKey == null || channelKey.isBlank()) {
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+        return channelKey;
     }
 
     // PaymentMethod enum을 application.yml channel 맵의 키 문자열로 변환 (예: KAKAO_PAY → "kakao-pay")
