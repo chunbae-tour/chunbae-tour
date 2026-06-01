@@ -8,6 +8,8 @@ import com.chunbaetour.domain.festival.dto.response.DailyCalendarResponse;
 import com.chunbaetour.domain.festival.service.CalendarService;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +36,7 @@ public class CalendarController {
      */
     @GetMapping
     public ApiResponse<CalendarResponse> getMonthly(
-            @RequestParam int year,
+            @Min(1) @Max(9999) @RequestParam int year,
             @RequestParam int month) {
         if (month < 1 || month > 12) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
