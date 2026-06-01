@@ -58,6 +58,10 @@ public class SupportMessage {
     @Builder
     private SupportMessage(Long supportRoomId, Long senderId, SupportSenderRole senderRole,
                            SupportMessageType messageType, String content, String fileUrl) {
+        if (supportRoomId == null) throw new IllegalArgumentException("supportRoomId must not be null");
+        if (senderId == null) throw new IllegalArgumentException("senderId must not be null");
+        if (senderRole == null) throw new IllegalArgumentException("senderRole must not be null");
+        if (messageType == null) throw new IllegalArgumentException("messageType must not be null");
         validatePayload(messageType, content, fileUrl);
         this.supportRoomId = supportRoomId;
         this.senderId = senderId;

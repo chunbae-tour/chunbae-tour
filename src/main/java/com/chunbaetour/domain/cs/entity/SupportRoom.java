@@ -39,14 +39,17 @@ public class SupportRoom extends BaseEntity {
     @Column(nullable = false, length = 10)
     private SupportRoomStatus status;
 
-    // 상담 종료 시각 — OPEN 상태에서는 null
+    // 상담 종료 시각 — WAITING 상태에서는 null
     @Column(name = "closed_at")
     private LocalDateTime closedAt;
 
     @Builder
     private SupportRoom(Long userId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId must not be null");
+        }
         this.userId = userId;
-        this.status = SupportRoomStatus.OPEN;
+        this.status = SupportRoomStatus.WAITING;
     }
 
     // ADMIN 배정 — @Transactional 경계 안 영속 상태에서 호출해야 updatedAt 갱신 보장
