@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -14,7 +16,6 @@ import com.chunbaetour.domain.cs.dto.request.FaqUpdateRequest;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
 import com.chunbaetour.domain.cs.entity.Faq;
 import com.chunbaetour.domain.cs.repository.FaqRepository;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class FaqServiceTest {
     @InjectMocks private FaqService faqService;
     @Mock private FaqRepository faqRepository;
 
-    // ===== getAll (cursor 페이징) =====
+    // ===== getAll (ADMIN cursor 페이징) =====
 
     // size보다 많은 결과 → hasNext=true, nextCursor 존재
     @Test
@@ -58,6 +59,69 @@ class FaqServiceTest {
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
         assertThat(result.content()).hasSize(2);
+    }
+
+    // ===== getActiveFaqs (USER cursor 페이징) =====
+
+    // category null → findByIsActiveTrueWithCursor 호출
+    @Test
+    void getActiveFaqs_whenCategoryNull_callsFindByIsActiveTrue() {
+        given(faqRepository.findByIsActiveTrueWithCursor(any(), any(PageRequest.class)))
+                .willReturn(List.of(buildFaq(1L)));
+
+        faqService.getActiveFaqs(null, 20, null);
+
+        verify(faqRepository).findByIsActiveTrueWithCursor(any(), any(PageRequest.class));
+        verifyNoMoreInteractions(faqRepository);
+    }
+
+    // category blank → findByIsActiveTrueWithCursor 호출
+    @Test
+    void getActiveFaqs_whenCategoryBlank_callsFindByIsActiveTrue() {
+        given(faqRepository.findByIsActiveTrueWithCursor(any(), any(PageRequest.class)))
+                .willReturn(List.of());
+
+        faqService.getActiveFaqs(null, 20, "  ");
+
+        verify(faqRepository).findByIsActiveTrueWithCursor(any(), any(PageRequest.class));
+    }
+
+    // category 있음 → findByCategoryAndIsActiveTrueWithCursor 호출
+    @Test
+    void getActiveFaqs_whenCategoryPresent_callsFindByCategory() {
+        given(faqRepository.findByCategoryAndIsActiveTrueWithCursor(any(), any(), any(PageRequest.class)))
+                .willReturn(List.of(buildFaq(1L)));
+
+        faqService.getActiveFaqs(null, 20, "PAYMENT");
+
+        verify(faqRepository).findByCategoryAndIsActiveTrueWithCursor(any(), any(), any(PageRequest.class));
+        verifyNoMoreInteractions(faqRepository);
+    }
+
+    // size보다 많은 결과 → hasNext=true, nextCursor 존재
+    @Test
+    void getActiveFaqs_hasNextTrue_whenResultExceedsSize() {
+        int size = 2;
+        given(faqRepository.findByIsActiveTrueWithCursor(any(), any(PageRequest.class)))
+                .willReturn(List.of(buildFaq(1L), buildFaq(2L), buildFaq(3L)));
+
+        CursorPageResponse<FaqResponse> result = faqService.getActiveFaqs(null, size, null);
+
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+        assertThat(result.content()).hasSize(size);
+    }
+
+    // size 이하 결과 → hasNext=false, nextCursor null
+    @Test
+    void getActiveFaqs_hasNextFalse_whenResultWithinSize() {
+        given(faqRepository.findByIsActiveTrueWithCursor(any(), any(PageRequest.class)))
+                .willReturn(List.of(buildFaq(1L)));
+
+        CursorPageResponse<FaqResponse> result = faqService.getActiveFaqs(null, 20, null);
+
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
     }
 
     // ===== update =====
