@@ -72,7 +72,7 @@ public class PlaceReviewController {
     @GetMapping
     public ApiResponse<Page<PlaceReviewResponse>> getPlaceReviews(
             @PathVariable @Positive Long placeId,
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 10, sort = {"createdAt", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
         Page<PlaceReviewResponse> response = placeReviewService.getPlaceReviews(placeId, pageable);
         return ApiResponse.success(response);
     }

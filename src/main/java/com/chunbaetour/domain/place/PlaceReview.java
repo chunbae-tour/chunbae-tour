@@ -27,7 +27,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
  * 관광지 리뷰 엔티티.
  *
  * <ul>
- *   <li>1인 1리뷰 정책: 애플리케이션 레벨의 비관적 락으로 중복 방지 (삭제 후 재작성 지원)</li>
+ *   <li>1인 1리뷰 정책: DB Generated Column 기반 UNIQUE 제약(uk_place_review_active)과 비관적 락으로 중복 원천 방지 (삭제 후 재작성 지원)</li>
  *   <li>리뷰 내용: 최대 500자</li>
  *   <li>이미지: JSON 배열로 저장, 최대 5개 (서비스 레이어에서 검증)</li>
  *   <li>soft delete: status = DELETED로 처리</li>

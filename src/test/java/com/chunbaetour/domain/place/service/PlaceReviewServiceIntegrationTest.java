@@ -102,7 +102,7 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
 
         Page<PlaceReviewResponse> reviews = placeReviewService.getPlaceReviews(
                 testPlace.getId(), 
-                PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt"))
+                PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
         );
 
         assertThat(reviews.getContent()).hasSize(2);

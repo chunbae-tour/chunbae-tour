@@ -12,7 +12,7 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
 
     /**
      * 1인 1리뷰 정책 체크: 해당 관광지에 사용자가 이미 ACTIVE 리뷰를 작성했는지 확인.
-     * DB UNIQUE 제약(uk_place_review_user_place)과 이중으로 방어.
+     * DB UNIQUE 제약(uk_place_review_active)과 비관적 락으로 이중 방어.
      */
     boolean existsByAuthorIdAndPlaceIdAndStatus(Long authorId, Long placeId, PlaceReviewStatus status);
 
