@@ -40,7 +40,7 @@ public class CallbackService {
             WebhookEventType eventType = WebhookEventType.from(payload.type());
             switch (eventType) {
                 case TRANSACTION_PAID ->
-                        handleSuccess(payload.data().paymentId(), payload.data().txId());
+                        handleSuccess(payload.data().paymentId(), payload.data().transactionId());
                 case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
                         handleFail(payload.data().paymentId());
                 default -> { }
@@ -80,7 +80,7 @@ public class CallbackService {
         }
 
         // 2단계: PG 검증 (외부 네트워크 호출, 락 미점유)
-        // amountValid에 txId 비어있지 않음을 포함 — PG webhook이 비정상 payload(txId null/blank) 전송 시
+        // amountValid에 transactionId 비어있지 않음을 포함 — PG webhook이 비정상 payload 전송 시
         // walletService.charge가 빈 transaction id로 실행되어 결제 추적성 손실 차단. CodeRabbit 지적 반영.
         PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(paymentId);
         boolean amountValid = info.isPaid()

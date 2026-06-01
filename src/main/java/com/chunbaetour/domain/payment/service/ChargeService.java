@@ -4,14 +4,17 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
-import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+import com.chunbaetour.domain.payment.config.PortOneProperties;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
 import com.chunbaetour.domain.payment.dto.response.PaymentHistoryResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import com.chunbaetour.domain.payment.type.PaymentMethod;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -30,6 +33,7 @@ public class ChargeService {
     private final IdempotencyService idempotencyService;
     private final PaymentGatewayClient paymentGatewayClient;
     private final PaymentOrderRepository paymentOrderRepository;
+    private final PortOneProperties portOneProperties;
 
     // 충전 플로우:
     // [1] 금액 검증 → [2] 멱등성 키 점유 → [3] 포트원 사전등록 → [4] 주문 PENDING 저장 → [5] orderUid 반환
@@ -53,7 +57,13 @@ public class ChargeService {
                     PaymentOrder.create(orderUid, userId, request.amount(),
                             idempotencyKey, request.paymentMethod(), orderUid)
             );
-            return new ChargeResponse(orderUid);
+            return ChargeResponse.from(
+                orderUid,
+                request.amount(),
+                request.paymentMethod(),
+                portOneProperties.getStoreId(),
+                resolveChannelKey(request.paymentMethod())
+            );
         } catch (RuntimeException ex) {
             // preRegister 또는 save 실패 시 키 해제 → 사용자 재시도 가능
             idempotencyService.unmark(idempotencyKey);
@@ -106,5 +116,19 @@ public class ChargeService {
         if (amount > MAX_AMOUNT) {
             throw new PaymentException(ErrorCode.CHARGE_AMOUNT_EXCEEDED);
         }
+    }
+    // 결제수단에 대응하는 PortOne 채널키를 application.yml channel 맵에서 조회해 반환
+    private String resolveChannelKey(PaymentMethod paymentMethod) {
+        return portOneProperties.getChannel().get(toChannelPropertyKey(paymentMethod));
+    }
+
+    // PaymentMethod enum을 application.yml channel 맵의 키 문자열로 변환 (예: KAKAO_PAY → "kakao-pay")
+    private String toChannelPropertyKey(PaymentMethod paymentMethod) {
+        return switch (paymentMethod) {
+            case CARD -> "card";
+            case KAKAO_PAY -> "kakao-pay";
+            case TOSS_PAY -> "toss-pay";
+            case FOREIGN_CARD -> "foreign-card";
+        };
     }
 }
