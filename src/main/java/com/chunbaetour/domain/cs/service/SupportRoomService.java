@@ -68,7 +68,7 @@ public class SupportRoomService {
             );
         }
 
-        return SupportRoomResponse.from(room);
+        return SupportRoomResponse.fromForUser(room);
     }
 
     // USER 본인 상담방 목록 cursor 페이징 — status 필터 선택
@@ -78,7 +78,7 @@ public class SupportRoomService {
                 userId, status, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = page.size() > size;
-        List<SupportRoomResponse> content = page.stream().limit(size).map(SupportRoomResponse::from).toList();
+        List<SupportRoomResponse> content = page.stream().limit(size).map(SupportRoomResponse::fromForUser).toList();
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).supportRoomId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());

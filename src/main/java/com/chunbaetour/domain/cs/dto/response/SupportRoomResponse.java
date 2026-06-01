@@ -13,6 +13,7 @@ public record SupportRoomResponse(
         LocalDateTime closedAt,
         LocalDateTime createdAt
 ) {
+    // ADMIN용 — summary 포함
     public static SupportRoomResponse from(SupportRoom room) {
         return new SupportRoomResponse(
                 room.getId(),
@@ -20,6 +21,19 @@ public record SupportRoomResponse(
                 room.getAdminId(),
                 room.getStatus(),
                 room.getSummary(),
+                room.getClosedAt(),
+                room.getCreatedAt()
+        );
+    }
+
+    // USER용 — summary 제외 (ADMIN 내부 메모 노출 방지)
+    public static SupportRoomResponse fromForUser(SupportRoom room) {
+        return new SupportRoomResponse(
+                room.getId(),
+                room.getUserId(),
+                room.getAdminId(),
+                room.getStatus(),
+                null,
                 room.getClosedAt(),
                 room.getCreatedAt()
         );
