@@ -10,7 +10,9 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
+import com.chunbaetour.domain.place.service.PlaceReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -73,6 +75,7 @@ public class UserMeController {
     private final UserMeService userMeService;
     private final UserMeHomeService userMeHomeService;
     private final PlaceLikeService placeLikeService;
+    private final PlaceReviewService placeReviewService;
     private final RefreshCookieFactory refreshCookieFactory;
 
     /**
@@ -161,6 +164,29 @@ public class UserMeController {
             }
         });
         return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
+    }
+
+    /**
+     * 본인이 작성한 관광지 리뷰 목록 페이징 조회 (Epic A S6, 4-6).
+     *
+     * <p>마이페이지에서 노출되는 리뷰 목록. 최신순 정렬 기본 적용.
+     *
+     * @param userId   SecurityContext에 저장된 본인 ID
+     * @param pageable 페이징 파라미터
+     * @return 작성한 리뷰 목록 페이지
+     */
+    @Operation(summary = "내 리뷰 목록 조회")
+    @GetMapping("/reviews")
+    public ApiResponse<Page<UserReviewResponse>> getMyReviews(
+            @AuthenticationPrincipal Long userId,
+            @PageableDefault(size = 10, sort = {"createdAt", "id"}, direction = Sort.Direction.DESC) Pageable pageable) {
+        requireAuthenticated(userId);
+        pageable.getSort().forEach(order -> {
+            if (!ALLOWED_LIKES_SORT_FIELDS.contains(order.getProperty())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+        });
+        return ApiResponse.success(placeReviewService.getUserReviews(userId, pageable));
     }
 
     /**

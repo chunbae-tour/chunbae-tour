@@ -111,6 +111,43 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("내가 작성한 리뷰 목록을 정상적으로 조회할 수 있어야 한다 (마이페이지용)")
+    void can_read_my_reviews() {
+        // testUser가 두 개의 리뷰 작성
+        ReviewCreateRequest request1 = new ReviewCreateRequest(5, "내 첫 리뷰", null);
+        placeReviewService.createReview(testUser.getId(), testPlace.getId(), request1);
+
+        Place testPlace2 = Place.builder()
+                .name("테스트 관광지 2")
+                .address("부산")
+                .lat(new BigDecimal("35.0"))
+                .lng(new BigDecimal("129.0"))
+                .category(PlaceCategory.TOURIST_SPOT)
+                .build();
+        placeRepository.save(testPlace2);
+
+        ReviewCreateRequest request2 = new ReviewCreateRequest(4, "내 두 번째 리뷰", null);
+        placeReviewService.createReview(testUser.getId(), testPlace2.getId(), request2);
+
+        // 다른 유저가 리뷰 작성 (내 목록에 안 나와야 함)
+        Account testUser2 = Account.registerUser("other@test.com", "password", "다른유저");
+        accountRepository.save(testUser2);
+        placeReviewService.createReview(testUser2.getId(), testPlace.getId(), new ReviewCreateRequest(3, "남의 리뷰", null));
+
+        org.springframework.data.domain.Page<com.chunbaetour.domain.place.dto.response.UserReviewResponse> myReviews = 
+            placeReviewService.getUserReviews(
+                testUser.getId(), 
+                PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
+            );
+
+        assertThat(myReviews.getContent()).hasSize(2);
+        assertThat(myReviews.getContent().get(0).content()).isEqualTo("내 두 번째 리뷰");
+        assertThat(myReviews.getContent().get(0).placeName()).isEqualTo("테스트 관광지 2");
+        assertThat(myReviews.getContent().get(1).content()).isEqualTo("내 첫 리뷰");
+        assertThat(myReviews.getContent().get(1).placeName()).isEqualTo("테스트 관광지");
+    }
+
+    @Test
     @DisplayName("동일 유저가 동시에 여러 번 리뷰 작성 요청 시 1번만 성공해야 한다 (동시성 중복 방어)")
     void concurrent_duplicate_reviews_by_same_user_should_fail() throws InterruptedException {
         int threadCount = 5;
