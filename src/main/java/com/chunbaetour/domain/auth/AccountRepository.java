@@ -2,7 +2,9 @@ package com.chunbaetour.domain.auth;
 
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -103,4 +105,33 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     int markAsDeleted(@Param("userId") Long userId,
                        @Param("now") LocalDateTime now,
                        @Param("deletedStatus") AccountStatus deletedStatus);
+
+    /**
+     * 운영자 사용자 목록 검색 — keyword(닉네임/이메일 부분일치) + status + role 필터 + cursor 페이징 (KAN-180 Admin S02).
+     *
+     * <p>모든 필터는 {@code null}이면 미적용(전체). cursor는 id 내림차순 keyset 페이징 —
+     * {@code cursorId}보다 작은 id만 조회해 다음 페이지를 sentinel(size+1) 방식으로 판단(서비스 책임).
+     *
+     * <p>{@code @SQLRestriction("deleted_at IS NULL")}이 자동 적용되어 탈퇴(DELETED) 계정은 결과에서 제외된다 —
+     * 운영자 사용자 관리는 활성/정지 계정 대상. keyword는 {@code CONCAT('%',:keyword,'%')} LIKE이며 공백 문자열은
+     * 호출자(서비스)가 null로 정규화해 전달.
+     */
+    @Query("SELECT a FROM Account a WHERE "
+            + "(:keyword IS NULL OR a.nickname LIKE CONCAT('%', :keyword, '%') "
+            + "OR a.email LIKE CONCAT('%', :keyword, '%')) "
+            + "AND (:status IS NULL OR a.status = :status) "
+            + "AND (:role IS NULL OR a.role = :role) "
+            + "AND (:cursorId IS NULL OR a.id < :cursorId) "
+            + "ORDER BY a.id DESC")
+    List<Account> searchForAdmin(@Param("keyword") String keyword,
+                                 @Param("status") AccountStatus status,
+                                 @Param("role") Role role,
+                                 @Param("cursorId") Long cursorId,
+                                 Pageable pageable);
+
+    /** 정지 상태 계정 수 — S03 대시보드 의존 (KAN-181). */
+    long countByStatus(AccountStatus status);
+
+    /** 특정 시각 이후 가입 계정 수 — 오늘 신규 가입 카운트용. S03 대시보드 의존 (KAN-181). */
+    long countByCreatedAtGreaterThanEqual(LocalDateTime start);
 }

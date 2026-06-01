@@ -62,6 +62,9 @@ public class Account {
     @Column(nullable = false, length = 20)
     private AccountStatus status;
 
+    @Column(name = "suspended_reason", length = 500)
+    private String suspendedReason;
+
     @Column(name = "suspended_until")
     private LocalDateTime suspendedUntil;
 
@@ -145,12 +148,53 @@ public class Account {
     /**
      * 계정 정지 처리 (KAN-92 신고 처리 SUSPEND 액션).
      * status = SUSPENDED. 해제는 별도 관리자 기능으로 처리.
+     *
+     * <p>신고 자동 정지 경로 전용 — 사유/기간 미입력의 무기한 정지. 운영자 수동 정지는
+     * {@link #suspend(String, LocalDateTime)}를 사용한다.
      */
     public void suspend() {
         if (this.status == AccountStatus.DELETED) {
             throw new IllegalStateException("탈퇴 계정은 정지할 수 없습니다. accountId=" + this.id);
         }
         this.status = AccountStatus.SUSPENDED;
+    }
+
+    /**
+     * 운영자 수동 정지 — 사유/만료시각 세팅 (KAN-180 Admin S02).
+     *
+     * <p><b>재정지 갱신 허용</b>: 이미 {@code SUSPENDED}인 계정에 재호출하면 사유/기간을 덮어쓴다
+     * (예외 없음). 운영자가 정지 사유를 정정하거나 기간을 연장하는 정상 시나리오.
+     *
+     * <p><b>상태 무결성 가드</b>: {@code DELETED} 계정은 정지 불가 — soft-delete된 계정을 다시
+     * 활성 상태군으로 끌어올리는 모순을 막는다.
+     *
+     * @param reason         정지 사유 (운영자 입력)
+     * @param suspendedUntil 정지 만료 시각 (null = 무기한). 호출자가 기간으로부터 산출.
+     * @throws BusinessException 이미 {@code DELETED} 상태인 경우 ({@link ErrorCode#USER_ALREADY_DELETED}, 400).
+     */
+    public void suspend(String reason, LocalDateTime suspendedUntil) {
+        if (this.status == AccountStatus.DELETED) {
+            throw new BusinessException(ErrorCode.USER_ALREADY_DELETED);
+        }
+        this.status = AccountStatus.SUSPENDED;
+        this.suspendedReason = reason;
+        this.suspendedUntil = suspendedUntil;
+    }
+
+    /**
+     * 운영자 정지 해제 — status = ACTIVE + 정지 사유/만료시각 초기화 (KAN-180 Admin S02).
+     *
+     * <p>{@code DELETED} 계정에는 적용하지 않는다 — 탈퇴 계정을 활성 상태로 되살리는 모순 방지.
+     *
+     * @throws BusinessException {@code DELETED} 상태인 경우 ({@link ErrorCode#USER_ALREADY_DELETED}, 400).
+     */
+    public void unsuspend() {
+        if (this.status == AccountStatus.DELETED) {
+            throw new BusinessException(ErrorCode.USER_ALREADY_DELETED);
+        }
+        this.status = AccountStatus.ACTIVE;
+        this.suspendedReason = null;
+        this.suspendedUntil = null;
     }
 
     /**
