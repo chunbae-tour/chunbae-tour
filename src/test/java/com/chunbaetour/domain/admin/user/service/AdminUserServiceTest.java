@@ -16,7 +16,6 @@ import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -35,7 +34,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class AdminUserServiceTest {
 
-    private static final Instant FIXED_INSTANT = Instant.parse("2026-05-31T03:00:00Z");
+    // 2026-05-30T15:00:00Z = KST 2026-05-31T00:00 → UTC 날짜(05-30)와 KST 날짜(05-31)가 갈리는 시각.
+    private static final Instant FIXED_INSTANT = Instant.parse("2026-05-30T15:00:00Z");
     private final Clock fixedClock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
     @Mock
@@ -138,25 +138,26 @@ class AdminUserServiceTest {
         assertThat(service.getSuspendedUsers()).isEqualTo(3L);
         assertThat(service.getNewUsersToday()).isEqualTo(7L);
 
-        // getNewUsersToday는 오늘 0시(고정 clock 기준)를 경계로 조회
-        LocalDateTime expectedStart = LocalDate.now(fixedClock).atStartOfDay();
-        then(accountRepository).should().countByCreatedAtGreaterThanEqual(expectedStart);
+        // getNewUsersToday: KST 오늘 0시를 UTC LocalDateTime으로 변환해 경계로 조회.
+        // fixedClock = KST 2026-05-31 00:00 → UTC 2026-05-30T15:00.
+        then(accountRepository).should()
+                .countByCreatedAtGreaterThanEqual(LocalDateTime.of(2026, 5, 30, 15, 0));
     }
 
     @Test
-    @DisplayName("신규 가입 오늘 집계: UTC 자정 넘겨도 KST 날짜 경계로 조회 (KAN-181 S03)")
+    @DisplayName("신규 가입 오늘 집계: created_at UTC 저장 → KST 영업일 0시를 UTC로 변환해 조회 (KAN-181 S03)")
     void getNewUsersToday_usesKstDateBoundary() {
-        // 2026-06-01T16:00:00Z = KST 2026-06-02T01:00 → '오늘'은 KST 기준 2026-06-02.
-        // Clock 빈은 systemUTC지만 created_at은 KST로 기록되므로 KST 날짜 경계로 조회해야 정합.
-        Clock kstBoundaryClock = Clock.fixed(Instant.parse("2026-06-01T16:00:00Z"), ZoneOffset.UTC);
+        // 2026-06-01T15:00:00Z = KST 2026-06-02T00:00. created_at은 UTC LocalDateTime으로 저장되므로
+        // 경계 = KST 오늘(06-02) 0시를 UTC로 변환한 2026-06-01T15:00.
+        // naive KST(06-02T00:00)도, UTC 날짜(06-01T00:00)도 아님 — 둘 다였으면 KST 00:00~08:59 가입자 오집계.
+        Clock kstBoundaryClock = Clock.fixed(Instant.parse("2026-06-01T15:00:00Z"), ZoneOffset.UTC);
         AdminUserService service = new AdminUserService(accountRepository, reportRepository, kstBoundaryClock);
         given(accountRepository.countByCreatedAtGreaterThanEqual(any())).willReturn(1L);
 
         service.getNewUsersToday();
 
-        // UTC 날짜(2026-06-01)가 아니라 KST 날짜(2026-06-02) 시작을 경계로 조회.
         then(accountRepository).should()
-                .countByCreatedAtGreaterThanEqual(LocalDateTime.of(2026, 6, 2, 0, 0));
+                .countByCreatedAtGreaterThanEqual(LocalDateTime.of(2026, 6, 1, 15, 0));
     }
 
     @Test

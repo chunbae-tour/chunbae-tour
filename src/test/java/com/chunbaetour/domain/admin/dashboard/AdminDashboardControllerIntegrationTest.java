@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.admin.dashboard;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -41,30 +43,36 @@ class AdminDashboardControllerIntegrationTest extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "Pa$$w0rd1!";
 
+    // AdminDashboardService 캐시 전역 키 — 테스트 간 오염 방지를 위해 계정과 함께 매번 제거.
+    private static final String CACHE_KEY = "admin:dashboard:summary";
+
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private AccountRepository accountRepository;
     @Autowired private AccountSeedFactory seedFactory;
+    @Autowired private StringRedisTemplate redisTemplate;
 
     @AfterEach
     void cleanup() {
         accountRepository.deleteAll();
+        redisTemplate.delete(CACHE_KEY);
     }
 
     @Test
-    @DisplayName("admin 토큰 → 200 + 카운트 3종 필드 존재")
+    @DisplayName("admin 토큰 → 200 + 카운트 3종 값 단정 (admin+ACTIVE+SUSPENDED)")
     void getDashboard_returns_200_with_counts() throws Exception {
         String adminToken = adminToken();
         seedFactory.seed("u1@test.com", PASSWORD, "유저1", Role.USER, AccountStatus.ACTIVE);
         seedFactory.seed("s1@test.com", PASSWORD, "정지자", Role.USER, AccountStatus.SUSPENDED);
 
+        // admin + u1(ACTIVE) + s1(SUSPENDED) = 전체>=2(실 3, 탈퇴 제외), 정지>=1.
         mockMvc.perform(get("/api/v1/admin/dashboard")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
-                .andExpect(jsonPath("$.data.totalUsers").exists())
-                .andExpect(jsonPath("$.data.newUsersToday").exists())
-                .andExpect(jsonPath("$.data.suspendedUsers").exists());
+                .andExpect(jsonPath("$.data.totalUsers").value(greaterThanOrEqualTo(2)))
+                .andExpect(jsonPath("$.data.suspendedUsers").value(greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.newUsersToday").exists());
     }
 
     @Test

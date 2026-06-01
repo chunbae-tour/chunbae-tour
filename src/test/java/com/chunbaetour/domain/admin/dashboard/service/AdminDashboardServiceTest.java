@@ -88,7 +88,10 @@ class AdminDashboardServiceTest {
 
         assertThat(first.totalUsers()).isEqualTo(10L);
         assertThat(second).isEqualTo(first);
+        // 캐시 hit 시 DB 조합 미수행 — 카운트 3종 모두 정확히 1회만 (2번째 호출은 역직렬화).
         then(adminUserService).should(times(1)).getTotalUsers();
+        then(adminUserService).should(times(1)).getNewUsersToday();
+        then(adminUserService).should(times(1)).getSuspendedUsers();
     }
 
     @Test
