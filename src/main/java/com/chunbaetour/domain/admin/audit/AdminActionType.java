@@ -22,5 +22,14 @@ public enum AdminActionType {
     USER_SUSPEND,
 
     /** S02 사용자 정지 해제. */
-    USER_UNSUSPEND;
+    USER_UNSUSPEND,
+
+    /** S05 인증 승인 (KAN-204) — Shop.markCertified() cascade. */
+    CERTIFICATION_APPROVE,
+
+    /** S05 인증 거절 (KAN-204) — rejectReason 기록. */
+    CERTIFICATION_REJECT,
+
+    /** S05 인증 취소 (KAN-204) — Shop.unmarkCertified() 회수. */
+    CERTIFICATION_CANCEL;
 }

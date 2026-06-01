@@ -152,6 +152,21 @@ public class Shop extends BaseEntity {
     }
 
     /**
+     * 인증 마크 부여 (KAN-204, Admin S05). 운영자가 인증 신청을 승인할 때 서비스가 호출 —
+     * {@code ShopCertification.approve()}와 같은 트랜잭션에서 cascade.
+     */
+    public void markCertified() {
+        this.isCertified = true;
+    }
+
+    /**
+     * 인증 마크 회수 (KAN-204, Admin S05). 운영자가 인증 기준 미충족 발견 시 인증을 취소할 때 서비스가 호출.
+     */
+    public void unmarkCertified() {
+        this.isCertified = false;
+    }
+
+    /**
      * 상인이 수정 가능한 필드 업데이트 (STORY-10).
      * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
      * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.
