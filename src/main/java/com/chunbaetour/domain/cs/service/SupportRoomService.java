@@ -8,6 +8,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessage;
 import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
+import java.util.List;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
@@ -25,7 +26,8 @@ public class SupportRoomService {
     // 상담방 생성 (USER·MERCHANT) — WAITING 중복 차단, initialMessage 제공 시 첫 메시지(TEXT) 함께 저장
     @Transactional
     public SupportRoomResponse createRoom(Long userId, SupportRoomCreateRequest request) {
-        if (supportRoomRepository.existsByUserIdAndStatus(userId, SupportRoomStatus.WAITING)) {
+        if (supportRoomRepository.existsByUserIdAndStatusIn(
+                userId, List.of(SupportRoomStatus.WAITING, SupportRoomStatus.IN_PROGRESS))) {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_EXISTS);
         }
         SupportRoom room = supportRoomRepository.save(

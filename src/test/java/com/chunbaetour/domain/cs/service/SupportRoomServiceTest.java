@@ -39,7 +39,7 @@ class SupportRoomServiceTest {
     // WAITING 상담방 이미 있으면 CS_004 예외
     @Test
     void createRoom_whenWaitingRoomExists_throwsAlreadyExists() {
-        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING)))
+        given(supportRoomRepository.existsByUserIdAndStatusIn(eq(1L), any()))
                 .willReturn(true);
 
         assertThatThrownBy(() -> supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null)))
@@ -53,7 +53,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_withoutMessage_doesNotSaveMessage() {
         SupportRoom room = buildRoom(1L);
-        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
+        given(supportRoomRepository.existsByUserIdAndStatusIn(eq(1L), any())).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null));
@@ -65,7 +65,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_withBlankMessage_doesNotSaveMessage() {
         SupportRoom room = buildRoom(1L);
-        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
+        given(supportRoomRepository.existsByUserIdAndStatusIn(eq(1L), any())).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         supportRoomService.createRoom(1L, new SupportRoomCreateRequest("   "));
@@ -77,7 +77,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_withMessage_savesMessageWithCorrectFields() {
         SupportRoom room = buildRoom(1L);
-        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
+        given(supportRoomRepository.existsByUserIdAndStatusIn(eq(1L), any())).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         supportRoomService.createRoom(1L, new SupportRoomCreateRequest("결제가 안 됩니다."));
@@ -95,7 +95,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_statusIsWaiting() {
         SupportRoom room = buildRoom(1L);
-        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
+        given(supportRoomRepository.existsByUserIdAndStatusIn(eq(1L), any())).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         SupportRoomResponse result = supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null));

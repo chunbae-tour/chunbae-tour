@@ -1,4 +1,10 @@
 -- ============================
+-- support_rooms status 컬럼 확장 — IN_PROGRESS(11자) 수용
+-- ============================
+ALTER TABLE `support_rooms`
+    MODIFY COLUMN `status` varchar(15) NOT NULL DEFAULT 'WAITING';
+
+-- ============================
 -- support_rooms 인덱스
 -- ============================
 CREATE INDEX `idx_support_rooms_user_id_id`
