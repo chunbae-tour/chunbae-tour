@@ -110,6 +110,10 @@ public class SupportRoomService {
         boolean hasNext = page.size() > size;
         List<SupportRoom> rooms = page.stream().limit(size).toList();
 
+        if (rooms.isEmpty()) {
+            return new CursorPageResponse<>(List.of(), null, false, 0);
+        }
+
         List<Long> userIds = rooms.stream().map(SupportRoom::getUserId).toList();
         List<Long> roomIds = rooms.stream().map(SupportRoom::getId).toList();
 
@@ -117,7 +121,7 @@ public class SupportRoomService {
         Map<Long, String> nicknameByUserId = accountRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(Account::getId, Account::getNickname));
 
-        // 마지막 메시지 배치 조회
+        // 마지막 메시지 배치 조회 — 빈 리스트는 위에서 early return으로 차단
         Map<Long, SupportMessage> lastMsgByRoomId = supportMessageRepository
                 .findLastMessagesByRoomIds(roomIds).stream()
                 .collect(Collectors.toMap(SupportMessage::getSupportRoomId, m -> m));

@@ -1,7 +1,6 @@
 package com.chunbaetour.domain.cs.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -10,9 +9,12 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
+import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
 import com.chunbaetour.domain.cs.entity.SupportMessage;
 import com.chunbaetour.domain.cs.entity.SupportMessageType;
@@ -21,11 +23,14 @@ import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class SupportRoomServiceTest {
@@ -33,6 +38,7 @@ class SupportRoomServiceTest {
     @InjectMocks private SupportRoomService supportRoomService;
     @Mock private SupportRoomRepository supportRoomRepository;
     @Mock private SupportMessageRepository supportMessageRepository;
+    @Mock private AccountRepository accountRepository;
 
     // ===== createRoom =====
 
@@ -103,6 +109,59 @@ class SupportRoomServiceTest {
         assertThat(result.status()).isEqualTo(SupportRoomStatus.WAITING);
     }
 
+    // ===== getMessages =====
+
+    // 본인 방 → 메시지 반환
+    @Test
+    void getMessages_whenOwner_returnsMessages() {
+        SupportRoom room = buildRoom(1L);
+        SupportMessage msg = buildMessage(1L, 1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(supportMessageRepository.findMessagesWithCursor(eq(1L), any(), any(PageRequest.class)))
+                .willReturn(List.of(msg));
+
+        CursorPageResponse<SupportMessageResponse> result = supportRoomService.getMessages(1L, 1L, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+    }
+
+    // 타인 방 → CS_003
+    @Test
+    void getMessages_whenNotOwner_throwsForbidden() {
+        SupportRoom room = buildRoom(1L); // userId=1
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> supportRoomService.getMessages(99L, 1L, null, 20))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
+    }
+
+    // 존재하지 않는 방 → CS_001
+    @Test
+    void getMessages_whenRoomNotFound_throwsNotFound() {
+        given(supportRoomRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> supportRoomService.getMessages(1L, 999L, null, 20))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+    }
+
+    // ===== getMyRooms =====
+
+    // hasNext=true when result > size
+    @Test
+    void getMyRooms_hasNextTrue_whenResultExceedsSize() {
+        given(supportRoomRepository.findMyRoomsWithCursor(eq(1L), any(), any(), any(PageRequest.class)))
+                .willReturn(List.of(buildRoom(1L), buildRoom(2L), buildRoom(3L)));
+
+        CursorPageResponse<SupportRoomResponse> result = supportRoomService.getMyRooms(1L, null, 2, null);
+
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.content()).hasSize(2);
+    }
+
     private SupportRoom buildRoom(Long id) {
         SupportRoom room = SupportRoom.builder().userId(1L).build();
         try {
@@ -113,5 +172,24 @@ class SupportRoomServiceTest {
             throw new RuntimeException(e);
         }
         return room;
+    }
+
+    private SupportMessage buildMessage(Long id, Long roomId) {
+        SupportMessage msg = SupportMessage.builder()
+                .supportRoomId(roomId)
+                .senderId(1L)
+                .senderRole(SupportSenderRole.CUSTOMER)
+                .messageType(SupportMessageType.TEXT)
+                .content("테스트 메시지")
+                .fileUrl(null)
+                .build();
+        try {
+            var field = SupportMessage.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(msg, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return msg;
     }
 }
