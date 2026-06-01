@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.dto.request.QrPayConfirmRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayCreateRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayItemRequest;
+import com.chunbaetour.domain.payment.dto.response.PendingQrPayResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse.MenuSnapshotItem;
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
@@ -41,6 +42,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -71,6 +73,8 @@ public class QrPayService {
     private final MessageSource messageSource;
 
     private static final int QR_PAY_EXPIRY_MINUTES = 5;
+    /** PENDING QR 결제 조회 LIMIT — PENDING은 실시간 승인 대상이므로 50 초과는 비정상 상황 */
+    private static final int PENDING_QR_LIMIT = 50;
     /** 분산 락 키: qr:lock:{shopId}:{userId} — 동일 사용자·가게 동시 승인 시도 직렬화 */
     private static final String QR_LOCK_KEY = "qr:lock:%d:%d";
     private static final int LOCK_WAIT_SECONDS = 3;
@@ -309,6 +313,45 @@ public class QrPayService {
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
+        }
+    }
+
+    /**
+     * 상인 대기중 QR 결제 목록 조회.
+     * 상인 소유 가게 전체의 PENDING 요청을 만료 시각 오름차순으로 반환.
+     * LIMIT 50 — 동시 PENDING이 과도하게 누적되는 비정상 상황에서 페이로드 폭발 방지.
+     * 50 초과 건은 다음 polling 호출에서 순차 처리됨 (만료 임박순 우선).
+     */
+    @Transactional(readOnly = true)
+    public List<PendingQrPayResponse> getPendingQrPayments(Long merchantUserId) {
+        // 서비스 경계 방어 검증 — @AuthenticationPrincipal 외 직접 호출 경로 보호
+        if (merchantUserId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        // 상인 소유 가게 ID 목록 조회
+        List<Long> shopIds = shopRepository.findAllByUserId(merchantUserId)
+                .stream().map(Shop::getId).toList();
+        if (shopIds.isEmpty()) {
+            return List.of();
+        }
+        // 미만료 PENDING 결제 요청 조회 — expiredAt > now로 스케줄러 60초 지연 구간 만료 건 제외
+        return qrPayRequestRepository.findPendingByShopIds(
+                        shopIds, QrPayStatus.PENDING, LocalDateTime.now(clock), Pageable.ofSize(PENDING_QR_LIMIT))
+                .stream()
+                .map(req -> PendingQrPayResponse.from(req, deserializeMenuItems(req.getMenuItems())))
+                .toList();
+    }
+
+    private List<MenuSnapshotItem> deserializeMenuItems(String menuItemsJson) {
+        try {
+            return objectMapper.readValue(menuItemsJson,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, MenuSnapshotItem.class));
+        } catch (JacksonException e) {
+            // 서버 생성 스냅샷이므로 정상 상황에서는 발생하지 않음.
+            // 스키마 변경·수동 DB 수정 등 예외 상황에서 한 건 실패가 전체 목록 500으로 번지지 않도록 빈 리스트 폴백.
+            log.warn("[QR 결제 대기 목록] 메뉴 스냅샷 역직렬화 실패 — 해당 건 menuItems 빈 리스트 처리. json={}", menuItemsJson);
+            log.debug("stack trace:", e);
+            return List.of();
         }
     }
 
