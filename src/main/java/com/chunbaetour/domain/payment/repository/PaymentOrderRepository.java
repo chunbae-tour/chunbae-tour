@@ -2,7 +2,9 @@ package com.chunbaetour.domain.payment.repository;
 
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -13,6 +15,17 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
 
     @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
     Optional<PaymentOrder> findByOrderUid(@Param("orderUid") String orderUid);
+
+    /** 사용자 결제(충전) 내역 cursor 페이징 조회 — id DESC, cursorId IS NULL이면 첫 페이지 */
+    @Query("""
+            SELECT p FROM PaymentOrder p
+            WHERE p.userId = :userId
+            AND (:cursorId IS NULL OR p.id < :cursorId)
+            ORDER BY p.id DESC
+            """)
+    List<PaymentOrder> findByUserIdWithCursor(@Param("userId") Long userId,
+                                              @Param("cursorId") Long cursorId,
+                                              Pageable pageable);
 
     /** 환불 승인 시 PaymentOrder 상태 변경용 비관적 락 조회 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
