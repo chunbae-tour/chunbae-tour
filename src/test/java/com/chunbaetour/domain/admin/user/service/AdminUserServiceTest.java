@@ -11,6 +11,7 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import java.time.Clock;
@@ -83,7 +84,9 @@ class AdminUserServiceTest {
         given(accountRepository.findById(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service().suspend(999L, "사유", 3))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
 
     @Test
@@ -106,7 +109,9 @@ class AdminUserServiceTest {
         given(accountRepository.findById(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service().unsuspend(999L))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
     }
 
     @Test

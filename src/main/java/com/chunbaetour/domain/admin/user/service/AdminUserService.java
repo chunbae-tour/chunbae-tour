@@ -108,7 +108,10 @@ public class AdminUserService {
         return accountRepository.count();
     }
 
-    /** 오늘(서버 UTC 기준) 신규 가입 사용자 수. */
+    /**
+     * 오늘 신규 가입 사용자 수.
+     * TODO(S03/KAN-181): "오늘" 기준 timezone(KST vs Clock zone) 기획 확정.
+     */
     public long getNewUsersToday() {
         LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
         return accountRepository.countByCreatedAtGreaterThanEqual(startOfToday);

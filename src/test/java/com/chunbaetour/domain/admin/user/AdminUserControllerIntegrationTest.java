@@ -220,6 +220,65 @@ class AdminUserControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("미존재 사용자 해제 → 404 + audit 미기록")
+    void unsuspend_nonexistent_returns_404_and_no_audit() throws Exception {
+        String adminToken = adminToken();
+
+        mockMvc.perform(delete("/api/v1/admin/users/999999/suspensions")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("AUTH_015"));
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("DELETED 계정 정지 → 400 AUTH_016 + audit 미기록")
+    void suspend_deleted_account_returns_400_and_no_audit() throws Exception {
+        // DELETED 시드는 deletedAt=null(builder 미세팅)이라 @SQLRestriction(deleted_at IS NULL)을
+        // 통과해 findById로 조회됨 → status=DELETED 가드 도달 → BusinessException(USER_ALREADY_DELETED).
+        String adminToken = adminToken();
+        Account deleted = seedFactory.seed("deleted-sus@test.com", PASSWORD, "탈퇴정지", Role.USER, AccountStatus.DELETED);
+
+        mockMvc.perform(post("/api/v1/admin/users/" + deleted.getId() + "/suspensions")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"사유\",\"durationDays\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_016"));
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("DELETED 계정 해제 → 400 AUTH_016 + audit 미기록")
+    void unsuspend_deleted_account_returns_400_and_no_audit() throws Exception {
+        String adminToken = adminToken();
+        Account deleted = seedFactory.seed("deleted-uns@test.com", PASSWORD, "탈퇴해제", Role.USER, AccountStatus.DELETED);
+
+        mockMvc.perform(delete("/api/v1/admin/users/" + deleted.getId() + "/suspensions")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AUTH_016"));
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("정지 사유 500자 초과 → 400")
+    void suspend_reason_too_long_returns_400() throws Exception {
+        String adminToken = adminToken();
+        Account target = seedFactory.seed("toolong@test.com", PASSWORD, "장문사유", Role.USER, AccountStatus.ACTIVE);
+        String over = "가".repeat(501);
+
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getId() + "/suspensions")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"" + over + "\",\"durationDays\":1}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("정지 사유 누락 → 400")
     void suspend_blank_reason_returns_400() throws Exception {
         String adminToken = adminToken();

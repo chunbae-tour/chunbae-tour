@@ -170,11 +170,11 @@ public class Account {
      *
      * @param reason         정지 사유 (운영자 입력)
      * @param suspendedUntil 정지 만료 시각 (null = 무기한). 호출자가 기간으로부터 산출.
-     * @throws IllegalStateException 이미 {@code DELETED} 상태인 경우.
+     * @throws BusinessException 이미 {@code DELETED} 상태인 경우 ({@link ErrorCode#USER_ALREADY_DELETED}, 400).
      */
     public void suspend(String reason, LocalDateTime suspendedUntil) {
         if (this.status == AccountStatus.DELETED) {
-            throw new IllegalStateException("탈퇴 계정은 정지할 수 없습니다. accountId=" + this.id);
+            throw new BusinessException(ErrorCode.USER_ALREADY_DELETED);
         }
         this.status = AccountStatus.SUSPENDED;
         this.suspendedReason = reason;
@@ -186,11 +186,11 @@ public class Account {
      *
      * <p>{@code DELETED} 계정에는 적용하지 않는다 — 탈퇴 계정을 활성 상태로 되살리는 모순 방지.
      *
-     * @throws IllegalStateException {@code DELETED} 상태인 경우.
+     * @throws BusinessException {@code DELETED} 상태인 경우 ({@link ErrorCode#USER_ALREADY_DELETED}, 400).
      */
     public void unsuspend() {
         if (this.status == AccountStatus.DELETED) {
-            throw new IllegalStateException("탈퇴 계정은 정지 해제할 수 없습니다. accountId=" + this.id);
+            throw new BusinessException(ErrorCode.USER_ALREADY_DELETED);
         }
         this.status = AccountStatus.ACTIVE;
         this.suspendedReason = null;

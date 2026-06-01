@@ -3,6 +3,8 @@ package com.chunbaetour.domain.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
@@ -128,8 +130,9 @@ class AccountTest {
                 "deleted@example.com", "hash", "탈퇴자", Role.USER, AccountStatus.DELETED);
 
         assertThatThrownBy(() -> account.suspend("사유", NOW))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("탈퇴 계정");
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_ALREADY_DELETED);
     }
 
     @Test
@@ -150,7 +153,8 @@ class AccountTest {
                 "deletedunsuspend@example.com", "hash", "탈퇴해제", Role.USER, AccountStatus.DELETED);
 
         assertThatThrownBy(account::unsuspend)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("탈퇴 계정");
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.USER_ALREADY_DELETED);
     }
 }
