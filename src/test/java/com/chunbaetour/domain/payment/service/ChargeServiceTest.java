@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
@@ -12,19 +14,25 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
+import com.chunbaetour.domain.payment.dto.response.PaymentHistoryResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
+import java.util.Collections;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class ChargeServiceTest {
@@ -123,5 +131,60 @@ class ChargeServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHARGE_AMOUNT_EXCEEDED);
+    }
+
+    // ── getPaymentHistory ────────────────────────────────────────────────────
+
+    private PaymentOrder createOrder(Long id, Long amount) {
+        PaymentOrder order = PaymentOrder.create(
+                "order-" + id, 1L, amount, "idem-" + id, PaymentMethod.CARD, "pg-" + id);
+        ReflectionTestUtils.setField(order, "id", id);
+        return order;
+    }
+
+    @Test
+    @DisplayName("결제 내역 조회 — cursor 없으면 첫 페이지 반환")
+    void getPaymentHistory_noCursor_returnsFirstPage() {
+        PaymentOrder o1 = createOrder(10L, 10_000L);
+        PaymentOrder o2 = createOrder(9L, 5_000L);
+        given(paymentOrderRepository.findByUserIdWithCursor(eq(1L), isNull(), any(Pageable.class)))
+                .willReturn(List.of(o1, o2));
+
+        CursorPageResponse<PaymentHistoryResponse> result = chargeService.getPaymentHistory(1L, null, 20);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.content().get(0).orderUid()).isEqualTo("order-10");
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("결제 내역 조회 — size+1개 조회 시 hasNext=true, nextCursor 설정")
+    void getPaymentHistory_hasNextPage_nextCursorSet() {
+        // size=2, DB에서 3개(size+1) 반환 → hasNext=true
+        PaymentOrder o1 = createOrder(10L, 10_000L);
+        PaymentOrder o2 = createOrder(9L, 5_000L);
+        PaymentOrder o3 = createOrder(8L, 3_000L);
+        given(paymentOrderRepository.findByUserIdWithCursor(eq(1L), isNull(), any(Pageable.class)))
+                .willReturn(List.of(o1, o2, o3));
+
+        CursorPageResponse<PaymentHistoryResponse> result = chargeService.getPaymentHistory(1L, null, 2);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("결제 내역 조회 — 결과 없으면 빈 목록")
+    void getPaymentHistory_noResults_returnsEmpty() {
+        given(paymentOrderRepository.findByUserIdWithCursor(eq(1L), isNull(), any(Pageable.class)))
+                .willReturn(Collections.emptyList());
+
+        CursorPageResponse<PaymentHistoryResponse> result = chargeService.getPaymentHistory(1L, null, 20);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
     }
 }
