@@ -42,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code PATCH /api/v1/users/me} — 닉네임/언어/프로필 partial update (Epic A S2, KAN-127)</li>
  *   <li>{@code GET /api/v1/users/me/home} — 마이페이지 홈 통합 응답 (Epic A S3, KAN-128)</li>
  *   <li>{@code GET /api/v1/users/me/likes} — 찜한 관광지 페이징 (Epic A S5, KAN-130)</li>
+ *   <li>{@code GET /api/v1/users/me/reviews} — 내가 작성한 리뷰 페이징 (Epic A S6, KAN-173)</li>
  *   <li>{@code DELETE /api/v1/users/me} — 회원 탈퇴 + 토큰 cascade 무효화 (Epic C S1, KAN-143)</li>
  * </ul>
  *
@@ -59,7 +60,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@link com.chunbaetour.domain.auth.MultiRoleAuthIntegrationTest}가 test scope의
  * {@code TestAuthFixtureController}를 사용해 커버. 시드 데이터 의존 없이 SecurityConfig 매핑만 검증.
  */
-@Tag(name = "내 정보 (USER)", description = "본인 프로필 조회·수정·탈퇴, 찜 목록 (/api/v1/users/me/**)")
+@Tag(name = "내 정보 (USER)", description = "본인 프로필 조회·수정·탈퇴, 찜/리뷰 목록 (/api/v1/users/me/**)")
 @RestController
 @RequestMapping("/api/v1/users/me")
 @RequiredArgsConstructor

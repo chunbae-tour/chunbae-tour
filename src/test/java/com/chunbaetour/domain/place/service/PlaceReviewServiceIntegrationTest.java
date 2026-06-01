@@ -149,6 +149,28 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("리뷰를 작성했더라도, 이후 관광지가 삭제(비활성)되면 내 리뷰 목록에서 노출되지 않아야 한다")
+    void should_not_return_reviews_for_deleted_place() {
+        // 리뷰 작성
+        ReviewCreateRequest request = new ReviewCreateRequest(5, "좋았던 곳", null);
+        placeReviewService.createReview(testUser.getId(), testPlace.getId(), request);
+
+        // 작성된 리뷰 확인 (1건 조회됨)
+        Page<UserReviewResponse> beforeDelete = placeReviewService.getUserReviews(
+                testUser.getId(), PageRequest.of(0, 10));
+        assertThat(beforeDelete.getContent()).hasSize(1);
+
+        // 관광지 삭제 처리 (soft delete)
+        testPlace.delete();
+        placeRepository.save(testPlace);
+
+        // 삭제 후 다시 내 리뷰 조회 (0건이어야 함)
+        Page<UserReviewResponse> afterDelete = placeReviewService.getUserReviews(
+                testUser.getId(), PageRequest.of(0, 10));
+        assertThat(afterDelete.getContent()).isEmpty();
+    }
+
+    @Test
     @DisplayName("마이페이지 내 리뷰 조회 시 page size가 100을 초과하면 예외가 발생해야 한다")
     void cannot_read_my_reviews_exceeding_max_page_size() {
         assertThatThrownBy(() -> placeReviewService.getUserReviews(
