@@ -31,6 +31,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
+import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
 
 @SpringBootTest
 class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
@@ -108,6 +109,76 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(reviews.getContent()).hasSize(2);
         assertThat(reviews.getContent().get(0).content()).isEqualTo("두 번째 리뷰"); // 최신순
         assertThat(reviews.getContent().get(1).content()).isEqualTo("첫 번째 리뷰");
+    }
+
+    @Test
+    @DisplayName("내가 작성한 리뷰 목록을 정상적으로 조회할 수 있어야 한다 (마이페이지용)")
+    void can_read_my_reviews() {
+        // testUser가 두 개의 리뷰 작성
+        ReviewCreateRequest request1 = new ReviewCreateRequest(5, "내 첫 리뷰", null);
+        placeReviewService.createReview(testUser.getId(), testPlace.getId(), request1);
+
+        Place testPlace2 = Place.builder()
+                .name("테스트 관광지 2")
+                .address("부산")
+                .lat(new BigDecimal("35.0"))
+                .lng(new BigDecimal("129.0"))
+                .category(PlaceCategory.TOURIST_SPOT)
+                .build();
+        placeRepository.save(testPlace2);
+
+        ReviewCreateRequest request2 = new ReviewCreateRequest(4, "내 두 번째 리뷰", null);
+        placeReviewService.createReview(testUser.getId(), testPlace2.getId(), request2);
+
+        // 다른 유저가 리뷰 작성 (내 목록에 안 나와야 함)
+        Account testUser2 = Account.registerUser("other@test.com", "password", "다른유저");
+        accountRepository.save(testUser2);
+        placeReviewService.createReview(testUser2.getId(), testPlace.getId(), new ReviewCreateRequest(3, "남의 리뷰", null));
+
+        Page<UserReviewResponse> myReviews = 
+            placeReviewService.getUserReviews(
+                testUser.getId(), 
+                PageRequest.of(0, 10, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
+            );
+
+        assertThat(myReviews.getContent()).hasSize(2);
+        assertThat(myReviews.getContent().get(0).content()).isEqualTo("내 두 번째 리뷰");
+        assertThat(myReviews.getContent().get(0).placeName()).isEqualTo("테스트 관광지 2");
+        assertThat(myReviews.getContent().get(1).content()).isEqualTo("내 첫 리뷰");
+        assertThat(myReviews.getContent().get(1).placeName()).isEqualTo("테스트 관광지");
+    }
+
+    @Test
+    @DisplayName("리뷰를 작성했더라도, 이후 관광지가 삭제(비활성)되면 내 리뷰 목록에서 노출되지 않아야 한다")
+    void should_not_return_reviews_for_deleted_place() {
+        // 리뷰 작성
+        ReviewCreateRequest request = new ReviewCreateRequest(5, "좋았던 곳", null);
+        placeReviewService.createReview(testUser.getId(), testPlace.getId(), request);
+
+        // 작성된 리뷰 확인 (1건 조회됨)
+        Page<UserReviewResponse> beforeDelete = placeReviewService.getUserReviews(
+                testUser.getId(), PageRequest.of(0, 10));
+        assertThat(beforeDelete.getContent()).hasSize(1);
+
+        // 관광지 삭제 처리 (soft delete)
+        testPlace.delete();
+        placeRepository.save(testPlace);
+
+        // 삭제 후 다시 내 리뷰 조회 (0건이어야 함)
+        Page<UserReviewResponse> afterDelete = placeReviewService.getUserReviews(
+                testUser.getId(), PageRequest.of(0, 10));
+        assertThat(afterDelete.getContent()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("마이페이지 내 리뷰 조회 시 page size가 100을 초과하면 예외가 발생해야 한다")
+    void cannot_read_my_reviews_exceeding_max_page_size() {
+        assertThatThrownBy(() -> placeReviewService.getUserReviews(
+                testUser.getId(), 
+                PageRequest.of(0, 101)
+        ))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(ErrorCode.INVALID_REQUEST.getMessage());
     }
 
     @Test
