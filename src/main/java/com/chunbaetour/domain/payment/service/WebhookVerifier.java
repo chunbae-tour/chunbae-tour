@@ -11,8 +11,10 @@ import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class WebhookVerifier {
@@ -59,12 +61,29 @@ public class WebhookVerifier {
     private String computeHmac(String message) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
-            mac.init(new SecretKeySpec(
-                    properties.getWebhookSecret().getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+            mac.init(new SecretKeySpec(webhookSecretBytes(), HMAC_ALGORITHM));
             return Base64.getEncoder().encodeToString(
                     mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
+    }
+    // PortOne 웹훅 시크릿을 HMAC 서명 검증용 바이트 배열로 변환
+    // "whsec_" 접두사가 있으면 Base64 디코딩, 없으면 UTF-8 바이트로 반환
+    private byte[] webhookSecretBytes() {
+        String secret = properties.getWebhookSecret();
+        // 시크릿 미설정 시 런타임 NPE 대신 즉시 예외로 원인 고정
+        if (secret == null || secret.isBlank()) {
+            throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+        if (secret.startsWith("whsec_")) {
+            try {
+                return Base64.getDecoder().decode(secret.substring("whsec_".length()));
+            } catch (IllegalArgumentException e) {
+                log.error("[WebhookVerifier] webhookSecret whsec_ Base64 디코딩 실패 — 설정값 확인 필요", e);
+                throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+            }
+        }
+        return secret.getBytes(StandardCharsets.UTF_8);
     }
 }
