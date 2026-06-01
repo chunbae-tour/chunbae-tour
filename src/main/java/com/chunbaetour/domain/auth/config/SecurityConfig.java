@@ -47,6 +47,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
  *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
  *   <li>{@code /api/v1/reports/**} — USER 전용 (신고 생성·내 신고 조회; admin 신고 API는 /admin/** 커버)</li>
+ *   <li>{@code /api/v1/support/**} — USER 전용 (고객센터 상담; admin 상담 API는 /admin/** 커버)</li>
  *   <li>그 외 — 인증 필요</li>
  * </ul>
  *
@@ -149,6 +150,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/notifications/**").hasRole("USER")
                         // 번역은 USER 전용 — 채팅 메시지 번역 기능
                         .requestMatchers("/api/v1/translations/**").hasRole("USER")
+                        // 고객센터 상담은 USER 전용 — MERCHANT/ADMIN 접근 시 AUTH_007 응답
+                        .requestMatchers("/api/v1/support/**").hasRole("USER")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
