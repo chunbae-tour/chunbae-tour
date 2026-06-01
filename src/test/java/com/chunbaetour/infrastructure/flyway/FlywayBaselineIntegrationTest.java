@@ -100,27 +100,33 @@ class FlywayBaselineIntegrationTest {
                 .load();
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.success).as("V1 마이그레이션이 성공해야 한다").isTrue();
+        assertThat(result.success).as("마이그레이션이 성공해야 한다").isTrue();
+        // KAN-179 V2 admin_action_logs 합류 → 본 슬라이스 시점 누적 2건이 일반 마이그레이션으로 실행.
+        // 후속 V3~ 추가 시 본 가드의 기댓값도 함께 갱신해야 한다 (그 슬라이스 PR이 책임).
         assertThat(result.migrationsExecuted)
-                .as("정확히 1건(V1)이 적용되어야 한다")
-                .isEqualTo(1);
+                .as("V1 + V2 두 건 모두 적용되어야 한다")
+                .isEqualTo(2);
 
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
-        // V1 row 검증.
+        // V1 + V2 row 모두 success 검증.
         // flyway_schema_history.success는 MySQL TINYINT(1) — Spring JdbcTemplate의 Boolean.class 자동
         // 변환은 Flyway 버전별 컬럼 타입 변경 시 깨질 위험. Integer.class로 받아 == 1로 비교가 안전.
         Integer v1Success = jdbc.queryForObject(
                 "SELECT success FROM flyway_schema_history WHERE version = '1'",
                 Integer.class);
-        assertThat(v1Success)
-                .as("flyway_schema_history에 V1 row가 success=1로 기록되어야 한다")
-                .isEqualTo(1);
+        assertThat(v1Success).isEqualTo(1);
+        Integer v2Success = jdbc.queryForObject(
+                "SELECT success FROM flyway_schema_history WHERE version = '2'",
+                Integer.class);
+        assertThat(v2Success).isEqualTo(1);
 
         // V1 SQL이 실제 실행되어 테이블이 생성되었는지 sample 검증 (29개 중 대표 3개)
         assertTableExists(jdbc, "users");
         assertTableExists(jdbc, "wallets");
         assertTableExists(jdbc, "ad_applications");
+        // V2가 추가한 admin_action_logs 테이블도 검증 (KAN-179 회귀 가드)
+        assertTableExists(jdbc, "admin_action_logs");
     }
 
     @Test
@@ -142,24 +148,34 @@ class FlywayBaselineIntegrationTest {
         MigrateResult result = flyway.migrate();
 
         assertThat(result.success).as("baseline 적용이 성공해야 한다").isTrue();
-        // baseline은 BASELINE 타입 row 1건만 기록 (V1 SQL 실행 X) → migrationsExecuted=0
+        // V1은 BASELINE marker(실 실행 X). V2(KAN-179 admin_action_logs)는 baseline-version=1보다 위 →
+        // 일반 마이그레이션으로 실 실행 → migrationsExecuted=1.
+        // 후속 V3~ 추가 시 본 가드 기댓값도 함께 갱신해야 한다.
         assertThat(result.migrationsExecuted)
-                .as("V1은 baseline marker로만 기록되어 실제 실행은 0건이어야 한다")
-                .isEqualTo(0);
+                .as("V1 baseline + V2 실 실행 → 1건")
+                .isEqualTo(1);
 
-        // schema_history에 BASELINE 타입 row가 존재해야 함
+        // schema_history에 V1은 BASELINE, V2는 SQL 타입으로 기록되어야 함
         String v1Type = jdbc.queryForObject(
                 "SELECT type FROM flyway_schema_history WHERE version = '1'",
                 String.class);
         assertThat(v1Type)
                 .as("V1 row의 type이 BASELINE이어야 한다 (운영 prod 흐름)")
                 .isEqualTo("BASELINE");
+        String v2Type = jdbc.queryForObject(
+                "SELECT type FROM flyway_schema_history WHERE version = '2'",
+                String.class);
+        assertThat(v2Type)
+                .as("V2 row의 type이 SQL이어야 한다 (baseline 외 일반 마이그레이션)")
+                .isEqualTo("SQL");
 
         // V1 SQL이 실행되지 않았는지 검증 — ad_applications 등 dump 테이블이 없어야 함
         // (existing_legacy_table만 있고 V1의 어떤 테이블도 생성되지 않음)
         assertTableDoesNotExist(jdbc, "ad_applications");
         assertTableDoesNotExist(jdbc, "users");
         assertTableExists(jdbc, "existing_legacy_table"); // 기존 schema는 보존
+        // V2는 baseline-version=1보다 위라 실 실행되므로 admin_action_logs 테이블은 존재해야 함
+        assertTableExists(jdbc, "admin_action_logs");
     }
 
     private static HikariDataSource newHikariDataSource() {
