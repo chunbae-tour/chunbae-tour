@@ -120,6 +120,8 @@ public class Product extends BaseEntity {
         if (merchantName != null) this.merchantName = merchantName;
         if (validityDays != null) this.validityDays = validityDays;
         if (maxPerPerson != null) this.maxPerPerson = maxPerPerson;
+        // status 적용 우선순위: 명시값 > stock 기반 자동 전환.
+        // 명시값이 있더라도 invariant는 최종 상태로 항상 검증 — 예: stock=0 + status=ON_SALE 명시 시 여기서 throw.
         if (status != null) this.status = status;
 
         // invariant: ON_SALE 상태에서 재고 0 금지

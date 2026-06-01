@@ -30,6 +30,8 @@ public class ProductMapper {
                 p.getId(), p.getName(), p.getDescription(), p.getCategory(),
                 p.getPrice(), p.getOriginalPrice(), imageUrls,
                 p.getMerchantName(), p.getStock(),
+                // adminUpdate() 호출 시 originalStock=stock으로 리셋 → 이후 구매 감소분이 soldCount.
+                // stock > originalStock은 정상 플로우에서 불가. 음수 발생 시 데이터 정합성 문제를 의미하므로 0 클램핑.
                 Math.max(0, p.getOriginalStock() - p.getStock()),
                 p.getValidityDays(), p.getStatus());
     }

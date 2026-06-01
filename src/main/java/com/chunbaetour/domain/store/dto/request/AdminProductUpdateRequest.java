@@ -3,6 +3,7 @@ package com.chunbaetour.domain.store.dto.request;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
@@ -20,7 +21,7 @@ public record AdminProductUpdateRequest(
         @Min(0) Integer stock,
         @Size(max = 10) List<String> imageUrls,
         @Size(max = 100) String merchantName,
-        Integer validityDays,
+        @Positive Integer validityDays,
         @Min(1) Integer maxPerPerson,
         ProductStatus status
 ) {

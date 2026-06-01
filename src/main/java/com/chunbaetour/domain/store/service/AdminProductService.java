@@ -57,6 +57,16 @@ public class AdminProductService {
     public ProductDetailResponse updateProduct(Long productId, AdminProductUpdateRequest request) {
         Product product = productRepository.findByIdWithLock(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+
+        // null 필드는 기존 엔티티 값으로 병합 후 price/originalPrice 교차 검증.
+        // DTO isOriginalPriceValid()는 요청 내 필드만 비교하므로, price=null 요청 시 기존 price와의 비교가 불가.
+        // 서비스에서 병합 값으로 사전 검증해 ConstraintViolation과 동일한 400 응답 보장.
+        long effectivePrice = request.price() != null ? request.price() : product.getPrice();
+        Long effectiveOriginalPrice = request.originalPrice() != null ? request.originalPrice() : product.getOriginalPrice();
+        if (effectiveOriginalPrice != null && effectiveOriginalPrice < effectivePrice) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
         String imageUrlsJson = request.imageUrls() != null
                 ? productMapper.serializeImageUrls(request.imageUrls()) : null;
         product.adminUpdate(
