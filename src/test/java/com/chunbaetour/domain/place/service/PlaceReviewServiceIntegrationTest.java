@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,6 +107,8 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
             });
         }
         latch.await();
+        executorService.shutdown();
+        executorService.awaitTermination(5, TimeUnit.SECONDS);
 
         assertThat(successCount.get()).isEqualTo(1);
         assertThat(failCount.get()).isEqualTo(threadCount - 1);
@@ -134,6 +137,8 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
             });
         }
         latch.await();
+        executorService.shutdown();
+        executorService.awaitTermination(5, TimeUnit.SECONDS);
 
         Place updatedPlace = placeRepository.findById(testPlace.getId()).orElseThrow();
         assertThat(updatedPlace.getReviewCount()).isEqualTo(userCount);

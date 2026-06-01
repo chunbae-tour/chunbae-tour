@@ -164,8 +164,8 @@ public class PlaceReviewService {
         try {
             return objectMapper.writeValueAsString(filtered);
         } catch (Exception e) {
-            log.warn("이미지 URL 직렬화 실패. imageUrls={}", imageUrls, e);
-            return null;
+            log.warn("이미지 URL 직렬화 실패. imageUrlsSize={}", imageUrls.size(), e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 
