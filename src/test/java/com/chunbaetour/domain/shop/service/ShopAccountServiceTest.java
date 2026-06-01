@@ -87,6 +87,20 @@ class ShopAccountServiceTest {
     }
 
     @Test
+    @DisplayName("정산 계좌 등록 — SUSPENDED 가게 → SHOP_INACTIVE")
+    void updateAccount_suspendedShop_throws() {
+        ShopAccountRequest req = new ShopAccountRequest("국민은행", "123456-78-901234", "홍길동");
+        Shop shop = createShop();
+        shop.hide(); // ACTIVE → SUSPENDED
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopAccountService.updateAccount(USER_ID, SHOP_ID, req))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
     @DisplayName("계좌번호 마스킹 — 뒷 4자리 제외 * 처리, 하이픈 유지")
     void accountNumberMasking_hidesMiddleDigits() {
         ShopAccountRequest req = new ShopAccountRequest("신한은행", "110-123-456789", "김철수");

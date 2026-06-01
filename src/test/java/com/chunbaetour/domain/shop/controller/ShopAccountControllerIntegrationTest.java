@@ -159,6 +159,29 @@ class ShopAccountControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("SUSPENDED 가게에 정산 계좌 변경 시 403 SHOP_005를 반환한다")
+    void updateAccount_suspended_shop_returns_403() throws Exception {
+        Long merchantUserId = 9004L;
+        String token = tokenIssuer.issueAccess(merchantUserId, Role.MERCHANT, "merchant4@test.com");
+
+        Shop shop = shopRepository.save(Shop.builder()
+                .userId(merchantUserId).applicationId(9004L)
+                .shopName("정지된가게").category("FOOD")
+                .address("서울시 강남구").phone("02-0000-0000")
+                .description("테스트").build());
+        shop.hide(); // ACTIVE → SUSPENDED
+        shopRepository.save(shop);
+        shopWalletRepository.save(ShopWallet.create(shop.getId()));
+
+        mockMvc.perform(put(BASE_ENDPOINT + "/" + shop.getId() + "/account")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_BODY))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SHOP_005"));
+    }
+
+    @Test
     @DisplayName("accountNumber 형식 오류(하이픈만) 시 400 COMMON_002를 반환한다")
     void updateAccount_invalid_accountNumber_returns_400() throws Exception {
         Long merchantUserId = 9003L;
