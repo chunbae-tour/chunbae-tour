@@ -5,7 +5,7 @@ CREATE TABLE `support_rooms` (
   `id`         bigint       NOT NULL AUTO_INCREMENT,
   `user_id`    bigint       NOT NULL,
   `admin_id`   bigint       DEFAULT NULL,
-  `status`     varchar(10)  NOT NULL DEFAULT 'OPEN',
+  `status`     varchar(10)  NOT NULL DEFAULT 'WAITING',
   `created_at` datetime(6)  NOT NULL,
   `updated_at` datetime(6)  NOT NULL,
   `closed_at`  datetime(6)  DEFAULT NULL,
