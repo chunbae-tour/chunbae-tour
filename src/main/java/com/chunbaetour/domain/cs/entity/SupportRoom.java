@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -60,12 +61,15 @@ public class SupportRoom extends BaseEntity {
         this.adminId = adminId;
     }
 
-    // 상담 종료 — @Transactional 경계 안 영속 상태에서 호출해야 updatedAt 갱신 보장
-    public void close() {
+    // 상담 종료 — closedAt은 호출자가 Clock으로 주입 (테스트 결정성 + createdAt/updatedAt 기준 통일)
+    public void close(Clock clock) {
         if (this.status == SupportRoomStatus.CLOSED) {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
         }
+        if (clock == null) {
+            throw new IllegalArgumentException("clock must not be null");
+        }
         this.status = SupportRoomStatus.CLOSED;
-        this.closedAt = LocalDateTime.now();
+        this.closedAt = LocalDateTime.now(clock);
     }
 }

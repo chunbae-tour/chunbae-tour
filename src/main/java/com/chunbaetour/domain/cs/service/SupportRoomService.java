@@ -31,7 +31,7 @@ public class SupportRoomService {
                     SupportMessage.builder()
                             .supportRoomId(room.getId())
                             .senderId(userId)
-                            .senderRole(SupportSenderRole.USER)
+                            .senderRole(SupportSenderRole.CUSTOMER)
                             .messageType(SupportMessageType.TEXT)
                             .content(request.initialMessage())
                             .fileUrl(null)
