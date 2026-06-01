@@ -46,6 +46,8 @@ public enum ErrorCode {
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "AUTH_014", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
 
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_015", "존재하지 않는 사용자입니다."),
+    // AUTH_016: 탈퇴(soft-delete)된 계정에 운영자 정지/해제를 시도한 경우. 운영자 입력 오류이므로 400.
+    USER_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "AUTH_016", "탈퇴한 계정입니다."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),
@@ -70,6 +72,9 @@ public enum ErrorCode {
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
     LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
     LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
+    REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,            "PLACE_012", "이미 리뷰를 작성한 관광지입니다."),
+    REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND,                "PLACE_013", "존재하지 않는 리뷰입니다."),
+    REVIEW_FORBIDDEN(HttpStatus.FORBIDDEN,                "PLACE_014", "본인의 리뷰만 수정·삭제할 수 있습니다."),
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
