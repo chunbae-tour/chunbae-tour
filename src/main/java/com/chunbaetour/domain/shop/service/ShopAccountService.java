@@ -55,7 +55,9 @@ public class ShopAccountService {
         // 계좌 전체 교체
         wallet.updateAccount(request.bankName(), request.accountNumber(), request.accountHolder());
 
-        // 정산 계좌 변경 audit log — high-risk 행위 사후 추적용
+        // 정산 계좌 변경 audit log — high-risk 행위 사후 추적용.
+        // 트랜잭션 커밋 전 기록 → 롤백 시 로그와 DB 불일치 가능.
+        // 정산 계좌 변경은 롤백 빈도가 낮고, 허위 로그 리스크보다 누락 리스크가 높아 현재 방식 유지.
         String accountTail = request.accountNumber().length() >= 4
                 ? request.accountNumber().substring(request.accountNumber().length() - 4)
                 : "****";

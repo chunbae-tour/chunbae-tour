@@ -200,6 +200,6 @@ class ShopAccountControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        return body.get("data").get("accessToken").asString();
+        return body.get("data").get("accessToken").asText();
     }
 }
