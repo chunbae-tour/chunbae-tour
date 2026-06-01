@@ -28,6 +28,7 @@ public class Faq extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String answer;
 
+    // String 타입 — Admin이 카테고리를 자유롭게 입력하는 설계. 고정 목록이 확정되면 FaqCategory enum으로 전환 검토.
     @Column(nullable = false, length = 50)
     private String category;
 
@@ -52,12 +53,12 @@ public class Faq extends BaseEntity {
         if (category != null && !category.isBlank()) this.category = category;
     }
 
-    // 활성화
+    // 활성화 — @Transactional 경계 안 영속 상태에서 호출해야 updatedAt 갱신 보장
     public void activate() {
         this.isActive = true;
     }
 
-    // 비활성화 (soft hide — USER 노출 제외)
+    // 비활성화 (soft hide — USER 노출 제외) — @Transactional 경계 안 영속 상태에서 호출해야 updatedAt 갱신 보장
     public void deactivate() {
         this.isActive = false;
     }
