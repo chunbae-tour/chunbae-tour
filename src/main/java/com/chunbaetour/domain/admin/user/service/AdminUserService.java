@@ -15,6 +15,7 @@ import com.chunbaetour.domain.report.repository.ReportRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -36,6 +37,9 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AdminUserService {
+
+    // 신규 가입 "오늘" 집계는 한국 영업일 기준 (MerchantHomeService.BUSINESS_ZONE와 동일).
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
     private final AccountRepository accountRepository;
     private final ReportRepository reportRepository;
@@ -109,12 +113,14 @@ public class AdminUserService {
     }
 
     /**
-     * 오늘 신규 가입 사용자 수.
-     * TODO(S03/KAN-181): "오늘" 기준 timezone(KST vs Clock zone) 기획 확정.
+     * 오늘(한국 영업일, Asia/Seoul) 신규 가입 사용자 수.
+     *
+     * <p>Clock 빈은 {@code systemUTC}지만 {@code created_at}은 JPA auditing이 서버 기본 zone(prod=KST)으로
+     * 기록하므로, {@code clock.withZone(BUSINESS_ZONE)}로 KST 날짜를 산출해 정합을 맞춘다.
      */
     public long getNewUsersToday() {
-        LocalDateTime startOfToday = LocalDate.now(clock).atStartOfDay();
-        return accountRepository.countByCreatedAtGreaterThanEqual(startOfToday);
+        LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
+        return accountRepository.countByCreatedAtGreaterThanEqual(today.atStartOfDay());
     }
 
     /** 정지 상태 사용자 수. */

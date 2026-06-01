@@ -144,6 +144,22 @@ class AdminUserServiceTest {
     }
 
     @Test
+    @DisplayName("신규 가입 오늘 집계: UTC 자정 넘겨도 KST 날짜 경계로 조회 (KAN-181 S03)")
+    void getNewUsersToday_usesKstDateBoundary() {
+        // 2026-06-01T16:00:00Z = KST 2026-06-02T01:00 → '오늘'은 KST 기준 2026-06-02.
+        // Clock 빈은 systemUTC지만 created_at은 KST로 기록되므로 KST 날짜 경계로 조회해야 정합.
+        Clock kstBoundaryClock = Clock.fixed(Instant.parse("2026-06-01T16:00:00Z"), ZoneOffset.UTC);
+        AdminUserService service = new AdminUserService(accountRepository, reportRepository, kstBoundaryClock);
+        given(accountRepository.countByCreatedAtGreaterThanEqual(any())).willReturn(1L);
+
+        service.getNewUsersToday();
+
+        // UTC 날짜(2026-06-01)가 아니라 KST 날짜(2026-06-02) 시작을 경계로 조회.
+        then(accountRepository).should()
+                .countByCreatedAtGreaterThanEqual(LocalDateTime.of(2026, 6, 2, 0, 0));
+    }
+
+    @Test
     @DisplayName("정지 호출 시 save 명시 호출 없음 — 영속 컨텍스트 dirty checking 의존")
     void suspend_doesNotCallSave() {
         Account account = activeUser();
