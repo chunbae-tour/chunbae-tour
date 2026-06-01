@@ -41,6 +41,19 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
                           @Param("expiredStatus") QrPayStatus expiredStatus,
                           @Param("now") LocalDateTime now);
 
+    /** 상인 가게 목록의 미만료 PENDING 결제 요청 조회 — 만료 시각 오름차순(먼저 만료되는 요청 우선 표시).
+     *  expiredAt > now 조건으로 스케줄러 60초 지연 구간의 만료 건 제외 — 상인이 승인 시도 시
+     *  confirmQrPayRequest 만료 가드에서 거부되는 UX 불일치 방지 */
+    @Query("""
+            SELECT q FROM QrPayRequest q
+            WHERE q.shopId IN :shopIds AND q.status = :status AND q.expiredAt > :now
+            ORDER BY q.expiredAt ASC, q.id ASC
+            """)
+    List<QrPayRequest> findPendingByShopIds(@Param("shopIds") List<Long> shopIds,
+                                            @Param("status") QrPayStatus status,
+                                            @Param("now") LocalDateTime now,
+                                            Pageable pageable);
+
     /** 상인 홈 대시보드 — 오늘 완료된 QR 결제 합계 */
     @Query("""
             SELECT COALESCE(SUM(q.amount), 0)
