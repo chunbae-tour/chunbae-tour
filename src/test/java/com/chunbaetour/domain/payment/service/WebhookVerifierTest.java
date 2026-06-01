@@ -34,7 +34,7 @@ class WebhookVerifierTest {
 
     private static final String SECRET = "test-webhook-secret";
     private static final String WEBHOOK_ID = "wh_test_123";
-    private static final String RAW_BODY = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"order-1\",\"txId\":\"tx-1\"}}";
+    private static final String RAW_BODY = "{\"type\":\"Transaction.Paid\",\"data\":{\"paymentId\":\"order-1\",\"transactionId\":\"tx-1\"}}";
 
     @BeforeEach
     void setup() {
@@ -42,9 +42,13 @@ class WebhookVerifierTest {
     }
 
     private String computeHmac(String webhookId, String timestamp, String body) throws Exception {
+        return computeHmac(SECRET.getBytes(StandardCharsets.UTF_8), webhookId, timestamp, body);
+    }
+
+    private String computeHmac(byte[] secretBytes, String webhookId, String timestamp, String body) throws Exception {
         String message = webhookId + "." + timestamp + "." + body;
         Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(SECRET.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        mac.init(new SecretKeySpec(secretBytes, "HmacSHA256"));
         return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
     }
 
@@ -53,6 +57,18 @@ class WebhookVerifierTest {
     void verify_valid_signature_passes() throws Exception {
         String timestamp = String.valueOf(Instant.now().getEpochSecond());
         String sig = computeHmac(WEBHOOK_ID, timestamp, RAW_BODY);
+
+        assertThatCode(() -> webhookVerifier.verify(WEBHOOK_ID, "v1," + sig, timestamp, RAW_BODY))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("whsec_ 시크릿은 prefix 제거 후 Base64 decode한 키로 검증한다")
+    void verify_whsec_secret_decodes_before_hmac() throws Exception {
+        byte[] secretBytes = "decoded-webhook-secret".getBytes(StandardCharsets.UTF_8);
+        given(properties.getWebhookSecret()).willReturn("whsec_" + Base64.getEncoder().encodeToString(secretBytes));
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+        String sig = computeHmac(secretBytes, WEBHOOK_ID, timestamp, RAW_BODY);
 
         assertThatCode(() -> webhookVerifier.verify(WEBHOOK_ID, "v1," + sig, timestamp, RAW_BODY))
                 .doesNotThrowAnyException();
@@ -110,6 +126,30 @@ class WebhookVerifierTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.WEBHOOK_SIGNATURE_INVALID);
+    }
+
+    @Test
+    @DisplayName("webhookSecret null 시 PAYMENT_SERVICE_UNAVAILABLE")
+    void verify_null_secret_throws() {
+        given(properties.getWebhookSecret()).willReturn(null);
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+
+        assertThatThrownBy(() -> webhookVerifier.verify(WEBHOOK_ID, "v1,anysig", timestamp, RAW_BODY))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("webhookSecret 공백 시 PAYMENT_SERVICE_UNAVAILABLE")
+    void verify_blank_secret_throws() {
+        given(properties.getWebhookSecret()).willReturn("   ");
+        String timestamp = String.valueOf(Instant.now().getEpochSecond());
+
+        assertThatThrownBy(() -> webhookVerifier.verify(WEBHOOK_ID, "v1,anysig", timestamp, RAW_BODY))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
     }
 
     @Test
