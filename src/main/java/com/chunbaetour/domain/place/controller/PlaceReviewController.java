@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import jakarta.validation.constraints.Positive;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,7 +54,7 @@ public class PlaceReviewController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<PlaceReviewResponse> createReview(
-            @PathVariable Long placeId,
+            @PathVariable @Positive Long placeId,
             @AuthenticationPrincipal Long userId,
             @Valid @RequestBody ReviewCreateRequest request) {
         requireAuthenticated(userId);
@@ -65,19 +66,19 @@ public class PlaceReviewController {
      * 관광지 리뷰 목록 조회 (최신순 페이징).
      * GET /api/v1/places/{placeId}/reviews
      *
-     * <p>비로그인 허용 (permitAll). SecurityConfig에서 설정 필요.
+     * <p>비로그인 허용 (permitAll).
      * 기본 페이지 크기 10, 최신순 정렬.
      */
     @GetMapping
     public ApiResponse<Page<PlaceReviewResponse>> getPlaceReviews(
-            @PathVariable Long placeId,
+            @PathVariable @Positive Long placeId,
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         Page<PlaceReviewResponse> response = placeReviewService.getPlaceReviews(placeId, pageable);
         return ApiResponse.success(response);
     }
 
     /**
-     * SecurityConfig에서 hasRole("USER")로 이넓 정상 흐름에서 userId가 null이 올 수 없지만,
+     * SecurityConfig에서 hasRole("USER")로 인증된 이후 정상 흐름에서 userId가 null이 올 수 없지만,
      * 필터 우회/설정 누락 등 비정상 상태 방어 차원에서 명시적으로 코드로도 확인.
      * NPE 대신 표준 AUTH_006 응답으로 통일.
      */

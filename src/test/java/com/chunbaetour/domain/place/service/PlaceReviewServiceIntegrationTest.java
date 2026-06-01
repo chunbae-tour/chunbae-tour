@@ -56,7 +56,6 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
                 .lat(new BigDecimal("37.0"))
                 .lng(new BigDecimal("127.0"))
                 .category(PlaceCategory.TOURIST_SPOT)
-                .status(PlaceStatus.ACTIVE)
                 .build();
         placeRepository.save(testPlace);
     }

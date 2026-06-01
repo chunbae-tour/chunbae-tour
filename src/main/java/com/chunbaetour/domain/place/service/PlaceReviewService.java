@@ -74,10 +74,10 @@ public class PlaceReviewService {
             throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
         }
 
-        // 3. Account 프록시 조회 — getReferenceById로 불필요한 SELECT 방지
-        //    SecurityConfig hasRole("USER") 인증을 통과한 userId이므로 실제 조회 불필요.
-        //    INSERT 시 FK 바인딩에만 사용.
-        Account author = accountRepository.getReferenceById(userId);
+        // 3. Account 엔티티 조회
+        //    응답 DTO 생성 시 작성자 닉네임/프로필이 필요하므로 프록시 대신 실제 객체 로딩.
+        Account author = accountRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         // 4. 이미지 JSON 직렬화 (최대 5개는 DTO @Size 검증으로 이미 처리됨)
         String imageUrlsJson = serializeImageUrls(request.imageUrls());
