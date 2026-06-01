@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
 import com.chunbaetour.domain.cs.service.FaqService;
@@ -38,27 +39,41 @@ class FaqControllerTest extends AbstractIntegrationTest {
 
     // ===== GET /faqs =====
 
-    // 미인증 → 401
+    // 미인증 → 401 AUTH_006
     @Test
     @DisplayName("미인증 → 401")
     void getFaqs_whenUnauthenticated_returns401() throws Exception {
         mockMvc.perform(get(BASE_URL))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.getCode()));
         verifyNoInteractions(faqService);
     }
 
-    // ADMIN 인증 → 403 (USER 전용 endpoint)
+    // ADMIN 인증 → 403 AUTH_007 (USER 전용 endpoint)
     @Test
     @DisplayName("ADMIN 인증 → 403")
     void getFaqs_whenAdmin_returns403() throws Exception {
         String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
         mockMvc.perform(get(BASE_URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
         verifyNoInteractions(faqService);
     }
 
-    // USER 인증 → 200 + FAQ 목록 반환
+    // MERCHANT 인증 → 403 AUTH_007 (USER 전용 endpoint)
+    @Test
+    @DisplayName("MERCHANT 인증 → 403")
+    void getFaqs_whenMerchant_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.MERCHANT, "merchant@test.com");
+        mockMvc.perform(get(BASE_URL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
+        verifyNoInteractions(faqService);
+    }
+
+    // USER 인증 → 200 + FAQ 필드 검증
     @Test
     @DisplayName("USER 인증 → 200")
     void getFaqs_whenUser_returns200() throws Exception {
@@ -70,7 +85,9 @@ class FaqControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get(BASE_URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content[0].faqId").value(1));
+                .andExpect(jsonPath("$.data.content[0].faqId").value(1))
+                .andExpect(jsonPath("$.data.content[0].question").value("테스트 질문"))
+                .andExpect(jsonPath("$.data.content[0].category").value("PAYMENT"));
     }
 
     // category 파라미터 전달 시 서비스로 전달됨
