@@ -1,19 +1,26 @@
 package com.chunbaetour.domain.payment.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
 import com.chunbaetour.domain.payment.dto.request.ChargeRequest;
 import com.chunbaetour.domain.payment.dto.response.ChargeResponse;
+import com.chunbaetour.domain.payment.dto.response.PaymentHistoryResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ChargeService {
 
     private static final long MIN_AMOUNT = 5_000L;
@@ -52,6 +59,41 @@ public class ChargeService {
             idempotencyService.unmark(idempotencyKey);
             throw ex;
         }
+    }
+
+    /**
+     * 결제(충전) 내역 cursor 페이징 조회.
+     * id DESC 기준. cursor 없으면 첫 페이지.
+     *
+     * <p>nextCursor 포맷: 마지막 항목의 id(Long)를 Base64URL 인코딩한 문자열 (padding 없음, URL-safe).
+     * 클라이언트는 받은 nextCursor 값을 그대로 ?cursor= query param으로 전달하면 되며, 별도 파싱·변환 불필요.
+     *
+     * <p>status 노출 범위: PENDING·COMPLETED·FAILED·CANCELLED·REFUNDED 전체 상태를 포함한다.
+     * FAILED·CANCELLED는 사용자가 충전 실패 원인을 확인할 수 있도록 의도적으로 노출.
+     * 내부 처리 필터링이 필요하다면 API 버전 업 또는 쿼리 파라미터로 별도 제공.
+     */
+    public CursorPageResponse<PaymentHistoryResponse> getPaymentHistory(Long userId, String cursor, int size) {
+        // 서비스 경계 방어 검증 — controller @Min/@Max 외 직접 호출 경로 보호
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        if (size < 1 || size > 100) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        // size+1 조회 — 다음 페이지 존재 여부 판별
+        List<PaymentOrder> orders = paymentOrderRepository.findByUserIdWithCursor(
+                userId, cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = orders.size() > size;
+        List<PaymentOrder> content = hasNext ? orders.subList(0, size) : orders;
+        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
+
+        List<PaymentHistoryResponse> responses = content.stream()
+                .map(PaymentHistoryResponse::from)
+                .toList();
+
+        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
     }
 
     private void validateAmount(Long amount) {
