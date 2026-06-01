@@ -4,8 +4,10 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.response.ShopImageResponse;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.storage.ShopImageStorage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Set;
 
@@ -25,6 +27,7 @@ import java.util.Set;
  */
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ShopImageService {
 
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024L; // 5MB

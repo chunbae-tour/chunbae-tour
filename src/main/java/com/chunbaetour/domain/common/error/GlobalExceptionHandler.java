@@ -83,6 +83,9 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ErrorCode.INVALID_REQUEST.getCode(), ErrorCode.INVALID_REQUEST.getMessage()));
     }
 
+    // MaxUploadSizeExceededException은 서블릿 multipart 파싱 단계에서 발생.
+    // 실제 운영에서는 DispatcherServlet 이전(필터 레벨)에서 던져져 이 핸들러에 도달하지 못하고 500 반환 가능.
+    // MockMultipartFile은 서블릿 파싱을 우회하므로 테스트에서는 정상 동작 — 운영 환경에서 별도 검증 필요.
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(
             org.springframework.web.multipart.MaxUploadSizeExceededException ex) {

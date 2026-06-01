@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.shop.service;
+package com.chunbaetour.domain.shop.storage;
 
 import org.springframework.web.multipart.MultipartFile;
 

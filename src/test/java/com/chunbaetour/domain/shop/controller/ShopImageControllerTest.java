@@ -77,8 +77,10 @@ class ShopImageControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 이미지 타입(GIF) → MERCHANT 통과 후 가게 없으면 SHOP_001")
-    void upload_merchant_unsupportedType_shopNotFound() throws Exception {
+    @DisplayName("GIF 파일 + 존재하지 않는 shopId → 소유권 검증이 파일 검증보다 먼저 실행되므로 SHOP_001")
+    void upload_merchant_gifFile_shopNotFound_ownershipCheckedFirst() throws Exception {
+        // 서비스 실행 순서: 소유권 확인(1) → 파일 검증(2). shopId=1이 DB에 없으므로 파일 타입 무관하게 SHOP_001 반환.
+        // GIF 거부 자체는 ShopImageServiceTest에서 단위 테스트로 검증.
         String token = tokenIssuer.issueAccess(9001L, Role.MERCHANT, "merchant@test.com");
         MockMultipartFile gifFile = new MockMultipartFile("file", "anim.gif", "image/gif", new byte[512]);
         mockMvc.perform(multipart(ENDPOINT)
