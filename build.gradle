@@ -20,6 +20,12 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// AspectJ (KAN-179, Admin Epic KAN-177 S01).
+	// AdminActionLog 자동 wiring용 @LogAdminAction 어노테이션 + advice. 호출자 코드 변경 없이 액션 자동 기록.
+	// Spring Boot 4.0 BOM은 spring-boot-starter-aop을 자체 게시하지 않으므로 spring-aspects + aspectjweaver를 직접 명시.
+	// spring-aspects가 EnableAspectJAutoProxy 자동 등록 + AspectJ proxy 인프라 제공. aspectjweaver는 @Aspect 메타데이터 처리.
+	implementation 'org.springframework:spring-aspects'
+	implementation 'org.aspectj:aspectjweaver'
 	// Micrometer Prometheus registry — /actuator/prometheus endpoint 노출 (KAN-104).
 	// Spring Boot가 버전 관리. 인증 필터/서비스에 Counter/Timer 추가 시 자동 수집.
 	implementation 'io.micrometer:micrometer-registry-prometheus'
