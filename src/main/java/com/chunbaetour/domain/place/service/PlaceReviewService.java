@@ -12,11 +12,10 @@ import com.chunbaetour.domain.place.dto.request.ReviewCreateRequest;
 import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.util.List;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -62,8 +62,8 @@ public class PlaceReviewService {
      */
     @Transactional
     public PlaceReviewResponse createReview(Long userId, Long placeId, ReviewCreateRequest request) {
-        // 1. 관광지 존재 여부 확인
-        Place place = placeRepository.findById(placeId)
+        // 1. 관광지 존재 여부 및 활성 상태(ACTIVE) 확인 + 비관적 락 획득 (동시성 제어)
+        Place place = placeRepository.findByIdAndStatusForUpdate(placeId, PlaceStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
 
         // 2. 1인 1리뷰 정책 검증
@@ -82,13 +82,9 @@ public class PlaceReviewService {
         // 4. 이미지 JSON 직렬화 (최대 5개는 DTO @Size 검증으로 이미 처리됨)
         String imageUrlsJson = serializeImageUrls(request.imageUrls());
 
-        // 5. 리뷰 엔티티 생성 및 저장
+        // 5. 리뷰 엔티티 생성 및 저장 (DB 유니크 제약 대신 비관적 락으로 중복 쓰기 방어)
         PlaceReview review = PlaceReview.create(place, author, request.rating(), request.content(), imageUrlsJson);
-        try {
-            placeReviewRepository.saveAndFlush(review);
-        } catch (DataIntegrityViolationException e) {
-            throw new BusinessException(ErrorCode.REVIEW_ALREADY_EXISTS);
-        }
+        placeReviewRepository.save(review);
 
         // 6. Place 평점 및 리뷰 수 재계산
         recalculatePlaceRating(place);
@@ -111,7 +107,8 @@ public class PlaceReviewService {
      */
     @Transactional(readOnly = true)
     public Page<PlaceReviewResponse> getPlaceReviews(Long placeId, Pageable pageable) {
-        if (!placeRepository.existsById(placeId)) {
+        // 관광지 존재 여부 및 활성 상태(ACTIVE) 확인 (숨김/삭제 관광지 차단)
+        if (placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE).isEmpty()) {
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
         return placeReviewRepository.findActiveByPlaceId(placeId, pageable)
@@ -152,14 +149,14 @@ public class PlaceReviewService {
     /**
      * 이미지 URL 목록을 JSON 문자열로 직렬화.
      * null이거나 비어있으면 null 반환 (DB 저장 시 NULL).
-     * null 원소 필터링 포함.
+     * blank 문자열 필터링 포함.
      */
     private String serializeImageUrls(List<String> imageUrls) {
         if (imageUrls == null || imageUrls.isEmpty()) {
             return null;
         }
         List<String> filtered = imageUrls.stream()
-                .filter(Objects::nonNull)
+                .filter(StringUtils::hasText)
                 .toList();
         if (filtered.isEmpty()) {
             return null;
