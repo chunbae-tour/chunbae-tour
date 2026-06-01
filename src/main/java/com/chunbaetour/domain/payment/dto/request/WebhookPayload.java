@@ -13,7 +13,7 @@ public record WebhookPayload(
         @NotBlank
         String paymentId,
         @NotBlank
-        String txId
+        String transactionId // PortOne V2 웹훅 스키마 기준 필드로 수정
     ) {
     }
 }
