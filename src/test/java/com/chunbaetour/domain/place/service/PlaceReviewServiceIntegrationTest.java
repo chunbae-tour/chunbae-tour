@@ -149,6 +149,17 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("마이페이지 내 리뷰 조회 시 page size가 100을 초과하면 예외가 발생해야 한다")
+    void cannot_read_my_reviews_exceeding_max_page_size() {
+        assertThatThrownBy(() -> placeReviewService.getUserReviews(
+                testUser.getId(), 
+                PageRequest.of(0, 101)
+        ))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining(ErrorCode.INVALID_REQUEST.getMessage());
+    }
+
+    @Test
     @DisplayName("동일 유저가 동시에 여러 번 리뷰 작성 요청 시 1번만 성공해야 한다 (동시성 중복 방어)")
     void concurrent_duplicate_reviews_by_same_user_should_fail() throws InterruptedException {
         int threadCount = 5;
