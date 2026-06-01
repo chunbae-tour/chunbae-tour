@@ -1,0 +1,105 @@
+package com.chunbaetour.domain.cs.controller;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.chunbaetour.domain.auth.Role;
+import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.cs.dto.response.FaqResponse;
+import com.chunbaetour.domain.cs.service.FaqService;
+import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+class FaqControllerTest extends AbstractIntegrationTest {
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private TokenIssuer tokenIssuer;
+
+    @MockitoBean private FaqService faqService;
+
+    private static final String BASE_URL = "/api/v1/faqs";
+
+    // ===== GET /faqs =====
+
+    // 미인증 → 401
+    @Test
+    @DisplayName("미인증 → 401")
+    void getFaqs_whenUnauthenticated_returns401() throws Exception {
+        mockMvc.perform(get(BASE_URL))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(faqService);
+    }
+
+    // ADMIN 인증 → 403 (USER 전용 endpoint)
+    @Test
+    @DisplayName("ADMIN 인증 → 403")
+    void getFaqs_whenAdmin_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+        mockMvc.perform(get(BASE_URL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(faqService);
+    }
+
+    // USER 인증 → 200 + FAQ 목록 반환
+    @Test
+    @DisplayName("USER 인증 → 200")
+    void getFaqs_whenUser_returns200() throws Exception {
+        FaqResponse faq = buildFaqResponse(1L);
+        given(faqService.getActiveFaqs(any(), eq(20), any()))
+                .willReturn(new CursorPageResponse<>(List.of(faq), null, false, 1));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].faqId").value(1));
+    }
+
+    // category 파라미터 전달 시 서비스로 전달됨
+    @Test
+    @DisplayName("category 파라미터 → 서비스 전달")
+    void getFaqs_withCategory_passesToService() throws Exception {
+        given(faqService.getActiveFaqs(any(), eq(20), eq("PAYMENT")))
+                .willReturn(new CursorPageResponse<>(List.of(), null, false, 0));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL)
+                        .param("category", "PAYMENT")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk());
+    }
+
+    // size 범위 초과(101) → 400
+    @Test
+    @DisplayName("size=101 → 400")
+    void getFaqs_whenSizeExceedsMax_returns400() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL)
+                        .param("size", "101")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
+    }
+
+    private FaqResponse buildFaqResponse(Long id) {
+        return new FaqResponse(id, "테스트 질문", "테스트 답변", "PAYMENT", true, LocalDateTime.now(), LocalDateTime.now());
+    }
+}
