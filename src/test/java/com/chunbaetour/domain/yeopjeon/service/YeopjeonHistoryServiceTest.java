@@ -148,7 +148,7 @@ class YeopjeonHistoryServiceTest {
                 makeHistory(4L, YeopjeonHistoryType.CHARGE, 5_000L),
                 makeHistory(3L, YeopjeonHistoryType.RECEIVED_PAYMENT, 3_000L),
                 makeHistory(2L, YeopjeonHistoryType.PAYMENT, 2_000L),
-                makeHistory(1L, YeopjeonHistoryType.REFUND, 1_000L)
+                makeHistory(1L, YeopjeonHistoryType.REFUND, -1_000L)
         );
         given(yeopjeonHistoryRepository.findByUserIdOrderByIdDesc(eq(1L), any(PageRequest.class)))
                 .willReturn(rows);

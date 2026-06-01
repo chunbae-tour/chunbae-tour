@@ -177,6 +177,8 @@ public class CallbackService {
 
         if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
             order.partialCancel();
+            // 충전 요청 멱등성 키는 결제 완료 웹훅(handleSuccess)에서 이미 해제된다.
+            // 부분 취소는 결제 완료 이후 후속 이벤트이므로 여기서 다시 해제하지 않는다.
         }
     }
 

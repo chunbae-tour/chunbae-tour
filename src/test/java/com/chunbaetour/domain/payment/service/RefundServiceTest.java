@@ -167,6 +167,27 @@ class RefundServiceTest {
     }
 
     @Test
+    @DisplayName("PortOne 취소 중 예상치 못한 예외가 발생해도 환불 이력만 FAILED 처리한다")
+    void requestRefund_portOneUnexpectedRuntimeException_marksRefundFailed() {
+        PaymentOrder order = completedOrder(USER_ID);
+        AtomicReference<Refund> refundRef = stubRefundSave();
+        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+        doThrow(new IllegalStateException("unexpected gateway failure"))
+                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+
+        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+        assertThat(refundRef.get().getStatus()).isEqualTo(RefundStatus.FAILED);
+        verify(walletService, never()).reclaimAvailableForRefund(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("PortOne 취소 성공 후 회수 가능 잔액이 부족하면 회수필요 상태로 남긴다")
     void requestRefund_gatewaySuccessButWalletShort_marksAdjustmentRequired() {
         PaymentOrder order = completedOrder(USER_ID);

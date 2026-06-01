@@ -62,8 +62,8 @@ public class RefundService {
         try {
             // PortOne 원결제 취소 호출은 DB/Wallet 락을 잡지 않은 상태에서 실행한다.
             paymentGatewayClient.cancelPayment(preparation.orderUid(), preparation.amount(), preparation.reason());
-        } catch (PaymentException e) {
-            // PortOne 취소 실패 시 환불 이력만 FAILED로 남기고 주문/엽전 상태는 완료 처리하지 않는다.
+        } catch (RuntimeException e) {
+            // PortOne 취소 실패나 예상치 못한 런타임 예외는 환불 이력만 FAILED로 남긴다.
             transactionTemplate.executeWithoutResult(status -> markRefundFailed(preparation.refundId()));
             throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
