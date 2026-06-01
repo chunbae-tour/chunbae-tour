@@ -93,7 +93,9 @@ public class PaymentOrder extends BaseEntity {
     }
 
     public void cancel() {
-        if (this.status == PaymentOrderStatus.REFUNDED) {
+        if (this.status == PaymentOrderStatus.CANCELLED
+                || this.status == PaymentOrderStatus.REFUNDED
+                || this.status == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
             return;
         }
         this.status = PaymentOrderStatus.CANCELLED;

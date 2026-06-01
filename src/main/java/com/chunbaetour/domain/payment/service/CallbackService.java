@@ -33,6 +33,7 @@ public class CallbackService {
         if (!idempotencyService.markWebhookIfAbsent(webhookId)) {
             return;
         }
+        scheduleWebhookUnmarkOnRollback(webhookId);
 
         try {
             if (payload.data() == null) return;
@@ -181,8 +182,7 @@ public class CallbackService {
 
     @Transactional
     public void handleCancelPending(String paymentId) {
-        paymentOrderRepository.findByOrderUid(paymentId)
-                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+        paymentOrderRepository.findByOrderUid(paymentId);
     }
 
     /**
@@ -218,5 +218,19 @@ public class CallbackService {
             // 트랜잭션 밖 → 즉시 실행
             idempotencyService.unmark(idempotencyKey);
         }
+    }
+
+    private void scheduleWebhookUnmarkOnRollback(String webhookId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    idempotencyService.unmarkWebhook(webhookId);
+                }
+            }
+        });
     }
 }

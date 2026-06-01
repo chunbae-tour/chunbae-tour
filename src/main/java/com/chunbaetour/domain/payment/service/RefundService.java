@@ -16,11 +16,8 @@ import com.chunbaetour.domain.payment.repository.RefundRepository;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
-import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
-import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
-import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -29,7 +26,9 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -42,13 +41,31 @@ public class RefundService {
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
     private final WalletRepository walletRepository;
-    private final YeopjeonHistoryRepository yeopjeonHistoryRepository;
     private final PaymentGatewayClient paymentGatewayClient;
     private final WalletService walletService;
     private final Clock clock;
+    private final TransactionTemplate transactionTemplate;
 
-    @Transactional(noRollbackFor = BusinessException.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
+        RefundPreparation preparation = transactionTemplate.execute(status ->
+                prepareRefund(userId, orderId, request.reason()));
+
+        if (preparation.alreadyApprovedResponse() != null) {
+            return preparation.alreadyApprovedResponse();
+        }
+
+        try {
+            paymentGatewayClient.cancelPayment(preparation.orderUid(), preparation.amount(), preparation.reason());
+        } catch (PaymentException e) {
+            transactionTemplate.executeWithoutResult(status -> markRefundFailed(preparation.refundId()));
+            throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+
+        return transactionTemplate.execute(status -> completeRefundAfterGatewayCancel(preparation));
+    }
+
+    private RefundPreparation prepareRefund(Long userId, String orderId, String reason) {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
@@ -59,7 +76,7 @@ public class RefundService {
         Refund existingRefund = refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(order.getId()).orElse(null);
         if (order.getStatus() == PaymentOrderStatus.REFUNDED) {
             if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
-                return RefundResponse.from(existingRefund);
+                return RefundPreparation.alreadyApproved(RefundResponse.from(existingRefund));
             }
             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
         }
@@ -72,34 +89,23 @@ public class RefundService {
             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
         }
 
-        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+        Wallet wallet = walletRepository.findByUserId(order.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
-        if (wallet.getBalance() < order.getAmount() || isChargeUsed(order)) {
+        if (wallet.getBalance() < order.getAmount()) {
             throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
         }
 
         if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
-            return RefundResponse.from(existingRefund);
+            return RefundPreparation.alreadyApproved(RefundResponse.from(existingRefund));
         }
         if (existingRefund != null && existingRefund.getStatus() == RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
         }
 
         try {
-            Refund refund = Refund.create(order.getId(), userId, order.getAmount(), request.reason());
+            Refund refund = Refund.create(order.getId(), userId, order.getAmount(), reason);
             refundRepository.saveAndFlush(refund);
-
-            try {
-                paymentGatewayClient.cancelPayment(order.getOrderUid(), order.getAmount(), request.reason());
-            } catch (PaymentException e) {
-                refund.fail("PORTONE_CANCEL_FAILED");
-                throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
-            }
-
-            order.refund();
-            refund.approve();
-            walletService.reclaimForRefund(userId, order.getAmount(), order.getId());
-            return RefundResponse.from(refund);
+            return RefundPreparation.pending(order.getOrderUid(), order.getAmount(), refund.getId(), reason);
         } catch (DataIntegrityViolationException e) {
             Throwable cause = e;
             while (cause != null) {
@@ -111,6 +117,46 @@ public class RefundService {
             }
             throw e;
         }
+    }
+
+    private void markRefundFailed(Long refundId) {
+        refundRepository.findByIdWithLock(refundId)
+                .ifPresent(refund -> {
+                    if (refund.getStatus() == RefundStatus.PENDING) {
+                        refund.fail("PORTONE_CANCEL_FAILED");
+                    }
+                });
+    }
+
+    private RefundResponse completeRefundAfterGatewayCancel(RefundPreparation preparation) {
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(preparation.orderUid())
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+        Refund refund = refundRepository.findByIdWithLock(preparation.refundId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+
+        if (refund.getStatus() == RefundStatus.APPROVED) {
+            return RefundResponse.from(refund);
+        }
+        if (refund.getStatus() != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+        }
+
+        if (order.getStatus() == PaymentOrderStatus.COMPLETED
+                || order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED) {
+            long reclaimed = walletService.reclaimAvailableForRefund(
+                    order.getUserId(),
+                    order.getAmount(),
+                    order.getId()
+            );
+            if (reclaimed == order.getAmount()) {
+                order.refund();
+            } else {
+                order.requireAdjustment();
+            }
+        }
+
+        refund.approve();
+        return RefundResponse.from(refund);
     }
 
     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
@@ -142,17 +188,19 @@ public class RefundService {
         refund.cancel();
     }
 
-    private boolean isChargeUsed(PaymentOrder order) {
-        return yeopjeonHistoryRepository.findFirstByPaymentOrderIdAndTypeOrderByIdAsc(
-                        order.getId(),
-                        YeopjeonHistoryType.CHARGE
-                )
-                .map(YeopjeonHistory::getId)
-                .map(chargeHistoryId -> yeopjeonHistoryRepository.existsByUserIdAndIdGreaterThanAndTypeIn(
-                        order.getUserId(),
-                        chargeHistoryId,
-                        List.of(YeopjeonHistoryType.PAYMENT)
-                ))
-                .orElse(false);
+    private record RefundPreparation(
+            String orderUid,
+            Long amount,
+            Long refundId,
+            String reason,
+            RefundResponse alreadyApprovedResponse
+    ) {
+        private static RefundPreparation pending(String orderUid, Long amount, Long refundId, String reason) {
+            return new RefundPreparation(orderUid, amount, refundId, reason, null);
+        }
+
+        private static RefundPreparation alreadyApproved(RefundResponse response) {
+            return new RefundPreparation(null, null, null, null, response);
+        }
     }
 }

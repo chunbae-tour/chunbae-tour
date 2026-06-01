@@ -113,7 +113,19 @@ public class YeopjeonHistory extends BaseEntity {
                 .amount(amount)
                 .balanceSnapshot(balanceSnapshot)
                 .paymentOrderId(paymentOrderId)
-                .description(adjustmentRequired ? "EXTERNAL_CANCEL_ADJUSTMENT_REQUIRED" : "EXTERNAL_CANCEL_RECLAIM")
+                .description(adjustmentRequired ? "외부 결제취소 회수 필요" : "외부 결제취소 회수")
+                .build();
+    }
+
+    public static YeopjeonHistory ofRefundReclaim(
+            Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId, boolean adjustmentRequired) {
+        return YeopjeonHistory.builder()
+                .userId(userId)
+                .type(YeopjeonHistoryType.REFUND)
+                .amount(amount)
+                .balanceSnapshot(balanceSnapshot)
+                .paymentOrderId(paymentOrderId)
+                .description(adjustmentRequired ? "환불 회수 필요" : "환불 회수")
                 .build();
     }
 
