@@ -2,12 +2,16 @@ package com.chunbaetour.domain.cs.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
 import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
 import com.chunbaetour.domain.cs.entity.SupportMessage;
@@ -32,10 +36,24 @@ class SupportRoomServiceTest {
 
     // ===== createRoom =====
 
+    // WAITING 상담방 이미 있으면 CS_004 예외
+    @Test
+    void createRoom_whenWaitingRoomExists_throwsAlreadyExists() {
+        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING)))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_EXISTS));
+        verify(supportRoomRepository, never()).save(any(SupportRoom.class));
+    }
+
     // initialMessage 없으면 SupportMessage 저장 안 함
     @Test
     void createRoom_withoutMessage_doesNotSaveMessage() {
         SupportRoom room = buildRoom(1L);
+        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null));
@@ -47,6 +65,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_withBlankMessage_doesNotSaveMessage() {
         SupportRoom room = buildRoom(1L);
+        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         supportRoomService.createRoom(1L, new SupportRoomCreateRequest("   "));
@@ -58,6 +77,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_withMessage_savesMessageWithCorrectFields() {
         SupportRoom room = buildRoom(1L);
+        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         supportRoomService.createRoom(1L, new SupportRoomCreateRequest("결제가 안 됩니다."));
@@ -75,6 +95,7 @@ class SupportRoomServiceTest {
     @Test
     void createRoom_statusIsWaiting() {
         SupportRoom room = buildRoom(1L);
+        given(supportRoomRepository.existsByUserIdAndStatus(eq(1L), eq(SupportRoomStatus.WAITING))).willReturn(false);
         given(supportRoomRepository.save(any(SupportRoom.class))).willReturn(room);
 
         SupportRoomResponse result = supportRoomService.createRoom(1L, new SupportRoomCreateRequest(null));
