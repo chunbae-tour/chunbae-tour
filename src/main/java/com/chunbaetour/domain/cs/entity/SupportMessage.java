@@ -43,10 +43,11 @@ public class SupportMessage {
     @Column(name = "message_type", nullable = false, length = 10)
     private SupportMessageType messageType;
 
-    @Column(nullable = false, columnDefinition = "TEXT")
+    // TEXT 타입: 필수. IMAGE/FILE 타입: 선택(캡션)
+    @Column(columnDefinition = "TEXT")
     private String content;
 
-    // TEXT 타입은 null — IMAGE/FILE 타입에만 사용
+    // IMAGE/FILE 타입에만 사용 — TEXT 타입은 null
     @Column(name = "file_url", length = 500)
     private String fileUrl;
 
@@ -67,11 +68,13 @@ public class SupportMessage {
     }
 
     private static void validatePayload(SupportMessageType messageType, String content, String fileUrl) {
-        if (content == null || content.isBlank()) {
-            throw new IllegalArgumentException("content는 비어 있을 수 없습니다.");
-        }
-        if (messageType == SupportMessageType.TEXT && fileUrl != null) {
-            throw new IllegalArgumentException("TEXT 메시지는 fileUrl을 가질 수 없습니다.");
+        if (messageType == SupportMessageType.TEXT) {
+            if (content == null || content.isBlank()) {
+                throw new IllegalArgumentException("TEXT 메시지는 content가 필요합니다.");
+            }
+            if (fileUrl != null) {
+                throw new IllegalArgumentException("TEXT 메시지는 fileUrl을 가질 수 없습니다.");
+            }
         }
         if ((messageType == SupportMessageType.IMAGE || messageType == SupportMessageType.FILE)
                 && (fileUrl == null || fileUrl.isBlank())) {

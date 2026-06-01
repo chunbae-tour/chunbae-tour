@@ -12,7 +12,7 @@ CREATE TABLE `support_rooms` (
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_support_rooms_user`  FOREIGN KEY (`user_id`)  REFERENCES `users` (`id`),
   CONSTRAINT `fk_support_rooms_admin` FOREIGN KEY (`admin_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ============================
 -- support_messages (상담 메시지)
@@ -23,10 +23,11 @@ CREATE TABLE `support_messages` (
   `sender_id`       bigint       NOT NULL,
   `sender_role`     varchar(10)  NOT NULL,
   `message_type`    varchar(10)  NOT NULL,
-  `content`         text         NOT NULL,
+  -- TEXT 타입: content 필수. IMAGE/FILE 타입: content 선택(캡션), fileUrl 필수
+  `content`         text         DEFAULT NULL,
   `file_url`        varchar(500) DEFAULT NULL,
   `sent_at`         datetime(6)  NOT NULL,
   PRIMARY KEY (`id`),
   CONSTRAINT `fk_support_messages_room`   FOREIGN KEY (`support_room_id`) REFERENCES `support_rooms` (`id`),
   CONSTRAINT `fk_support_messages_sender` FOREIGN KEY (`sender_id`)       REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
