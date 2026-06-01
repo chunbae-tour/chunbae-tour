@@ -17,6 +17,9 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * 가게 수익 지갑 API 권한 회귀 테스트.
  * 비로그인 401, USER 역할 403 검증 (서비스 로직 실행 전 Spring Security 차단).
+ *
+ * @AfterEach 미포함 이유: Spring Security 필터에서 차단되므로 서비스·DB 레이어에 도달하지 않음.
+ * 토큰은 TokenIssuer가 JWT를 인메모리 생성하므로 DB seed 없음 → 테스트 간 격리 보장.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -105,6 +105,8 @@ public class ShopService {
      * 본인 가게 소유권 확인 후 ShopWallet 잔액 반환.
      */
     public ShopWalletResponse getShopWallet(Long userId, Long shopId) {
+        // Security 레이어에서 인증 필수이지만 서비스 경계 방어로 null 명시 차단
+        if (userId == null) throw new BusinessException(ErrorCode.SHOP_NOT_FOUND);
         // 소유권 확인 — 타인 가게 접근 시 SHOP_001
         shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));

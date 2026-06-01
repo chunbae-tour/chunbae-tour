@@ -133,6 +133,7 @@ public enum ErrorCode {
     AD_APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND,          "SHOP_013", "존재하지 않는 광고 신청입니다."),
     DUPLICATE_AD_APPLICATION(HttpStatus.CONFLICT,           "SHOP_014", "이미 처리 대기 중인 광고 신청이 있습니다."),
     AD_APPLICATION_INVALID_STATUS(HttpStatus.CONFLICT,      "SHOP_015", "현재 상태에서는 처리할 수 없는 광고 신청입니다."),
+    SHOP_WALLET_ALREADY_EXISTS(HttpStatus.CONFLICT,          "SHOP_016", "이미 등록된 가게 수익 지갑이 있습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

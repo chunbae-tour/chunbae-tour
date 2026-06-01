@@ -119,9 +119,11 @@ public class AdminMerchantApplicationService {
             if (msg != null && msg.contains("uk_shops_application_id")) {
                 throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
             }
-            // uk_shop_wallets_shop_id: 동일 가게에 ShopWallet 중복 생성 방지 (동시 승인 replay)
+            // uk_shop_wallets_shop_id: Shop은 생성됐으나 ShopWallet이 이미 존재하는 경합 케이스 — Wallet 중복이므로 별도 에러코드 사용
+            // [backfill 주의] 이 PR 이전에 승인된 가게(shop row O, shop_wallet row X)가 있으면
+            // getShopWallet() 호출 시 SHOP_WALLET_NOT_FOUND 발생 → 운영 전 backfill migration 필요 (별도 이슈 추적)
             if (msg != null && msg.contains("uk_shop_wallets_shop_id")) {
-                throw new BusinessException(ErrorCode.SHOP_ALREADY_EXISTS);
+                throw new BusinessException(ErrorCode.SHOP_WALLET_ALREADY_EXISTS);
             }
             log.error("Shop 저장 중 예상치 못한 DB 제약 위반 발생. applicationId={}", application.getId(), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
