@@ -38,7 +38,11 @@ class YeopjeonHistoryServiceTest {
     private YeopjeonHistoryService yeopjeonHistoryService;
 
     private YeopjeonHistory makeHistory(Long id, Long amount) {
-        YeopjeonHistory history = YeopjeonHistory.create(1L, null, null, YeopjeonHistoryType.CHARGE, amount, amount, "테스트");
+        return makeHistory(id, YeopjeonHistoryType.CHARGE, amount);
+    }
+
+    private YeopjeonHistory makeHistory(Long id, YeopjeonHistoryType type, Long amount) {
+        YeopjeonHistory history = YeopjeonHistory.create(1L, null, null, type, amount, amount, "테스트");
         ReflectionTestUtils.setField(history, "id", id);
         return history;
     }
@@ -135,5 +139,24 @@ class YeopjeonHistoryServiceTest {
         assertThat(response.hasNext()).isFalse();
         assertThat(response.nextCursor()).isNull();
         assertThat(response.size()).isZero();
+    }
+
+    @Test
+    @DisplayName("이용 내역 금액은 타입에 따라 충전/받은 결제는 양수, 결제/환불은 음수로 반환한다")
+    void getHistories_amountSign_normalizesByHistoryType() {
+        List<YeopjeonHistory> rows = List.of(
+                makeHistory(4L, YeopjeonHistoryType.CHARGE, 5_000L),
+                makeHistory(3L, YeopjeonHistoryType.RECEIVED_PAYMENT, 3_000L),
+                makeHistory(2L, YeopjeonHistoryType.PAYMENT, 2_000L),
+                makeHistory(1L, YeopjeonHistoryType.REFUND, 1_000L)
+        );
+        given(yeopjeonHistoryRepository.findByUserIdOrderByIdDesc(eq(1L), any(PageRequest.class)))
+                .willReturn(rows);
+
+        CursorPageResponse<YeopjeonHistoryResponse> response = yeopjeonHistoryService.getHistories(1L, null, 20);
+
+        assertThat(response.content())
+                .extracting(YeopjeonHistoryResponse::amount)
+                .containsExactly(5_000L, 3_000L, -2_000L, -1_000L);
     }
 }

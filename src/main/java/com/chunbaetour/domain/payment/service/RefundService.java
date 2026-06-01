@@ -51,12 +51,12 @@ public class RefundService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
         // 환불 가능 여부를 먼저 짧은 트랜잭션에서 검증하고 PENDING 환불 이력을 생성한다.
-        RefundPreparation preparation = transactionTemplate.execute(status ->
+        PreparedRefund preparation = transactionTemplate.execute(status ->
                 prepareRefund(userId, orderId, request.reason()));
 
         // 이미 승인된 환불이면 PortOne을 다시 호출하지 않고 기존 환불 응답을 반환한다.
-        if (preparation.alreadyApprovedResponse() != null) {
-            return preparation.alreadyApprovedResponse();
+        if (preparation.alreadyApprovedRefund() != null) {
+            return RefundResponse.from(preparation.alreadyApprovedRefund());
         }
 
         try {
@@ -72,7 +72,7 @@ public class RefundService {
         return transactionTemplate.execute(status -> completeRefundAfterGatewayCancel(preparation));
     }
 
-    private RefundPreparation prepareRefund(Long userId, String orderId, String reason) {
+    private PreparedRefund prepareRefund(Long userId, String orderId, String reason) {
         // 결제 주문을 비관적 락으로 조회해 동시에 같은 주문 환불이 처리되지 않게 한다.
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
@@ -87,7 +87,7 @@ public class RefundService {
         // 주문이 이미 환불 완료 상태라면 APPROVED 환불 이력만 멱등 성공으로 반환한다.
         if (order.getStatus() == PaymentOrderStatus.REFUNDED) {
             if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
-                return RefundPreparation.alreadyApproved(RefundResponse.from(existingRefund));
+                return PreparedRefund.alreadyApproved(existingRefund);
             }
             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
         }
@@ -111,7 +111,7 @@ public class RefundService {
 
         // 기존 환불이 이미 승인된 상태면 같은 결과를 반환하고 PortOne 중복 취소를 막는다.
         if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
-            return RefundPreparation.alreadyApproved(RefundResponse.from(existingRefund));
+            return PreparedRefund.alreadyApproved(existingRefund);
         }
         // 기존 환불이 대기 중이면 중복 요청으로 판단한다.
         if (existingRefund != null && existingRefund.getStatus() == RefundStatus.PENDING) {
@@ -122,7 +122,7 @@ public class RefundService {
             // PortOne 호출 전에 PENDING 환불 이력을 먼저 생성해 실패/재시도 상태를 추적할 수 있게 한다.
             Refund refund = Refund.create(order.getId(), userId, order.getAmount(), reason);
             refundRepository.saveAndFlush(refund);
-            return RefundPreparation.pending(order.getOrderUid(), order.getAmount(), refund.getId(), reason);
+            return PreparedRefund.pending(order.getOrderUid(), order.getAmount(), refund.getId(), reason);
         } catch (DataIntegrityViolationException e) {
             // 동일 주문 환불 동시 요청으로 유니크 제약이 터지면 중복 환불 요청으로 변환한다.
             Throwable cause = e;
@@ -147,7 +147,7 @@ public class RefundService {
                 });
     }
 
-    private RefundResponse completeRefundAfterGatewayCancel(RefundPreparation preparation) {
+    private RefundResponse completeRefundAfterGatewayCancel(PreparedRefund preparation) {
         // PortOne 취소 성공 후 주문을 다시 잠금 조회해 최신 상태 기준으로 확정 처리한다.
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(preparation.orderUid())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
@@ -218,21 +218,23 @@ public class RefundService {
         refund.cancel();
     }
 
-    private record RefundPreparation(
+    // 환불 준비 단계에서 만든 서비스 내부 전달 객체다.
+    // PortOne 호출에 필요한 주문 정보와, 이미 승인된 환불이면 기존 Refund 엔티티를 함께 담는다.
+    private record PreparedRefund(
             String orderUid,
             Long amount,
             Long refundId,
             String reason,
-            RefundResponse alreadyApprovedResponse
+            Refund alreadyApprovedRefund
     ) {
-        private static RefundPreparation pending(String orderUid, Long amount, Long refundId, String reason) {
+        private static PreparedRefund pending(String orderUid, Long amount, Long refundId, String reason) {
             // PortOne 취소 호출에 필요한 주문 식별자와 환불 이력 id를 담아 반환한다.
-            return new RefundPreparation(orderUid, amount, refundId, reason, null);
+            return new PreparedRefund(orderUid, amount, refundId, reason, null);
         }
 
-        private static RefundPreparation alreadyApproved(RefundResponse response) {
-            // 이미 승인된 환불은 외부 PG 호출 없이 바로 반환할 응답만 담는다.
-            return new RefundPreparation(null, null, null, null, response);
+        private static PreparedRefund alreadyApproved(Refund refund) {
+            // 이미 승인된 환불은 외부 PG 호출 없이 반환할 기존 환불 이력만 담는다.
+            return new PreparedRefund(null, null, null, null, refund);
         }
     }
 }

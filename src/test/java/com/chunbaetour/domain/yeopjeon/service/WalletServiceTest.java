@@ -127,4 +127,48 @@ class WalletServiceTest {
         assertThat(history.getBalanceSnapshot()).isEqualTo(7_000L);
         assertThat(history.getDescription()).isEqualTo("스토어 구매 - 테스트 상품");
     }
+
+    @Test
+    @DisplayName("사용자 자동 환불 회수 이력은 음수 금액으로 저장한다")
+    void reclaimAvailableForRefund_saves_negative_refund_history_amount() {
+        Wallet wallet = Wallet.create(1L);
+        wallet.credit(10_000L);
+        given(walletRepository.findByUserIdWithLock(1L)).willReturn(Optional.of(wallet));
+        given(yeopjeonHistoryRepository.save(any(YeopjeonHistory.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+        long reclaimed = walletService.reclaimAvailableForRefund(1L, 5_000L, 42L);
+
+        ArgumentCaptor<YeopjeonHistory> captor = ArgumentCaptor.forClass(YeopjeonHistory.class);
+        verify(yeopjeonHistoryRepository).save(captor.capture());
+        YeopjeonHistory history = captor.getValue();
+
+        assertThat(reclaimed).isEqualTo(5_000L);
+        assertThat(wallet.getBalance()).isEqualTo(5_000L);
+        assertThat(history.getType()).isEqualTo(YeopjeonHistoryType.REFUND);
+        assertThat(history.getAmount()).isEqualTo(-5_000L);
+        assertThat(history.getDescription()).isEqualTo("충전 환불");
+    }
+
+    @Test
+    @DisplayName("외부 결제 취소 회수 이력은 음수 금액으로 저장한다")
+    void reclaimAvailableForExternalCancel_saves_negative_refund_history_amount() {
+        Wallet wallet = Wallet.create(1L);
+        wallet.credit(3_000L);
+        given(walletRepository.findByUserIdWithLock(1L)).willReturn(Optional.of(wallet));
+        given(yeopjeonHistoryRepository.save(any(YeopjeonHistory.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+        long reclaimed = walletService.reclaimAvailableForExternalCancel(1L, 5_000L, 42L);
+
+        ArgumentCaptor<YeopjeonHistory> captor = ArgumentCaptor.forClass(YeopjeonHistory.class);
+        verify(yeopjeonHistoryRepository).save(captor.capture());
+        YeopjeonHistory history = captor.getValue();
+
+        assertThat(reclaimed).isEqualTo(3_000L);
+        assertThat(wallet.getBalance()).isZero();
+        assertThat(history.getType()).isEqualTo(YeopjeonHistoryType.REFUND);
+        assertThat(history.getAmount()).isEqualTo(-3_000L);
+        assertThat(history.getDescription()).isEqualTo("충전 취소 처리 중");
+    }
 }
