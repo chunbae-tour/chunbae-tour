@@ -17,10 +17,9 @@ import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +30,7 @@ public class FestivalService {
 
     private final FestivalRepository festivalRepository;
     private final FestivalQueryRepository festivalQueryRepository;
+    private final FestivalCacheEvictUtil cacheEvict;
 
     @Lazy
     @Autowired
@@ -57,8 +57,9 @@ public class FestivalService {
 
     public CursorPageResponse<FestivalResponse> getList(
             LocalDate date, String region, String cursor, int size) {
-        Long cursorId = CursorUtils.decodeSafe(cursor);
-        List<FestivalCacheData> rows = self.findCachedFestivalList(date, region, cursorId, size);
+        String normalizedRegion = StringUtils.hasText(region) ? region.trim() : null;
+        Long cursorId = CursorUtils.decodeSafe(StringUtils.hasText(cursor) ? cursor : null);
+        List<FestivalCacheData> rows = self.findCachedFestivalList(date, normalizedRegion, cursorId, size);
 
         boolean hasNext = rows.size() > size;
         List<FestivalCacheData> content = hasNext ? rows.subList(0, size) : rows;
@@ -104,12 +105,6 @@ public class FestivalService {
     // ── KAN-95: 관리자 축제 등록 ───────────────────────────────────────────
 
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "festivals", allEntries = true),
-            @CacheEvict(value = "festivals:list", allEntries = true),
-            @CacheEvict(value = "calendar:monthly", allEntries = true),
-            @CacheEvict(value = "calendar:daily", allEntries = true)
-    })
     public FestivalAdminMutateResponse create(FestivalCreateRequest request) {
         Festival festival = Festival.create(
                 request.name(), request.description(),
@@ -117,18 +112,14 @@ public class FestivalService {
                 request.startDate(), request.endDate(),
                 request.imageUrl(), request.relatedUrl(),
                 request.status());
-        return FestivalAdminMutateResponse.of(festivalRepository.save(festival));
+        FestivalAdminMutateResponse response = FestivalAdminMutateResponse.of(festivalRepository.save(festival));
+        cacheEvict.evictAll();
+        return response;
     }
 
     // ── KAN-95: 관리자 축제 수정 ───────────────────────────────────────────
 
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "festivals", key = "#festivalId"),
-            @CacheEvict(value = "festivals:list", allEntries = true),
-            @CacheEvict(value = "calendar:monthly", allEntries = true),
-            @CacheEvict(value = "calendar:daily", allEntries = true)
-    })
     public FestivalAdminMutateResponse update(Long festivalId, FestivalUpdateRequest request) {
         Festival festival = findForAdmin(festivalId);
         festival.update(
@@ -137,21 +128,18 @@ public class FestivalService {
                 request.startDate(), request.endDate(),
                 request.imageUrl(), request.relatedUrl(),
                 request.status());
-        return FestivalAdminMutateResponse.of(festival);
+        FestivalAdminMutateResponse response = FestivalAdminMutateResponse.of(festival);
+        cacheEvict.evictById(festivalId);
+        return response;
     }
 
     // ── KAN-95: 관리자 축제 삭제 ───────────────────────────────────────────
 
     @Transactional
-    @Caching(evict = {
-            @CacheEvict(value = "festivals", key = "#festivalId"),
-            @CacheEvict(value = "festivals:list", allEntries = true),
-            @CacheEvict(value = "calendar:monthly", allEntries = true),
-            @CacheEvict(value = "calendar:daily", allEntries = true)
-    })
     public void delete(Long festivalId) {
         Festival festival = findForAdmin(festivalId);
         festival.delete();
+        cacheEvict.evictById(festivalId);
     }
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
