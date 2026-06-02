@@ -105,8 +105,8 @@ public class RefundRetryScheduler {
                 // PG 상태 조회도 실패 → 다음 시도로 넘김
             }
             recordFailure(refund);
-            log.warn("환불 PG 호출 실패 (retryCount={}): refundId={}, orderUid={}",
-                    refund.getRetryCount() + 1, refund.getId(), orderUid);
+            // retryCount는 recordFailure 내부 tx에서 갱신되므로 detached entity 값(+1 추정) 대신 로그에 표기
+            log.warn("환불 PG 호출 실패: refundId={}, orderUid={}", refund.getId(), orderUid);
             return;
         }
 

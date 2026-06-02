@@ -144,8 +144,15 @@ public class RefundService {
         if (refund.getStatus() == RefundStatus.APPROVED) {
             return; // 이미 처리됨 (멱등)
         }
-        if (refund.getStatus() != RefundStatus.PENDING && refund.getStatus() != RefundStatus.FAILED) {
-            return; // 처리 불가 상태
+
+        // CANCELLED: PG 취소는 이미 완료됐으나 스케줄러 실행 직전 사용자가 cancelRefund()로 전환한 케이스.
+        // 사용자 요청 철회 의사와 무관하게 PG에서 돈이 이미 반환됐으므로 엽전 회수 + 주문 전환 처리.
+        boolean wasUserCancelled = refund.getStatus() == RefundStatus.CANCELLED;
+
+        if (refund.getStatus() != RefundStatus.PENDING
+                && refund.getStatus() != RefundStatus.FAILED
+                && refund.getStatus() != RefundStatus.CANCELLED) {
+            return; // 그 외 상태는 처리 불가
         }
 
         // PG 취소 완료 — 가능한 엽전 회수
@@ -160,7 +167,12 @@ public class RefundService {
                 order.requireAdjustment();
             }
         }
-        refund.approveFromScheduler();
+        // CANCELLED 상태였어도 PG 취소가 완료됐으므로 APPROVED로 확정
+        if (wasUserCancelled) {
+            refund.approveFromCancelledByScheduler();
+        } else {
+            refund.approveFromScheduler();
+        }
     }
 
     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
@@ -182,13 +194,17 @@ public class RefundService {
 
     @Transactional
     public void cancelRefund(Long userId, Long refundId) {
+        // 환불 요청을 비관적 락으로 조회해 스케줄러 처리와 동시 취소가 충돌하지 않게 한다.
         Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
+        // 본인 환불 요청이 아니면 취소할 수 없다.
         if (!refund.getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
         }
 
+        // PENDING 환불 요청만 취소 상태로 전환한다.
+        // 스케줄러가 PG 취소를 완료한 뒤 이 락을 획득하면 이미 APPROVED이므로 cancel()에서 예외 발생.
         refund.cancel();
     }
 }

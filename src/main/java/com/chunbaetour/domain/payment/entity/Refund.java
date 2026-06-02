@@ -118,17 +118,21 @@ public class Refund extends BaseEntity {
         this.nextRetryAt = null;
     }
 
-    /** 스케줄러 재시도 성공 시 FAILED → APPROVED 전환. */
-    public void approveRetry() {
-        if (this.status != RefundStatus.FAILED) {
+    /** 스케줄러가 PENDING 또는 FAILED 상태 환불을 APPROVED로 전환. */
+    public void approveFromScheduler() {
+        if (this.status != RefundStatus.PENDING && this.status != RefundStatus.FAILED) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.APPROVED;
     }
 
-    /** 스케줄러가 PENDING 또는 FAILED 상태 환불을 APPROVED로 전환. */
-    public void approveFromScheduler() {
-        if (this.status != RefundStatus.PENDING && this.status != RefundStatus.FAILED) {
+    /**
+     * PG 취소 완료 후 스케줄러가 CANCELLED 상태 환불을 APPROVED로 전환.
+     * PG 호출과 사용자 cancelRefund() 사이 경합으로 CANCELLED가 된 경우 사용.
+     * PG에서 이미 돈이 반환됐으므로 엽전 회수 후 APPROVED 확정.
+     */
+    public void approveFromCancelledByScheduler() {
+        if (this.status != RefundStatus.CANCELLED) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.APPROVED;
