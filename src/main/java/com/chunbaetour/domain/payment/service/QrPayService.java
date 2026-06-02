@@ -9,6 +9,7 @@ import com.chunbaetour.domain.payment.dto.request.QrPayCreateRequest;
 import com.chunbaetour.domain.payment.dto.request.QrPayItemRequest;
 import com.chunbaetour.domain.payment.dto.response.PendingQrPayResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
+import com.chunbaetour.domain.payment.dto.response.QrPayStatusResponse;
 import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse.MenuSnapshotItem;
 import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.repository.QrPayRequestRepository;
@@ -286,17 +287,16 @@ public class QrPayService {
             wallet.debit(amount);
             shopWallet.credit(amount);
 
-            // 이력 기록
-            // TODO(KAN-???): YeopjeonHistory에 payRequestId 연결 — 정산/환불 추적 시 필요 (STORY-17 또는 환불 슬라이스 전 처리)
-            yeopjeonHistoryRepository.save(YeopjeonHistory.create(
-                    lockedRequest.getUserId(), null, lockedRequest.getShopId(),
+            // 이력 기록 — payRequestId 연결로 QR 결제 원본 요청 역추적 가능 (KAN-206)
+            yeopjeonHistoryRepository.save(YeopjeonHistory.createForQrPay(
+                    lockedRequest.getUserId(), lockedRequest.getShopId(), payRequestId,
                     YeopjeonHistoryType.PAYMENT, amount, wallet.getBalance(),
                     messageSource.getMessage("history.payment.description",
                             new Object[]{shop.getShopName()}, LocaleContextHolder.getLocale())
             ));
             // merchantUserId == shop.getUserId() 는 소유권 검증으로 보장됨 — 위치 변경 시 재검증 필요
-            yeopjeonHistoryRepository.save(YeopjeonHistory.create(
-                    merchantUserId, null, lockedRequest.getShopId(),
+            yeopjeonHistoryRepository.save(YeopjeonHistory.createForQrPay(
+                    merchantUserId, lockedRequest.getShopId(), payRequestId,
                     YeopjeonHistoryType.RECEIVED_PAYMENT, amount, shopWallet.getBalance(),
                     messageSource.getMessage("history.received.description",
                             null, LocaleContextHolder.getLocale())
@@ -314,6 +314,24 @@ public class QrPayService {
                 lock.unlock();
             }
         }
+    }
+
+    /**
+     * QR 결제 상태 폴링 (STORY-13, USER 전용).
+     * 푸시 알림 미도달 시 사용자가 결제 완료 여부를 확인하는 수단.
+     * 본인 요청만 조회 가능 — 타인 payRequestId로 조회 시 NOT_FOUND 처리.
+     */
+    @Transactional(readOnly = true)
+    public QrPayStatusResponse getQrPayStatus(Long userId, String payRequestId) {
+        QrPayRequest qrPayRequest = qrPayRequestRepository.findByPayRequestId(payRequestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
+
+        // 본인 요청만 조회 가능 — 타인 요청 노출 차단
+        if (!qrPayRequest.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+        }
+
+        return QrPayStatusResponse.from(qrPayRequest);
     }
 
     /**
