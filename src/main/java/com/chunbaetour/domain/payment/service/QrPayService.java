@@ -92,15 +92,14 @@ public class QrPayService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
         validateShop(shop, userId);
 
-        MenuSnapshotResult snapshot = buildMenuSnapshot(request.menuItems(), request.shopId());
-
-        // 동일 사용자·가게에 유효한 PENDING 요청 사전 차단 — 만료된 PENDING은 제외 (스케줄러 60초 지연 대응)
+        // 동일 사용자·가게에 유효한 PENDING 요청 사전 차단 — 메뉴·지갑 조회 전 조기 차단으로 불필요한 DB 호출 방지
         // DB unique 제약(pendingKey)은 동시 레이스 케이스 최종 방어용으로 병행 유지
         if (qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
                 userId, shop.getId(), QrPayStatus.PENDING, LocalDateTime.now(clock))) {
             throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
         }
 
+        MenuSnapshotResult snapshot = buildMenuSnapshot(request.menuItems(), request.shopId());
         validateWalletBalance(userId, snapshot.totalAmount());
 
         // 결제 시점 메뉴 정보 JSON 스냅샷 직렬화
@@ -317,7 +316,8 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
         }
 
-        return QrPayStatusResponse.from(qrPayRequest);
+        List<MenuSnapshotItem> menuItems = deserializeMenuItems(qrPayRequest.getMenuItems());
+        return QrPayStatusResponse.of(qrPayRequest, menuItems);
     }
 
     /**
