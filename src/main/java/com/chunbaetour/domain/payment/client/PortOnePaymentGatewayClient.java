@@ -54,7 +54,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
                 || response.amount().total() == null) {
                 throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
             }
-            return new PortOnePaymentInfo(response.status(), response.amount().total());
+            return new PortOnePaymentInfo(response.status(), response.amount().total(), response.amount().cancelled());
         } catch (RestClientException e) {
             throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
@@ -66,7 +66,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
             portOneRestClient.post()
                 .uri("/payments/{paymentId}/cancel", pgTransactionId)
                 .header("Authorization", "PortOne " + properties.getSecret())
-                .body(new CancelRequest(reason, amount))
+                .body(new CancelRequest(properties.getStoreId(), reason, amount))
                 .retrieve()
                 .toBodilessEntity();
         } catch (RestClientException e) {
@@ -77,11 +77,11 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
     private record PreRegisterRequest(String storeId, Long totalAmount, String currency) {
     }
 
-    private record CancelRequest(String reason, Long amount) {
+    private record CancelRequest(String storeId, String reason, Long amount) {
     }
 
     private record PortOnePaymentResponse(String status, AmountDetail amount) {
-        record AmountDetail(Long total) {
+        record AmountDetail(Long total, Long cancelled) {
         }
     }
 }

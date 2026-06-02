@@ -154,6 +154,20 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].supportRoomId").value(10));
     }
 
+    // MERCHANT 인증 → 200 (USER·MERCHANT 공용)
+    @Test
+    @DisplayName("내 상담방 목록 — MERCHANT 200")
+    void getMyRooms_whenMerchant_returns200() throws Exception {
+        given(supportRoomService.getMyRooms(eq(1L), any(), eq(20), isNull()))
+                .willReturn(new CursorPageResponse<>(List.of(buildResponse(20L)), null, false, 1));
+        String token = tokenIssuer.issueAccess(1L, Role.MERCHANT, "merchant@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].supportRoomId").value(20));
+    }
+
     // 미인증 → 401
     @Test
     @DisplayName("내 상담방 목록 — 미인증 401")
@@ -180,6 +194,17 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].messageId").value(1));
+    }
+
+    // supportRoomId 0 → 400
+    @Test
+    @DisplayName("상담 메시지 조회 — supportRoomId 0 → 400")
+    void getMessages_whenRoomIdZero_returns400() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+        mockMvc.perform(get(BASE_URL + "/0/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(supportRoomService);
     }
 
     // MERCHANT 토큰 + 타인 방 → 403 (서비스 ownership check)

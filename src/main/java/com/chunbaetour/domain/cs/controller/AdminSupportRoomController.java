@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,7 +47,7 @@ public class AdminSupportRoomController {
     @Operation(summary = "상담 메시지 조회 (ADMIN)")
     @GetMapping("/{supportRoomId}/messages")
     public ApiResponse<CursorPageResponse<SupportMessageResponse>> getMessages(
-            @PathVariable Long supportRoomId,
+            @PathVariable @Positive Long supportRoomId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return ApiResponse.success(supportRoomService.getMessagesAsAdmin(supportRoomId, cursor, size));

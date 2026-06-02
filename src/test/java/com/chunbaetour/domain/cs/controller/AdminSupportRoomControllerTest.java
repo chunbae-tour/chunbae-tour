@@ -106,6 +106,17 @@ class AdminSupportRoomControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].messageId").value(1));
     }
 
+    // supportRoomId 0 → 400
+    @Test
+    @DisplayName("상담 메시지 조회 (ADMIN) — supportRoomId 0 → 400")
+    void getMessages_whenRoomIdZero_returns400() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+        mockMvc.perform(get(BASE_URL + "/0/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(supportRoomService);
+    }
+
     // USER 인증 → 403 (ADMIN 전용)
     @Test
     @DisplayName("상담 메시지 조회 (ADMIN) — USER 403")

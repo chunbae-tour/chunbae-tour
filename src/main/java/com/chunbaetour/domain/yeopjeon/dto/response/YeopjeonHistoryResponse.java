@@ -17,10 +17,17 @@ public record YeopjeonHistoryResponse(
         return new YeopjeonHistoryResponse(
                 history.getId(),
                 history.getType(),
-                history.getAmount(),
+                displayAmount(history),
                 history.getBalanceSnapshot(),
                 history.getDescription(),
                 history.getCreatedAt()
         );
+    }
+
+    private static Long displayAmount(YeopjeonHistory history) {
+        return switch (history.getType()) {
+            case CHARGE, RECEIVED_PAYMENT -> Math.abs(history.getAmount());
+            case PAYMENT, REFUND -> -Math.abs(history.getAmount());
+        };
     }
 }
