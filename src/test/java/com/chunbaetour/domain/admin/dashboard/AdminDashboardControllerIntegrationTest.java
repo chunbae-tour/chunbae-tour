@@ -72,7 +72,11 @@ class AdminDashboardControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.totalUsers").value(greaterThanOrEqualTo(2)))
                 .andExpect(jsonPath("$.data.suspendedUsers").value(greaterThanOrEqualTo(1)))
-                .andExpect(jsonPath("$.data.newUsersToday").exists());
+                .andExpect(jsonPath("$.data.newUsersToday").exists())
+                // S06: 가게/인증/상인신청 카운트 3종 노출 (값은 시드 무관, 존재 + 음수 아님만 검증).
+                .andExpect(jsonPath("$.data.totalShops").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.pendingCertifications").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.pendingMerchantApplications").value(greaterThanOrEqualTo(0)));
     }
 
     @Test

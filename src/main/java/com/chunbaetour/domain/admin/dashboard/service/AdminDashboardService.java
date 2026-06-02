@@ -1,7 +1,10 @@
 package com.chunbaetour.domain.admin.dashboard.service;
 
+import com.chunbaetour.domain.admin.certification.service.AdminShopCertificationService;
 import com.chunbaetour.domain.admin.dashboard.dto.response.AdminDashboardResponse;
+import com.chunbaetour.domain.admin.shop.service.AdminShopService;
 import com.chunbaetour.domain.admin.user.service.AdminUserService;
+import com.chunbaetour.domain.merchant.service.AdminMerchantApplicationService;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,9 @@ public class AdminDashboardService {
     private static final String CACHE_KEY = "admin:dashboard:summary";
 
     private final AdminUserService adminUserService;
+    private final AdminShopService adminShopService;
+    private final AdminShopCertificationService adminShopCertificationService;
+    private final AdminMerchantApplicationService adminMerchantApplicationService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -69,11 +75,17 @@ public class AdminDashboardService {
         return response;
     }
 
-    /** 사용자 카운트 3종을 {@link AdminUserService}에서 조합. */
+    /**
+     * 카운트 6종을 각 도메인 서비스에서 조합. 본 서비스는 조합만 담당하며 직접 쿼리하지 않는다.
+     * 사용자 3종({@link AdminUserService}) + S06 가게/인증/상인신청 3종을 합친다.
+     */
     private AdminDashboardResponse loadSummary() {
         return new AdminDashboardResponse(
                 adminUserService.getTotalUsers(),
                 adminUserService.getNewUsersToday(),
-                adminUserService.getSuspendedUsers());
+                adminUserService.getSuspendedUsers(),
+                adminShopService.getTotalShops(),
+                adminShopCertificationService.getPendingCertificationsCount(),
+                adminMerchantApplicationService.getPendingApplicationsCount());
     }
 }
