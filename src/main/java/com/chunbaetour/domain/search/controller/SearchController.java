@@ -64,6 +64,21 @@ public class SearchController {
     private final SearchService searchService;
     private final SuggestService suggestService;
     private final RecentSearchService recentSearchService;
+    private final com.chunbaetour.domain.search.service.IntegratedSearchService integratedSearchService;
+
+    @SecurityRequirements
+    @Operation(summary = "통합 검색 (장소/가게/메뉴/축제)")
+    @GetMapping
+    public ApiResponse<CursorPageResponse<com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem>> searchIntegrated(
+            @RequestParam(name = "q", required = false) String q,
+            @RequestParam(name = "type", defaultValue = "ALL") String type,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        CursorPageResponse<com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem> response = 
+                integratedSearchService.searchIntegrated(q, type, cursor, size);
+        return ApiResponse.success(response);
+    }
 
     /**
      * 인기 검색어 TOP 10 조회.
