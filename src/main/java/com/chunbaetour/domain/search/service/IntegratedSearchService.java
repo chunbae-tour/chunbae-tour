@@ -29,8 +29,14 @@ public class IntegratedSearchService {
             throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
         }
         keyword = keyword.trim();
+        if (keyword.length() > 50) {
+            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+        }
         boolean searchAll = "ALL".equalsIgnoreCase(type);
-        if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL").contains(type.toUpperCase())) {
+        if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL").contains(type.toUpperCase(java.util.Locale.ROOT))) {
+            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+        }
+        if (cursorStr != null && cursorStr.length() > 1000) {
             throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
         }
 

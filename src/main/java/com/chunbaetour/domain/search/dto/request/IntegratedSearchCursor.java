@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.search.dto.request;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
 import java.util.Base64;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -20,7 +20,7 @@ public record IntegratedSearchCursor(
         try {
             String json = OBJECT_MAPPER.writeValueAsString(this);
             return Base64.getEncoder().encodeToString(json.getBytes());
-        } catch (JacksonException e) {
+        } catch (JsonProcessingException e) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }

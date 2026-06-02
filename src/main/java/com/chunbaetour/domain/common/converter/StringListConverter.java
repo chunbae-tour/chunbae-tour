@@ -2,9 +2,9 @@ package com.chunbaetour.domain.common.converter;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
@@ -23,7 +23,7 @@ public class StringListConverter implements AttributeConverter<List<String>, Str
         }
         try {
             return mapper.writeValueAsString(attribute);
-        } catch (JacksonException e) {
+        } catch (JsonProcessingException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
@@ -35,7 +35,7 @@ public class StringListConverter implements AttributeConverter<List<String>, Str
         }
         try {
             return mapper.readValue(dbData, new TypeReference<List<String>>() {});
-        } catch (JacksonException e) {
+        } catch (JsonProcessingException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
