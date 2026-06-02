@@ -232,6 +232,6 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
     }
 
     private SupportRoomResponse buildResponse(Long id) {
-        return new SupportRoomResponse(id, 1L, null, SupportRoomStatus.WAITING, LocalDateTime.now());
+        return new SupportRoomResponse(id, 1L, null, SupportRoomStatus.WAITING, null, null, LocalDateTime.now());
     }
 }

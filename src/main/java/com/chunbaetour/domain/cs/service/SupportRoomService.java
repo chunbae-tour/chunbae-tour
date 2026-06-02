@@ -6,6 +6,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
+import com.chunbaetour.domain.cs.dto.request.SupportRoomCloseRequest;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse.LastMessage;
@@ -18,6 +19,7 @@ import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SupportRoomService {
 
+    private final Clock clock;
     private final SupportRoomRepository supportRoomRepository;
     private final SupportMessageRepository supportMessageRepository;
     private final AccountRepository accountRepository;
@@ -65,7 +68,7 @@ public class SupportRoomService {
             );
         }
 
-        return SupportRoomResponse.from(room);
+        return SupportRoomResponse.fromForUser(room);
     }
 
     // USER 본인 상담방 목록 cursor 페이징 — status 필터 선택
@@ -78,7 +81,7 @@ public class SupportRoomService {
                 userId, status, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = page.size() > size;
-        List<SupportRoomResponse> content = page.stream().limit(size).map(SupportRoomResponse::from).toList();
+        List<SupportRoomResponse> content = page.stream().limit(size).map(SupportRoomResponse::fromForUser).toList();
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).supportRoomId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
@@ -102,6 +105,15 @@ public class SupportRoomService {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND);
         }
         return fetchMessages(supportRoomId, cursor, size);
+    }
+
+    // ADMIN 상담 종료 — CLOSED 재종료 시 CS_002, 존재하지 않으면 CS_001
+    @Transactional
+    public SupportRoomResponse closeRoom(Long supportRoomId, SupportRoomCloseRequest request) {
+        SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+        room.close(clock, request.summary());
+        return SupportRoomResponse.from(room);
     }
 
     // ADMIN 전체 상담방 목록 cursor 페이징 — userNickname + lastMessage 배치 조회(N+1 방지)
