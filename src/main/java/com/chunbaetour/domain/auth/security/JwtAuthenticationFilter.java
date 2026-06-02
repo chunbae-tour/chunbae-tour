@@ -96,7 +96,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/community/posts/companions/**",
             "/api/v1/community/posts/free/**",
             // 스토어 상품 조회 — 비인증 공개 API
-            "/api/v1/store/products/**"
+            "/api/v1/store/products/**",
+            // 축제·캘린더 조회 — 비인증 허용
+            "/api/v1/festivals/**",
+            "/api/v1/calendar/**"
     );
 
     /**

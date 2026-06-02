@@ -147,6 +147,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
+                        // 축제·캘린더 조회 — 비인증 허용
+                        .requestMatchers(HttpMethod.GET, "/api/v1/festivals/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답

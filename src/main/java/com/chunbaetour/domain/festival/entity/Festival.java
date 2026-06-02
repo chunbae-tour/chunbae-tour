@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.festival.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -100,7 +102,7 @@ public class Festival extends BaseEntity {
                 || address == null || address.isBlank()
                 || startDate == null || endDate == null
                 || startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("Invalid festival arguments");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 

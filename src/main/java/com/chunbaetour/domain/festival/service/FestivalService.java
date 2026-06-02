@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.festival.dto.request.FestivalCreateRequest;
 import com.chunbaetour.domain.festival.dto.request.FestivalUpdateRequest;
 import com.chunbaetour.domain.festival.dto.response.FestivalAdminMutateResponse;
+import com.chunbaetour.domain.festival.dto.response.FestivalCacheData;
 import com.chunbaetour.domain.festival.dto.response.FestivalResponse;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
@@ -15,17 +16,14 @@ import com.chunbaetour.domain.festival.type.FestivalStatus;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
-import org.springframework.http.HttpStatus;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 축제 서비스 (KAN-95/97/98).
- * 캘린더 관련 로직은 CalendarService 참조.
- */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -34,59 +32,60 @@ public class FestivalService {
     private final FestivalRepository festivalRepository;
     private final FestivalQueryRepository festivalQueryRepository;
 
+    @Lazy
+    @Autowired
+    private FestivalService self;
+
+    // ── 캐시 레이어 (progressStatus 없는 entity 캐시) ───────────────────────
+
+    @Cacheable(value = "festivals", key = "#festivalId")
+    public FestivalCacheData findCachedFestival(Long festivalId) {
+        Festival f = festivalRepository.findById(festivalId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND));
+        return FestivalCacheData.from(f);
+    }
+
+    @Cacheable(value = "festivals:list",
+            key = "#date + ':' + #region + ':' + #cursorId + ':' + #size")
+    public List<FestivalCacheData> findCachedFestivalList(
+            LocalDate date, String region, Long cursorId, int size) {
+        return festivalQueryRepository.findActiveByFilter(date, region, cursorId, size + 1)
+                .stream().map(FestivalCacheData::from).toList();
+    }
+
     // ── KAN-97: 사용자 축제 목록 조회 ──────────────────────────────────────
 
-    /**
-     * 사용자 축제 목록 조회 — ACTIVE만, date/region 필터, cursor 페이징.
-     *
-     * @param date   해당 날짜 기간 내 포함되는 축제 필터 (null = 전체)
-     * @param region 지역 필터 (null = 전체)
-     * @param cursor Base64 인코딩된 cursor (null = 첫 페이지)
-     * @param size   페이지 크기
-     */
-    @Cacheable(value = "festivals:list",
-            key = "#date + ':' + #region + ':' + #cursor + ':' + #size")
     public CursorPageResponse<FestivalResponse> getList(
             LocalDate date, String region, String cursor, int size) {
         Long cursorId = CursorUtils.decodeSafe(cursor);
-        List<Festival> rows = festivalQueryRepository.findActiveByFilter(
-                date, region, cursorId, size + 1);
+        List<FestivalCacheData> rows = self.findCachedFestivalList(date, region, cursorId, size);
 
         boolean hasNext = rows.size() > size;
-        List<Festival> content = hasNext ? rows.subList(0, size) : rows;
+        List<FestivalCacheData> content = hasNext ? rows.subList(0, size) : rows;
         String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
+                ? CursorUtils.encode(content.get(content.size() - 1).id())
                 : null;
 
         return new CursorPageResponse<>(
-                content.stream().map(FestivalResponse::of).toList(),
+                content.stream().map(FestivalCacheData::toResponse).toList(),
                 nextCursor, hasNext, content.size());
     }
 
     // ── KAN-98: 사용자 축제 상세 조회 ──────────────────────────────────────
 
-    /**
-     * 사용자 축제 상세 조회 — ACTIVE 축제만.
-     */
-    @Cacheable(value = "festivals", key = "#festivalId")
     public FestivalResponse getDetail(Long festivalId) {
-        Festival festival = festivalRepository.findById(festivalId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND));
-        if (festival.getStatus() == FestivalStatus.DELETED) {
+        FestivalCacheData data = self.findCachedFestival(festivalId);
+        if (data.isDeleted()) {
             throw new BusinessException(ErrorCode.FESTIVAL_DELETED);
         }
-        if (!festival.isActive()) {
-            // HIDDEN — 사용자에게는 존재하지 않는 것으로 처리
+        if (!data.isActive()) {
             throw new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND);
         }
-        return FestivalResponse.of(festival);
+        return data.toResponse();
     }
 
     // ── KAN-95: 관리자 축제 목록 조회 ──────────────────────────────────────
 
-    /**
-     * 관리자 축제 목록 — DELETED 제외 (ACTIVE + HIDDEN), cursor 페이징.
-     */
     public CursorPageResponse<FestivalResponse> getAdminList(String cursor, int size) {
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Festival> rows = festivalQueryRepository.findNotDeletedByCursor(cursorId, size + 1);
@@ -112,7 +111,6 @@ public class FestivalService {
             @CacheEvict(value = "calendar:daily", allEntries = true)
     })
     public FestivalAdminMutateResponse create(FestivalCreateRequest request) {
-        validateDateRange(request.startDate(), request.endDate());
         Festival festival = Festival.create(
                 request.name(), request.description(),
                 request.region(), request.address(),
@@ -132,7 +130,6 @@ public class FestivalService {
             @CacheEvict(value = "calendar:daily", allEntries = true)
     })
     public FestivalAdminMutateResponse update(Long festivalId, FestivalUpdateRequest request) {
-        validateDateRange(request.startDate(), request.endDate());
         Festival festival = findForAdmin(festivalId);
         festival.update(
                 request.name(), request.description(),
@@ -159,7 +156,6 @@ public class FestivalService {
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
 
-    /** 관리자용 조회 — DELETED 포함 (처리 가능하도록). */
     private Festival findForAdmin(Long festivalId) {
         Festival festival = festivalRepository.findById(festivalId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND));
@@ -167,11 +163,5 @@ public class FestivalService {
             throw new BusinessException(ErrorCode.FESTIVAL_DELETED);
         }
         return festival;
-    }
-
-    private void validateDateRange(LocalDate startDate, LocalDate endDate) {
-        if (startDate.isAfter(endDate)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
     }
 }
