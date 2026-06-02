@@ -28,6 +28,7 @@ public class IntegratedSearchService {
         if (keyword == null || keyword.isBlank()) {
             throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
         }
+        keyword = keyword.trim();
         boolean searchAll = "ALL".equalsIgnoreCase(type);
         if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL").contains(type.toUpperCase())) {
             throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);

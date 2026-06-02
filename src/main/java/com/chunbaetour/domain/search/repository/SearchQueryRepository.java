@@ -4,6 +4,9 @@ import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.festival.type.FestivalStatus;
+import com.chunbaetour.domain.place.type.PlaceStatus;
+import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
@@ -29,32 +32,48 @@ public class SearchQueryRepository {
     public List<Place> searchPlaces(String keyword) {
         return queryFactory
                 .selectFrom(place)
-                .where(placeNameContains(keyword))
+                .where(
+                        placeNameContains(keyword),
+                        place.status.eq(PlaceStatus.ACTIVE)
+                )
                 .orderBy(exactMatchScore(place.name, keyword).desc(), place.id.desc())
+                .limit(200)
                 .fetch();
     }
 
     public List<Shop> searchShops(String keyword) {
         return queryFactory
                 .selectFrom(shop)
-                .where(shopNameContains(keyword))
+                .where(
+                        shopNameContains(keyword),
+                        shop.status.eq(ShopStatus.ACTIVE)
+                )
                 .orderBy(exactMatchScore(shop.shopName, keyword).desc(), shop.id.desc())
+                .limit(200)
                 .fetch();
     }
 
     public List<Menu> searchMenus(String keyword) {
         return queryFactory
                 .selectFrom(menu)
-                .where(menuNameContains(keyword))
+                .where(
+                        menuNameContains(keyword),
+                        menu.isAvailable.isTrue()
+                )
                 .orderBy(exactMatchScore(menu.name, keyword).desc(), menu.id.desc())
+                .limit(200)
                 .fetch();
     }
 
     public List<Festival> searchFestivals(String keyword) {
         return queryFactory
                 .selectFrom(festival)
-                .where(festivalNameContains(keyword))
+                .where(
+                        festivalNameContains(keyword),
+                        festival.status.eq(FestivalStatus.ACTIVE)
+                )
                 .orderBy(exactMatchScore(festival.name, keyword).desc(), festival.id.desc())
+                .limit(200)
                 .fetch();
     }
 
