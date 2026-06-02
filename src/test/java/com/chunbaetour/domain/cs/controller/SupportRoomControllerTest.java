@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
@@ -179,6 +180,20 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].messageId").value(1));
+    }
+
+    // MERCHANT 토큰 + 타인 방 → 403 (서비스 ownership check)
+    @Test
+    @DisplayName("상담 메시지 조회 — MERCHANT 타인 방 403")
+    void getMessages_whenMerchantAccessOtherUserRoom_returns403() throws Exception {
+        given(supportRoomService.getMessages(eq(2L), eq(10L), any(), eq(20)))
+                .willThrow(new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
+        String token = tokenIssuer.issueAccess(2L, Role.MERCHANT, "merchant@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/10/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SUPPORT_ROOM_FORBIDDEN.getCode()));
     }
 
     // 미인증 → 401
