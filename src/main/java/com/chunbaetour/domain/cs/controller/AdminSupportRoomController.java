@@ -57,7 +57,7 @@ public class AdminSupportRoomController {
     @Operation(summary = "상담 종료 (ADMIN)")
     @PostMapping("/{supportRoomId}/close")
     public ApiResponse<SupportRoomResponse> closeRoom(
-            @PathVariable Long supportRoomId,
+            @PathVariable @Positive Long supportRoomId,
             @Valid @RequestBody SupportRoomCloseRequest request) {
         return ApiResponse.success(supportRoomService.closeRoom(supportRoomId, request));
     }
