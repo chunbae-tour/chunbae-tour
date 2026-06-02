@@ -88,6 +88,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/places/**",
             "/api/v1/recommend/**",
             // 검색 조회 API — 인기/장소/축제/자동완성
+            "/api/v1/search",
             "/api/v1/search/popular",
             "/api/v1/search/places",
             "/api/v1/search/festivals",
