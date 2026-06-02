@@ -22,5 +22,8 @@ public enum AdminActionType {
     USER_SUSPEND,
 
     /** S02 사용자 정지 해제. */
-    USER_UNSUSPEND;
+    USER_UNSUSPEND,
+
+    /** S04 가게 관리 (수정/숨김/복구) — status·description·phone·operatingHours partial update. */
+    SHOP_UPDATE;
 }

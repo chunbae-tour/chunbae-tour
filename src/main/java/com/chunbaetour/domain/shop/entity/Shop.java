@@ -144,11 +144,27 @@ public class Shop extends BaseEntity {
     }
 
     /**
-     * 관리자 가게 상태 직접 변경 — ACTIVE ↔ SUSPENDED 전환.
-     * CLOSED 가게 변경 및 CLOSED로 변경은 서비스 레이어에서 사전 차단.
+     * 관리자 노출 복구 (SUSPENDED → ACTIVE). hide()의 대칭 메서드 (KAN-203 Admin S04).
+     * CLOSED(폐업) 가게는 복구 불가 — hide()와 동일하게 SHOP_INACTIVE.
+     * 이미 ACTIVE면 멱등(no-op) — 재호출해도 ACTIVE 유지.
      */
-    public void updateStatus(ShopStatus newStatus) {
-        this.status = newStatus;
+    public void activate() {
+        if (this.status == ShopStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+        this.status = ShopStatus.ACTIVE;
+    }
+
+    /**
+     * 관리자 전용 partial update — status 무관 수정 가능 (KAN-203 Admin S04).
+     * 상인용 {@link #update(ShopUpdateRequest)}는 status=ACTIVE 가드가 있어 SUSPENDED 가게를 못 고치므로 별도.
+     * null = 미수정 (KAN-127 Account.updateProfile 패턴). "" 는 DTO @Size(min=1)로 진입 전 차단됨.
+     * status 전이는 본 메서드가 아니라 서비스에서 hide()/activate()로 처리 — 여기서 직접 세팅 금지.
+     */
+    public void adminUpdate(String description, String phone, String operatingHours) {
+        if (description != null) this.description = description;
+        if (phone != null) this.phone = phone;
+        if (operatingHours != null) this.operatingHours = operatingHours;
     }
 
     /**
