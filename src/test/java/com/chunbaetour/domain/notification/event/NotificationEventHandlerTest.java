@@ -12,6 +12,8 @@ import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
+import com.chunbaetour.domain.cs.event.SupportMessageSentEvent;
+import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
 import com.chunbaetour.domain.notification.entity.Notification;
 import com.chunbaetour.domain.notification.service.NotificationRedisPubSubService;
@@ -42,6 +44,8 @@ class NotificationEventHandlerTest {
     private static final Long OWNER_USER_ID = 1L;
     private static final Long APPLICANT_USER_ID = 2L;
     private static final Long KICKED_USER_ID = 3L;
+    private static final Long SUPPORT_ROOM_ID = 50L;
+    private static final Long ROOM_OWNER_USER_ID = 4L;
 
     // 참여 신청 생성 이벤트 — 방장에게 CHAT_JOIN_REQUEST 알림 저장 + Redis Push 검증
     @Test
@@ -173,6 +177,76 @@ class NotificationEventHandlerTest {
 
         handler.handleJoinRequestCreated(
                 new JoinRequestCreatedEvent(CHAT_ROOM_ID, JOIN_REQUEST_ID, OWNER_USER_ID));
+
+        verify(notificationRedisPubSubService, never()).publish(any(), any());
+    }
+
+    // 상담 메시지 전송 이벤트 — 방 소유자에게 SUPPORT_MESSAGE 알림 저장 + Redis Push 검증
+    @Test
+    void handleSupportMessageSent_notifiesRoomOwner_andPushes() {
+        Notification notification = buildNotification(200L, ROOM_OWNER_USER_ID, NotificationType.SUPPORT_MESSAGE, NotificationReferenceType.SUPPORT_ROOM, SUPPORT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(ROOM_OWNER_USER_ID),
+                eq(NotificationType.SUPPORT_MESSAGE),
+                eq("고객센터 메시지 도착"),
+                eq("고객센터 상담 메시지가 도착했어요."),
+                eq(NotificationReferenceType.SUPPORT_ROOM),
+                eq(SUPPORT_ROOM_ID))).willReturn(notification);
+
+        handler.handleSupportMessageSent(new SupportMessageSentEvent(SUPPORT_ROOM_ID, ROOM_OWNER_USER_ID));
+
+        verify(notificationService).createNotification(
+                eq(ROOM_OWNER_USER_ID),
+                eq(NotificationType.SUPPORT_MESSAGE),
+                eq("고객센터 메시지 도착"),
+                eq("고객센터 상담 메시지가 도착했어요."),
+                eq(NotificationReferenceType.SUPPORT_ROOM),
+                eq(SUPPORT_ROOM_ID));
+        verify(notificationRedisPubSubService).publish(eq(ROOM_OWNER_USER_ID), any(NotificationResponse.class));
+    }
+
+    // createNotification 실패 시 push 미호출 — 저장 실패가 Push로 전파되지 않음
+    @Test
+    void handleSupportMessageSent_createFails_noPush() {
+        given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
+                .willThrow(new RuntimeException("DB error"));
+
+        handler.handleSupportMessageSent(new SupportMessageSentEvent(SUPPORT_ROOM_ID, ROOM_OWNER_USER_ID));
+
+        verify(notificationRedisPubSubService, never()).publish(any(), any());
+    }
+
+    // 상담 종료 이벤트 — 방 소유자에게 SUPPORT_ROOM_CLOSED 알림 저장 + Redis Push 검증
+    @Test
+    void handleSupportRoomClosed_notifiesRoomOwner_andPushes() {
+        Notification notification = buildNotification(201L, ROOM_OWNER_USER_ID, NotificationType.SUPPORT_ROOM_CLOSED, NotificationReferenceType.SUPPORT_ROOM, SUPPORT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(ROOM_OWNER_USER_ID),
+                eq(NotificationType.SUPPORT_ROOM_CLOSED),
+                eq("상담 종료"),
+                eq("고객센터 상담이 종료됐어요."),
+                eq(NotificationReferenceType.SUPPORT_ROOM),
+                eq(SUPPORT_ROOM_ID))).willReturn(notification);
+
+        handler.handleSupportRoomClosed(new SupportRoomClosedEvent(SUPPORT_ROOM_ID, ROOM_OWNER_USER_ID));
+
+        verify(notificationService).createNotification(
+                eq(ROOM_OWNER_USER_ID),
+                eq(NotificationType.SUPPORT_ROOM_CLOSED),
+                eq("상담 종료"),
+                eq("고객센터 상담이 종료됐어요."),
+                eq(NotificationReferenceType.SUPPORT_ROOM),
+                eq(SUPPORT_ROOM_ID));
+        verify(notificationRedisPubSubService).publish(eq(ROOM_OWNER_USER_ID), any(NotificationResponse.class));
+    }
+
+    // 상담 종료 createNotification 실패 시 push 미호출
+    @Test
+    void handleSupportRoomClosed_createFails_noPush() {
+        given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
+                .willThrow(new RuntimeException("DB error"));
+
+        handler.handleSupportRoomClosed(new SupportRoomClosedEvent(SUPPORT_ROOM_ID, ROOM_OWNER_USER_ID));
 
         verify(notificationRedisPubSubService, never()).publish(any(), any());
     }

@@ -27,6 +27,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
+import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.util.List;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +50,7 @@ class SupportRoomServiceTest {
     @Mock private SupportRoomRepository supportRoomRepository;
     @Mock private SupportMessageRepository supportMessageRepository;
     @Mock private AccountRepository accountRepository;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     // ===== createRoom =====
 
@@ -120,10 +123,10 @@ class SupportRoomServiceTest {
 
     // ===== closeRoom =====
 
-    // 정상 종료 → CLOSED + closedAt 설정
+    // 정상 종료 → CLOSED + closedAt 설정 + 방 소유자에게 이벤트 발행
     @Test
-    void closeRoom_success_returnsClosedRoom() {
-        SupportRoom room = buildRoom(1L);
+    void closeRoom_success_returnsClosedRoom_andPublishesEvent() {
+        SupportRoom room = buildRoom(1L); // userId=1
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(clock.instant()).willReturn(FIXED_CLOCK.instant());
         given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
@@ -133,6 +136,7 @@ class SupportRoomServiceTest {
         assertThat(result.status()).isEqualTo(SupportRoomStatus.CLOSED);
         assertThat(result.summary()).isEqualTo("해결 완료");
         assertThat(result.closedAt()).isNotNull();
+        verify(applicationEventPublisher).publishEvent(new SupportRoomClosedEvent(1L, 1L));
     }
 
     // 존재하지 않는 방 → CS_001
