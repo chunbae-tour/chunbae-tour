@@ -16,10 +16,9 @@ import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
-import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
+import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
 import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
@@ -170,7 +169,4 @@ class AdminSupportRoomControllerTest extends AbstractIntegrationTest {
         verifyNoInteractions(supportRoomService);
     }
 
-    private SupportRoomResponse buildRoomResponse(Long id, SupportRoomStatus status) {
-        return new SupportRoomResponse(id, 1L, null, status, null, null, LocalDateTime.now());
-    }
 }
