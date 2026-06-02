@@ -11,7 +11,7 @@ public record IntegratedFestivalItem(
         LocalDate startDate,
         LocalDate endDate,
         String address,
-        String thumbnailUrl,
+        String imageUrl,
         String content
 ) implements IntegratedSearchItem {
     @Override

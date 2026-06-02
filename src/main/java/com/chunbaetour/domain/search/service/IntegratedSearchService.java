@@ -113,7 +113,7 @@ public class IntegratedSearchService {
                         .startDate(f.getStartDate())
                         .endDate(f.getEndDate())
                         .address(f.getLocation())
-                        .thumbnailUrl(f.getThumbnailUrl())
+                        .imageUrl(f.getThumbnailUrl())
                         .content(f.getDescription())
                         .build();
                 allItems.add(new ItemWrapper(score, 40, "FESTIVAL", f.getId(), item));
@@ -130,6 +130,11 @@ public class IntegratedSearchService {
         });
 
         // 커서 필터링
+        // [주의] 본 인메모리 페이징 구조에서 커서는 클라이언트가 이미 본 항목을 건너뛰기 위한(Skip) 용도이지,
+        // DB 단의 오프셋(Offset) 커서가 아닙니다. 
+        // 2페이지, 3페이지 요청 시에도 DB에서는 항상 상위 200건씩만 가져와서 병합 후 건너뜁니다.
+        // 이는 여러 도메인(Place, Shop, Menu, Festival)의 정렬 점수를 애플리케이션 메모리에서 통일하기 위한 MVP 구조적 한계이며,
+        // 후속 개발 시 이 로직을 단순히 DB 커서로 착각하여 최적화하려다 정렬 버그를 유발하지 않도록 주의 바랍니다.
         List<ItemWrapper> filtered = allItems;
         if (cursor != null) {
             filtered = allItems.stream()

@@ -78,19 +78,19 @@ public class SearchQueryRepository {
     }
 
     private BooleanExpression placeNameContains(String keyword) {
-        return keyword != null && !keyword.isBlank() ? place.name.containsIgnoreCase(keyword) : null;
+        return keyword != null && !keyword.isBlank() ? place.name.containsIgnoreCase(keyword) : Expressions.FALSE;
     }
 
     private BooleanExpression shopNameContains(String keyword) {
-        return keyword != null && !keyword.isBlank() ? shop.shopName.containsIgnoreCase(keyword) : null;
+        return keyword != null && !keyword.isBlank() ? shop.shopName.containsIgnoreCase(keyword) : Expressions.FALSE;
     }
 
     private BooleanExpression menuNameContains(String keyword) {
-        return keyword != null && !keyword.isBlank() ? menu.name.containsIgnoreCase(keyword) : null;
+        return keyword != null && !keyword.isBlank() ? menu.name.containsIgnoreCase(keyword) : Expressions.FALSE;
     }
 
     private BooleanExpression festivalNameContains(String keyword) {
-        return keyword != null && !keyword.isBlank() ? festival.name.containsIgnoreCase(keyword) : null;
+        return keyword != null && !keyword.isBlank() ? festival.name.containsIgnoreCase(keyword) : Expressions.FALSE;
     }
 
     private NumberExpression<Integer> exactMatchScore(StringPath path, String keyword) {
