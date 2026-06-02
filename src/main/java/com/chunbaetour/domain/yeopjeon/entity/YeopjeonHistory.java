@@ -87,6 +87,7 @@ public class YeopjeonHistory extends BaseEntity {
     }
 
     // QR 결제 이력 전용 팩토리 — payRequestId 추적 포함
+    // paymentOrderId는 의도적 null: QR 결제는 PaymentOrder를 거치지 않고 QrPayRequest로 처리됨
     public static YeopjeonHistory createForQrPay(Long userId, Long shopId, String payRequestId,
                                                   YeopjeonHistoryType type, Long amount, Long balanceSnapshot,
                                                   String description) {

@@ -316,7 +316,15 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
         }
 
-        List<MenuSnapshotItem> menuItems = deserializeMenuItems(qrPayRequest.getMenuItems());
+        // 단건 조회: 서버 생성 JSON 파싱 실패는 DB 오류 — 조용한 빈 리스트 대신 명시적 예외
+        List<MenuSnapshotItem> menuItems;
+        try {
+            menuItems = objectMapper.readValue(qrPayRequest.getMenuItems(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, MenuSnapshotItem.class));
+        } catch (JacksonException e) {
+            log.error("[QR 결제 상태 조회] 메뉴 스냅샷 역직렬화 실패 — payRequestId={}", payRequestId, e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
         return QrPayStatusResponse.of(qrPayRequest, menuItems);
     }
 
