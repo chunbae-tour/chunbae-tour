@@ -62,4 +62,25 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Place p WHERE p.id = :id AND p.status = :status")
     Optional<Place> findByIdAndStatusForUpdate(@Param("id") Long id, @Param("status") PlaceStatus status);
+
+    /**
+     * 운영자 관광지 목록 검색 — keyword(이름 부분일치) + category + cursor 페이징 (Admin Epic KAN-177 S07).
+     *
+     * <p>모든 필터는 {@code null}이면 미적용(전체). cursor는 id 내림차순 keyset 페이징 —
+     * {@code cursorId}보다 작은 id만 조회해 다음 페이지를 sentinel(size+1) 방식으로 판단(서비스 책임).
+     *
+     * <p>{@code DELETED}(soft delete) 상태는 운영자 목록에서 제외하고 ACTIVE/HIDDEN만 노출한다 — 사용자 검색은
+     * 별도로 status=ACTIVE 고정 필터를 적용(PlaceQueryRepository.searchByKeyword). keyword는
+     * {@code LIKE '%keyword%'}이며 공백 문자열은 호출자(서비스)가 null로 정규화해 전달.
+     */
+    @Query("SELECT p FROM Place p WHERE "
+            + "p.status <> com.chunbaetour.domain.place.type.PlaceStatus.DELETED "
+            + "AND (:keyword IS NULL OR p.name LIKE CONCAT('%', :keyword, '%')) "
+            + "AND (:category IS NULL OR p.category = :category) "
+            + "AND (:cursorId IS NULL OR p.id < :cursorId) "
+            + "ORDER BY p.id DESC")
+    List<Place> searchForAdmin(@Param("keyword") String keyword,
+                               @Param("category") PlaceCategory category,
+                               @Param("cursorId") Long cursorId,
+                               Pageable pageable);
 }
