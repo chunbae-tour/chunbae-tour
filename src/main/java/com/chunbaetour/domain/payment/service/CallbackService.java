@@ -25,8 +25,9 @@ public class CallbackService {
     private final IdempotencyService idempotencyService;
     private final WalletService walletService;
 
-    // handle()에서 handleSuccess/handleFail을 self-invocation으로 호출하므로
-    // 각 메서드의 @Transactional이 프록시를 거치지 않음 → handle()에 통합
+    // handle()에서 모든 handle* 메서드를 self-invocation으로 호출하므로
+    // 각 메서드의 @Transactional이 프록시를 거치지 않음 → handle()의 트랜잭션에 통합.
+    // handle* 메서드에 @Transactional을 선언하지 않는다.
     @Transactional(noRollbackFor = PaymentException.class)
     public void handle(String webhookId, WebhookPayload payload) {
         // Standard Webhooks: 동일 webhook-id 재전송 시 즉시 200 리턴 (중복 처리 방지)
@@ -64,7 +65,9 @@ public class CallbackService {
             }
             throw e;
         } catch (RuntimeException e) {
-            // DataAccessException 등 예상 외 예외 → 500 반환 → PortOne 자동 재시도
+            // DataAccessException 등 예상 외 예외 → 500 반환 → PortOne 자동 재시도.
+            // scheduleWebhookUnmarkOnRollback의 afterCompletion(rollback)과 중복 실행되나,
+            // Redis delete는 멱등이므로 문제 없음. 명시적 해제로 의도를 코드에 남긴다.
             idempotencyService.unmarkWebhook(webhookId);
             throw e;
         }
@@ -140,7 +143,6 @@ public class CallbackService {
         scheduleUnmark(order.getIdempotencyKey());
     }
 
-    @Transactional
     public void handleCancelled(String paymentId) {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
@@ -174,7 +176,6 @@ public class CallbackService {
         scheduleUnmark(order.getIdempotencyKey());
     }
 
-    @Transactional
     public void handlePartialCancelled(String paymentId) {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));

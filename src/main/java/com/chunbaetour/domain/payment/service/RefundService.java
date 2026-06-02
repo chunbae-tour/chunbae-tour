@@ -172,11 +172,12 @@ public class RefundService {
                     order.getAmount(),
                     order.getId()
             );
-            // 전액 회수에 성공하면 주문을 REFUNDED로 확정한다.
-            if (reclaimed == order.getAmount()) {
+            // PARTIAL_CANCELLED: PG 부분취소 이후 관리자 환불이 겹친 동시성 경합 케이스.
+            // order.refund()는 COMPLETED만 허용하므로 throw → PG 취소는 이미 성공, reclaim은 롤백 → 정산 불일치.
+            // 금액 복잡성(PG 부분취소분 중복 가능)으로 관리자 확인 상태로 남긴다.
+            if (reclaimed == order.getAmount() && order.getStatus() == PaymentOrderStatus.COMPLETED) {
                 order.refund();
             } else {
-                // 잔액 부족으로 일부만 회수되면 관리자 확인 필요 상태로 남긴다.
                 order.requireAdjustment();
             }
         }
