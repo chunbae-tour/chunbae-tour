@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -60,7 +61,7 @@ public class SupportRoomController {
     @GetMapping("/{supportRoomId}/messages")
     public ApiResponse<CursorPageResponse<SupportMessageResponse>> getMessages(
             @AuthenticationPrincipal Long userId,
-            @PathVariable Long supportRoomId,
+            @PathVariable @Positive Long supportRoomId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return ApiResponse.success(supportRoomService.getMessages(userId, supportRoomId, cursor, size));
