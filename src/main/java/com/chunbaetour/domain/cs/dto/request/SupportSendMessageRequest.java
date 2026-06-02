@@ -1,9 +1,5 @@
 package com.chunbaetour.domain.cs.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-
 // STOMP 메시지 전송 요청 DTO — TEXT 타입 전용 (IMAGE/FILE은 S3 연동 후 별도 티켓)
-public record SupportSendMessageRequest(
-        @NotBlank @Size(max = 1000) String content
-) {}
+// 길이·blank 검증은 SupportMessageService에서 명시적으로 수행 (STOMP @Payload는 Bean Validation 미적용)
+public record SupportSendMessageRequest(String content) {}

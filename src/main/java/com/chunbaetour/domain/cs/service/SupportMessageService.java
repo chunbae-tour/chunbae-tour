@@ -66,8 +66,8 @@ public class SupportMessageService {
             senderRole = SupportSenderRole.CUSTOMER;
         }
 
-        // STOMP @Payload는 Bean Validation 미적용 — 서비스에서 명시적 길이 검증
-        if (request.content().length() > 1000) {
+        // STOMP @Payload는 Bean Validation 미적용 — 서비스에서 명시적 길이 검증 (null은 엔티티 validatePayload에서 차단)
+        if (request.content() != null && request.content().length() > 1000) {
             throw new BusinessException(ErrorCode.MESSAGE_TOO_LONG);
         }
 
