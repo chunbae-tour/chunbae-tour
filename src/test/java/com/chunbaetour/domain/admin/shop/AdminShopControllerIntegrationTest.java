@@ -225,6 +225,22 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    @DisplayName("PATCH description 멀티라인(개행 포함) → 200 (DOTALL 회귀 가드)")
+    void patch_multiline_description_returns_200() throws Exception {
+        // @Pattern이 (?s) 없이 ".*\\S.*"만 쓰면 '.'이 개행을 매치하지 못해 멀티라인 소개가 거부됐다(회귀).
+        // 내용 있는 멀티라인은 정상 입력이므로 200이어야 한다.
+        String adminToken = adminToken();
+        Shop shop = seedShop(ShopStatus.ACTIVE);
+
+        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"첫 줄 소개\\n둘째 줄 소개\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.description").value("첫 줄 소개\n둘째 줄 소개"));
+    }
+
     // ── 에러/접근 제어 ──────────────────────────────────────────────────────
 
     @Test
