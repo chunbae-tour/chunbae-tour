@@ -25,24 +25,34 @@ public class CallbackService {
     private final IdempotencyService idempotencyService;
     private final WalletService walletService;
 
-    // handle()에서 handleSuccess/handleFail을 self-invocation으로 호출하므로
-    // 각 메서드의 @Transactional이 프록시를 거치지 않음 → handle()에 통합
+    // handle()에서 모든 handle* 메서드를 self-invocation으로 호출하므로
+    // 각 메서드의 @Transactional이 프록시를 거치지 않음 → handle()의 트랜잭션에 통합.
+    // handle* 메서드에 @Transactional을 선언하지 않는다.
     @Transactional(noRollbackFor = PaymentException.class)
     public void handle(String webhookId, WebhookPayload payload) {
         // Standard Webhooks: 동일 webhook-id 재전송 시 즉시 200 리턴 (중복 처리 방지)
         if (!idempotencyService.markWebhookIfAbsent(webhookId)) {
             return;
         }
+        scheduleWebhookUnmarkOnRollback(webhookId);
 
         try {
-            if (payload.data() == null) return;
+            WebhookPayload.WebhookData data = payload.data();
+            if (data == null) return;
 
             WebhookEventType eventType = WebhookEventType.from(payload.type());
             switch (eventType) {
                 case TRANSACTION_PAID ->
-                        handleSuccess(payload.data().paymentId(), payload.data().transactionId());
-                case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
-                        handleFail(payload.data().paymentId());
+                        handleSuccess(data.paymentId(), data.transactionId());
+                case TRANSACTION_FAILED ->
+                        handleFail(data.paymentId());
+                case TRANSACTION_CANCELLED ->
+                        handleCancelled(data.paymentId());
+                case TRANSACTION_PARTIAL_CANCELLED ->
+                        handlePartialCancelled(data.paymentId());
+                // TRANSACTION_CANCEL_PENDING은 취소 진행 중 상태로, 이후 TRANSACTION_CANCELLED로 확정됨.
+                // 별도 처리 없이 명시적 무시.
+                case TRANSACTION_CANCEL_PENDING -> { }
                 default -> { }
             }
         } catch (PaymentException e) {
@@ -55,7 +65,9 @@ public class CallbackService {
             }
             throw e;
         } catch (RuntimeException e) {
-            // DataAccessException 등 예상 외 예외 → 500 반환 → PortOne 자동 재시도
+            // DataAccessException 등 예상 외 예외 → 500 반환 → PortOne 자동 재시도.
+            // scheduleWebhookUnmarkOnRollback의 afterCompletion(rollback)과 중복 실행되나,
+            // Redis delete는 멱등이므로 문제 없음. 명시적 해제로 의도를 코드에 남긴다.
             idempotencyService.unmarkWebhook(webhookId);
             throw e;
         }
@@ -75,7 +87,9 @@ public class CallbackService {
         // COMPLETED 조기 리턴: 도메인 상태 전이상 COMPLETED는 단방향 종착 (이후 REFUNDED는 별도 환불 경로).
         //   cached COMPLETED entity는 DB 현재 상태와 항상 일치 — stale 위험 0이므로 PG 검증 생략 안전.
         //   FAILED는 handleFail 선점 경합일 수 있으므로 계속 진행 (PG PAID 시 CAS UPDATE로 결제 복구).
+        //   scheduleUnmark: 이전 처리에서 afterCommit 장애로 키가 남아있을 경우를 대비해 항상 정리.
         if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
@@ -95,7 +109,8 @@ public class CallbackService {
             if (failed == 0) {
                 // 다른 스레드/이전 호출이 이미 종착 상태로 전환 완료 — 본 호출은 중복 처리.
                 // throw 시 운영 에러 로그만 누적되고 PortOne은 동일 webhook을 재시도 → 무한 noise.
-                // 조용히 return으로 멱등 처리. lim-haeun 지적 반영 (handleSuccess의 amountValid==false + CAS=0 시나리오).
+                // 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 조용히 return.
+                scheduleUnmark(order.getIdempotencyKey());
                 return;
             }
             scheduleUnmark(order.getIdempotencyKey());
@@ -105,8 +120,10 @@ public class CallbackService {
         // 3b) PENDING/FAILED → COMPLETED 전환 (REFUNDED/CANCELLED는 차단 — Repository WHERE 화이트리스트).
         //     DB-level CAS — 동시 webhook 2건 호출 시 InnoDB row lock 직렬화 → 한쪽만 1 반환.
         //     0 반환 시 다른 스레드/이전 호출이 먼저 종착 전환 — walletService.charge 중복 실행 차단.
+        //     이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 return.
         int completed = paymentOrderRepository.completeIfNotCompleted(paymentId, txId);
         if (completed == 0) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
@@ -121,12 +138,90 @@ public class CallbackService {
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
         // PENDING → FAILED 조건부 CAS. 이미 COMPLETED/FAILED/REFUNDED면 0 반환 — 멱등 처리.
+        // 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 return.
         int failed = paymentOrderRepository.failIfPending(paymentId);
         if (failed == 0) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
         scheduleUnmark(order.getIdempotencyKey());
+    }
+
+    public void handleCancelled(String paymentId) {
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+
+        // 이미 종착 상태: 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 return.
+        if (order.getStatus() == PaymentOrderStatus.CANCELLED
+                || order.getStatus() == PaymentOrderStatus.REFUNDED
+                || order.getStatus() == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
+            scheduleUnmark(order.getIdempotencyKey());
+            return;
+        }
+
+        if (order.getStatus() == PaymentOrderStatus.PENDING || order.getStatus() == PaymentOrderStatus.FAILED) {
+            order.cancel();
+            scheduleUnmark(order.getIdempotencyKey());
+            return;
+        }
+
+        // 여기까지 오는 상태: COMPLETED 또는 PARTIAL_CANCELLED
+        long reclaimed = walletService.reclaimAvailableForExternalCancel(
+                order.getUserId(),
+                order.getAmount(),
+                order.getId()
+        );
+        if (reclaimed == order.getAmount()) {
+            order.cancel();
+        } else {
+            order.requireAdjustment();
+        }
+        scheduleUnmark(order.getIdempotencyKey());
+    }
+
+    public void handlePartialCancelled(String paymentId) {
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+
+        // ADJUSTMENT_REQUIRED: 이미 보정 필요 상태 — 추가 처리 불필요
+        if (order.getStatus() == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
+            return;
+        }
+
+        // PARTIAL_CANCELLED: PortOne at-least-once로 동일 결제에 추가 부분취소 이벤트가 올 수 있음.
+        // amount.cancelled는 누적 취소액이라 이전 처리분 delta 계산 불가(별도 추적 필드 없음).
+        // 추가 이벤트는 ADJUSTMENT_REQUIRED로 전환해 관리자 확인으로 처리.
+        if (order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED) {
+            order.requireAdjustment();
+            return;
+        }
+
+        // COMPLETED 이외 상태(PENDING/FAILED/CANCELLED/REFUNDED)는 부분취소 처리 불가
+        if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
+            return;
+        }
+
+        // PG에서 취소 금액 조회 — cancelledAmount가 null이거나 0 이하면 정산 보정 상태로 남김
+        PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(paymentId);
+        Long cancelledAmount = info.cancelledAmount();
+        if (cancelledAmount == null || cancelledAmount <= 0) {
+            order.requireAdjustment();
+            return;
+        }
+
+        // 취소 금액만큼 엽전 회수 (잔액 부족 시 debitUpTo로 가능한 만큼만 회수)
+        long reclaimed = walletService.reclaimAvailableForExternalCancel(
+                order.getUserId(),
+                cancelledAmount,
+                order.getId()
+        );
+        if (reclaimed == cancelledAmount) {
+            order.partialCancel();
+        } else {
+            order.requireAdjustment();
+        }
+        // 충전 멱등성 키는 handleSuccess에서 이미 해제됨 — 재해제 불필요
     }
 
     /**
@@ -162,5 +257,19 @@ public class CallbackService {
             // 트랜잭션 밖 → 즉시 실행
             idempotencyService.unmark(idempotencyKey);
         }
+    }
+
+    private void scheduleWebhookUnmarkOnRollback(String webhookId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    idempotencyService.unmarkWebhook(webhookId);
+                }
+            }
+        });
     }
 }
