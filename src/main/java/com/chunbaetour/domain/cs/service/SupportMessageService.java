@@ -53,8 +53,11 @@ public class SupportMessageService {
 
         SupportSenderRole senderRole;
         if (isAdmin) {
-            // ADMIN은 배정된 방(IN_PROGRESS)에만 발신 가능
+            // 배정된 ADMIN만 발신 가능 — IN_PROGRESS 상태 + adminId 일치
             if (room.getStatus() != SupportRoomStatus.IN_PROGRESS) {
+                throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
+            }
+            if (!userId.equals(room.getAdminId())) {
                 throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
             }
             senderRole = SupportSenderRole.ADMIN;
@@ -95,6 +98,7 @@ public class SupportMessageService {
                 }
             });
         } else {
+            // 트랜잭션 없는 컨텍스트(단위 테스트 등)에서만 진입 — 프로덕션에서 도달하지 않음
             supportRedisPubSubService.publish(supportRoomId, response);
         }
     }

@@ -97,6 +97,19 @@ class SupportMessageServiceTest {
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
     }
 
+    // 배정되지 않은 ADMIN이 IN_PROGRESS 방 발신 시도 → CS_003
+    @Test
+    void sendMessage_whenAdminNotAssigned_throwsForbidden() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        SupportRoom room = buildRoom(1L, 99L, SupportRoomStatus.IN_PROGRESS); // adminId=null (buildRoom doesn't set adminId)
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> supportMessageService.sendMessage(1L, 1L, true, req("안녕")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
+    }
+
     // null content → INVALID_REQUEST
     @Test
     void sendMessage_whenContentNull_throwsInvalidRequest() {

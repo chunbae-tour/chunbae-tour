@@ -107,6 +107,21 @@ public class SupportRoomService {
         return fetchMessages(supportRoomId, cursor, size);
     }
 
+    // ADMIN 상담방 배정 — 호출한 ADMIN이 담당자로 배정됨, WAITING→IN_PROGRESS 전이
+    @Transactional
+    public SupportRoomResponse assignAdmin(Long supportRoomId, Long adminId) {
+        SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+        if (room.getStatus() == SupportRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
+        }
+        if (room.getStatus() == SupportRoomStatus.IN_PROGRESS) {
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_ASSIGNED);
+        }
+        room.assignAdmin(adminId);
+        return SupportRoomResponse.from(room);
+    }
+
     // ADMIN 상담 종료 — CLOSED 재종료 시 CS_002, 존재하지 않으면 CS_001
     @Transactional
     public SupportRoomResponse closeRoom(Long supportRoomId, SupportRoomCloseRequest request) {

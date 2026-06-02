@@ -73,12 +73,37 @@ class StompChannelInterceptorTest {
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
     }
 
-    // ADMIN → 모든 방 구독 허용 (소유자 검증 없음)
+    // ADMIN — WAITING 방(미배정) 구독 허용
     @Test
-    void subscribe_supportRoom_whenAdmin_allowed() {
+    void subscribe_supportRoom_whenAdminAndWaiting_allowed() {
         Message<?> message = subscribeMessage("/sub/support/rooms/10", principal(1L, "ROLE_ADMIN"));
+        SupportRoom room = buildRoom(10L, 99L); // adminId=null
+        given(supportRoomRepository.findById(10L)).willReturn(Optional.of(room));
 
         assertThatNoException().isThrownBy(() -> interceptor.preSend(message, channel));
+    }
+
+    // 배정된 ADMIN(본인) — IN_PROGRESS 방 구독 허용
+    @Test
+    void subscribe_supportRoom_whenAssignedAdmin_allowed() {
+        Message<?> message = subscribeMessage("/sub/support/rooms/10", principal(1L, "ROLE_ADMIN"));
+        SupportRoom room = buildRoomWithAdmin(10L, 99L, 1L); // adminId=1 (본인)
+        given(supportRoomRepository.findById(10L)).willReturn(Optional.of(room));
+
+        assertThatNoException().isThrownBy(() -> interceptor.preSend(message, channel));
+    }
+
+    // 다른 ADMIN(미담당) — IN_PROGRESS 방 구독 차단
+    @Test
+    void subscribe_supportRoom_whenOtherAdmin_throwsForbidden() {
+        Message<?> message = subscribeMessage("/sub/support/rooms/10", principal(2L, "ROLE_ADMIN")); // adminId=1인 방
+        SupportRoom room = buildRoomWithAdmin(10L, 99L, 1L); // adminId=1
+        given(supportRoomRepository.findById(10L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> org.assertj.core.api.Assertions.assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
     }
 
     // ===== SEND 브로커 destination 직접 발사 차단 =====
@@ -138,6 +163,13 @@ class StompChannelInterceptorTest {
     private SupportRoom buildRoom(Long id, Long userId) {
         SupportRoom room = SupportRoom.builder().userId(userId).build();
         ReflectionTestUtils.setField(room, "id", id);
+        return room;
+    }
+
+    private SupportRoom buildRoomWithAdmin(Long id, Long userId, Long adminId) {
+        SupportRoom room = SupportRoom.builder().userId(userId).build();
+        ReflectionTestUtils.setField(room, "id", id);
+        ReflectionTestUtils.setField(room, "adminId", adminId);
         return room;
     }
 }

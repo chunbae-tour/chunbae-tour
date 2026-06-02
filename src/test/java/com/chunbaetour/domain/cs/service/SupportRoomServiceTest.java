@@ -185,6 +185,54 @@ class SupportRoomServiceTest {
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
     }
 
+    // ===== assignAdmin =====
+
+    // 정상 배정 → IN_PROGRESS + adminId 설정
+    @Test
+    void assignAdmin_success_returnsInProgressRoom() {
+        SupportRoom room = buildRoom(1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        SupportRoomResponse result = supportRoomService.assignAdmin(1L, 99L);
+
+        assertThat(result.status()).isEqualTo(SupportRoomStatus.IN_PROGRESS);
+    }
+
+    // 이미 배정된 방(IN_PROGRESS) → CS_005
+    @Test
+    void assignAdmin_whenAlreadyAssigned_throwsAlreadyAssigned() {
+        SupportRoom room = buildRoom(1L);
+        // status를 IN_PROGRESS로 설정
+        try {
+            var f = SupportRoom.class.getDeclaredField("status");
+            f.setAccessible(true);
+            f.set(room, SupportRoomStatus.IN_PROGRESS);
+        } catch (Exception e) { throw new RuntimeException(e); }
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_ASSIGNED));
+    }
+
+    // CLOSED 방 → CS_002
+    @Test
+    void assignAdmin_whenClosed_throwsAlreadyClosed() {
+        SupportRoom room = buildRoom(1L);
+        try {
+            var f = SupportRoom.class.getDeclaredField("status");
+            f.setAccessible(true);
+            f.set(room, SupportRoomStatus.CLOSED);
+        } catch (Exception e) { throw new RuntimeException(e); }
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED));
+    }
+
     // ===== getMessagesAsAdmin =====
 
     // 존재하지 않는 방 → CS_001

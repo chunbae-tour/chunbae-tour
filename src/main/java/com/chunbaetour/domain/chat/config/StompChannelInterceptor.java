@@ -132,16 +132,17 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         return message;
     }
 
-    // /sub/support/rooms/{id} 구독 — 방 소유자 또는 ADMIN만 허용
+    // /sub/support/rooms/{id} 구독 — 방 소유자 또는 배정된 ADMIN만 허용
+    // WAITING(adminId=null): 아직 미배정이므로 모든 ADMIN 구독 가능 (목록 확인 용도)
+    // IN_PROGRESS/CLOSED: 배정된 ADMIN만 구독 가능
     private Message<?> handleSupportRoomSubscribe(Message<?> message, StompHeaderAccessor accessor) {
         if (!(accessor.getUser() instanceof UsernamePasswordAuthenticationToken auth)) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
+        Long userId = Long.parseLong(auth.getName());
         boolean isAdmin = auth.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-        if (isAdmin) return message;
 
-        Long userId = Long.parseLong(auth.getName());
         String roomIdStr = accessor.getDestination().substring(SUPPORT_ROOM_TOPIC_PREFIX.length());
         Long supportRoomId;
         try {
@@ -152,6 +153,15 @@ public class StompChannelInterceptor implements ChannelInterceptor {
 
         SupportRoom room = supportRoomRepository.findById(supportRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+
+        if (isAdmin) {
+            // 미배정(WAITING) → 모든 ADMIN 구독 가능 / 배정 후 → 담당 ADMIN만
+            if (room.getAdminId() != null && !room.getAdminId().equals(userId)) {
+                throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
+            }
+            return message;
+        }
+
         if (!room.getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
         }
