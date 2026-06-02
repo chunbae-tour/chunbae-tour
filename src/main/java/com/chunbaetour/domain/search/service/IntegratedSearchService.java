@@ -44,7 +44,7 @@ public class IntegratedSearchService {
                 IntegratedPlaceItem item = IntegratedPlaceItem.builder()
                         .id(p.getId())
                         .name(p.getName())
-                        .category(p.getCategory())
+                        .category(p.getCategory() != null ? p.getCategory().name() : null)
                         .address(p.getAddress())
                         .thumbnailUrl(p.getThumbnailUrl())
                         .matchedShopCount(0)

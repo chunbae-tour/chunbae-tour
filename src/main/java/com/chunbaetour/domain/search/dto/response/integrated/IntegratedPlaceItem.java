@@ -1,6 +1,5 @@
 package com.chunbaetour.domain.search.dto.response.integrated;
 
-import com.chunbaetour.domain.place.type.PlaceCategory;
 import lombok.Builder;
 import java.util.List;
 
@@ -8,7 +7,7 @@ import java.util.List;
 public record IntegratedPlaceItem(
         Long id,
         String name,
-        PlaceCategory category,
+        String category,
         String address,
         String thumbnailUrl,
         int matchedShopCount,
