@@ -168,7 +168,7 @@ class SupportMessageServiceTest {
     @Test
     void sendMessage_whenAdminSendsToInProgressRoom_savesAndPublishes() {
         given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
-        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 99L, SupportRoomStatus.IN_PROGRESS)));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoomWithAdmin(1L, 99L, 1L, SupportRoomStatus.IN_PROGRESS)));
         given(supportMessageRepository.save(any())).willReturn(buildMessage(101L, 1L));
 
         supportMessageService.sendMessage(1L, 1L, true, req("확인했습니다"));
@@ -201,6 +201,10 @@ class SupportMessageServiceTest {
     }
 
     private SupportRoom buildRoom(Long id, Long userId, SupportRoomStatus status) {
+        return buildRoomWithAdmin(id, userId, null, status);
+    }
+
+    private SupportRoom buildRoomWithAdmin(Long id, Long userId, Long adminId, SupportRoomStatus status) {
         SupportRoom room = SupportRoom.builder().userId(userId).build();
         try {
             var idField = SupportRoom.class.getDeclaredField("id");
@@ -209,6 +213,11 @@ class SupportMessageServiceTest {
             var statusField = SupportRoom.class.getDeclaredField("status");
             statusField.setAccessible(true);
             statusField.set(room, status);
+            if (adminId != null) {
+                var adminIdField = SupportRoom.class.getDeclaredField("adminId");
+                adminIdField.setAccessible(true);
+                adminIdField.set(room, adminId);
+            }
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
