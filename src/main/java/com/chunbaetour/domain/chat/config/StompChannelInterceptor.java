@@ -58,6 +58,12 @@ public class StompChannelInterceptor implements ChannelInterceptor {
             if (accessor.getUser() == null) {
                 throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
             }
+            // broker prefix(/sub, /queue) 직접 SEND 차단 — @MessageMapping 우회 및 메시지 위조 방지
+            // 클라이언트는 반드시 /pub/... 앱 destination으로만 SEND해야 함
+            String dest = accessor.getDestination();
+            if (dest != null && (dest.startsWith("/sub") || dest.startsWith("/queue"))) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
             return message;
         }
 

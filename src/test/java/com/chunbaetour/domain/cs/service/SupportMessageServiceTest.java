@@ -97,6 +97,32 @@ class SupportMessageServiceTest {
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
     }
 
+    // null content → INVALID_REQUEST
+    @Test
+    void sendMessage_whenContentNull_throwsInvalidRequest() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+
+        assertThatThrownBy(() -> supportMessageService.sendMessage(1L, 1L, false, req(null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.INVALID_REQUEST));
+        verify(supportMessageRepository, never()).save(any());
+    }
+
+    // blank content → INVALID_REQUEST
+    @Test
+    void sendMessage_whenContentBlank_throwsInvalidRequest() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+
+        assertThatThrownBy(() -> supportMessageService.sendMessage(1L, 1L, false, req("   ")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.INVALID_REQUEST));
+        verify(supportMessageRepository, never()).save(any());
+    }
+
     // 1001자 메시지 → MESSAGE_TOO_LONG, DB 저장 없음
     @Test
     void sendMessage_whenContentTooLong_throwsMessageTooLong() {
