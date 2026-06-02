@@ -2,18 +2,26 @@ package com.chunbaetour.domain.cs.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
+import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
+import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
+import com.chunbaetour.domain.cs.entity.SupportSenderRole;
+import java.util.List;
 import com.chunbaetour.domain.cs.service.SupportRoomService;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDateTime;
@@ -130,7 +138,100 @@ class SupportRoomControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ===== GET /support/rooms/me =====
+
+    // USER 인증 → 200
+    @Test
+    @DisplayName("내 상담방 목록 — USER 200")
+    void getMyRooms_whenUser_returns200() throws Exception {
+        given(supportRoomService.getMyRooms(eq(1L), any(), eq(20), isNull()))
+                .willReturn(new CursorPageResponse<>(List.of(buildResponse(10L)), null, false, 1));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].supportRoomId").value(10));
+    }
+
+    // MERCHANT 인증 → 200 (USER·MERCHANT 공용)
+    @Test
+    @DisplayName("내 상담방 목록 — MERCHANT 200")
+    void getMyRooms_whenMerchant_returns200() throws Exception {
+        given(supportRoomService.getMyRooms(eq(1L), any(), eq(20), isNull()))
+                .willReturn(new CursorPageResponse<>(List.of(buildResponse(20L)), null, false, 1));
+        String token = tokenIssuer.issueAccess(1L, Role.MERCHANT, "merchant@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].supportRoomId").value(20));
+    }
+
+    // 미인증 → 401
+    @Test
+    @DisplayName("내 상담방 목록 — 미인증 401")
+    void getMyRooms_whenUnauthenticated_returns401() throws Exception {
+        mockMvc.perform(get(BASE_URL + "/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.getCode()));
+        verifyNoInteractions(supportRoomService);
+    }
+
+    // ===== GET /support/rooms/{id}/messages =====
+
+    // USER 인증 → 200
+    @Test
+    @DisplayName("상담 메시지 조회 — USER 200")
+    void getMessages_whenUser_returns200() throws Exception {
+        SupportMessageResponse msg = new SupportMessageResponse(
+                1L, 1L, SupportSenderRole.CUSTOMER, SupportMessageType.TEXT, "결제 안됩니다", null, LocalDateTime.now());
+        given(supportRoomService.getMessages(eq(1L), eq(10L), any(), eq(20)))
+                .willReturn(new CursorPageResponse<>(List.of(msg), null, false, 1));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/10/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].messageId").value(1));
+    }
+
+    // supportRoomId 0 → 400
+    @Test
+    @DisplayName("상담 메시지 조회 — supportRoomId 0 → 400")
+    void getMessages_whenRoomIdZero_returns400() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+        mockMvc.perform(get(BASE_URL + "/0/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(supportRoomService);
+    }
+
+    // MERCHANT 토큰 + 타인 방 → 403 (서비스 ownership check)
+    @Test
+    @DisplayName("상담 메시지 조회 — MERCHANT 타인 방 403")
+    void getMessages_whenMerchantAccessOtherUserRoom_returns403() throws Exception {
+        given(supportRoomService.getMessages(eq(2L), eq(10L), any(), eq(20)))
+                .willThrow(new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
+        String token = tokenIssuer.issueAccess(2L, Role.MERCHANT, "merchant@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/10/messages")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.SUPPORT_ROOM_FORBIDDEN.getCode()));
+    }
+
+    // 미인증 → 401
+    @Test
+    @DisplayName("상담 메시지 조회 — 미인증 401")
+    void getMessages_whenUnauthenticated_returns401() throws Exception {
+        mockMvc.perform(get(BASE_URL + "/10/messages"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.getCode()));
+        verifyNoInteractions(supportRoomService);
+    }
+
     private SupportRoomResponse buildResponse(Long id) {
-        return new SupportRoomResponse(id, 1L, null, SupportRoomStatus.WAITING, LocalDateTime.now());
+        return new SupportRoomResponse(id, 1L, null, SupportRoomStatus.WAITING, null, null, LocalDateTime.now());
     }
 }

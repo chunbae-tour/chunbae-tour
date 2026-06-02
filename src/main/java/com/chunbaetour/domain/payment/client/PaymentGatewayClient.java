@@ -18,7 +18,7 @@ public interface PaymentGatewayClient {
     // 결제 취소(환불) — 관리자 환불 승인 시 포트원에 전액 취소 요청
     void cancelPayment(String pgTransactionId, Long amount, String reason);
 
-    record PortOnePaymentInfo(String status, Long totalAmount) {
+    record PortOnePaymentInfo(String status, Long totalAmount, Long cancelledAmount) {
         public boolean isPaid() {
             return "PAID".equals(status);
         }

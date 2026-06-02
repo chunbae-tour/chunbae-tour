@@ -3,18 +3,21 @@ package com.chunbaetour.domain.payment.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
+import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
 import com.chunbaetour.domain.payment.dto.request.RefundRequest;
 import com.chunbaetour.domain.payment.dto.response.RefundResponse;
 import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.entity.Refund;
+import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.repository.RefundRepository;
 import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import com.chunbaetour.domain.payment.type.RefundStatus;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
-import com.chunbaetour.domain.common.util.CursorUtils;
+import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,13 +26,10 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * 환불 요청 서비스 (STORY-06, KAN-115).
- * 유저가 환불을 요청하면 Refund 엔티티를 PENDING으로 생성.
- * 실제 PG 환불은 STORY-07 관리자 승인 시점에 수행.
- */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -41,70 +41,90 @@ public class RefundService {
     private final PaymentOrderRepository paymentOrderRepository;
     private final RefundRepository refundRepository;
     private final WalletRepository walletRepository;
+    private final PaymentGatewayClient paymentGatewayClient;
+    private final WalletService walletService;
     private final Clock clock;
+    private final TransactionTemplate transactionTemplate;
 
-    /**
-     * 환불 요청 생성.
-     * orderId = PaymentOrder.orderUid (UUID 문자열, 충전 응답으로 전달받은 값).
-     *
-     * <p>검증 순서:
-     * 1. 주문 존재 확인 → PAY_009
-     * 2. 본인 주문 확인 → PAY_011
-     * 3. COMPLETED 상태 확인 → PAY_015
-     * 4. 환불 기간(7일) 확인 → PAY_010
-     * 5. 잔액 전액 보유 확인 → PAY_017 (부분 사용 후 환불 불가)
-     * 6. 중복 환불 요청 확인 → PAY_016
-     *
-     * <p><b>잔액 검증 주의:</b> 본 메서드는 요청 시점 잔액만 검증한다.
-     * PENDING 상태에서 사용자가 엽전을 추가 소비하면 잔액이 줄 수 있으므로,
-     * 관리자 승인(STORY-07) 시점에 잔액 재검증 + 차감을 원자적으로 수행해야 한다.
-     */
-    @Transactional
+    // 외부 PortOne API 호출 중 DB 트랜잭션/락을 오래 잡지 않도록 메서드 전체 트랜잭션을 사용하지 않는다.
+    // 필요한 DB 작업은 TransactionTemplate으로 짧게 나눠 실행한다.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
-        // 1. 주문 조회 — orderId는 충전 시 발급된 orderUid(UUID), PK(id)가 아님
-        PaymentOrder order = paymentOrderRepository.findByOrderUid(orderId)
+        // 환불 가능 여부를 먼저 짧은 트랜잭션에서 검증하고 PENDING 환불 이력을 생성한다.
+        PreparedRefund preparation = transactionTemplate.execute(status ->
+                prepareRefund(userId, orderId, request.reason()));
+
+        // 이미 승인된 환불이면 PortOne을 다시 호출하지 않고 기존 환불 응답을 반환한다.
+        if (preparation.alreadyApprovedRefund() != null) {
+            return RefundResponse.from(preparation.alreadyApprovedRefund());
+        }
+
+        try {
+            // PortOne 원결제 취소 호출은 DB/Wallet 락을 잡지 않은 상태에서 실행한다.
+            paymentGatewayClient.cancelPayment(preparation.orderUid(), preparation.amount(), preparation.reason());
+        } catch (RuntimeException e) {
+            // PortOne 취소 실패나 예상치 못한 런타임 예외는 환불 이력만 FAILED로 남긴다.
+            transactionTemplate.executeWithoutResult(status -> markRefundFailed(preparation.refundId()));
+            throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+        }
+
+        // PortOne 취소 성공 후 짧은 트랜잭션에서 주문 상태와 엽전 회수를 확정한다.
+        return transactionTemplate.execute(status -> completeRefundAfterGatewayCancel(preparation));
+    }
+
+    private PreparedRefund prepareRefund(Long userId, String orderId, String reason) {
+        // 결제 주문을 비관적 락으로 조회해 동시에 같은 주문 환불이 처리되지 않게 한다.
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        // 2. 본인 주문 확인 — 다른 사용자의 주문에 환불 요청 불가
+        // 요청 사용자가 결제 주문 소유자가 아니면 환불 요청을 거절한다.
         if (!order.getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
         }
 
-        // 3. 결제 완료 상태 확인 — PENDING(결제 진행 중)/FAILED/CANCELLED 주문은 환불 대상 아님
+        // 기존 환불 이력이 있는지 확인해 중복 환불 요청을 방어한다.
+        Refund existingRefund = refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(order.getId()).orElse(null);
+        // 주문이 이미 환불 완료 상태라면 APPROVED 환불 이력만 멱등 성공으로 반환한다.
+        if (order.getStatus() == PaymentOrderStatus.REFUNDED) {
+            if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
+                return PreparedRefund.alreadyApproved(existingRefund);
+            }
+            throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+        }
+
+        // 결제 완료 주문만 사용자 환불 대상이다.
         if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
             throw new BusinessException(ErrorCode.REFUND_NOT_ELIGIBLE);
         }
 
-        // 4. 환불 기간(7일) 초과 확인 — 충전일 기준 7일 이내만 환불 허용
+        // 충전일 기준 환불 가능 기간이 지났으면 환불을 거절한다.
         if (order.getCreatedAt().isBefore(LocalDateTime.now(clock).minusDays(REFUND_PERIOD_DAYS))) {
             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
         }
 
-        // 5. 사용자 지갑 조회 (요청 시점 잔액 1차 검증용)
-        Wallet wallet = walletRepository.findByUserId(userId)
+        // PortOne 호출 전 1차 잔액 검증만 수행한다. 실제 차감은 PG 성공 후 락을 잡고 다시 처리한다.
+        Wallet wallet = walletRepository.findByUserId(order.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
-        // 현재 총 잔액이 환불 금액 미만이면 거부 — 충전 엽전을 일부라도 소비했으면 balance < amount
-        // 2차 검증은 관리자 승인 시 WalletService.reclaimForRefund()에서 비관적 락 + 재확인
         if (wallet.getBalance() < order.getAmount()) {
             throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
         }
 
-        // 6. 동일 주문에 이미 PENDING 환불이 있는지 확인 — 순차적 중복 요청 차단
-        // 동시 요청은 아래 saveAndFlush의 UK 제약이 최종 방어
-        if (refundRepository.existsByPaymentOrderIdAndStatus(order.getId(), RefundStatus.PENDING)) {
+        // 기존 환불이 이미 승인된 상태면 같은 결과를 반환하고 PortOne 중복 취소를 막는다.
+        if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
+            return PreparedRefund.alreadyApproved(existingRefund);
+        }
+        // 기존 환불이 대기 중이면 중복 요청으로 판단한다.
+        if (existingRefund != null && existingRefund.getStatus() == RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
         }
 
         try {
-            // 7. 환불 요청 엔티티 생성 (전액 환불, PENDING 상태)
-            Refund refund = Refund.create(order.getId(), userId, order.getAmount(), request.reason());
-            // DB에 즉시 저장 — save()는 트랜잭션 종료 시 flush라 UK 위반을 늦게 감지, saveAndFlush로 즉시 감지
+            // PortOne 호출 전에 PENDING 환불 이력을 먼저 생성해 실패/재시도 상태를 추적할 수 있게 한다.
+            Refund refund = Refund.create(order.getId(), userId, order.getAmount(), reason);
             refundRepository.saveAndFlush(refund);
-            // 생성된 환불 요청을 응답 DTO로 변환해서 반환
-            return RefundResponse.from(refund);
+            return PreparedRefund.pending(order.getOrderUid(), order.getAmount(), refund.getId(), reason);
         } catch (DataIntegrityViolationException e) {
-            // UK 제약(uk_refunds_payment_order_id) 위반 시 동시 중복 요청 → DUPLICATE_REFUND_REQUEST로 변환
-            // Hibernate/드라이버 버전에 따라 cause depth가 달라질 수 있어 전체 chain 탐색
+            // 동일 주문 환불 동시 요청으로 유니크 제약이 터지면 중복 환불 요청으로 변환한다.
             Throwable cause = e;
             while (cause != null) {
                 if (cause instanceof ConstraintViolationException cve
@@ -113,56 +133,109 @@ public class RefundService {
                 }
                 cause = cause.getCause();
             }
-            // UK 위반 아닌 그 외 DB 예외는 그대로 전파
             throw e;
         }
     }
 
-    /**
-     * 사용자 환불 내역 cursor 페이징 조회 (KAN-115).
-     * status 파라미터 생략 시 전체 상태 조회.
-     * cursor는 Refund.id를 Base64URL 인코딩한 값이며, id DESC 기준으로 조회한다.
-     * 클라이언트는 nextCursor를 다음 요청의 cursor로 그대로 전달하면 된다.
-     */
+    private void markRefundFailed(Long refundId) {
+        // PortOne 취소 실패 시 아직 대기 중인 환불만 FAILED로 전환한다.
+        refundRepository.findByIdWithLock(refundId)
+                .ifPresent(refund -> {
+                    if (refund.getStatus() == RefundStatus.PENDING) {
+                        refund.fail("PORTONE_CANCEL_FAILED");
+                    }
+                });
+    }
+
+    private RefundResponse completeRefundAfterGatewayCancel(PreparedRefund preparation) {
+        // PortOne 취소 성공 후 주문을 다시 잠금 조회해 최신 상태 기준으로 확정 처리한다.
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(preparation.orderUid())
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+        // 환불 이력도 잠금 조회해 중복 확정 처리를 방지한다.
+        Refund refund = refundRepository.findByIdWithLock(preparation.refundId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+
+        // 환불이 이미 승인 상태라면 기존 승인 응답을 반환한다.
+        if (refund.getStatus() == RefundStatus.APPROVED) {
+            return RefundResponse.from(refund);
+        }
+        // PENDING이 아닌 환불은 현재 확정 처리할 수 없는 상태다.
+        if (refund.getStatus() != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+        }
+
+        // 아직 앱 DB에서 회수 가능한 주문 상태라면 가능한 엽전을 회수한다.
+        if (order.getStatus() == PaymentOrderStatus.COMPLETED
+                || order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED) {
+            long reclaimed = walletService.reclaimAvailableForRefund(
+                    order.getUserId(),
+                    order.getAmount(),
+                    order.getId()
+            );
+            // PARTIAL_CANCELLED: PG 부분취소 이후 관리자 환불이 겹친 동시성 경합 케이스.
+            // order.refund()는 COMPLETED만 허용하므로 throw → PG 취소는 이미 성공, reclaim은 롤백 → 정산 불일치.
+            // 금액 복잡성(PG 부분취소분 중복 가능)으로 관리자 확인 상태로 남긴다.
+            if (reclaimed == order.getAmount() && order.getStatus() == PaymentOrderStatus.COMPLETED) {
+                order.refund();
+            } else {
+                order.requireAdjustment();
+            }
+        }
+
+        // PortOne 취소는 성공했으므로 환불 이력은 승인 완료로 확정한다.
+        refund.approve();
+        return RefundResponse.from(refund);
+    }
+
     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
             Long userId, RefundStatus status, String cursor, int size) {
-        // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
         PageRequest pageable = PageRequest.of(0, size + 1);
-        // cursor가 있으면 Base64URL 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
         Long cursorId = CursorUtils.decodeSafe(cursor);
-        // status/cursorId null이면 조건 미적용 (4가지 조합을 쿼리 1개로 처리)
         List<Refund> refunds = refundRepository.findByUserIdWithFilter(userId, status, cursorId, pageable);
 
-        // size+1개 왔으면 다음 페이지 존재
         boolean hasNext = refunds.size() > size;
-        // 실제 응답은 size개만 — size+1번째 원소는 hasNext 판단 후 제거
         List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
-        // 다음 페이지 cursor — 마지막 원소 id를 Base64URL로 인코딩해서 클라이언트에 전달
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
-        // Refund 엔티티를 사용자용 응답 DTO로 변환
         List<UserRefundResponse> responses = content.stream()
                 .map(UserRefundResponse::from)
                 .toList();
 
-        // cursor 페이지 응답 조립 후 반환
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
     }
 
-    /** 환불 요청 취소. PENDING 상태만 취소 가능 → PAY_019. 타인 요청 취소 시 → PAY_011. */
     @Transactional
     public void cancelRefund(Long userId, Long refundId) {
-        // 환불 요청 조회 + 비관적 락 획득 — 관리자 approve()와 사용자 cancel()이 동시에 들어와도 하나만 처리
+        // 환불 요청을 잠금 조회해 관리자 승인과 사용자 취소가 동시에 처리되지 않게 한다.
         Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        // 본인 환불 요청인지 확인 — 타인 요청 취소 시 FORBIDDEN
+        // 본인 환불 요청이 아니면 취소할 수 없다.
         if (!refund.getUserId().equals(userId)) {
             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
         }
 
-        // PENDING → CANCELLED 상태 전이 — PENDING이 아니면 엔티티 내부에서 PAY_019 throw
+        // PENDING 환불 요청만 취소 상태로 전환한다.
         refund.cancel();
     }
 
+    // 환불 준비 단계에서 만든 서비스 내부 전달 객체다.
+    // PortOne 호출에 필요한 주문 정보와, 이미 승인된 환불이면 기존 Refund 엔티티를 함께 담는다.
+    private record PreparedRefund(
+            String orderUid,
+            Long amount,
+            Long refundId,
+            String reason,
+            Refund alreadyApprovedRefund
+    ) {
+        private static PreparedRefund pending(String orderUid, Long amount, Long refundId, String reason) {
+            // PortOne 취소 호출에 필요한 주문 식별자와 환불 이력 id를 담아 반환한다.
+            return new PreparedRefund(orderUid, amount, refundId, reason, null);
+        }
+
+        private static PreparedRefund alreadyApproved(Refund refund) {
+            // 이미 승인된 환불은 외부 PG 호출 없이 반환할 기존 환불 이력만 담는다.
+            return new PreparedRefund(null, null, null, null, refund);
+        }
+    }
 }

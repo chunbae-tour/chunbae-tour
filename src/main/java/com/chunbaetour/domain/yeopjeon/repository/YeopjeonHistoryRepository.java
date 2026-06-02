@@ -1,7 +1,9 @@
 package com.chunbaetour.domain.yeopjeon.repository;
 
 import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
+import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -27,5 +29,16 @@ public interface YeopjeonHistoryRepository extends JpaRepository<YeopjeonHistory
     List<YeopjeonHistory> findByUserIdOrderByIdDesc(
             @Param("userId") Long userId,
             Pageable pageable
+    );
+
+    Optional<YeopjeonHistory> findFirstByPaymentOrderIdAndTypeOrderByIdAsc(
+            Long paymentOrderId,
+            YeopjeonHistoryType type
+    );
+
+    boolean existsByUserIdAndIdGreaterThanAndTypeIn(
+            Long userId,
+            Long id,
+            List<YeopjeonHistoryType> types
     );
 }

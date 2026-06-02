@@ -82,6 +82,14 @@ public class Refund extends BaseEntity {
         this.status = RefundStatus.APPROVED;
     }
 
+    public void fail(String rejectReason) {
+        if (this.status != RefundStatus.PENDING) {
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+        }
+        this.status = RefundStatus.FAILED;
+        this.rejectReason = rejectReason;
+    }
+
     /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
     public void reject(String rejectReason) {
         if (this.status != RefundStatus.PENDING) {
