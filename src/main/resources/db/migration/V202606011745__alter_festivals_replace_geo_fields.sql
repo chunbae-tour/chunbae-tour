@@ -1,6 +1,6 @@
 -- KAN-95: festivals 테이블 스키마 변경
 -- ADD → backfill → DROP 순서로 기존 데이터 보존
--- 제거: lat, lng, location, thumbnail_url, image_urls
+-- 제거: location, thumbnail_url, image_urls
 -- 추가: address, image_url, related_url
 
 -- Step 1: 새 컬럼 추가 (nullable)
@@ -20,8 +20,6 @@ ALTER TABLE festivals
 
 -- Step 4: 구버전 컬럼 제거
 ALTER TABLE festivals
-    DROP COLUMN lat,
-    DROP COLUMN lng,
     DROP COLUMN location,
     DROP COLUMN thumbnail_url,
     DROP COLUMN image_urls;
