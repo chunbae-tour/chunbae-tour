@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.admin.shop.dto.request;
 
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -18,8 +19,11 @@ import jakarta.validation.constraints.Size;
  */
 public record AdminShopUpdateRequest(
         ShopStatus status,
-        @Size(min = 1, max = 65535, message = "소개글은 빈 값일 수 없습니다.") String description,
-        @Size(min = 1, max = 20, message = "연락처는 빈 값일 수 없습니다.") String phone,
-        @Size(min = 1, max = 100, message = "운영시간은 빈 값일 수 없습니다.") String operatingHours
+        @Size(min = 1, max = 65535, message = "소개글은 빈 값일 수 없습니다.")
+        @Pattern(regexp = ".*\\S.*", message = "소개글은 공백만 입력할 수 없습니다.") String description,
+        @Size(min = 1, max = 20, message = "연락처는 빈 값일 수 없습니다.")
+        @Pattern(regexp = ".*\\S.*", message = "연락처는 공백만 입력할 수 없습니다.") String phone,
+        @Size(min = 1, max = 100, message = "운영시간은 빈 값일 수 없습니다.")
+        @Pattern(regexp = ".*\\S.*", message = "운영시간은 공백만 입력할 수 없습니다.") String operatingHours
 ) {
 }

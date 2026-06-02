@@ -186,6 +186,45 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
     }
 
+    @Test
+    @DisplayName("PATCH phone 공백-only → 400 (공백 차단)")
+    void patch_blank_only_phone_returns_400() throws Exception {
+        String adminToken = adminToken();
+        Shop shop = seedShop(ShopStatus.ACTIVE);
+
+        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phone\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH description 공백-only → 400 (공백 차단)")
+    void patch_blank_only_description_returns_400() throws Exception {
+        String adminToken = adminToken();
+        Shop shop = seedShop(ShopStatus.ACTIVE);
+
+        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH operatingHours 공백-only → 400 (공백 차단)")
+    void patch_blank_only_operatingHours_returns_400() throws Exception {
+        String adminToken = adminToken();
+        Shop shop = seedShop(ShopStatus.ACTIVE);
+
+        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operatingHours\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+    }
+
     // ── 에러/접근 제어 ──────────────────────────────────────────────────────
 
     @Test

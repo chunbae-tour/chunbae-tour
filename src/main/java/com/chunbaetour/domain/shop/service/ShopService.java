@@ -153,10 +153,12 @@ public class ShopService {
         }
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
-        if (shop.getStatus() == ShopStatus.CLOSED) {
-            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        // 도메인 가드(CLOSED 불변) 우회 방지 — 명시적 전이 메서드로 위임
+        switch (newStatus) {
+            case ACTIVE -> shop.activate();
+            case SUSPENDED -> shop.hide();
+            case CLOSED -> throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
-        shop.updateStatus(newStatus);
     }
 
     /**

@@ -156,14 +156,6 @@ public class Shop extends BaseEntity {
     }
 
     /**
-     * 관리자 가게 상태 직접 변경 — ACTIVE ↔ SUSPENDED 전환.
-     * CLOSED 가게 변경 및 CLOSED로 변경은 서비스 레이어에서 사전 차단.
-     */
-    public void updateStatus(ShopStatus newStatus) {
-        this.status = newStatus;
-    }
-
-    /**
      * 관리자 전용 partial update — status 무관 수정 가능 (KAN-203 Admin S04).
      * 상인용 {@link #update(ShopUpdateRequest)}는 status=ACTIVE 가드가 있어 SUSPENDED 가게를 못 고치므로 별도.
      * null = 미수정 (KAN-127 Account.updateProfile 패턴). "" 는 DTO @Size(min=1)로 진입 전 차단됨.
