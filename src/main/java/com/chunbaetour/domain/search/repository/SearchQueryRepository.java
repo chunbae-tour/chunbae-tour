@@ -26,39 +26,35 @@ public class SearchQueryRepository {
     
     private final JPAQueryFactory queryFactory;
 
-    public List<Place> searchPlaces(String keyword, int limit) {
+    public List<Place> searchPlaces(String keyword) {
         return queryFactory
                 .selectFrom(place)
                 .where(placeNameContains(keyword))
                 .orderBy(exactMatchScore(place.name, keyword).desc(), place.id.desc())
-                .limit(limit)
                 .fetch();
     }
 
-    public List<Shop> searchShops(String keyword, int limit) {
+    public List<Shop> searchShops(String keyword) {
         return queryFactory
                 .selectFrom(shop)
                 .where(shopNameContains(keyword))
                 .orderBy(exactMatchScore(shop.shopName, keyword).desc(), shop.id.desc())
-                .limit(limit)
                 .fetch();
     }
 
-    public List<Menu> searchMenus(String keyword, int limit) {
+    public List<Menu> searchMenus(String keyword) {
         return queryFactory
                 .selectFrom(menu)
                 .where(menuNameContains(keyword))
                 .orderBy(exactMatchScore(menu.name, keyword).desc(), menu.id.desc())
-                .limit(limit)
                 .fetch();
     }
 
-    public List<Festival> searchFestivals(String keyword, int limit) {
+    public List<Festival> searchFestivals(String keyword) {
         return queryFactory
                 .selectFrom(festival)
                 .where(festivalNameContains(keyword))
                 .orderBy(exactMatchScore(festival.name, keyword).desc(), festival.id.desc())
-                .limit(limit)
                 .fetch();
     }
 

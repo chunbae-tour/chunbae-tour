@@ -21,7 +21,7 @@ public record IntegratedSearchCursor(
             String json = OBJECT_MAPPER.writeValueAsString(this);
             return Base64.getEncoder().encodeToString(json.getBytes());
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Cursor encoding failed", e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 

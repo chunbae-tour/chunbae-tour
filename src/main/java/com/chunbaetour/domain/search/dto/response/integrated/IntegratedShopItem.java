@@ -6,7 +6,6 @@ import java.util.List;
 @Builder
 public record IntegratedShopItem(
         Long id,
-        Long shopId,
         String name,
         Long placeId,
         String placeName,

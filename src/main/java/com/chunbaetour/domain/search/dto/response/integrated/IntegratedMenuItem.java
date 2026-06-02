@@ -5,7 +5,6 @@ import lombok.Builder;
 @Builder
 public record IntegratedMenuItem(
         Long id,
-        Long menuId,
         String name,
         Long shopId,
         String shopName,

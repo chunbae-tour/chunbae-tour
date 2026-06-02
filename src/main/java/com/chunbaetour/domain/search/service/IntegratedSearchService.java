@@ -23,16 +23,22 @@ import java.util.stream.Collectors;
 public class IntegratedSearchService {
 
     private final SearchQueryRepository searchQueryRepository;
-    private static final int FETCH_LIMIT = 100;
 
     public CursorPageResponse<IntegratedSearchItem> searchIntegrated(String keyword, String type, String cursorStr, int size) {
+        if (keyword == null || keyword.isBlank()) {
+            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+        }
+        boolean searchAll = "ALL".equalsIgnoreCase(type);
+        if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL").contains(type.toUpperCase())) {
+            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+        }
+
         IntegratedSearchCursor cursor = IntegratedSearchCursor.decode(cursorStr);
         List<ItemWrapper> allItems = new ArrayList<>();
-        boolean searchAll = "ALL".equalsIgnoreCase(type);
         
         // 1. PLACE
         if (searchAll || "PLACE".equalsIgnoreCase(type)) {
-            List<Place> places = searchQueryRepository.searchPlaces(keyword, FETCH_LIMIT);
+            List<Place> places = searchQueryRepository.searchPlaces(keyword);
             for (Place p : places) {
                 double score = calculateScore(p.getName(), keyword);
                 IntegratedPlaceItem item = IntegratedPlaceItem.builder()
@@ -50,12 +56,11 @@ public class IntegratedSearchService {
 
         // 2. SHOP
         if (searchAll || "SHOP".equalsIgnoreCase(type)) {
-            List<Shop> shops = searchQueryRepository.searchShops(keyword, FETCH_LIMIT);
+            List<Shop> shops = searchQueryRepository.searchShops(keyword);
             for (Shop s : shops) {
                 double score = calculateScore(s.getShopName(), keyword);
                 IntegratedShopItem item = IntegratedShopItem.builder()
                         .id(s.getId())
-                        .shopId(s.getId())
                         .name(s.getShopName())
                         .placeId(null)
                         .placeName(null) // 연관관계 없음 (MVP)
@@ -71,12 +76,11 @@ public class IntegratedSearchService {
 
         // 3. MENU
         if (searchAll || "MENU".equalsIgnoreCase(type)) {
-            List<Menu> menus = searchQueryRepository.searchMenus(keyword, FETCH_LIMIT);
+            List<Menu> menus = searchQueryRepository.searchMenus(keyword);
             for (Menu m : menus) {
                 double score = calculateScore(m.getName(), keyword);
                 IntegratedMenuItem item = IntegratedMenuItem.builder()
                         .id(m.getId())
-                        .menuId(m.getId())
                         .name(m.getName())
                         .shopId(m.getShopId())
                         .shopName(null) // 연관관계 제거됨 (MVP)
@@ -92,7 +96,7 @@ public class IntegratedSearchService {
 
         // 4. FESTIVAL
         if (searchAll || "FESTIVAL".equalsIgnoreCase(type)) {
-            List<Festival> festivals = searchQueryRepository.searchFestivals(keyword, FETCH_LIMIT);
+            List<Festival> festivals = searchQueryRepository.searchFestivals(keyword);
             for (Festival f : festivals) {
                 double score = calculateScore(f.getName(), keyword);
                 IntegratedFestivalItem item = IntegratedFestivalItem.builder()
@@ -137,7 +141,7 @@ public class IntegratedSearchService {
         }
 
         List<IntegratedSearchItem> items = paged.stream().map(w -> w.item).toList();
-        return new CursorPageResponse<>(items, nextCursor, hasNext, size);
+        return new CursorPageResponse<>(items, nextCursor, hasNext, items.size());
     }
 
     private double calculateScore(String text, String keyword) {
