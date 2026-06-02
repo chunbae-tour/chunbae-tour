@@ -6,9 +6,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -148,6 +150,54 @@ class SupportRoomServiceTest {
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
     }
 
+    // ===== getMessagesAsAdmin =====
+
+    // 존재하지 않는 방 → CS_001
+    @Test
+    void getMessagesAsAdmin_whenRoomNotFound_throwsNotFound() {
+        given(supportRoomRepository.existsById(999L)).willReturn(false);
+
+        assertThatThrownBy(() -> supportRoomService.getMessagesAsAdmin(999L, null, 20))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+    }
+
+    // ===== getAllRooms =====
+
+    // 탈퇴한 유저 포함 — nickname "(탈퇴한 사용자)" fallback
+    @Test
+    void getAllRooms_withDeletedUser_returnsWithdrawnNickname() {
+        SupportRoom room = buildRoomWithUserId(1L, 99L);
+        given(supportRoomRepository.findAllRoomsWithCursor(any(), any(), any(PageRequest.class)))
+                .willReturn(List.of(room));
+        given(accountRepository.findAllById(List.of(99L))).willReturn(List.of());
+        given(supportMessageRepository.findLastMessagesByRoomIds(List.of(1L))).willReturn(List.of());
+
+        CursorPageResponse<com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse> result =
+                supportRoomService.getAllRooms(null, 20, null);
+
+        assertThat(result.content().get(0).userNickname()).isEqualTo("(탈퇴한 사용자)");
+    }
+
+    // 메시지 없는 방 — lastMessage null
+    @Test
+    void getAllRooms_withNoMessage_returnsNullLastMessage() {
+        SupportRoom room = buildRoom(1L);
+        Account account = mock(Account.class);
+        given(account.getId()).willReturn(1L);
+        given(account.getNickname()).willReturn("테스트유저");
+        given(supportRoomRepository.findAllRoomsWithCursor(any(), any(), any(PageRequest.class)))
+                .willReturn(List.of(room));
+        given(accountRepository.findAllById(List.of(1L))).willReturn(List.of(account));
+        given(supportMessageRepository.findLastMessagesByRoomIds(List.of(1L))).willReturn(List.of());
+
+        CursorPageResponse<com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse> result =
+                supportRoomService.getAllRooms(null, 20, null);
+
+        assertThat(result.content().get(0).lastMessage()).isNull();
+    }
+
     // ===== getMyRooms =====
 
     // hasNext=true when result > size
@@ -160,6 +210,18 @@ class SupportRoomServiceTest {
 
         assertThat(result.hasNext()).isTrue();
         assertThat(result.content()).hasSize(2);
+    }
+
+    private SupportRoom buildRoomWithUserId(Long id, Long userId) {
+        SupportRoom room = SupportRoom.builder().userId(userId).build();
+        try {
+            var field = SupportRoom.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(room, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return room;
     }
 
     private SupportRoom buildRoom(Long id) {
