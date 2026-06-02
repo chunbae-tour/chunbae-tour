@@ -27,6 +27,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
@@ -38,6 +42,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import net.javacrumbs.shedlock.core.LockProvider;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.Trigger;
 import org.springframework.test.context.TestPropertySource;
@@ -202,9 +207,42 @@ class RefundRetrySchedulerIntegrationTest extends AbstractIntegrationTest {
         assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.FAILED);
     }
 
-    // @Scheduled 자동 실행 방지: 직접 메서드 호출과 백그라운드 스케줄러 간 경합 차단
+    @Test
+    @DisplayName("[동시성] 두 스레드가 같은 PENDING 환불을 동시 처리해도 DB 상태는 1회만 APPROVED 전환, 지갑 이중 차감 없음")
+    void processPendingRefunds_concurrentExecution_dbConsistencyGuaranteed() throws Exception {
+        // 시나리오: ShedLock이 없는 직접 호출 경로(테스트)에서 두 스레드가 동시 실행됐을 때
+        // completeSchedulerRetry의 비관적 락 + APPROVED early-return이 DB 일관성을 보장하는지 검증
+        Refund refund = createPendingRefund();
+        willDoNothing().given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
+
+        CountDownLatch startLatch = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        Future<?> f1 = executor.submit(() -> { startLatch.await(); refundRetryScheduler.processPendingRefunds(); return null; });
+        Future<?> f2 = executor.submit(() -> { startLatch.await(); refundRetryScheduler.processPendingRefunds(); return null; });
+
+        startLatch.countDown(); // 동시 시작
+        f1.get(10, TimeUnit.SECONDS);
+        f2.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
+        Wallet wallet = walletRepository.findByUserId(USER_ID).orElseThrow();
+
+        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(wallet.getBalance()).isZero(); // 이중 차감 없음
+    }
+
+    // @Scheduled 자동 실행 방지 + ShedLock 테이블 미존재 문제 해소 (테스트 DB는 create-drop, Flyway 비활성)
     @TestConfiguration
     static class NoAutoSchedulingConfig {
+
+        // ShedLock이 shedlock 테이블에 접근하지 않도록 항상 락 허용하는 no-op 구현
+        @Bean
+        @Primary
+        LockProvider noOpLockProvider() {
+            return lockConfiguration -> java.util.Optional.of(() -> {});
+        }
 
         @Bean
         @Primary
