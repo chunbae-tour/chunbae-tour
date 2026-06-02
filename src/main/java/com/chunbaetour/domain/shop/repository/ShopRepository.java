@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.shop.repository;
 
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.type.ShopStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +14,9 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
 
     /** userId로 내 가게 목록 전체 조회 — 다중 가게 지원 */
     List<Shop> findAllByUserId(Long userId);
+
+    /** 상태별 가게 수 — S06 대시보드 카운트(AdminShopService.getSuspendedShops) 의존. */
+    long countByStatus(ShopStatus status);
 
     /** 소유권 검증용 — shopId + userId 조합으로 본인 가게인지 확인 */
     Optional<Shop> findByIdAndUserId(Long id, Long userId);
