@@ -16,7 +16,7 @@ public record FestivalUpdateRequest(
         @NotBlank @Size(max = 255) String address,
         @NotNull LocalDate startDate,
         @NotNull LocalDate endDate,
-        String imageUrl,
-        String relatedUrl,
+        @Size(max = 512) String imageUrl,
+        @Size(max = 512) String relatedUrl,
         @NotNull FestivalStatus status
 ) {}

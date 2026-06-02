@@ -7,6 +7,8 @@ import com.chunbaetour.domain.festival.dto.request.FestivalUpdateRequest;
 import com.chunbaetour.domain.festival.dto.response.FestivalAdminMutateResponse;
 import com.chunbaetour.domain.festival.dto.response.FestivalResponse;
 import com.chunbaetour.domain.festival.service.FestivalService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -26,10 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 관리자 축제 관리 API (KAN-95).
- * 2중 방어 — SecurityConfig의 /api/v1/admin/** ADMIN 설정 + 클래스 레벨 @PreAuthorize.
- */
+@Tag(name = "관리자 - 축제", description = "축제 등록·수정·삭제·조회 관리자 API — ADMIN 전용 (/api/v1/admin/festivals/**)")
 @Validated
 @RestController
 @RequestMapping("/api/v1/admin/festivals")
@@ -39,7 +38,7 @@ public class AdminFestivalController {
 
     private final FestivalService festivalService;
 
-    /** 관리자 축제 목록 조회 (HIDDEN 포함, DELETED 제외). */
+    @Operation(summary = "관리자 축제 목록 조회", description = "HIDDEN 포함 전체. cursor 페이징.")
     @GetMapping
     public ApiResponse<CursorPageResponse<FestivalResponse>> getAdminList(
             @RequestParam(required = false) String cursor,
@@ -47,7 +46,7 @@ public class AdminFestivalController {
         return ApiResponse.success(festivalService.getAdminList(cursor, size));
     }
 
-    /** 축제 등록. */
+    @Operation(summary = "축제 수동 등록", description = "source=MANUAL. 201 반환.")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<FestivalAdminMutateResponse> create(
@@ -55,7 +54,7 @@ public class AdminFestivalController {
         return ApiResponse.success(festivalService.create(request));
     }
 
-    /** 축제 수정 (PUT — 전체 교체). */
+    @Operation(summary = "축제 수정", description = "전체 필드 교체 (PUT). MANUAL·API_FETCH 모두 가능.")
     @PutMapping("/{festivalId}")
     public ApiResponse<FestivalAdminMutateResponse> update(
             @Positive @PathVariable Long festivalId,
@@ -63,7 +62,7 @@ public class AdminFestivalController {
         return ApiResponse.success(festivalService.update(festivalId, request));
     }
 
-    /** 축제 삭제 (Soft Delete — status = DELETED). */
+    @Operation(summary = "축제 삭제", description = "Soft delete — status=DELETED.")
     @DeleteMapping("/{festivalId}")
     public ApiResponse<Void> delete(@Positive @PathVariable Long festivalId) {
         festivalService.delete(festivalId);

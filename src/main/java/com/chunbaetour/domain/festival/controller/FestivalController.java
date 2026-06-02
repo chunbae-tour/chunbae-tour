@@ -4,6 +4,8 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.festival.dto.response.FestivalResponse;
 import com.chunbaetour.domain.festival.service.FestivalService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
@@ -17,9 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 사용자용 축제 API (KAN-97/98). 비인증 허용.
- */
+@Tag(name = "축제", description = "축제 목록·상세 조회 API — 비인증 허용 (/api/v1/festivals/**)")
 @Validated
 @RestController
 @RequestMapping("/api/v1/festivals")
@@ -28,11 +28,7 @@ public class FestivalController {
 
     private final FestivalService festivalService;
 
-    /**
-     * 축제 목록 조회 (KAN-97).
-     * date: 해당 날짜를 포함하는 축제 필터 (옵션).
-     * region: 지역 필터 (옵션).
-     */
+    @Operation(summary = "축제 목록 조회", description = "date 포함 축제·지역 필터, cursor 페이징. ACTIVE 축제만 반환.")
     @GetMapping
     public ApiResponse<CursorPageResponse<FestivalResponse>> getList(
             @RequestParam(required = false)
@@ -43,9 +39,7 @@ public class FestivalController {
         return ApiResponse.success(festivalService.getList(date, region, cursor, size));
     }
 
-    /**
-     * 축제 상세 조회 (KAN-98). ACTIVE 축제만 반환.
-     */
+    @Operation(summary = "축제 상세 조회", description = "ACTIVE 축제만 반환. HIDDEN/DELETED는 404.")
     @GetMapping("/{festivalId}")
     public ApiResponse<FestivalResponse> getDetail(@Positive @PathVariable Long festivalId) {
         return ApiResponse.success(festivalService.getDetail(festivalId));
