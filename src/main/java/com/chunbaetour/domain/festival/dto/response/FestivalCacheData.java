@@ -31,11 +31,11 @@ public record FestivalCacheData(
                 f.getStatus());
     }
 
-    public FestivalResponse toResponse() {
+    public FestivalResponse toResponse(LocalDate today) {
         return new FestivalResponse(
                 id, name, description, region, address, startDate, endDate,
                 imageUrl, relatedUrl, status,
-                FestivalProgressStatus.of(startDate, endDate, LocalDate.now()));
+                FestivalProgressStatus.of(startDate, endDate, today));
     }
 
     public boolean isActive()  { return status == FestivalStatus.ACTIVE; }

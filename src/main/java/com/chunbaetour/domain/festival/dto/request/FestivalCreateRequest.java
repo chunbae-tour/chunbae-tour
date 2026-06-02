@@ -19,5 +19,5 @@ public record FestivalCreateRequest(
         @NotNull LocalDate endDate,
         @Size(max = 512) String imageUrl,
         @Size(max = 512) String relatedUrl,
-        FestivalStatus status
+        FestivalStatus status  // nullable — null 시 Festival.create() 내부에서 ACTIVE 기본값 적용
 ) {}

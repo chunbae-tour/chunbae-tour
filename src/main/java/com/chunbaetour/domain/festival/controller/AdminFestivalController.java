@@ -38,7 +38,7 @@ public class AdminFestivalController {
 
     private final FestivalService festivalService;
 
-    @Operation(summary = "관리자 축제 목록 조회", description = "HIDDEN 포함 전체. cursor 페이징.")
+    @Operation(summary = "관리자 축제 목록 조회", description = "[ADMIN 전용] HIDDEN 포함 전체. cursor 페이징.")
     @GetMapping
     public ApiResponse<CursorPageResponse<FestivalResponse>> getAdminList(
             @RequestParam(required = false) String cursor,

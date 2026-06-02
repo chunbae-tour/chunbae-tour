@@ -67,8 +67,9 @@ public class FestivalService {
                 ? CursorUtils.encode(content.get(content.size() - 1).id())
                 : null;
 
+        LocalDate today = LocalDate.now();
         return new CursorPageResponse<>(
-                content.stream().map(FestivalCacheData::toResponse).toList(),
+                content.stream().map(d -> d.toResponse(today)).toList(),
                 nextCursor, hasNext, content.size());
     }
 
@@ -82,7 +83,8 @@ public class FestivalService {
         if (!data.isActive()) {
             throw new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND);
         }
-        return data.toResponse();
+        LocalDate today = LocalDate.now();
+        return data.toResponse(today);
     }
 
     // ── KAN-95: 관리자 축제 목록 조회 ──────────────────────────────────────
@@ -97,8 +99,9 @@ public class FestivalService {
                 ? CursorUtils.encode(content.get(content.size() - 1).getId())
                 : null;
 
+        LocalDate today = LocalDate.now();
         return new CursorPageResponse<>(
-                content.stream().map(FestivalResponse::of).toList(),
+                content.stream().map(f -> FestivalResponse.of(f, today)).toList(),
                 nextCursor, hasNext, content.size());
     }
 

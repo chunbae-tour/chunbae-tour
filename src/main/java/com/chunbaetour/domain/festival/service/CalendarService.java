@@ -66,8 +66,9 @@ public class CalendarService {
     // ── KAN-97: 일별 캘린더 조회 ───────────────────────────────────────────
 
     public DailyCalendarResponse getDailyCalendar(LocalDate date) {
+        LocalDate today = LocalDate.now();
         List<DailyEventItem> events = self.findCachedDailyFestivals(date).stream()
-                .map(DailyEventItem::fromCache)
+                .map(d -> DailyEventItem.fromCache(d, today))
                 .toList();
         return new DailyCalendarResponse(date, events);
     }

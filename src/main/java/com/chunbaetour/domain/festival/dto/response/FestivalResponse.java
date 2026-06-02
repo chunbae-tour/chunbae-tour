@@ -22,7 +22,7 @@ public record FestivalResponse(
         FestivalStatus status,
         FestivalProgressStatus progressStatus
 ) {
-    public static FestivalResponse of(Festival f) {
+    public static FestivalResponse of(Festival f, LocalDate today) {
         return new FestivalResponse(
                 f.getId(),
                 f.getName(),
@@ -34,7 +34,7 @@ public record FestivalResponse(
                 f.getImageUrl(),
                 f.getRelatedUrl(),
                 f.getStatus(),
-                FestivalProgressStatus.of(f.getStartDate(), f.getEndDate(), LocalDate.now())
+                FestivalProgressStatus.of(f.getStartDate(), f.getEndDate(), today)
         );
     }
 }
