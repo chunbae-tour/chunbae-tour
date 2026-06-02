@@ -109,7 +109,8 @@ public class CallbackService {
             if (failed == 0) {
                 // 다른 스레드/이전 호출이 이미 종착 상태로 전환 완료 — 본 호출은 중복 처리.
                 // throw 시 운영 에러 로그만 누적되고 PortOne은 동일 webhook을 재시도 → 무한 noise.
-                // 조용히 return으로 멱등 처리. lim-haeun 지적 반영 (handleSuccess의 amountValid==false + CAS=0 시나리오).
+                // 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 조용히 return.
+                scheduleUnmark(order.getIdempotencyKey());
                 return;
             }
             scheduleUnmark(order.getIdempotencyKey());
@@ -119,8 +120,10 @@ public class CallbackService {
         // 3b) PENDING/FAILED → COMPLETED 전환 (REFUNDED/CANCELLED는 차단 — Repository WHERE 화이트리스트).
         //     DB-level CAS — 동시 webhook 2건 호출 시 InnoDB row lock 직렬화 → 한쪽만 1 반환.
         //     0 반환 시 다른 스레드/이전 호출이 먼저 종착 전환 — walletService.charge 중복 실행 차단.
+        //     이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 return.
         int completed = paymentOrderRepository.completeIfNotCompleted(paymentId, txId);
         if (completed == 0) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
@@ -135,8 +138,10 @@ public class CallbackService {
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
         // PENDING → FAILED 조건부 CAS. 이미 COMPLETED/FAILED/REFUNDED면 0 반환 — 멱등 처리.
+        // 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 return.
         int failed = paymentOrderRepository.failIfPending(paymentId);
         if (failed == 0) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
@@ -147,8 +152,11 @@ public class CallbackService {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
+        // 이미 종착 상태: 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리 후 return.
         if (order.getStatus() == PaymentOrderStatus.CANCELLED
-                || order.getStatus() == PaymentOrderStatus.REFUNDED) {
+                || order.getStatus() == PaymentOrderStatus.REFUNDED
+                || order.getStatus() == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
@@ -158,11 +166,7 @@ public class CallbackService {
             return;
         }
 
-        if (order.getStatus() != PaymentOrderStatus.COMPLETED
-                && order.getStatus() != PaymentOrderStatus.PARTIAL_CANCELLED) {
-            return;
-        }
-
+        // 여기까지 오는 상태: COMPLETED 또는 PARTIAL_CANCELLED
         long reclaimed = walletService.reclaimAvailableForExternalCancel(
                 order.getUserId(),
                 order.getAmount(),
@@ -180,9 +184,16 @@ public class CallbackService {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        // 멱등: 이미 처리된 상태
-        if (order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED
-                || order.getStatus() == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
+        // ADJUSTMENT_REQUIRED: 이미 보정 필요 상태 — 추가 처리 불필요
+        if (order.getStatus() == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
+            return;
+        }
+
+        // PARTIAL_CANCELLED: PortOne at-least-once로 동일 결제에 추가 부분취소 이벤트가 올 수 있음.
+        // amount.cancelled는 누적 취소액이라 이전 처리분 delta 계산 불가(별도 추적 필드 없음).
+        // 추가 이벤트는 ADJUSTMENT_REQUIRED로 전환해 관리자 확인으로 처리.
+        if (order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED) {
+            order.requireAdjustment();
             return;
         }
 

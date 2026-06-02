@@ -94,10 +94,11 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("[동시성 회귀 가드] CAS UPDATE가 0 반환 → 다른 스레드가 먼저 COMPLETED 전환 → charge 호출 없음")
+    @DisplayName("[동시성 회귀 가드] CAS UPDATE가 0 반환 → 다른 스레드가 먼저 COMPLETED 전환 → charge 없음 + 멱등키 정리")
     void handleSuccess_cas_returns_zero_skips_charge_for_idempotency() {
         // 시나리오: 동시 webhook 2건 중 다른 스레드가 먼저 completeIfNotCompleted 실행 →
-        // 본 스레드의 CAS UPDATE는 0 반환 (status가 이미 COMPLETED)
+        // 본 스레드의 CAS UPDATE는 0 반환 (status가 이미 COMPLETED).
+        // 이전 afterCommit 장애로 키가 남아있을 수 있으므로 scheduleUnmark 호출.
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
@@ -107,7 +108,7 @@ class CallbackServiceTest {
         callbackService.handleSuccess("order-uid-1", "tx-1");
 
         verify(walletService, never()).charge(anyLong(), anyLong(), any());
-        verify(idempotencyService, never()).unmark(anyString());
+        verify(idempotencyService).unmark("idem-key-1");
     }
 
     @Test
@@ -141,11 +142,11 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("금액 불일치 + failIfPending CAS=0 (이미 종착 상태) → 조용히 return (중복 unmark + 불필요 throw 차단)")
+    @DisplayName("금액 불일치 + failIfPending CAS=0 (이미 종착 상태) → charge 없음 + 멱등키 정리 후 조용히 return")
     void handleSuccess_amount_mismatch_with_already_failed_returns_silently() {
         // 시나리오: 1단계 조기 리턴이 stale 캐시로 skip된 상태에서 amountValid=false 진입.
         // failIfPending이 0 반환 = 다른 스레드가 이미 종착 상태(COMPLETED/FAILED/REFUNDED) 전환 완료.
-        // 본 호출은 중복 처리이므로 throw 시 PortOne 재시도 + 운영 에러 로그 누적 noise — 조용히 return.
+        // 이전 afterCommit 장애로 키가 남아있을 수 있으므로 scheduleUnmark 호출 후 return.
         // PR #198 lim-haeun 리뷰 반영.
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
@@ -155,7 +156,7 @@ class CallbackServiceTest {
 
         callbackService.handleSuccess("order-uid-1", "tx-1");
 
-        verify(idempotencyService, never()).unmark(anyString());
+        verify(idempotencyService).unmark("idem-key-1");
         verify(walletService, never()).charge(anyLong(), anyLong(), any());
     }
 
@@ -229,8 +230,8 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("이미 처리된 주문 실패 콜백은 멱등 처리 (CAS=0 → unmark 없음)")
-    void handleFail_already_processed_returns_silently() {
+    @DisplayName("이미 처리된 주문 실패 콜백: CAS=0 → charge 없음 + 멱등키 정리 (afterCommit 장애 방어)")
+    void handleFail_already_processed_still_releases_idempotency_key() {
         PaymentOrder order = pendingOrder();
         order.fail();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
@@ -238,7 +239,7 @@ class CallbackServiceTest {
 
         callbackService.handleFail("order-uid-1");
 
-        verify(idempotencyService, never()).unmark(anyString());
+        verify(idempotencyService).unmark("idem-key-1");
     }
 
     @Test
@@ -284,8 +285,8 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("Transaction.Cancelled: 이미 취소된 주문은 멱등하게 처리한다")
-    void handleCancelled_already_cancelled_returns_silently() {
+    @DisplayName("Transaction.Cancelled: 이미 취소된 주문 → reclaim 없음 + 멱등키 정리 (afterCommit 장애 방어)")
+    void handleCancelled_already_cancelled_releases_idempotency_key() {
         PaymentOrder order = pendingOrder();
         order.cancel();
         given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
@@ -293,6 +294,7 @@ class CallbackServiceTest {
         callbackService.handleCancelled("order-uid-1");
 
         verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
+        verify(idempotencyService).unmark("idem-key-1");
     }
 
     @Test
@@ -448,8 +450,10 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("Transaction.PartialCancelled: 이미 PARTIAL_CANCELLED → 멱등 처리 (reclaim 없음)")
-    void handlePartialCancelled_already_partial_cancelled_returns_silently() {
+    @DisplayName("Transaction.PartialCancelled: 이미 PARTIAL_CANCELLED → 추가 부분취소 이벤트로 간주, ADJUSTMENT_REQUIRED 전환 (delta 추적 불가)")
+    void handlePartialCancelled_already_partial_cancelled_marks_adjustment_required() {
+        // PortOne at-least-once: 동일 결제에 추가 부분취소 이벤트 도달 가능.
+        // amount.cancelled는 누적값이라 delta 계산 불가 → 관리자 확인 상태로 전환.
         PaymentOrder order = pendingOrder();
         order.complete("tx-1");
         order.partialCancel();
@@ -457,6 +461,8 @@ class CallbackServiceTest {
 
         callbackService.handlePartialCancelled("order-uid-1");
 
+        assertThat(order.getStatus())
+                .isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.ADJUSTMENT_REQUIRED);
         verify(paymentGatewayClient, never()).verifyPayment(anyString());
         verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
     }
