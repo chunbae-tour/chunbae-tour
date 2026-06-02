@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
 import com.chunbaetour.domain.payment.dto.request.RefundRequest;
 import com.chunbaetour.domain.payment.dto.response.RefundResponse;
 import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
@@ -63,6 +64,18 @@ public class RefundService {
             // PortOne 원결제 취소 호출은 DB/Wallet 락을 잡지 않은 상태에서 실행한다.
             paymentGatewayClient.cancelPayment(preparation.orderUid(), preparation.amount(), preparation.reason());
         } catch (RuntimeException e) {
+            // cancelPayment 실패 시 PortOne이 실제로 취소 처리했는지 재확인한다.
+            // 타임아웃 등으로 취소는 성공했으나 응답 수신이 실패한 경우:
+            //   - 재시도 시 cancelPayment가 "이미 취소됨" 에러를 반환해 이 catch로 진입
+            //   - verifyPayment로 CANCELLED 확인 후 완료 경로로 진행해 정산 불일치를 방지한다.
+            try {
+                PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(preparation.orderUid());
+                if (info.isCancelled()) {
+                    return transactionTemplate.execute(status -> completeRefundAfterGatewayCancel(preparation));
+                }
+            } catch (RuntimeException ignored) {
+                // PG 상태 조회도 실패 → 보수적으로 FAILED 처리
+            }
             // PortOne 취소 실패나 예상치 못한 런타임 예외는 환불 이력만 FAILED로 남긴다.
             transactionTemplate.executeWithoutResult(status -> markRefundFailed(preparation.refundId()));
             throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);

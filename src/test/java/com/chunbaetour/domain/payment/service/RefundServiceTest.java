@@ -17,6 +17,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
 import com.chunbaetour.domain.payment.dto.request.RefundRequest;
 import com.chunbaetour.domain.payment.dto.response.RefundResponse;
 import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
@@ -176,6 +177,53 @@ class RefundServiceTest {
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
         doThrow(new IllegalStateException("unexpected gateway failure"))
                 .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+
+        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+
+        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+        assertThat(refundRef.get().getStatus()).isEqualTo(RefundStatus.FAILED);
+        verify(walletService, never()).reclaimAvailableForRefund(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("[KAN-205] cancelPayment 실패 후 PG 상태가 CANCELLED → 환불 완료 처리 (타임아웃 후 재시도 정산 불일치 방지)")
+    void requestRefund_cancelPaymentFails_butPGAlreadyCancelled_completesRefund() {
+        // 시나리오: cancelPayment 호출 후 네트워크 타임아웃 → 서버는 예외 수신, PG는 취소 완료.
+        // verifyPayment로 CANCELLED 확인 → completeRefundAfterGatewayCancel로 진행해 정산 불일치 방지.
+        PaymentOrder order = completedOrder(USER_ID);
+        AtomicReference<Refund> refundRef = stubRefundSave();
+        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+        doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
+                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+        given(paymentGatewayClient.verifyPayment(ORDER_UID))
+                .willReturn(new PortOnePaymentInfo("CANCELLED", AMOUNT, AMOUNT));
+        given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(AMOUNT);
+
+        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
+
+        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
+        assertThat(refundRef.get().getStatus()).isEqualTo(RefundStatus.APPROVED);
+        verify(walletService).reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("[KAN-205] cancelPayment 실패 + verifyPayment도 실패 → FAILED 처리 (PG 상태 불명 시 보수적 처리)")
+    void requestRefund_cancelPaymentFails_verifyAlsoFails_marksRefundFailed() {
+        PaymentOrder order = completedOrder(USER_ID);
+        AtomicReference<Refund> refundRef = stubRefundSave();
+        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+        doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
+                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+        given(paymentGatewayClient.verifyPayment(ORDER_UID))
+                .willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE));
 
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
                 .isInstanceOf(BusinessException.class)

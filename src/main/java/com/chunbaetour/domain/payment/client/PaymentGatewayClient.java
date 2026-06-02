@@ -22,5 +22,9 @@ public interface PaymentGatewayClient {
         public boolean isPaid() {
             return "PAID".equals(status);
         }
+
+        public boolean isCancelled() {
+            return "CANCELLED".equals(status);
+        }
     }
 }
