@@ -17,7 +17,7 @@ public interface PaymentGatewayClient {
 
     // 결제 취소(환불) — 관리자 환불 승인 시 포트원에 전액 취소 요청.
     // idempotencyKey: "refund-{refundId}" 형식으로 전달해 네트워크 타임아웃 후 재시도 시 이중 취소 방지.
-    void cancelPayment(String pgTransactionId, Long amount, String reason, String idempotencyKey);
+    void cancelPayment(String orderUid, Long amount, String reason, String idempotencyKey);
 
     record PortOnePaymentInfo(String status, Long totalAmount, Long cancelledAmount) {
         public boolean isPaid() {

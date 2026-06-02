@@ -43,7 +43,6 @@ public class AdminRefundService {
      * PG 취소 실패 시 트랜잭션 전체 롤백 — Refund PENDING, PaymentOrder COMPLETED, 엽전 원상 복구.
      * 관리자는 재시도 가능.
      * <p>
-     * TODO [FUTURE]: PG 취소 요청 시 refundId 기반 멱등키 전달 — 네트워크 타임아웃 후 재시도 시 중복 취소 방지.
      * TODO [FUTURE]: 서버 장애(프로세스 종료) 후 PG 미취소 건 복구를 위해 Outbox 패턴 + 워커 재시도 고려.
      */
     @Transactional

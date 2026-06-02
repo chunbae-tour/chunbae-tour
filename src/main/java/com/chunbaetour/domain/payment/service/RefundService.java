@@ -112,7 +112,7 @@ public class RefundService {
             if (wallet.getBalance() < order.getAmount()) {
                 // 부분 사용 감지 → 즉시 REJECTED 저장, 이력 보존
                 refund.reject(PARTIAL_REFUND_REJECT_REASON);
-                refundRepository.save(refund);
+                refundRepository.saveAndFlush(refund);
                 return refund; // REJECTED 상태
             }
 

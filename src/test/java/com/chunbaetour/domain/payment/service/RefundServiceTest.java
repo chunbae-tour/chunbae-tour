@@ -104,7 +104,7 @@ class RefundServiceTest {
         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT - 1)));
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
-        given(refundRepository.save(any(Refund.class))).willAnswer(inv -> {
+        given(refundRepository.saveAndFlush(any(Refund.class))).willAnswer(inv -> {
             Refund r = inv.getArgument(0);
             refundRef.set(r);
             return r;

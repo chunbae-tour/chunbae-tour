@@ -61,10 +61,10 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
     }
 
     @Override
-    public void cancelPayment(String pgTransactionId, Long amount, String reason, String idempotencyKey) {
+    public void cancelPayment(String orderUid, Long amount, String reason, String idempotencyKey) {
         try {
             portOneRestClient.post()
-                .uri("/payments/{paymentId}/cancel", pgTransactionId)
+                .uri("/payments/{paymentId}/cancel", orderUid)
                 .header("Authorization", "PortOne " + properties.getSecret())
                 // refundId 기반 멱등키: 동일 환불 건 재시도 시 PortOne이 이미 처리한 요청을 중복 없이 반환
                 .header("Idempotency-Key", idempotencyKey)
