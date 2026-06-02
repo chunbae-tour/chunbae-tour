@@ -131,12 +131,14 @@ public class RefundRetryScheduler {
                 managed.fail("PORTONE_CANCEL_FAILED", firstRetryAt);
             } else if (managed.getStatus() == RefundStatus.FAILED) {
                 // FAILED 재시도 실패 → retryCount 증가, 다음 재시도 시각 갱신
-                // 최대 재시도 횟수 초과 시 nextRetryAt=null → 스케줄러 대상에서 영구 제외
                 int nextCount = managed.getRetryCount() + 1;
-                LocalDateTime nextRetryAt = nextCount < RETRY_INTERVALS_MINUTES.length
-                        ? LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[nextCount])
-                        : null;
-                managed.recordRetryFailure(nextRetryAt);
+                if (nextCount >= MAX_RETRY_COUNT) {
+                    // 최대 재시도 횟수 초과 → 자동 처리 불가, 관리자 직접 확인 필요
+                    managed.requireAdmin();
+                } else {
+                    LocalDateTime nextRetryAt = LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[nextCount]);
+                    managed.recordRetryFailure(nextRetryAt);
+                }
             }
         });
     }

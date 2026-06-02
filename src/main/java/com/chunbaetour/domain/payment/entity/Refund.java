@@ -109,6 +109,15 @@ public class Refund extends BaseEntity {
         this.nextRetryAt = nextRetryAt;
     }
 
+    /** 최대 재시도 횟수 초과 — 자동 처리 불가, 관리자 직접 확인 필요 상태로 전환. */
+    public void requireAdmin() {
+        if (this.status != RefundStatus.FAILED) {
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+        }
+        this.status = RefundStatus.REQUIRES_ADMIN;
+        this.nextRetryAt = null;
+    }
+
     /** 스케줄러 재시도 성공 시 FAILED → APPROVED 전환. */
     public void approveRetry() {
         if (this.status != RefundStatus.FAILED) {

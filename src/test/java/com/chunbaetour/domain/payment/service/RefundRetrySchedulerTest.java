@@ -186,9 +186,9 @@ class RefundRetrySchedulerTest {
     }
 
     @Test
-    @DisplayName("retryCount MAX 도달 시 nextRetryAt null → 스케줄러 대상에서 영구 제외")
-    void retryFailedRefunds_maxRetryReached_setsNullNextRetryAt() {
-        Refund refund = failedRefund(1L, 100L, 4); // 4회 실패, 5번째 시도
+    @DisplayName("retryCount MAX 도달 시 → REQUIRES_ADMIN 전환 (자동 처리 불가, 관리자 직접 확인)")
+    void retryFailedRefunds_maxRetryReached_transitionsToRequiresAdmin() {
+        Refund refund = failedRefund(1L, 100L, 4); // 4회 실패, 5번째(마지막) 시도
         PaymentOrder order = completedOrder(100L, "order-uid-1");
         given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
                 .willReturn(List.of(refund));
@@ -201,7 +201,7 @@ class RefundRetrySchedulerTest {
 
         scheduler.retryFailedRefunds();
 
-        assertThat(refund.getRetryCount()).isEqualTo(5);
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.REQUIRES_ADMIN);
         assertThat(refund.getNextRetryAt()).isNull();
     }
 }
