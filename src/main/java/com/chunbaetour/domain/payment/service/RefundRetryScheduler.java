@@ -84,8 +84,15 @@ public class RefundRetryScheduler {
     private void processSingleRefund(Refund refund) {
         var order = paymentOrderRepository.findById(refund.getPaymentOrderId()).orElse(null);
         if (order == null) {
-            log.warn("환불 처리 실패: paymentOrderId={} 주문 없음, refundId={}",
+            log.warn("환불 처리 실패: paymentOrderId={} 주문 없음 — REQUIRES_ADMIN 전환, refundId={}",
                     refund.getPaymentOrderId(), refund.getId());
+            // 주문이 존재하지 않으면 자동 처리 불가 — 배치 큐 점유 방지를 위해 관리자 확인 상태로 전이
+            transactionTemplate.executeWithoutResult(status -> {
+                Refund managed = refundRepository.findById(refund.getId()).orElse(null);
+                if (managed != null) {
+                    managed.requireAdmin();
+                }
+            });
             return;
         }
 

@@ -23,17 +23,26 @@ import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
-import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.Trigger;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -191,5 +200,37 @@ class RefundRetrySchedulerIntegrationTest extends AbstractIntegrationTest {
         verify(paymentGatewayClient, org.mockito.Mockito.never()).cancelPayment(any(), any(), any(), any());
         Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.FAILED);
+    }
+
+    // @Scheduled 자동 실행 방지: 직접 메서드 호출과 백그라운드 스케줄러 간 경합 차단
+    @TestConfiguration
+    static class NoAutoSchedulingConfig {
+
+        @Bean
+        @Primary
+        TaskScheduler noOpTaskScheduler() {
+            return new NoOpTaskScheduler();
+        }
+
+        private static final class NoOpTaskScheduler implements TaskScheduler {
+
+            private static final ScheduledFuture<Object> NOOP = new ScheduledFuture<>() {
+                @Override public long getDelay(TimeUnit u) { return 0L; }
+                @Override public int compareTo(java.util.concurrent.Delayed o) { return 0; }
+                @Override public boolean cancel(boolean b) { return true; }
+                @Override public boolean isCancelled() { return true; }
+                @Override public boolean isDone() { return true; }
+                @Override public Object get() { return null; }
+                @Override public Object get(long t, TimeUnit u) { return null; }
+            };
+
+            @Override public Clock getClock() { return Clock.systemDefaultZone(); }
+            @Override public ScheduledFuture<?> schedule(Runnable t, Trigger g) { return NOOP; }
+            @Override public ScheduledFuture<?> schedule(Runnable t, Instant s) { return NOOP; }
+            @Override public ScheduledFuture<?> scheduleAtFixedRate(Runnable t, Instant s, Duration p) { return NOOP; }
+            @Override public ScheduledFuture<?> scheduleAtFixedRate(Runnable t, Duration p) { return NOOP; }
+            @Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable t, Instant s, Duration d) { return NOOP; }
+            @Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable t, Duration d) { return NOOP; }
+        }
     }
 }

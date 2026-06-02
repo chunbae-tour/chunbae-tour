@@ -94,8 +94,11 @@ public class RefundService {
             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
         }
 
-        // PENDING 중복 요청 방지
-        if (existingRefund != null && existingRefund.getStatus() == RefundStatus.PENDING) {
+        // PENDING/FAILED/REQUIRES_ADMIN 중복 요청 방지 — 처리 중이거나 관리자 검토 대기 중
+        if (existingRefund != null
+                && (existingRefund.getStatus() == RefundStatus.PENDING
+                    || existingRefund.getStatus() == RefundStatus.FAILED
+                    || existingRefund.getStatus() == RefundStatus.REQUIRES_ADMIN)) {
             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
         }
 
