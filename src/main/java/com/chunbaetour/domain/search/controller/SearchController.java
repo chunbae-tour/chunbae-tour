@@ -11,6 +11,8 @@ import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.RecentSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
+import com.chunbaetour.domain.search.service.IntegratedSearchService;
+import com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -64,18 +66,18 @@ public class SearchController {
     private final SearchService searchService;
     private final SuggestService suggestService;
     private final RecentSearchService recentSearchService;
-    private final com.chunbaetour.domain.search.service.IntegratedSearchService integratedSearchService;
+    private final IntegratedSearchService integratedSearchService;
 
     @SecurityRequirements
     @Operation(summary = "통합 검색 (장소/가게/메뉴/축제)")
     @GetMapping
-    public ApiResponse<CursorPageResponse<com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem>> searchIntegrated(
+    public ApiResponse<CursorPageResponse<IntegratedSearchItem>> searchIntegrated(
             @RequestParam(name = "q", required = false) String q,
             @RequestParam(name = "type", defaultValue = "ALL") String type,
             @RequestParam(name = "cursor", required = false) String cursor,
             @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        CursorPageResponse<com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem> response = 
+        CursorPageResponse<IntegratedSearchItem> response = 
                 integratedSearchService.searchIntegrated(q, type, cursor, size);
         return ApiResponse.success(response);
     }
