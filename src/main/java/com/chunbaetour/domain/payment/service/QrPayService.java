@@ -38,6 +38,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.context.MessageSource;
@@ -92,10 +93,16 @@ public class QrPayService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
         validateShop(shop, userId);
 
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        // 스케줄러 지연으로 pending_key unique 제약에 만료 건이 남아있을 수 있어 선제 정리
+        // bulkExpireOverdue: expiredAt <= now인 PENDING을 EXPIRED로 전환 + pendingKey null 초기화
+        qrPayRequestRepository.bulkExpireOverdue(QrPayStatus.PENDING, QrPayStatus.EXPIRED, now);
+
         // 동일 사용자·가게에 유효한 PENDING 요청 사전 차단 — 메뉴·지갑 조회 전 조기 차단으로 불필요한 DB 호출 방지
         // DB unique 제약(pendingKey)은 동시 레이스 케이스 최종 방어용으로 병행 유지
         if (qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
-                userId, shop.getId(), QrPayStatus.PENDING, LocalDateTime.now(clock))) {
+                userId, shop.getId(), QrPayStatus.PENDING, now)) {
             throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
         }
 
@@ -106,8 +113,8 @@ public class QrPayService {
         // 생성 이후 메뉴 가격 변경/삭제 시에도 결제 금액은 생성 시점 기준으로 고정됨 (의도된 정책)
         String menuItemsJson = serializeSnapshots(snapshot.snapshots());
 
-        // QrPayRequest 생성 — expiredAt = 현재 + 5분, 상인 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
-        LocalDateTime expiredAt = LocalDateTime.now(clock).plusMinutes(QR_PAY_EXPIRY_MINUTES);
+        // QrPayRequest 생성 — expiredAt = now + 5분, 상인 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
+        LocalDateTime expiredAt = now.plusMinutes(QR_PAY_EXPIRY_MINUTES);
         QrPayRequest qrPayRequest = QrPayRequest.create(
                 UUID.randomUUID().toString(), userId, shop.getId(),
                 snapshot.totalAmount(), menuItemsJson, expiredAt);
@@ -245,15 +252,21 @@ public class QrPayService {
             if (lockedRequest.getStatus() != QrPayStatus.PENDING) {
                 throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
             }
-            // 만료 체크 — APPROVE·REJECT 모두 차단. 만료 상태 전이는 STORY-15 스케줄러 전담
-            LocalDateTime now = LocalDateTime.now(clock);
-            if (now.isAfter(lockedRequest.getExpiredAt())) {
-                throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
-            }
 
+            LocalDateTime now = LocalDateTime.now(clock);
+
+            // 거절: 금액 이동 없음 → 만료 후에도 상태 정리 허용 (scheduler 대기 없이 즉시 정리)
             if (request.action() == QrPayConfirmRequest.Action.REJECT) {
+                if (!StringUtils.hasText(request.rejectReason())) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
                 lockedRequest.reject(request.rejectReason());
                 return;
+            }
+
+            // 승인: 만료 후 금액 이동 차단 — 만료 상태 전이는 STORY-15 스케줄러 전담
+            if (now.isAfter(lockedRequest.getExpiredAt())) {
+                throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
             }
 
             // 비관적 락 순서 고정: wallets → shop_wallets (데드락 방지)
