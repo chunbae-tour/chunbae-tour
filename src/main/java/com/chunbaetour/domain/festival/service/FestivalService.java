@@ -77,9 +77,6 @@ public class FestivalService {
 
     public FestivalResponse getDetail(Long festivalId) {
         FestivalCacheData data = self.findCachedFestival(festivalId);
-        if (data.isDeleted()) {
-            throw new BusinessException(ErrorCode.FESTIVAL_DELETED);
-        }
         if (!data.isActive()) {
             throw new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND);
         }
