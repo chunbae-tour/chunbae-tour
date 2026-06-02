@@ -263,7 +263,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     // ===== /api/v1/notifications/** Security 회귀 가드 =====
-    // notifications는 USER 전용 개인 데이터 — 비로그인/타 역할 차단 검증 (GET + PATCH 엔드포인트 커버)
+    // notifications는 USER·MERCHANT 공용 — MERCHANT도 고객센터 알림 수신 대상 (KAN-200). ADMIN·비로그인 차단 검증
 
     @Test
     @org.junit.jupiter.api.DisplayName("인증 없이 GET /api/v1/notifications 호출 시 401 AUTH_006")
