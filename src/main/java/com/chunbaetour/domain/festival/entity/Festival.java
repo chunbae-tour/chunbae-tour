@@ -64,7 +64,8 @@ public class Festival extends BaseEntity {
     public static Festival create(String name, String description, String region,
             String address, LocalDate startDate, LocalDate endDate,
             String imageUrl, String relatedUrl, FestivalStatus status) {
-        validateInvariant(name, region, address, startDate, endDate);
+        FestivalStatus resolvedStatus = status != null ? status : FestivalStatus.ACTIVE;
+        validateInvariant(name, region, address, startDate, endDate, resolvedStatus);
         Festival f = new Festival();
         f.name = name;
         f.description = description;
@@ -74,7 +75,7 @@ public class Festival extends BaseEntity {
         f.endDate = endDate;
         f.imageUrl = imageUrl;
         f.relatedUrl = relatedUrl;
-        f.status = status != null ? status : FestivalStatus.ACTIVE;
+        f.status = resolvedStatus;
         return f;
     }
 
@@ -83,7 +84,7 @@ public class Festival extends BaseEntity {
     public void update(String name, String description, String region,
             String address, LocalDate startDate, LocalDate endDate,
             String imageUrl, String relatedUrl, FestivalStatus status) {
-        validateInvariant(name, region, address, startDate, endDate);
+        validateInvariant(name, region, address, startDate, endDate, status);
         this.name = name;
         this.description = description;
         this.region = region;
@@ -96,12 +97,13 @@ public class Festival extends BaseEntity {
     }
 
     private static void validateInvariant(String name, String region, String address,
-            LocalDate startDate, LocalDate endDate) {
+            LocalDate startDate, LocalDate endDate, FestivalStatus status) {
         if (name == null || name.isBlank()
                 || region == null || region.isBlank()
                 || address == null || address.isBlank()
                 || startDate == null || endDate == null
-                || startDate.isAfter(endDate)) {
+                || startDate.isAfter(endDate)
+                || status == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
