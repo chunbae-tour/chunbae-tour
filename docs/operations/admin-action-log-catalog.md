@@ -20,12 +20,12 @@
 |---|---|---|---|
 | `USER_SUSPEND` | S02 | 사용자 정지 (사유 + 기간) | `USER` |
 | `USER_UNSUSPEND` | S02 | 사용자 정지 해제 | `USER` |
+| `SHOP_UPDATE` | S04 | 가게 수정/숨김(→SUSPENDED)/복구(→ACTIVE) — status·description·phone·operatingHours partial | `SHOP` |
 
 후속 슬라이스 예상 추가 항목 (PRD INDEX.md 결정 2 참조):
 
 | actionType | 슬라이스 | targetType |
 |---|---|---|
-| `SHOP_UPDATE` | S04 | `SHOP` |
 | `CERTIFICATION_APPROVE` / `REJECT` / `CANCEL` | S05 | `SHOP_CERTIFICATION` |
 | `PLACE_CREATE` / `UPDATE` / `DELETE` | S07 | `PLACE` |
 | `FESTIVAL_CREATE` / `UPDATE` / `DELETE` | S08 | `FESTIVAL` |

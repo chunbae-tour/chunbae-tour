@@ -312,19 +312,29 @@ class ShopServiceTest {
     @DisplayName("가게 상태 변경 — SUSPENDED → ACTIVE 성공 (복구)")
     void updateShopStatus_suspendedToActive_success() {
         Shop shop = mock(Shop.class);
-        given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
         shopService.updateShopStatus(SHOP_ID, ShopStatus.ACTIVE);
 
-        verify(shop).updateStatus(ShopStatus.ACTIVE);
+        verify(shop).activate();
     }
 
     @Test
-    @DisplayName("가게 상태 변경 — CLOSED 가게 → SHOP_INACTIVE")
-    void updateShopStatus_closedShop_throws() {
+    @DisplayName("가게 상태 변경 — SUSPENDED 전이 시 hide() 위임")
+    void updateShopStatus_toSuspended_delegatesHide() {
         Shop shop = mock(Shop.class);
-        given(shop.getStatus()).willReturn(ShopStatus.CLOSED);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateShopStatus(SHOP_ID, ShopStatus.SUSPENDED);
+
+        verify(shop).hide();
+    }
+
+    @Test
+    @DisplayName("가게 상태 변경 — CLOSED 가게 → SHOP_INACTIVE (도메인 가드)")
+    void updateShopStatus_closedShop_throws() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
         assertThatThrownBy(() -> shopService.updateShopStatus(SHOP_ID, ShopStatus.ACTIVE))
