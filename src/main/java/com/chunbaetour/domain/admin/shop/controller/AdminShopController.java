@@ -6,6 +6,8 @@ import com.chunbaetour.domain.admin.audit.LogAdminAction;
 import com.chunbaetour.domain.admin.shop.dto.request.AdminShopUpdateRequest;
 import com.chunbaetour.domain.admin.shop.dto.response.AdminShopDetailResponse;
 import com.chunbaetour.domain.admin.shop.service.AdminShopService;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -58,6 +60,12 @@ public class AdminShopController {
     public ApiResponse<AdminShopDetailResponse> updateShop(
             @PathVariable @Positive Long shopId,
             @Valid @RequestBody AdminShopUpdateRequest request) {
+        // 전 필드 null인 빈 PATCH는 의미 없는 수정이므로 400으로 거부한다(Bean Validation은 null 필드를 통과시킴).
+        // 여기서 예외가 나면 @LogAdminAction Around advice의 pjp.proceed()가 예외를 전파해 record()가 호출되지
+        // 않으므로 audit(SHOP_UPDATE) 로그도 남지 않는다 — "실패한 액션은 미기록" 정합.
+        if (request.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         return ApiResponse.success(adminShopService.updateShop(shopId, request));
     }
 }

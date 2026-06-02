@@ -7,7 +7,10 @@ import jakarta.validation.constraints.Size;
 /**
  * 운영자 가게 partial update 요청 (KAN-203, Admin Epic KAN-177 S04).
  *
- * <p>모든 필드 nullable — null = 미수정 (KAN-127 Account.updateProfile 패턴). 빈 body({@code {}})는 미변경.
+ * <p>모든 필드 nullable — null = 미수정 (KAN-127 Account.updateProfile 패턴). 단, 전 필드가 null인
+ * 빈 body({@code {}})는 의미 없는 요청이므로 컨트롤러 진입부에서 {@code INVALID_INPUT_VALUE}(400)로 거부한다
+ * ({@link #isEmpty()}). KAN-127 사용자 PATCH는 빈 body를 200 no-op으로 두지만, 운영자 가게 수정은
+ * audit(SHOP_UPDATE) 대상이라 "아무 것도 안 바꾸는 수정"을 명시적 오류로 처리한다.
  *
  * <p>{@code status}는 ACTIVE/SUSPENDED만 허용 — CLOSED(폐업) 직접 지정은 서비스에서 INVALID_INPUT_VALUE로 차단.
  * status=ACTIVE → {@code Shop.activate()}, status=SUSPENDED → {@code Shop.hide()}로 전이(결정 B: HIDDEN 미도입).
@@ -30,4 +33,12 @@ public record AdminShopUpdateRequest(
         @Size(min = 1, max = 100, message = "운영시간은 빈 값일 수 없습니다.")
         @Pattern(regexp = "(?s).*\\S.*", message = "운영시간은 공백만 입력할 수 없습니다.") String operatingHours
 ) {
+
+    /**
+     * 전 필드가 null인 빈 요청 여부. {@code @Valid}는 null 필드를 통과시키므로(각 제약이 null-friendly)
+     * 빈 body는 Bean Validation으로 걸러지지 않는다. 컨트롤러가 본 메서드로 따로 판별해 400으로 거부한다.
+     */
+    public boolean isEmpty() {
+        return status == null && description == null && phone == null && operatingHours == null;
+    }
 }

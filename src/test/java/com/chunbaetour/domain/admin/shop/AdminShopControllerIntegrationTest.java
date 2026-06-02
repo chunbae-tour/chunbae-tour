@@ -172,8 +172,9 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("PATCH 빈 body → 200 미변경")
-    void patch_empty_body_no_change() throws Exception {
+    @DisplayName("PATCH 빈 body → 400 COMMON_004 + audit 미기록")
+    void patch_empty_body_returns_400() throws Exception {
+        // 전 필드 null인 빈 PATCH는 의미 없는 수정이라 400으로 거부(리뷰 L). 실패한 액션이므로 audit도 남기지 않는다.
         String adminToken = adminToken();
         Shop shop = seedShop(ShopStatus.ACTIVE);
 
@@ -181,9 +182,10 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.description").value("테스트 소개"))
-                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_004"));
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
     }
 
     @Test
