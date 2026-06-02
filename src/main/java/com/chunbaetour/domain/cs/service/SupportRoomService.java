@@ -70,6 +70,9 @@ public class SupportRoomService {
 
     // USER 본인 상담방 목록 cursor 페이징 — status 필터 선택
     public CursorPageResponse<SupportRoomResponse> getMyRooms(Long userId, String cursor, int size, SupportRoomStatus status) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<SupportRoom> page = supportRoomRepository.findMyRoomsWithCursor(
                 userId, status, cursorId, PageRequest.of(0, size + 1));
@@ -127,14 +130,24 @@ public class SupportRoomService {
                 .collect(Collectors.toMap(SupportMessage::getSupportRoomId, m -> m));
 
         List<AdminSupportRoomResponse> content = rooms.stream().map(room -> {
-            String nickname = nicknameByUserId.get(room.getUserId());
+            String nickname = nicknameByUserId.getOrDefault(room.getUserId(), "(탈퇴한 사용자)");
             SupportMessage lastMsg = lastMsgByRoomId.get(room.getId());
-            LastMessage lastMessage = lastMsg != null ? new LastMessage(lastMsg.getContent(), lastMsg.getSentAt()) : null;
+            LastMessage lastMessage = lastMsg != null ? new LastMessage(resolveLastMessageContent(lastMsg), lastMsg.getSentAt()) : null;
             return AdminSupportRoomResponse.of(room, nickname, lastMessage);
         }).toList();
 
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).supportRoomId()) : null;
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+    }
+
+    // IMAGE/FILE 타입은 content가 null일 수 있으므로 fallback 문자열 반환
+    private String resolveLastMessageContent(SupportMessage msg) {
+        if (msg.getContent() != null) return msg.getContent();
+        return switch (msg.getMessageType()) {
+            case IMAGE -> "[이미지]";
+            case FILE -> "[파일]";
+            default -> "";
+        };
     }
 
     private CursorPageResponse<SupportMessageResponse> fetchMessages(Long supportRoomId, String cursor, int size) {

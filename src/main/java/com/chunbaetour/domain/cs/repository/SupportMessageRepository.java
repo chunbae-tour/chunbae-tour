@@ -13,7 +13,7 @@ public interface SupportMessageRepository extends JpaRepository<SupportMessage, 
     @Query("SELECT m FROM SupportMessage m WHERE m.supportRoomId = :roomId AND (:cursorId IS NULL OR m.id < :cursorId) ORDER BY m.id DESC")
     List<SupportMessage> findMessagesWithCursor(@Param("roomId") Long roomId, @Param("cursorId") Long cursorId, Pageable pageable);
 
-    // CS-6: Admin 목록 lastMessage 배치 조회 — 방 N개를 쿼리 1번에 처리
+    // CS-6: Admin 목록 lastMessage 배치 조회 — 방 N개를 쿼리 1번에 처리. roomIds 빈 리스트 전달 금지 — 호출 전 empty 체크 필수
     @Query("SELECT m FROM SupportMessage m WHERE m.id IN (SELECT MAX(m2.id) FROM SupportMessage m2 WHERE m2.supportRoomId IN :roomIds GROUP BY m2.supportRoomId)")
     List<SupportMessage> findLastMessagesByRoomIds(@Param("roomIds") List<Long> roomIds);
 }
