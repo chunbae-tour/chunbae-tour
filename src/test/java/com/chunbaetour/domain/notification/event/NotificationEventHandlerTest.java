@@ -251,6 +251,32 @@ class NotificationEventHandlerTest {
         verify(notificationRedisPubSubService, never()).publish(any(), any());
     }
 
+    // Support 메시지 핸들러 — Push 실패 시 예외 미전파 (저장은 완료됨)
+    @Test
+    void handleSupportMessageSent_pushFailure_doesNotPropagateException() {
+        Notification notification = buildNotification(200L, ROOM_OWNER_USER_ID, NotificationType.SUPPORT_MESSAGE, NotificationReferenceType.SUPPORT_ROOM, SUPPORT_ROOM_ID);
+        given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
+                .willReturn(notification);
+        org.mockito.BDDMockito.willThrow(new RuntimeException("Redis unavailable"))
+                .given(notificationRedisPubSubService).publish(any(), any());
+
+        assertThatNoException().isThrownBy(() ->
+                handler.handleSupportMessageSent(new SupportMessageSentEvent(SUPPORT_ROOM_ID, ROOM_OWNER_USER_ID)));
+    }
+
+    // Support 종료 핸들러 — Push 실패 시 예외 미전파 (저장은 완료됨)
+    @Test
+    void handleSupportRoomClosed_pushFailure_doesNotPropagateException() {
+        Notification notification = buildNotification(201L, ROOM_OWNER_USER_ID, NotificationType.SUPPORT_ROOM_CLOSED, NotificationReferenceType.SUPPORT_ROOM, SUPPORT_ROOM_ID);
+        given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
+                .willReturn(notification);
+        org.mockito.BDDMockito.willThrow(new RuntimeException("Redis unavailable"))
+                .given(notificationRedisPubSubService).publish(any(), any());
+
+        assertThatNoException().isThrownBy(() ->
+                handler.handleSupportRoomClosed(new SupportRoomClosedEvent(SUPPORT_ROOM_ID, ROOM_OWNER_USER_ID)));
+    }
+
     private Notification buildNotification(Long id, Long userId, NotificationType type, NotificationReferenceType referenceType, Long referenceId) {
         Notification n = Notification.builder()
                 .userId(userId)

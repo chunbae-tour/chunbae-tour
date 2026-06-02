@@ -127,18 +127,25 @@ public class NotificationEventHandler {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleSupportMessageSent(SupportMessageSentEvent event) {
+        Notification notification;
         try {
-            Notification notification = notificationService.createNotification(
+            notification = notificationService.createNotification(
                     event.recipientUserId(),
                     NotificationType.SUPPORT_MESSAGE,
                     "고객센터 메시지 도착",
                     "고객센터 상담 메시지가 도착했어요.",
                     NotificationReferenceType.SUPPORT_ROOM,
                     event.supportRoomId());
-            pushNotification(notification);
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — supportRoomId={}, recipientUserId={}",
                     event.supportRoomId(), event.recipientUserId(), e);
+            return;
+        }
+        try {
+            pushNotification(notification);
+        } catch (RuntimeException e) {
+            log.warn("알림 Push 등록 실패 — 알림 저장 완료, Push 미발송. supportRoomId={}",
+                    event.supportRoomId(), e);
         }
     }
 
@@ -146,18 +153,25 @@ public class NotificationEventHandler {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleSupportRoomClosed(SupportRoomClosedEvent event) {
+        Notification notification;
         try {
-            Notification notification = notificationService.createNotification(
+            notification = notificationService.createNotification(
                     event.userId(),
                     NotificationType.SUPPORT_ROOM_CLOSED,
                     "상담 종료",
                     "고객센터 상담이 종료됐어요.",
                     NotificationReferenceType.SUPPORT_ROOM,
                     event.supportRoomId());
-            pushNotification(notification);
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — supportRoomId={}, userId={}",
                     event.supportRoomId(), event.userId(), e);
+            return;
+        }
+        try {
+            pushNotification(notification);
+        } catch (RuntimeException e) {
+            log.warn("알림 Push 등록 실패 — 알림 저장 완료, Push 미발송. supportRoomId={}",
+                    event.supportRoomId(), e);
         }
     }
 
