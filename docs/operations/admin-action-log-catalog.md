@@ -20,6 +20,7 @@
 |---|---|---|---|
 | `USER_SUSPEND` | S02 | 사용자 정지 (사유 + 기간) | `USER` |
 | `USER_UNSUSPEND` | S02 | 사용자 정지 해제 | `USER` |
+| `SHOP_UPDATE` | S04 | 가게 수정/숨김(→SUSPENDED)/복구(→ACTIVE) — status·description·phone·operatingHours partial | `SHOP` |
 | `CERTIFICATION_APPROVE` | S05 | 인증 승인 (Shop.markCertified() cascade) | `SHOP_CERTIFICATION` |
 | `CERTIFICATION_REJECT` | S05 | 인증 거절 (사유 기록) | `SHOP_CERTIFICATION` |
 | `CERTIFICATION_CANCEL` | S05 | 인증 취소 (Shop.unmarkCertified() 회수) | `SHOP_CERTIFICATION` |
@@ -28,7 +29,6 @@
 
 | actionType | 슬라이스 | targetType |
 |---|---|---|
-| `SHOP_UPDATE` | S04 | `SHOP` |
 | `PLACE_CREATE` / `UPDATE` / `DELETE` | S07 | `PLACE` |
 | `FESTIVAL_CREATE` / `UPDATE` / `DELETE` | S08 | `FESTIVAL` |
 | `BANNER_CREATE` / `UPDATE` / `DELETE` | S09 | `BANNER` |
