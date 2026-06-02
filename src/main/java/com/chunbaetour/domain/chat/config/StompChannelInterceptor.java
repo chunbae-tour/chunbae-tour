@@ -6,6 +6,8 @@ import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.cs.entity.SupportRoom;
+import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import io.jsonwebtoken.JwtException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -26,12 +28,14 @@ public class StompChannelInterceptor implements ChannelInterceptor {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String CHAT_ROOM_TOPIC_PREFIX = "/sub/chat/rooms/";
+    private static final String SUPPORT_ROOM_TOPIC_PREFIX = "/sub/support/rooms/";
     private static final String NOTIFICATION_QUEUE = "/user/queue/notifications";
     private static final List<ChatMemberState> ACTIVE_STATES =
             List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
 
     private final TokenIssuer tokenIssuer;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final SupportRoomRepository supportRoomRepository;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -85,7 +89,7 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         return message;
     }
 
-    // SUBSCRIBE — 채팅방 구독: ACTIVE 멤버 검증 / 알림 큐 구독: USER 역할 검증
+    // SUBSCRIBE — 채팅방 구독: ACTIVE 멤버 검증 / 상담방 구독: 소유자·ADMIN 검증 / 알림 큐 구독: USER 역할 검증
     private Message<?> handleSubscribe(Message<?> message, StompHeaderAccessor accessor) {
         String destination = accessor.getDestination();
         if (destination == null) {
@@ -93,6 +97,9 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         }
         if (destination.equals(NOTIFICATION_QUEUE)) {
             return handleNotificationSubscribe(message, accessor);
+        }
+        if (destination.startsWith(SUPPORT_ROOM_TOPIC_PREFIX)) {
+            return handleSupportRoomSubscribe(message, accessor);
         }
         if (!destination.startsWith(CHAT_ROOM_TOPIC_PREFIX)) {
             return message;
@@ -116,6 +123,32 @@ public class StompChannelInterceptor implements ChannelInterceptor {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
+        return message;
+    }
+
+    // /sub/support/rooms/{id} 구독 — 방 소유자 또는 ADMIN만 허용
+    private Message<?> handleSupportRoomSubscribe(Message<?> message, StompHeaderAccessor accessor) {
+        if (!(accessor.getUser() instanceof UsernamePasswordAuthenticationToken auth)) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        boolean isAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        if (isAdmin) return message;
+
+        Long userId = Long.parseLong(auth.getName());
+        String roomIdStr = accessor.getDestination().substring(SUPPORT_ROOM_TOPIC_PREFIX.length());
+        Long supportRoomId;
+        try {
+            supportRoomId = Long.parseLong(roomIdStr);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+        if (!room.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
+        }
         return message;
     }
 

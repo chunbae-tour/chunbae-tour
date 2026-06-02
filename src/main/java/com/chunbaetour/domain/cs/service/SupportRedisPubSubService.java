@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.cs.service;
 
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -17,12 +18,15 @@ public class SupportRedisPubSubService {
 
     private static final String CHANNEL_PREFIX = "support:";
     private static final String STOMP_TOPIC_PREFIX = "/sub/support/rooms/";
+    private static final String METRIC_BROADCAST_FAILURE = "support.broadcast.failure.total";
+    private static final String METRIC_SERIALIZE_FAILURE = "support.serialize.failure.total";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     // SimpMessagingTemplate은 WebSocketConfig 초기화 이후 준비됨 — 순환 의존성 방지
     @Lazy
     private final SimpMessagingTemplate messagingTemplate;
+    private final MeterRegistry meterRegistry;
 
     // 메시지 저장 후 Redis 채널 발행 — 모든 서버 인스턴스가 구독 중
     public void publish(Long supportRoomId, SupportMessageResponse response) {
@@ -31,6 +35,7 @@ public class SupportRedisPubSubService {
             stringRedisTemplate.convertAndSend(CHANNEL_PREFIX + supportRoomId, json);
         } catch (JacksonException e) {
             log.error("SupportMessageResponse 직렬화 실패. supportRoomId={}", supportRoomId, e);
+            meterRegistry.counter(METRIC_SERIALIZE_FAILURE).increment();
         }
     }
 
@@ -52,6 +57,7 @@ public class SupportRedisPubSubService {
             messagingTemplate.convertAndSend(STOMP_TOPIC_PREFIX + roomId, response);
         } catch (Exception e) {
             log.error("STOMP 브로드캐스트 실패. supportRoomId={}", roomId, e);
+            meterRegistry.counter(METRIC_BROADCAST_FAILURE).increment();
         }
     }
 }

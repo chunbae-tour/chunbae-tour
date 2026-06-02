@@ -1,6 +1,6 @@
 package com.chunbaetour.domain.cs.controller;
 
-import com.chunbaetour.domain.chat.dto.response.StompErrorResponse;
+import com.chunbaetour.domain.cs.dto.response.StompErrorResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.cs.dto.request.SupportSendMessageRequest;
