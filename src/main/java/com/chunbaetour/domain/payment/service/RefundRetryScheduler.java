@@ -21,6 +21,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class RefundRetryScheduler {
 
     /**
+     * ⚠️ 단일 인스턴스 전제: @Scheduled는 인스턴스마다 독립 실행된다.
+     * 다중 인스턴스 배포 시 동일 PENDING/FAILED 건에 대해 cancelPayment()가 중복 호출될 수 있다.
+     * Idempotency-Key("refund-{refundId}") 덕분에 PG 측 이중 취소는 막히지만 불필요한 외부 호출이 발생한다.
+     * 다중 인스턴스 운영 시 ShedLock 또는 SELECT ... FOR UPDATE SKIP LOCKED 도입 검토 필요.
+     */
+
+    /**
      * 지수 백오프 정책: 재시도 횟수에 따라 다음 시도 간격을 점진적으로 늘린다.
      * - 첫 재시도(1분): 충전 직후 실수로 빠른 환불을 기대하는 사용자 경험 고려.
      * - 이후 간격 증가: 대부분의 PG 일시 장애가 5분 내 해결되고, 그 이후는 더 심각한 장애일 가능성이 높음.

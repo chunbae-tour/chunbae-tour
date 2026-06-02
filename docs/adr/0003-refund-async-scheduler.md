@@ -53,7 +53,7 @@
 재시도 스케줄러 (1분마다, next_retry_at 도래 건만)
   → retryFailedRefunds()
       → cancelPayment() 재시도 (최대 5회, 지수 백오프: 1→5→15→60→240분)
-          성공 → APPROVED
+          성공 → completeSchedulerRetry() → APPROVED, 엽전 회수, 주문 REFUNDED
           5회 모두 실패 → REQUIRES_ADMIN (관리자 직접 처리)
 ```
 
