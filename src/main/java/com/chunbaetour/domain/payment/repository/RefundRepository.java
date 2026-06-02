@@ -47,6 +47,12 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
             @Param("status") RefundStatus status,
             Pageable pageable);
 
+    /** 스케줄러 최초 처리 대상 — PENDING 상태 환불, 생성 순으로 처리 */
+    @Query("SELECT r FROM Refund r WHERE r.status = :status ORDER BY r.createdAt ASC")
+    List<Refund> findByStatusOrderByCreatedAt(
+            @Param("status") RefundStatus status,
+            Pageable pageable);
+
     /** 사용자 환불 목록 — status/cursor 모두 선택적 (null이면 조건 미적용) */
     @Query("SELECT r FROM Refund r WHERE r.userId = :userId " +
            "AND (:status IS NULL OR r.status = :status) " +

@@ -117,6 +117,14 @@ public class Refund extends BaseEntity {
         this.status = RefundStatus.APPROVED;
     }
 
+    /** 스케줄러가 PENDING 또는 FAILED 상태 환불을 APPROVED로 전환. */
+    public void approveFromScheduler() {
+        if (this.status != RefundStatus.PENDING && this.status != RefundStatus.FAILED) {
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+        }
+        this.status = RefundStatus.APPROVED;
+    }
+
     /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
     public void reject(String rejectReason) {
         if (this.status != RefundStatus.PENDING) {

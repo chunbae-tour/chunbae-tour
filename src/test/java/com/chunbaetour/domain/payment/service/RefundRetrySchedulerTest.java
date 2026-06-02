@@ -50,8 +50,8 @@ class RefundRetrySchedulerTest {
 
     @BeforeEach
     void setUp() {
-        given(clock.instant()).willReturn(Instant.parse("2026-06-02T12:00:00Z"));
-        given(clock.getZone()).willReturn(ZoneId.of("Asia/Seoul"));
+        org.mockito.Mockito.lenient().when(clock.instant()).thenReturn(Instant.parse("2026-06-02T12:00:00Z"));
+        org.mockito.Mockito.lenient().when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
         // TransactionTemplate: 콜백 즉시 실행
         org.mockito.Mockito.lenient().doAnswer(inv -> {
             inv.<java.util.function.Consumer<?>>getArgument(0).accept(null);
@@ -73,6 +73,50 @@ class RefundRetrySchedulerTest {
         ReflectionTestUtils.setField(order, "id", id);
         ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.COMPLETED);
         return order;
+    }
+
+    private Refund pendingRefund(Long id, Long paymentOrderId) {
+        Refund refund = Refund.create(paymentOrderId, 1L, 10_000L, "user request");
+        ReflectionTestUtils.setField(refund, "id", id);
+        // PENDING은 기본 상태 (Refund.create가 PENDING으로 생성)
+        return refund;
+    }
+
+    @Test
+    @DisplayName("PENDING 환불 처리: cancelPayment 성공 → completeSchedulerRetry 호출")
+    void processPendingRefunds_cancelSucceeds_completesRefund() {
+        Refund refund = pendingRefund(1L, 100L);
+        PaymentOrder order = completedOrder(100L, "order-uid-1");
+        given(refundRepository.findByStatusOrderByCreatedAt(eq(RefundStatus.PENDING), any(PageRequest.class)))
+                .willReturn(List.of(refund));
+        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
+
+        scheduler.processPendingRefunds();
+
+        verify(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
+        verify(refundService).completeSchedulerRetry(1L, "order-uid-1", 10_000L);
+    }
+
+    @Test
+    @DisplayName("PENDING 환불 처리 실패 → FAILED 전환 (첫 재시도 1분 후 예약)")
+    void processPendingRefunds_cancelFails_marksAsFailed() {
+        Refund refund = pendingRefund(1L, 100L);
+        PaymentOrder order = completedOrder(100L, "order-uid-1");
+        given(refundRepository.findByStatusOrderByCreatedAt(eq(RefundStatus.PENDING), any(PageRequest.class)))
+                .willReturn(List.of(refund));
+        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
+        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
+        org.mockito.Mockito.doThrow(new com.chunbaetour.domain.payment.exception.PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
+                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
+
+        scheduler.processPendingRefunds();
+
+        verify(refundService, never()).completeSchedulerRetry(any(), any(), any());
+        // PENDING → FAILED 전환
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.FAILED);
+        assertThat(refund.getNextRetryAt()).isNotNull();
     }
 
     @Test

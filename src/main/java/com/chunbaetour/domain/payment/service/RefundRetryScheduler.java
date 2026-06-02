@@ -31,7 +31,7 @@ public class RefundRetryScheduler {
     private static final int MAX_RETRY_COUNT = 5;
 
     // 한 번 실행에 처리할 최대 건수 — 병렬 처리 없이 순차 실행해 PG 동시 호출 폭발 방지
-    private static final int RETRY_BATCH_SIZE = 20;
+    private static final int BATCH_SIZE = 20;
 
     private final RefundRepository refundRepository;
     private final PaymentOrderRepository paymentOrderRepository;
@@ -41,13 +41,34 @@ public class RefundRetryScheduler {
     private final Clock clock;
 
     /**
-     * 1분마다 실행. 스케줄러 주기(1분) ≠ 재시도 간격.
-     * next_retry_at 조건으로 실제 PG 호출은 도래한 건만 처리.
+     * PENDING 환불 최초 처리.
+     * requestRefund()에서 PG 호출 없이 PENDING으로 접수된 환불을 1분마다 처리한다.
+     * 처음부터 cancelPayment를 배치로 처리해 API 응답 속도와 장애 격리를 보장한다.
+     */
+    @Scheduled(fixedDelay = 60_000)
+    public void processPendingRefunds() {
+        var pageable = PageRequest.of(0, BATCH_SIZE);
+        var pending = refundRepository.findByStatusOrderByCreatedAt(RefundStatus.PENDING, pageable);
+
+        if (pending.isEmpty()) {
+            return;
+        }
+        log.info("환불 처리 스케줄러 실행: {}건 대상", pending.size());
+
+        for (Refund refund : pending) {
+            processSingleRefund(refund);
+        }
+    }
+
+    /**
+     * FAILED 환불 재시도.
+     * 지수 백오프 정책: next_retry_at 조건으로 실제 PG 호출은 도래한 건만 처리.
+     * 스케줄러 주기(1분) ≠ 재시도 간격.
      */
     @Scheduled(fixedDelay = 60_000)
     public void retryFailedRefunds() {
         LocalDateTime now = LocalDateTime.now(clock);
-        var pageable = PageRequest.of(0, RETRY_BATCH_SIZE);
+        var pageable = PageRequest.of(0, BATCH_SIZE);
         var retryable = refundRepository.findRetryableRefunds(now, MAX_RETRY_COUNT, RefundStatus.FAILED, pageable);
 
         if (retryable.isEmpty()) {
@@ -56,15 +77,15 @@ public class RefundRetryScheduler {
         log.info("환불 재시도 스케줄러 실행: {}건 대상", retryable.size());
 
         for (Refund refund : retryable) {
-            processRetry(refund);
+            processSingleRefund(refund);
         }
     }
 
-    private void processRetry(Refund refund) {
-        // 환불 대상 주문의 orderUid 조회
+    private void processSingleRefund(Refund refund) {
         var order = paymentOrderRepository.findById(refund.getPaymentOrderId()).orElse(null);
         if (order == null) {
-            log.warn("환불 재시도 실패: paymentOrderId={} 주문 없음, refundId={}", refund.getPaymentOrderId(), refund.getId());
+            log.warn("환불 처리 실패: paymentOrderId={} 주문 없음, refundId={}",
+                    refund.getPaymentOrderId(), refund.getId());
             return;
         }
 
@@ -77,23 +98,23 @@ public class RefundRetryScheduler {
             try {
                 PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(orderUid);
                 if (info.isCancelled()) {
-                    completeRetry(refund, orderUid);
+                    completeRefund(refund, orderUid);
                     return;
                 }
             } catch (RuntimeException ignored) {
-                // PG 상태 조회도 실패 → 다음 재시도로 넘김
+                // PG 상태 조회도 실패 → 다음 시도로 넘김
             }
             recordFailure(refund);
-            log.warn("환불 재시도 실패 (retryCount={}): refundId={}, orderUid={}",
+            log.warn("환불 PG 호출 실패 (retryCount={}): refundId={}, orderUid={}",
                     refund.getRetryCount() + 1, refund.getId(), orderUid);
             return;
         }
 
-        completeRetry(refund, orderUid);
-        log.info("환불 재시도 성공: refundId={}, orderUid={}", refund.getId(), orderUid);
+        completeRefund(refund, orderUid);
+        log.info("환불 처리 완료: refundId={}, orderUid={}", refund.getId(), orderUid);
     }
 
-    private void completeRetry(Refund refund, String orderUid) {
+    private void completeRefund(Refund refund, String orderUid) {
         transactionTemplate.executeWithoutResult(status ->
                 refundService.completeSchedulerRetry(refund.getId(), orderUid, refund.getAmount()));
     }
@@ -103,12 +124,20 @@ public class RefundRetryScheduler {
             // detached entity를 DB에서 다시 조회해 Hibernate 변경 추적 활성화
             Refund managed = refundRepository.findById(refund.getId()).orElse(null);
             if (managed == null) return;
-            int nextCount = managed.getRetryCount() + 1;
-            // 최대 재시도 횟수 초과 시 nextRetryAt을 null로 설정해 스케줄러 대상에서 제외
-            LocalDateTime nextRetryAt = nextCount < RETRY_INTERVALS_MINUTES.length
-                    ? LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[nextCount])
-                    : null;
-            managed.recordRetryFailure(nextRetryAt);
+
+            if (managed.getStatus() == RefundStatus.PENDING) {
+                // PENDING 첫 번째 PG 실패 → FAILED 전환, 첫 재시도 1분 후 예약
+                LocalDateTime firstRetryAt = LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[0]);
+                managed.fail("PORTONE_CANCEL_FAILED", firstRetryAt);
+            } else if (managed.getStatus() == RefundStatus.FAILED) {
+                // FAILED 재시도 실패 → retryCount 증가, 다음 재시도 시각 갱신
+                // 최대 재시도 횟수 초과 시 nextRetryAt=null → 스케줄러 대상에서 영구 제외
+                int nextCount = managed.getRetryCount() + 1;
+                LocalDateTime nextRetryAt = nextCount < RETRY_INTERVALS_MINUTES.length
+                        ? LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[nextCount])
+                        : null;
+                managed.recordRetryFailure(nextRetryAt);
+            }
         });
     }
 }

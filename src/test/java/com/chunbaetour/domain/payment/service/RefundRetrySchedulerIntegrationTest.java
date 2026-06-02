@@ -85,6 +85,45 @@ class RefundRetrySchedulerIntegrationTest extends AbstractIntegrationTest {
         return refundRepository.save(refund);
     }
 
+    private Refund createPendingRefund() {
+        Refund refund = Refund.create(savedOrder.getId(), USER_ID, AMOUNT, "user request");
+        return refundRepository.save(refund); // PENDING 상태 저장
+    }
+
+    @Test
+    @DisplayName("[비동기 처리] PENDING 환불 → 스케줄러 cancelPayment → APPROVED, wallet 차감, order REFUNDED")
+    void processPendingRefunds_cancelSucceeds_approvesRefund() {
+        Refund refund = createPendingRefund();
+        willDoNothing().given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
+
+        refundRetryScheduler.processPendingRefunds();
+
+        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
+        PaymentOrder reloadedOrder = paymentOrderRepository.findByOrderUid(ORDER_UID).orElseThrow();
+        Wallet wallet = walletRepository.findByUserId(USER_ID).orElseThrow();
+
+        verify(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
+        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(reloadedOrder.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
+        assertThat(wallet.getBalance()).isZero();
+    }
+
+    @Test
+    @DisplayName("[비동기 처리] PENDING 환불 cancelPayment 실패 → FAILED 전환, 재시도 스케줄러 대상 등록")
+    void processPendingRefunds_cancelFails_marksAsFailed() {
+        Refund refund = createPendingRefund();
+        willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
+                .given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
+        given(paymentGatewayClient.verifyPayment(ORDER_UID))
+                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT, null));
+
+        refundRetryScheduler.processPendingRefunds();
+
+        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.FAILED);
+        assertThat(reloaded.getNextRetryAt()).isNotNull();
+    }
+
     @Test
     @DisplayName("[장애 복구] FAILED 환불 재시도: cancelPayment 성공 → refund APPROVED, wallet 차감, order REFUNDED")
     void retryFailedRefunds_cancelSucceeds_completesRefund() {
