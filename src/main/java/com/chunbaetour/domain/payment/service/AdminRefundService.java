@@ -51,8 +51,9 @@ public class AdminRefundService {
         Refund refund = refundRepository.findByIdWithLock(refundId)
             .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        // 2. PENDING 여부 사전 체크 — 이미 처리된 환불이면 즉시 실패, 불필요한 PaymentOrder 락 획득 생략
-        if (refund.getStatus() != RefundStatus.PENDING) {
+        // 2. 처리 가능 상태 사전 체크 — PENDING(일반) 또는 REQUIRES_ADMIN(자동 재시도 소진) 모두 허용
+        if (refund.getStatus() != RefundStatus.PENDING
+                && refund.getStatus() != RefundStatus.REQUIRES_ADMIN) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
 

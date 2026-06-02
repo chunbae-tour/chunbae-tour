@@ -10,6 +10,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -21,10 +22,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class RefundRetryScheduler {
 
     /**
-     * ⚠️ 단일 인스턴스 전제: @Scheduled는 인스턴스마다 독립 실행된다.
-     * 다중 인스턴스 배포 시 동일 PENDING/FAILED 건에 대해 cancelPayment()가 중복 호출될 수 있다.
-     * Idempotency-Key("refund-{refundId}") 덕분에 PG 측 이중 취소는 막히지만 불필요한 외부 호출이 발생한다.
-     * 다중 인스턴스 운영 시 ShedLock 또는 SELECT ... FOR UPDATE SKIP LOCKED 도입 검토 필요.
+     * 다중 인스턴스 중복 실행 방지: @SchedulerLock(ShedLock)으로 동일 작업을 한 인스턴스만 실행.
+     * Idempotency-Key("refund-{refundId}")로 PG 이중 취소도 방어하지만, 불필요한 외부 호출 자체를 차단.
+     * lockAtMostFor=PT3M: 최대 락 유지 시간 (BATCH_SIZE×PG 호출 최대치 고려).
+     * lockAtLeastFor=PT30S: 실행 직후 즉시 재실행 방지 최소 간격.
      */
 
     /**
@@ -53,6 +54,7 @@ public class RefundRetryScheduler {
      * 처음부터 cancelPayment를 배치로 처리해 API 응답 속도와 장애 격리를 보장한다.
      */
     @Scheduled(fixedDelay = 60_000)
+    @SchedulerLock(name = "refund_pending", lockAtMostFor = "PT3M", lockAtLeastFor = "PT30S")
     public void processPendingRefunds() {
         var pageable = PageRequest.of(0, BATCH_SIZE);
         var pending = refundRepository.findByStatusOrderByCreatedAt(RefundStatus.PENDING, pageable);
@@ -73,6 +75,7 @@ public class RefundRetryScheduler {
      * 스케줄러 주기(1분) ≠ 재시도 간격.
      */
     @Scheduled(fixedDelay = 60_000)
+    @SchedulerLock(name = "refund_retry", lockAtMostFor = "PT3M", lockAtLeastFor = "PT30S")
     public void retryFailedRefunds() {
         LocalDateTime now = LocalDateTime.now(clock);
         var pageable = PageRequest.of(0, BATCH_SIZE);

@@ -63,6 +63,13 @@ class AdminRefundServiceTest {
         return refund;
     }
 
+    private Refund makeRequiresAdminRefund() {
+        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "단순 변심");
+        ReflectionTestUtils.setField(refund, "id", REFUND_ID);
+        ReflectionTestUtils.setField(refund, "status", RefundStatus.REQUIRES_ADMIN);
+        return refund;
+    }
+
     private PaymentOrder makeCompletedOrder() {
         PaymentOrder order = PaymentOrder.create("uid-1", USER_ID, AMOUNT, "idem-1", PaymentMethod.CARD, "pg-order-1");
         ReflectionTestUtils.setField(order, "id", ORDER_ID);
@@ -119,6 +126,34 @@ class AdminRefundServiceTest {
                 .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
 
         verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("REQUIRES_ADMIN 환불 승인: 자동 재시도 소진 건도 관리자가 수동 승인 가능")
+    void approveRefund_requires_admin_success() {
+        Refund refund = makeRequiresAdminRefund();
+        PaymentOrder order = makeCompletedOrder();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
+        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+
+        RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID);
+
+        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+        verify(paymentGatewayClient).cancelPayment(eq("uid-1"), eq(AMOUNT), any(), any());
+    }
+
+    @Test
+    @DisplayName("REQUIRES_ADMIN 환불 거절: 자동 재시도 소진 건도 관리자가 수동 거절 가능")
+    void rejectRefund_requires_admin_success() {
+        Refund refund = makeRequiresAdminRefund();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        adminRefundService.rejectRefund(REFUND_ID, "복구 불가 건");
+
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(refund.getRejectReason()).isEqualTo("복구 불가 건");
     }
 
     @Test

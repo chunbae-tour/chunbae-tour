@@ -83,9 +83,9 @@ public class Refund extends BaseEntity {
                 .build();
     }
 
-    /** 관리자 승인 시 상태 전이. PENDING이 아니면 PAY_020. */
+    /** 관리자 승인 시 상태 전이. PENDING 또는 REQUIRES_ADMIN 허용 — 자동 재시도 실패 건도 관리자가 수동 처리 가능. */
     public void approve() {
-        if (this.status != RefundStatus.PENDING) {
+        if (this.status != RefundStatus.PENDING && this.status != RefundStatus.REQUIRES_ADMIN) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.APPROVED;
@@ -138,9 +138,9 @@ public class Refund extends BaseEntity {
         this.status = RefundStatus.APPROVED;
     }
 
-    /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
+    /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING 또는 REQUIRES_ADMIN 허용. */
     public void reject(String rejectReason) {
-        if (this.status != RefundStatus.PENDING) {
+        if (this.status != RefundStatus.PENDING && this.status != RefundStatus.REQUIRES_ADMIN) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.REJECTED;

@@ -139,10 +139,11 @@ public class RefundService {
      */
     @Transactional
     public void completeSchedulerRetry(Long refundId, String orderUid, Long amount) {
-        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderUid)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+        // 락 순서: Refund → Order (admin approveRefund와 동일 순서 — 역전 시 데드락 위험)
         Refund refund = refundRepository.findByIdWithLock(refundId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderUid)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
         if (refund.getStatus() == RefundStatus.APPROVED) {
             return; // 이미 처리됨 (멱등)
