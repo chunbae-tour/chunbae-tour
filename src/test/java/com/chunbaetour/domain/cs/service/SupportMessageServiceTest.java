@@ -3,6 +3,7 @@ package com.chunbaetour.domain.cs.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -15,6 +16,9 @@ import com.chunbaetour.domain.cs.dto.request.SupportSendMessageRequest;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
+import com.chunbaetour.domain.cs.entity.SupportMessage;
+import com.chunbaetour.domain.cs.entity.SupportMessageType;
+import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.time.Duration;
 import java.util.Optional;
@@ -106,8 +110,55 @@ class SupportMessageServiceTest {
         verify(supportMessageRepository, never()).save(any());
     }
 
+    // ===== 성공 경로 =====
+
+    // USER 소유자 발신 — save·publish 호출 확인 (트랜잭션 없는 환경 → else 분기 즉시 publish)
+    @Test
+    void sendMessage_whenOwnerSends_savesAndPublishes() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+        given(supportMessageRepository.save(any())).willReturn(buildMessage(100L, 1L));
+
+        supportMessageService.sendMessage(1L, 1L, false, req("안녕하세요"));
+
+        verify(supportMessageRepository).save(any(SupportMessage.class));
+        verify(supportRedisPubSubService).publish(eq(1L), any());
+    }
+
+    // ADMIN IN_PROGRESS 방 발신 — save·publish 호출 확인
+    @Test
+    void sendMessage_whenAdminSendsToInProgressRoom_savesAndPublishes() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 99L, SupportRoomStatus.IN_PROGRESS)));
+        given(supportMessageRepository.save(any())).willReturn(buildMessage(101L, 1L));
+
+        supportMessageService.sendMessage(1L, 1L, true, req("확인했습니다"));
+
+        verify(supportMessageRepository).save(any(SupportMessage.class));
+        verify(supportRedisPubSubService).publish(eq(1L), any());
+    }
+
     private SupportSendMessageRequest req(String content) {
         return new SupportSendMessageRequest(content);
+    }
+
+    private SupportMessage buildMessage(Long id, Long roomId) {
+        SupportMessage msg = SupportMessage.builder()
+                .supportRoomId(roomId)
+                .senderId(1L)
+                .senderRole(SupportSenderRole.CUSTOMER)
+                .messageType(SupportMessageType.TEXT)
+                .content("테스트")
+                .fileUrl(null)
+                .build();
+        try {
+            var field = SupportMessage.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(msg, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return msg;
     }
 
     private SupportRoom buildRoom(Long id, Long userId, SupportRoomStatus status) {
