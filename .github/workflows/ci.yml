@@ -25,8 +25,20 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # 메인 소스 컴파일 + assemble. 테스트 '실행'은 testcontainers(MySQL/Redis Docker)가 필요해
+      # 본 CI에서는 아직 돌리지 않는다(실 test 잡은 후속). '-x test'로 test 태스크만 제외한다.
       - name: Build with Gradle (skip tests)
         run: ./gradlew build -x test --no-daemon
+
+      # 테스트 소스 컴파일 게이트.
+      #
+      # WHY: 'build -x test'는 test 태스크를 그래프에서 제거하며, test에만 의존하던 compileTestJava까지
+      # 함께 빠진다. 그 결과 테스트 코드가 컴파일조차 안 되는 PR이 "CI 그린"으로 머지돼 develop의
+      # 테스트 컴파일을 통째로 깨뜨린 사고가 있었다(PR #275: ShopImageStorage import 누락 → #297 hotfix).
+      # 이 단계는 test 소스를 '실행 없이' 컴파일만 강제해 그 사고 유형을 즉시 차단한다.
+      # 테스트 '실행' 게이트(./gradlew test)는 testcontainers 가용성 확인 + develop red 테스트 정리 후 별도 도입.
+      - name: Compile test sources (CI gate)
+        run: ./gradlew compileTestJava --no-daemon
 
       - name: Upload build artifacts
         if: failure()
