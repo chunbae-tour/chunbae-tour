@@ -21,7 +21,6 @@ import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -63,7 +62,9 @@ public class RefundService {
 
         try {
             // PortOne 원결제 취소 호출은 DB/Wallet 락을 잡지 않은 상태에서 실행한다.
-            paymentGatewayClient.cancelPayment(preparation.orderUid(), preparation.amount(), preparation.reason());
+            paymentGatewayClient.cancelPayment(
+                    preparation.orderUid(), preparation.amount(), preparation.reason(),
+                    "refund-" + preparation.refundId());
         } catch (RuntimeException e) {
             // cancelPayment 실패 시 PortOne이 실제로 취소 처리했는지 재확인한다.
             // 타임아웃 등으로 취소는 성공했으나 응답 수신이 실패한 경우:

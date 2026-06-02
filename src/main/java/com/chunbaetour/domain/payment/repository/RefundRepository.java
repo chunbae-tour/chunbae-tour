@@ -36,7 +36,7 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
      * 스케줄러 재시도 대상 조회 — FAILED이면서 next_retry_at이 도래하고 최대 횟수 미만인 건만.
      * idx_refunds_retry (status, next_retry_at) 인덱스 사용.
      */
-    @Query("SELECT r FROM Refund r WHERE r.status = 'FAILED' " +
+    @Query("SELECT r FROM Refund r WHERE r.status = :status " +
            "AND r.retryCount < :maxRetryCount " +
            "AND r.nextRetryAt IS NOT NULL " +
            "AND r.nextRetryAt <= :now " +
@@ -44,6 +44,7 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
     List<Refund> findRetryableRefunds(
             @Param("now") LocalDateTime now,
             @Param("maxRetryCount") int maxRetryCount,
+            @Param("status") RefundStatus status,
             Pageable pageable);
 
     /** 사용자 환불 목록 — status/cursor 모두 선택적 (null이면 조건 미적용) */

@@ -110,7 +110,7 @@ class RefundServiceTest {
 
         RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
 
-        verify(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+        verify(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), eq("user request"), any());
         verify(walletService).reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID);
         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
         assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
@@ -128,7 +128,7 @@ class RefundServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
 
-        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any(), any());
     }
 
     @Test
@@ -155,7 +155,7 @@ class RefundServiceTest {
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
         doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
-                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), eq("user request"), any());
 
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
                 .isInstanceOf(BusinessException.class)
@@ -176,7 +176,7 @@ class RefundServiceTest {
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
         doThrow(new IllegalStateException("unexpected gateway failure"))
-                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), eq("user request"), any());
 
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
                 .isInstanceOf(BusinessException.class)
@@ -199,7 +199,7 @@ class RefundServiceTest {
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
         doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
-                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), eq("user request"), any());
         given(paymentGatewayClient.verifyPayment(ORDER_UID))
                 .willReturn(new PortOnePaymentInfo("CANCELLED", AMOUNT, AMOUNT));
         given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(AMOUNT);
@@ -221,7 +221,7 @@ class RefundServiceTest {
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
         doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
-                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), eq("user request"), any());
         given(paymentGatewayClient.verifyPayment(ORDER_UID))
                 .willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE));
 
@@ -264,7 +264,7 @@ class RefundServiceTest {
         RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
 
         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
-        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any(), any());
     }
 
     @Test

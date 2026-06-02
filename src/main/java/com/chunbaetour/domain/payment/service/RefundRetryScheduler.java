@@ -5,6 +5,7 @@ import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePayment
 import com.chunbaetour.domain.payment.entity.Refund;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.repository.RefundRepository;
+import com.chunbaetour.domain.payment.type.RefundStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +48,7 @@ public class RefundRetryScheduler {
     public void retryFailedRefunds() {
         LocalDateTime now = LocalDateTime.now(clock);
         var pageable = PageRequest.of(0, RETRY_BATCH_SIZE);
-        var retryable = refundRepository.findRetryableRefunds(now, MAX_RETRY_COUNT, pageable);
+        var retryable = refundRepository.findRetryableRefunds(now, MAX_RETRY_COUNT, RefundStatus.FAILED, pageable);
 
         if (retryable.isEmpty()) {
             return;
@@ -69,7 +70,8 @@ public class RefundRetryScheduler {
 
         String orderUid = order.getOrderUid();
         try {
-            paymentGatewayClient.cancelPayment(orderUid, refund.getAmount(), refund.getReason());
+            paymentGatewayClient.cancelPayment(
+                    orderUid, refund.getAmount(), refund.getReason(), "refund-" + refund.getId());
         } catch (RuntimeException e) {
             // cancelPayment 실패 시 PG 상태 재확인 (타임아웃 후 실제로 취소됐을 수 있음)
             try {
@@ -98,12 +100,15 @@ public class RefundRetryScheduler {
 
     private void recordFailure(Refund refund) {
         transactionTemplate.executeWithoutResult(status -> {
-            int nextCount = refund.getRetryCount() + 1;
+            // detached entity를 DB에서 다시 조회해 Hibernate 변경 추적 활성화
+            Refund managed = refundRepository.findById(refund.getId()).orElse(null);
+            if (managed == null) return;
+            int nextCount = managed.getRetryCount() + 1;
             // 최대 재시도 횟수 초과 시 nextRetryAt을 null로 설정해 스케줄러 대상에서 제외
             LocalDateTime nextRetryAt = nextCount < RETRY_INTERVALS_MINUTES.length
                     ? LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[nextCount])
                     : null;
-            refund.recordRetryFailure(nextRetryAt);
+            managed.recordRetryFailure(nextRetryAt);
         });
     }
 }

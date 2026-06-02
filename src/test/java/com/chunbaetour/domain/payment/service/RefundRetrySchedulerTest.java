@@ -78,12 +78,12 @@ class RefundRetrySchedulerTest {
     @Test
     @DisplayName("재시도 대상 없으면 PG 호출 없음")
     void retryFailedRefunds_noRetryable_doesNothing() {
-        given(refundRepository.findRetryableRefunds(any(), eq(5), any(PageRequest.class)))
+        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
                 .willReturn(List.of());
 
         scheduler.retryFailedRefunds();
 
-        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any(), any());
     }
 
     @Test
@@ -91,13 +91,13 @@ class RefundRetrySchedulerTest {
     void retryFailedRefunds_cancelSucceeds_completesRefund() {
         Refund refund = failedRefund(1L, 100L, 0);
         PaymentOrder order = completedOrder(100L, "order-uid-1");
-        given(refundRepository.findRetryableRefunds(any(), eq(5), any(PageRequest.class)))
+        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
                 .willReturn(List.of(refund));
         given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
 
         scheduler.retryFailedRefunds();
 
-        verify(paymentGatewayClient).cancelPayment("order-uid-1", 10_000L, "user request");
+        verify(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
         verify(refundService).completeSchedulerRetry(1L, "order-uid-1", 10_000L);
     }
 
@@ -106,11 +106,11 @@ class RefundRetrySchedulerTest {
     void retryFailedRefunds_cancelFails_butPGCancelled_completesRefund() {
         Refund refund = failedRefund(1L, 100L, 0);
         PaymentOrder order = completedOrder(100L, "order-uid-1");
-        given(refundRepository.findRetryableRefunds(any(), eq(5), any(PageRequest.class)))
+        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
                 .willReturn(List.of(refund));
         given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
         org.mockito.Mockito.doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
-                .when(paymentGatewayClient).cancelPayment("order-uid-1", 10_000L, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("CANCELLED", 10_000L, 10_000L));
 
@@ -124,20 +124,20 @@ class RefundRetrySchedulerTest {
     void retryFailedRefunds_cancelFails_pgStillPaid_recordsFailure() {
         Refund refund = failedRefund(1L, 100L, 0);
         PaymentOrder order = completedOrder(100L, "order-uid-1");
-        given(refundRepository.findRetryableRefunds(any(), eq(5), any(PageRequest.class)))
+        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
                 .willReturn(List.of(refund));
         given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
+        // recordFailure가 DB에서 refund를 다시 로드하므로 stub 필요
+        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
         org.mockito.Mockito.doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
-                .when(paymentGatewayClient).cancelPayment("order-uid-1", 10_000L, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
 
         scheduler.retryFailedRefunds();
 
         verify(refundService, never()).completeSchedulerRetry(any(), any(), any());
-        // recordRetryFailure 호출로 retryCount 1 증가
         assertThat(refund.getRetryCount()).isEqualTo(1);
-        // 2번째 재시도 간격(5분) 적용 — nextRetryAt이 갱신됨
         assertThat(refund.getNextRetryAt()).isNotNull();
     }
 
@@ -146,17 +146,18 @@ class RefundRetrySchedulerTest {
     void retryFailedRefunds_maxRetryReached_setsNullNextRetryAt() {
         Refund refund = failedRefund(1L, 100L, 4); // 4회 실패, 5번째 시도
         PaymentOrder order = completedOrder(100L, "order-uid-1");
-        given(refundRepository.findRetryableRefunds(any(), eq(5), any(PageRequest.class)))
+        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
                 .willReturn(List.of(refund));
         given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
+        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
         org.mockito.Mockito.doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
-                .when(paymentGatewayClient).cancelPayment("order-uid-1", 10_000L, "user request");
+                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
                 .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
 
         scheduler.retryFailedRefunds();
 
         assertThat(refund.getRetryCount()).isEqualTo(5);
-        assertThat(refund.getNextRetryAt()).isNull(); // 이후 스케줄러 대상에서 제외
+        assertThat(refund.getNextRetryAt()).isNull();
     }
 }

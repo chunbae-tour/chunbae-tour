@@ -77,7 +77,8 @@ public class AdminRefundService {
         paymentGatewayClient.cancelPayment(
             order.getOrderUid(),
             refund.getAmount(),
-            refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
+            refund.getReason() != null ? refund.getReason() : "관리자 환불 승인",
+            "refund-" + refund.getId()
         );
         // 승인 완료된 환불 정보를 DTO로 변환해서 반환
         return RefundDetailResponse.from(refund);
