@@ -84,7 +84,7 @@ class CallbackServiceIntegrationTest extends AbstractIntegrationTest {
         paymentOrderRepository.save(
                 PaymentOrder.create(ORDER_UID, USER_ID, AMOUNT, IDEM_KEY, PaymentMethod.CARD, "pg-1"));
         given(paymentGatewayClient.verifyPayment(ORDER_UID))
-                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT));
+                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT, null));
 
         callbackService.handleSuccess(ORDER_UID, "tx-1");
 
@@ -125,7 +125,7 @@ class CallbackServiceIntegrationTest extends AbstractIntegrationTest {
         order.refund();
         paymentOrderRepository.save(order);
         given(paymentGatewayClient.verifyPayment(ORDER_UID))
-                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT));
+                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT, null));
 
         // 1단계 조기 리턴(COMPLETED)에서 차단되지 않도록 REFUNDED 상태로 직접 진입 — CAS UPDATE 차단 검증이 본 테스트 목적.
         callbackService.handleSuccess(ORDER_UID, "tx-resend");
@@ -140,12 +140,30 @@ class CallbackServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("[Critical #2 회귀 가드] COMPLETED 주문에 성공 콜백 재전송: afterCommit 장애로 남은 멱등키 정리 보장")
+    void handleSuccess_already_completed_still_releases_idempotency_key_after_commit() {
+        // 시나리오: 이전 처리에서 DB commit 성공 후 afterCommit() 실행 전 장애 발생
+        //   → 멱등키가 Redis에 남아있는 상태로 웹훅 재전송
+        //   → COMPLETED 조기 리턴이어도 scheduleUnmark로 키 정리 보장
+        PaymentOrder order = PaymentOrder.create(ORDER_UID, USER_ID, AMOUNT, IDEM_KEY, PaymentMethod.CARD, "pg-1");
+        order.complete("tx-original");
+        paymentOrderRepository.save(order);
+        redis.opsForValue().set("idempotency:" + IDEM_KEY, "1");
+
+        callbackService.handleSuccess(ORDER_UID, "tx-resend");
+
+        assertThat(redis.hasKey("idempotency:" + IDEM_KEY)).isFalse();
+        PaymentOrder reloaded = paymentOrderRepository.findByOrderUid(ORDER_UID).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+    }
+
+    @Test
     @DisplayName("[#114 release blocker 회귀 가드] 성공 콜백 동시 2회: DB-level CAS UPDATE로 wallet 잔액 정확히 1회만 증가")
     void handleSuccess_concurrent_double_call_credits_wallet_exactly_once() throws InterruptedException {
         paymentOrderRepository.save(
                 PaymentOrder.create(ORDER_UID, USER_ID, AMOUNT, IDEM_KEY, PaymentMethod.CARD, "pg-1"));
         given(paymentGatewayClient.verifyPayment(ORDER_UID))
-                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT));
+                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT, null));
 
         CountDownLatch latch = new CountDownLatch(2);
         List<Exception> errors = java.util.Collections.synchronizedList(new java.util.ArrayList<>());

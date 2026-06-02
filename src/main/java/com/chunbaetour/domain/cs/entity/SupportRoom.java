@@ -44,6 +44,10 @@ public class SupportRoom extends BaseEntity {
     @Column(name = "closed_at")
     private LocalDateTime closedAt;
 
+    // 상담 종료 시 ADMIN 메모 — 선택
+    @Column(columnDefinition = "TEXT")
+    private String summary;
+
     @Builder
     private SupportRoom(Long userId) {
         if (userId == null) {
@@ -62,8 +66,8 @@ public class SupportRoom extends BaseEntity {
         this.status = SupportRoomStatus.IN_PROGRESS;
     }
 
-    // 상담 종료 — closedAt은 호출자가 Clock으로 주입 (테스트 결정성 + createdAt/updatedAt 기준 통일)
-    public void close(Clock clock) {
+    // 상담 종료 — closedAt은 호출자가 Clock으로 주입, summary 선택
+    public void close(Clock clock, String summary) {
         if (this.status == SupportRoomStatus.CLOSED) {
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
         }
@@ -72,5 +76,6 @@ public class SupportRoom extends BaseEntity {
         }
         this.status = SupportRoomStatus.CLOSED;
         this.closedAt = LocalDateTime.now(clock);
+        this.summary = summary;
     }
 }

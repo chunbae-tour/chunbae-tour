@@ -60,4 +60,13 @@ public class Wallet extends BaseEntity {
         }
         this.balance -= amount;
     }
+
+    public long debitUpTo(long amount) {
+        if (amount <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        long debited = Math.min(this.balance, amount);
+        this.balance -= debited;
+        return debited;
+    }
 }
