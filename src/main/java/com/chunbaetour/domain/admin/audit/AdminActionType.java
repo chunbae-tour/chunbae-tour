@@ -25,5 +25,14 @@ public enum AdminActionType {
     USER_UNSUSPEND,
 
     /** S04 가게 관리 (수정/숨김/복구) — status·description·phone·operatingHours partial update. */
-    SHOP_UPDATE;
+    SHOP_UPDATE,
+
+    /** S05 인증 승인 (KAN-204) — Shop.markCertified() cascade. */
+    CERTIFICATION_APPROVE,
+
+    /** S05 인증 거절 (KAN-204) — rejectReason 기록. */
+    CERTIFICATION_REJECT,
+
+    /** S05 인증 취소 (KAN-204) — Shop.unmarkCertified() 회수. */
+    CERTIFICATION_CANCEL;
 }
