@@ -97,6 +97,53 @@ class ShopCertificationTest {
         }
     }
 
+    @Nested
+    @DisplayName("cancel()")
+    class Cancel {
+
+        private ShopCertification approved() {
+            ShopCertification cert = pending();
+            cert.approve(7L, PROCESSED_AT);
+            return cert;
+        }
+
+        @Test
+        @DisplayName("APPROVED 취소 → CANCELLED + cancelReason/processedBy/processedAt 세팅")
+        void cancel_from_approved() {
+            ShopCertification cert = approved();
+
+            cert.cancel(11L, "인증 기준 미충족 발견", PROCESSED_AT);
+
+            assertThat(cert.getStatus()).isEqualTo(ShopCertificationStatus.CANCELLED);
+            assertThat(cert.getCancelReason()).isEqualTo("인증 기준 미충족 발견");
+            assertThat(cert.getProcessedBy()).isEqualTo(11L);
+            assertThat(cert.getProcessedAt()).isEqualTo(PROCESSED_AT);
+        }
+
+        @Test
+        @DisplayName("PENDING 취소 → 409 SHOP_CERTIFICATION_INVALID_STATUS")
+        void cancel_when_pending_throws() {
+            ShopCertification cert = pending();
+
+            assertThatThrownBy(() -> cert.cancel(11L, "사유", PROCESSED_AT))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.SHOP_CERTIFICATION_INVALID_STATUS);
+        }
+
+        @Test
+        @DisplayName("REJECTED 취소 → 409")
+        void cancel_when_rejected_throws() {
+            ShopCertification cert = pending();
+            cert.reject(9L, "기준 미달", PROCESSED_AT);
+
+            assertThatThrownBy(() -> cert.cancel(11L, "사유", PROCESSED_AT))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.SHOP_CERTIFICATION_INVALID_STATUS);
+        }
+    }
+
     @Test
     @DisplayName("submit() → 초기 상태 PENDING")
     void submit_initial_status_pending() {

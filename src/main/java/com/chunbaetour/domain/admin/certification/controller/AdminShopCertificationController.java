@@ -36,8 +36,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>2차 문서의 POST → PATCH 정정 적용 (승인/거절/취소는 인증 신청 status 부분 수정이라 PATCH가 의미상 정확 +
  * 기존 admin/refunds approve PATCH 패턴 일관). 승인/거절/취소 endpoint에 {@link LogAdminAction}을 부착해 S01
- * audit 인프라가 자동 기록한다 — 승인/거절은 {@code targetIdVar = "applicationId"}, 취소는
- * {@code targetIdVar = "shopId"}로 path 변수에서 결정적으로 대상 id를 추출(S01 리뷰 합의). 조회(GET) endpoint는
+ * audit 인프라가 자동 기록한다 — 승인/거절/취소 모두 {@code targetIdVar = "certificationId"}로 path 변수에서
+ * 결정적으로 대상 id(인증 신청 PK)를 추출(targetType=SHOP_CERTIFICATION과 일관). 조회(GET) endpoint는
  * 상태 전이가 없어 audit 미부착.
  */
 @Tag(name = "상인 인증 관리 (ADMIN)",
@@ -62,48 +62,49 @@ public class AdminShopCertificationController {
     }
 
     @Operation(summary = "인증 신청 단건 상세 조회")
-    @GetMapping("/shop-certifications/{applicationId}")
+    @GetMapping("/shop-certifications/{certificationId}")
     public ApiResponse<ShopCertificationDetailResponse> getCertification(
-            @PathVariable @Positive Long applicationId
+            @PathVariable @Positive Long certificationId
     ) {
-        return ApiResponse.success(certificationService.getCertification(applicationId));
+        return ApiResponse.success(certificationService.getCertification(certificationId));
     }
 
     @Operation(summary = "인증 승인 → 가게 인증 마크 자동 부여 (cascade)")
-    @PatchMapping("/shop-certifications/{applicationId}/approve")
+    @PatchMapping("/shop-certifications/{certificationId}/approve")
     @LogAdminAction(actionType = AdminActionType.CERTIFICATION_APPROVE,
             targetType = AdminTargetType.SHOP_CERTIFICATION,
-            targetIdVar = "applicationId")
+            targetIdVar = "certificationId")
     public ApiResponse<ShopCertificationDetailResponse> approve(
-            @PathVariable @Positive Long applicationId,
+            @PathVariable @Positive Long certificationId,
             @AuthenticationPrincipal Long adminUserId
     ) {
-        return ApiResponse.success(certificationService.approve(applicationId, adminUserId));
+        return ApiResponse.success(certificationService.approve(certificationId, adminUserId));
     }
 
     @Operation(summary = "인증 거절 (사유 필수)")
-    @PatchMapping("/shop-certifications/{applicationId}/reject")
+    @PatchMapping("/shop-certifications/{certificationId}/reject")
     @LogAdminAction(actionType = AdminActionType.CERTIFICATION_REJECT,
             targetType = AdminTargetType.SHOP_CERTIFICATION,
-            targetIdVar = "applicationId")
+            targetIdVar = "certificationId")
     public ApiResponse<ShopCertificationDetailResponse> reject(
-            @PathVariable @Positive Long applicationId,
+            @PathVariable @Positive Long certificationId,
             @AuthenticationPrincipal Long adminUserId,
             @Valid @RequestBody CertificationRejectRequest request
     ) {
-        return ApiResponse.success(certificationService.reject(applicationId, adminUserId, request.reason()));
+        return ApiResponse.success(certificationService.reject(certificationId, adminUserId, request.reason()));
     }
 
-    @Operation(summary = "인증 취소 (사유 필수) → 가게 인증 마크 회수")
-    @PatchMapping("/shops/{shopId}/certification/cancel")
+    @Operation(summary = "인증 취소 (사유 필수) → APPROVED 인증 회수 (cert CANCELLED + 가게 마크 회수)")
+    @PatchMapping("/shop-certifications/{certificationId}/cancel")
     @LogAdminAction(actionType = AdminActionType.CERTIFICATION_CANCEL,
             targetType = AdminTargetType.SHOP_CERTIFICATION,
-            targetIdVar = "shopId")
-    public ApiResponse<Void> cancel(
-            @PathVariable @Positive Long shopId,
+            targetIdVar = "certificationId")
+    public ApiResponse<ShopCertificationDetailResponse> cancel(
+            @PathVariable @Positive Long certificationId,
+            @AuthenticationPrincipal Long adminUserId,
             @Valid @RequestBody CertificationCancelRequest request
     ) {
-        certificationService.cancelCertification(shopId, request.reason());
-        return ApiResponse.success();
+        return ApiResponse.success(
+                certificationService.cancelCertification(certificationId, request.reason(), adminUserId));
     }
 }

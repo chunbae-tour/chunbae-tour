@@ -62,6 +62,10 @@ public class ShopCertification extends BaseEntity {
     @Column(name = "reject_reason", columnDefinition = "TEXT")
     private String rejectReason;
 
+    /** 취소 사유 — APPROVED 인증 취소 시에만 기록 (방향 B). */
+    @Column(name = "cancel_reason", columnDefinition = "TEXT")
+    private String cancelReason;
+
     /** 처리 운영자 userId. 미처리(PENDING) 시 null. */
     @Column(name = "processed_by")
     private Long processedBy;
@@ -118,6 +122,22 @@ public class ShopCertification extends BaseEntity {
         this.status = ShopCertificationStatus.REJECTED;
         this.processedBy = adminUserId;
         this.rejectReason = reason;
+        this.processedAt = processedAt;
+    }
+
+    /**
+     * 인증 취소 — APPROVED에서만 가능 (방향 B). APPROVED 외 호출 시 409
+     * ({@link ErrorCode#SHOP_CERTIFICATION_INVALID_STATUS}). 인증 row에 CANCELLED 전이를 기록하고
+     * cancelReason/processedBy/processedAt을 남긴다. 가게 인증 마크 회수(Shop.unmarkCertified())는 서비스가
+     * 같은 트랜잭션에서 cascade한다.
+     */
+    public void cancel(Long adminUserId, String reason, LocalDateTime processedAt) {
+        if (this.status != ShopCertificationStatus.APPROVED) {
+            throw new BusinessException(ErrorCode.SHOP_CERTIFICATION_INVALID_STATUS);
+        }
+        this.status = ShopCertificationStatus.CANCELLED;
+        this.cancelReason = reason;
+        this.processedBy = adminUserId;
         this.processedAt = processedAt;
     }
 }

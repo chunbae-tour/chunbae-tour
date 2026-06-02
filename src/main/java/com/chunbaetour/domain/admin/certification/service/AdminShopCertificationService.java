@@ -30,9 +30,13 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  *   <li><b>승인</b> — {@code cert.approve(adminUserId, now)} + {@code shop.markCertified()}를 동일 트랜잭션에서
  *       수행해 인증 마크가 자동 부여된다.</li>
- *   <li><b>취소</b> — 대상 가게가 인증되지 않았으면 409({@link ErrorCode#SHOP_NOT_CERTIFIED}),
- *       인증된 가게면 {@code shop.unmarkCertified()}.</li>
+ *   <li><b>취소</b> — {@code cert.cancel(...)}(APPROVED 가드, 아니면 409
+ *       {@link ErrorCode#SHOP_CERTIFICATION_INVALID_STATUS}) + {@code shop.unmarkCertified()}를 동일 트랜잭션에서
+ *       수행한다(방향 B: 인증 row에 CANCELLED 전이 기록 + cancelReason 보존).</li>
  * </ul>
+ *
+ * <p>상태 전이(approve/reject/cancel) 조회는 {@code findByIdForUpdate}(PESSIMISTIC_WRITE)로 행을 잠가 동시
+ * 처리로 인한 status·is_certified 모순을 방지한다. 단순 상세 조회(GET)는 락 없는 {@code findById} 사용.
  *
  * <p>{@code processedAt}은 {@code Clock} 빈으로 산출해 도메인 메서드에 주입한다
  * ({@code AdminUserService.suspend}의 {@code LocalDateTime.now(clock)} 패턴 일관) — 테스트 시각 고정 가능.
@@ -73,45 +77,49 @@ public class AdminShopCertificationService {
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
     }
 
-    /** 인증 신청 단건 상세. */
-    public ShopCertificationDetailResponse getCertification(Long applicationId) {
-        return ShopCertificationDetailResponse.from(findCertification(applicationId));
+    /** 인증 신청 단건 상세 — 단순 조회(락 미적용). 가게 현재 인증여부(isCertified) 동봉. */
+    public ShopCertificationDetailResponse getCertification(Long certificationId) {
+        ShopCertification cert = certificationRepository.findById(certificationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_CERTIFICATION_NOT_FOUND));
+        return ShopCertificationDetailResponse.from(cert, findShop(cert.getShopId()).isCertified());
     }
 
     /**
      * 인증 승인 — {@code cert.approve()}(PENDING 가드) + {@code shop.markCertified()} 동일 트랜잭션 cascade.
-     * PENDING 외 신청 재승인 시 409, 미존재 신청 404, 미존재 가게 404.
+     * PENDING 외 신청 재승인 시 409, 미존재 신청 404, 미존재 가게 404. 조회는 비관적 락(findByIdForUpdate).
      */
     @Transactional
-    public ShopCertificationDetailResponse approve(Long applicationId, Long adminUserId) {
-        ShopCertification cert = findCertification(applicationId);
+    public ShopCertificationDetailResponse approve(Long certificationId, Long adminUserId) {
+        ShopCertification cert = findCertificationForUpdate(certificationId);
         Shop shop = findShop(cert.getShopId());
         cert.approve(adminUserId, LocalDateTime.now(clock));
         shop.markCertified();
-        return ShopCertificationDetailResponse.from(cert);
+        return ShopCertificationDetailResponse.from(cert, shop.isCertified());
     }
 
     /**
      * 인증 거절 — {@code cert.reject()}(PENDING 가드) + rejectReason 기록. 가게 인증 마크는 부여하지 않는다.
+     * 조회는 비관적 락(findByIdForUpdate).
      */
     @Transactional
-    public ShopCertificationDetailResponse reject(Long applicationId, Long adminUserId, String reason) {
-        ShopCertification cert = findCertification(applicationId);
+    public ShopCertificationDetailResponse reject(Long certificationId, Long adminUserId, String reason) {
+        ShopCertification cert = findCertificationForUpdate(certificationId);
         cert.reject(adminUserId, reason, LocalDateTime.now(clock));
-        return ShopCertificationDetailResponse.from(cert);
+        return ShopCertificationDetailResponse.from(cert, findShop(cert.getShopId()).isCertified());
     }
 
     /**
-     * 인증 취소 — 이미 인증된 가게의 인증 마크 회수({@code shop.unmarkCertified()}). 인증되지 않은 가게면 409
-     * ({@link ErrorCode#SHOP_NOT_CERTIFIED}). 취소 사유는 admin_action_log에 기록된다(컨트롤러 wiring 후속 보강).
+     * 인증 취소 (방향 B) — {@code cert.cancel()}(APPROVED 가드, 아니면 409
+     * {@link ErrorCode#SHOP_CERTIFICATION_INVALID_STATUS}) + {@code shop.unmarkCertified()} 동일 트랜잭션 cascade.
+     * 인증 row에 CANCELLED 전이와 cancelReason을 기록한다. 조회는 비관적 락(findByIdForUpdate).
      */
     @Transactional
-    public void cancelCertification(Long shopId, String reason) {
-        Shop shop = findShop(shopId);
-        if (!shop.isCertified()) {
-            throw new BusinessException(ErrorCode.SHOP_NOT_CERTIFIED);
-        }
+    public ShopCertificationDetailResponse cancelCertification(Long certificationId, String reason, Long adminUserId) {
+        ShopCertification cert = findCertificationForUpdate(certificationId);
+        cert.cancel(adminUserId, reason, LocalDateTime.now(clock));
+        Shop shop = findShop(cert.getShopId());
         shop.unmarkCertified();
+        return ShopCertificationDetailResponse.from(cert, shop.isCertified());
     }
 
     // ── S10 대시보드(KAN-204 후속) 의존 카운트 ──────────────────────────────
@@ -121,8 +129,8 @@ public class AdminShopCertificationService {
         return certificationRepository.countByStatus(ShopCertificationStatus.PENDING);
     }
 
-    private ShopCertification findCertification(Long applicationId) {
-        return certificationRepository.findById(applicationId)
+    private ShopCertification findCertificationForUpdate(Long certificationId) {
+        return certificationRepository.findByIdForUpdate(certificationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_CERTIFICATION_NOT_FOUND));
     }
 

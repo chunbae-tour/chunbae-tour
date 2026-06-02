@@ -7,7 +7,8 @@
 --   shop_id:          인증 대상 가게 (shops.id)
 --   status:           PENDING / APPROVED / REJECTED — VARCHAR(32) + JPA @Enumerated(STRING)
 --   submitted_reason: 상인이 신청 시 입력한 사유 (nullable)
---   reject_reason:    운영자 거절/취소 사유 (nullable — 거절/취소 시에만 기록)
+--   reject_reason:    운영자 거절 사유 (nullable — 거절 시에만 기록)
+--   cancel_reason:    운영자 취소 사유 (nullable — APPROVED 인증 취소 시에만 기록, 방향 B)
 --   processed_by:     처리 운영자 userId (nullable — 미처리 PENDING 시 null)
 --   submitted_at:     신청 시각
 --   processed_at:     승인/거절 처리 시각 (nullable — 미처리 시 null)
@@ -29,6 +30,7 @@ CREATE TABLE shop_certifications (
     status           VARCHAR(32)  NOT NULL,
     submitted_reason TEXT         NULL,
     reject_reason    TEXT         NULL,
+    cancel_reason    TEXT         NULL,
     processed_by     BIGINT       NULL,
     submitted_at     DATETIME(6)  NOT NULL,
     processed_at     DATETIME(6)  NULL,
@@ -36,5 +38,6 @@ CREATE TABLE shop_certifications (
     updated_at       DATETIME(6)  NOT NULL,
     PRIMARY KEY (id),
     KEY idx_shop_cert_status (status),
-    KEY idx_shop_cert_shop (shop_id)
+    KEY idx_shop_cert_shop (shop_id),
+    CONSTRAINT fk_shop_certifications_shop FOREIGN KEY (shop_id) REFERENCES shops(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

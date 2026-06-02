@@ -43,8 +43,8 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>목록(status 필터)/상세 200</li>
  *   <li>승인 200 → Shop.isCertified=true cascade + audit CERTIFICATION_APPROVE</li>
  *   <li>거절 200 → rejectReason 저장 + audit CERTIFICATION_REJECT</li>
- *   <li>취소 200 → isCertified=false 회복 + audit CERTIFICATION_CANCEL</li>
- *   <li>이미 APPROVED 재승인 409 / 미존재 applicationId 404 / 인증 안 된 가게 취소 409 / 사유 누락 400</li>
+ *   <li>취소 200 → cert.status=CANCELLED + cancelReason 저장 + isCertified=false 회복 + audit CERTIFICATION_CANCEL(targetId=certId)</li>
+ *   <li>이미 APPROVED 재승인 409 / 미존재 certificationId 404 / 비APPROVED 취소 409 / 사유 누락 400</li>
  *   <li>USER/MERCHANT 토큰 403(AUTH_007)</li>
  * </ul>
  */
@@ -161,19 +161,31 @@ class AdminShopCertificationControllerIntegrationTest extends AbstractIntegratio
     }
 
     @Test
-    @DisplayName("PATCH 취소 → 200 + isCertified=false 회복 + audit CERTIFICATION_CANCEL")
+    @DisplayName("PATCH 취소 → 200 + cert CANCELLED + cancelReason 저장 + isCertified=false + audit targetId=certId")
     void cancel_returns_200_and_unmarks_certified() throws Exception {
         String adminToken = adminToken();
         Shop shop = seedShop();
+        // APPROVED 인증을 시드 (방향 B: 취소는 APPROVED cert에서만)
+        ShopCertification cert = certificationRepository.save(
+                ShopCertification.submit(shop.getId(), "신청", LocalDateTime.now()));
+        cert.approve(1L, LocalDateTime.now());
+        certificationRepository.save(cert);
         shop.markCertified();
         shopRepository.save(shop);
 
-        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId() + "/certification/cancel")
+        mockMvc.perform(patch("/api/v1/admin/shop-certifications/" + cert.getId() + "/cancel")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"인증 기준 미충족 발견\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.data.cancelReason").value("인증 기준 미충족 발견"))
+                .andExpect(jsonPath("$.data.isCertified").value(false));
 
+        ShopCertification reloaded = certificationRepository.findById(cert.getId()).orElseThrow();
+        assertThat(reloaded.getStatus())
+                .isEqualTo(com.chunbaetour.domain.shop.type.ShopCertificationStatus.CANCELLED);
+        assertThat(reloaded.getCancelReason()).isEqualTo("인증 기준 미충족 발견");
         assertThat(shopRepository.findById(shop.getId()).orElseThrow().isCertified()).isFalse();
 
         List<AdminActionLog> logs = adminActionLogRepository.findAll();
@@ -181,7 +193,7 @@ class AdminShopCertificationControllerIntegrationTest extends AbstractIntegratio
         AdminActionLog log = logs.getFirst();
         assertThat(log.getActionType()).isEqualTo(AdminActionType.CERTIFICATION_CANCEL);
         assertThat(log.getTargetType()).isEqualTo(AdminTargetType.SHOP_CERTIFICATION);
-        assertThat(log.getTargetId()).isEqualTo(shop.getId());
+        assertThat(log.getTargetId()).isEqualTo(cert.getId());
     }
 
     // ── 에러/접근 제어 ──────────────────────────────────────────────────────
@@ -205,7 +217,7 @@ class AdminShopCertificationControllerIntegrationTest extends AbstractIntegratio
     }
 
     @Test
-    @DisplayName("미존재 applicationId 승인 → 404 SHOP_019 + audit 미기록")
+    @DisplayName("미존재 certificationId 승인 → 404 SHOP_019 + audit 미기록")
     void approve_nonexistent_returns_404() throws Exception {
         String adminToken = adminToken();
 
@@ -218,17 +230,20 @@ class AdminShopCertificationControllerIntegrationTest extends AbstractIntegratio
     }
 
     @Test
-    @DisplayName("인증 안 된 가게 취소 → 409 SHOP_021 + audit 미기록")
-    void cancel_not_certified_returns_409() throws Exception {
+    @DisplayName("비APPROVED cert 취소 → 409 SHOP_020 + audit 미기록")
+    void cancel_non_approved_returns_409() throws Exception {
         String adminToken = adminToken();
-        Shop shop = seedShop(); // isCertified=false
+        Shop shop = seedShop();
+        // PENDING 상태 cert는 취소 불가 (APPROVED만 허용)
+        ShopCertification cert = certificationRepository.save(
+                ShopCertification.submit(shop.getId(), "신청", LocalDateTime.now()));
 
-        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId() + "/certification/cancel")
+        mockMvc.perform(patch("/api/v1/admin/shop-certifications/" + cert.getId() + "/cancel")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"사유\"}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("SHOP_021"));
+                .andExpect(jsonPath("$.code").value("SHOP_020"));
 
         assertThat(adminActionLogRepository.findAll()).isEmpty();
     }
@@ -253,10 +268,14 @@ class AdminShopCertificationControllerIntegrationTest extends AbstractIntegratio
     void cancel_blank_reason_returns_400() throws Exception {
         String adminToken = adminToken();
         Shop shop = seedShop();
+        ShopCertification cert = certificationRepository.save(
+                ShopCertification.submit(shop.getId(), "신청", LocalDateTime.now()));
+        cert.approve(1L, LocalDateTime.now());
+        certificationRepository.save(cert);
         shop.markCertified();
         shopRepository.save(shop);
 
-        mockMvc.perform(patch("/api/v1/admin/shops/" + shop.getId() + "/certification/cancel")
+        mockMvc.perform(patch("/api/v1/admin/shop-certifications/" + cert.getId() + "/cancel")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"\"}"))
