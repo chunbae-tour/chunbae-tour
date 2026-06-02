@@ -85,78 +85,14 @@ public class QrPayService {
     /**
      * QR 결제 요청 생성.
      * 결제 시점 메뉴 정보를 JSON 스냅샷으로 저장 — 이후 메뉴 수정/삭제 시에도 영수증에 당시 가격 보존.
-     *
-     * TODO(refactor): validation, snapshot building, wallet check를 private helper로 분리
      */
     @Transactional
     public QrPayCreateResponse createQrPayRequest(Long userId, QrPayCreateRequest request) {
-        // 가게 존재 확인
         Shop shop = shopRepository.findById(request.shopId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+        validateShop(shop, userId);
 
-        // ACTIVE 상태 가드 — SUSPENDED/CLOSED 가게는 결제 불가
-        if (shop.getStatus() != ShopStatus.ACTIVE) {
-            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
-        }
-
-        // 본인 가게 자가 결제 차단 — 실수·악용 모두 방지
-        if (shop.getUserId().equals(userId)) {
-            throw new BusinessException(ErrorCode.SELF_PAYMENT_NOT_ALLOWED);
-        }
-
-        // 중복 menuId 검증
-        // 정상 프론트라면 메뉴별 수량만 조절하므로 같은 menuId가 두 번 들어올 일 없음.
-        // 단, 프론트 버그 또는 API 직접 호출 시 [{menuId:100, qty:2}, {menuId:100, qty:3}] 형태로
-        // 중복 요청이 들어오면 스냅샷에 같은 메뉴가 2줄 생기고 totalAmount도 두 번 누적되어
-        // 결제 금액이 의도와 다르게 계산됨. 서버에서 사전 차단.
-        List<Long> menuIds = request.menuItems().stream()
-                .map(QrPayItemRequest::menuId)
-                .toList();
-        Set<Long> uniqueMenuIds = new HashSet<>(menuIds);
-        if (uniqueMenuIds.size() != menuIds.size()) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-
-        // 메뉴 일괄 조회 (N+1 방지)
-        Map<Long, Menu> menuMap = menuRepository.findAllById(menuIds).stream()
-                .collect(Collectors.toMap(Menu::getId, m -> m));
-
-        // 메뉴별 검증 + 스냅샷 구성
-        List<MenuSnapshotItem> snapshots = new ArrayList<>();
-        long totalAmount = 0;
-        for (QrPayItemRequest item : request.menuItems()) {
-            Menu menu = menuMap.get(item.menuId());
-
-            // 메뉴 존재 확인 — soft delete 메뉴는 @SQLRestriction으로 자동 제외
-            if (menu == null) {
-                throw new BusinessException(ErrorCode.MENU_NOT_FOUND);
-            }
-            // 다른 가게 메뉴 접근 차단
-            if (!menu.getShopId().equals(request.shopId())) {
-                throw new BusinessException(ErrorCode.MENU_NOT_FOUND);
-            }
-            // 품절/비활성 메뉴 결제 차단
-            if (!menu.isAvailable()) {
-                throw new BusinessException(ErrorCode.MENU_UNAVAILABLE);
-            }
-            // 메뉴 가격 음수/0 방어 — DB 데이터 오류 시 비정상 결제 생성 방지
-            if (menu.getPrice() <= 0) {
-                throw new BusinessException(ErrorCode.INVALID_REQUEST);
-            }
-
-            snapshots.add(new MenuSnapshotItem(menu.getId(), menu.getName(), menu.getPrice(), item.quantity()));
-            try {
-                long itemTotal = Math.multiplyExact(menu.getPrice(), (long) item.quantity());
-                totalAmount = Math.addExact(totalAmount, itemTotal);
-            } catch (ArithmeticException e) {
-                throw new BusinessException(ErrorCode.INVALID_REQUEST);
-            }
-        }
-
-        // totalAmount 0 이하 차단 — price <= 0 방어에도 불구하고 결제 금액 이상 발생 시 최종 방어
-        if (totalAmount <= 0) {
-            throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
-        }
+        MenuSnapshotResult snapshot = buildMenuSnapshot(request.menuItems(), request.shopId());
 
         // 동일 사용자·가게에 유효한 PENDING 요청 사전 차단 — 만료된 PENDING은 제외 (스케줄러 60초 지연 대응)
         // DB unique 제약(pendingKey)은 동시 레이스 케이스 최종 방어용으로 병행 유지
@@ -165,28 +101,17 @@ public class QrPayService {
             throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
         }
 
-        // 결제 요청 시점 잔액 사전 체크 — 명백한 잔액 부족 조기 차단 (실제 차감은 상인 승인 시 STORY-14)
-        // STORY-14에서 wallet row lock + 잔액 재검증 필수 (생성~승인 사이 잔액 변동 가능)
-        Wallet wallet = walletRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
-        if (wallet.getBalance() < totalAmount) {
-            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
-        }
+        validateWalletBalance(userId, snapshot.totalAmount());
 
         // 결제 시점 메뉴 정보 JSON 스냅샷 직렬화
         // 생성 이후 메뉴 가격 변경/삭제 시에도 결제 금액은 생성 시점 기준으로 고정됨 (의도된 정책)
-        String menuItemsJson = serializeSnapshots(snapshots);
+        String menuItemsJson = serializeSnapshots(snapshot.snapshots());
 
         // QrPayRequest 생성 — expiredAt = 현재 + 5분, 상인 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
         LocalDateTime expiredAt = LocalDateTime.now(clock).plusMinutes(QR_PAY_EXPIRY_MINUTES);
         QrPayRequest qrPayRequest = QrPayRequest.create(
-                UUID.randomUUID().toString(),
-                userId,
-                shop.getId(),
-                totalAmount,
-                menuItemsJson,
-                expiredAt
-        );
+                UUID.randomUUID().toString(), userId, shop.getId(),
+                snapshot.totalAmount(), menuItemsJson, expiredAt);
         // pending_key unique 위반 = 동시 요청 레이스 케이스 → DUPLICATE
         // 그 외 무결성 오류(pay_request_id 충돌 등)는 내부 서버 오류로 처리
         try {
@@ -200,14 +125,75 @@ public class QrPayService {
         }
 
         return new QrPayCreateResponse(
-                qrPayRequest.getPayRequestId(),
-                shop.getId(),
-                shop.getShopName(),
-                totalAmount,
-                snapshots,
-                expiredAt
-        );
+                qrPayRequest.getPayRequestId(), shop.getId(), shop.getShopName(),
+                snapshot.totalAmount(), snapshot.snapshots(), expiredAt);
     }
+
+    // ACTIVE 상태 가드 + 자가 결제 차단
+    private void validateShop(Shop shop, Long userId) {
+        if (shop.getStatus() != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+        if (shop.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.SELF_PAYMENT_NOT_ALLOWED);
+        }
+    }
+
+    /**
+     * 메뉴 중복 검증 + 일괄 조회 + 스냅샷 구성 + totalAmount 계산.
+     * 프론트 버그·직접 호출로 같은 menuId가 두 번 들어오면 금액이 두 번 누적되므로 서버에서 사전 차단.
+     */
+    private MenuSnapshotResult buildMenuSnapshot(List<QrPayItemRequest> items, Long shopId) {
+        List<Long> menuIds = items.stream().map(QrPayItemRequest::menuId).toList();
+        if (new HashSet<>(menuIds).size() != menuIds.size()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        // N+1 방지: 메뉴 일괄 조회
+        Map<Long, Menu> menuMap = menuRepository.findAllById(menuIds).stream()
+                .collect(Collectors.toMap(Menu::getId, m -> m));
+
+        List<MenuSnapshotItem> snapshots = new ArrayList<>();
+        long totalAmount = 0;
+        for (QrPayItemRequest item : items) {
+            Menu menu = menuMap.get(item.menuId());
+            // soft delete 메뉴는 @SQLRestriction으로 자동 제외, 다른 가게 메뉴 접근 차단
+            if (menu == null || !menu.getShopId().equals(shopId)) {
+                throw new BusinessException(ErrorCode.MENU_NOT_FOUND);
+            }
+            if (!menu.isAvailable()) {
+                throw new BusinessException(ErrorCode.MENU_UNAVAILABLE);
+            }
+            // DB 데이터 오류 시 비정상 결제 생성 방지
+            if (menu.getPrice() <= 0) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+            snapshots.add(new MenuSnapshotItem(menu.getId(), menu.getName(), menu.getPrice(), item.quantity()));
+            try {
+                long itemTotal = Math.multiplyExact(menu.getPrice(), (long) item.quantity());
+                totalAmount = Math.addExact(totalAmount, itemTotal);
+            } catch (ArithmeticException e) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+        }
+
+        // price <= 0 방어에도 불구하고 결제 금액 이상 발생 시 최종 방어
+        if (totalAmount <= 0) {
+            throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
+        }
+        return new MenuSnapshotResult(snapshots, totalAmount);
+    }
+
+    // 결제 요청 시점 잔액 사전 체크 — 실제 차감은 상인 승인 시 wallet row lock + 재검증 (STORY-14)
+    private void validateWalletBalance(Long userId, long totalAmount) {
+        Wallet wallet = walletRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+        if (wallet.getBalance() < totalAmount) {
+            throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
+        }
+    }
+
+    private record MenuSnapshotResult(List<MenuSnapshotItem> snapshots, long totalAmount) {}
 
     /**
      * QR 결제 승인/거절 (STORY-14, MERCHANT 전용).
