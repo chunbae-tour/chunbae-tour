@@ -92,10 +92,10 @@ public class SupportMessageService {
         SupportMessage saved = supportMessageRepository.save(message);
         SupportMessageResponse response = SupportMessageResponse.from(saved);
 
-        // 알림 이벤트 발행 — ADMIN 발신 시 방 소유자, USER/MERCHANT 발신 시 배정 ADMIN(null이면 미발송)
-        Long recipientId = isAdmin ? room.getUserId() : room.getAdminId();
-        if (recipientId != null) {
-            applicationEventPublisher.publishEvent(new SupportMessageSentEvent(supportRoomId, recipientId));
+        // 알림 이벤트 발행 — ADMIN 발신 시에만 방 소유자(USER·MERCHANT)에게 알림
+        // USER/MERCHANT 발신 → ADMIN은 알림 인프라 미구축(REST/STOMP 모두 USER 전용)으로 skip
+        if (isAdmin) {
+            applicationEventPublisher.publishEvent(new SupportMessageSentEvent(supportRoomId, room.getUserId()));
         }
 
         // DB 커밋 이후 발행 — 커밋 실패·롤백 시 유령 메시지 브로드캐스트 방지
