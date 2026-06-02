@@ -20,6 +20,7 @@ public class SupportRedisPubSubService {
     private static final String STOMP_TOPIC_PREFIX = "/sub/support/rooms/";
     private static final String METRIC_BROADCAST_FAILURE = "support.broadcast.failure.total";
     private static final String METRIC_SERIALIZE_FAILURE = "support.serialize.failure.total";
+    private static final String METRIC_PUBLISH_FAILURE = "support.publish.failure.total";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -28,14 +29,21 @@ public class SupportRedisPubSubService {
     private final SimpMessagingTemplate messagingTemplate;
     private final MeterRegistry meterRegistry;
 
-    // 메시지 저장 후 Redis 채널 발행 — 모든 서버 인스턴스가 구독 중
+    // 메시지 저장 후 Redis 채널 발행 — 직렬화·publish 예외 분리 처리로 부분 성공 방지
     public void publish(Long supportRoomId, SupportMessageResponse response) {
+        String json;
         try {
-            String json = objectMapper.writeValueAsString(response);
-            stringRedisTemplate.convertAndSend(CHANNEL_PREFIX + supportRoomId, json);
+            json = objectMapper.writeValueAsString(response);
         } catch (JacksonException e) {
             log.error("SupportMessageResponse 직렬화 실패. supportRoomId={}", supportRoomId, e);
             meterRegistry.counter(METRIC_SERIALIZE_FAILURE).increment();
+            return;
+        }
+        try {
+            stringRedisTemplate.convertAndSend(CHANNEL_PREFIX + supportRoomId, json);
+        } catch (Exception e) {
+            log.error("Redis publish 실패. supportRoomId={}", supportRoomId, e);
+            meterRegistry.counter(METRIC_PUBLISH_FAILURE).increment();
         }
     }
 

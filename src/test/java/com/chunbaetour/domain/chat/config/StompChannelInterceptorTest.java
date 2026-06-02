@@ -96,8 +96,23 @@ class StompChannelInterceptorTest {
     // 다른 ADMIN(미담당) — IN_PROGRESS 방 구독 차단
     @Test
     void subscribe_supportRoom_whenOtherAdmin_throwsForbidden() {
-        Message<?> message = subscribeMessage("/sub/support/rooms/10", principal(2L, "ROLE_ADMIN")); // adminId=1인 방
-        SupportRoom room = buildRoomWithAdmin(10L, 99L, 1L); // adminId=1
+        Message<?> message = subscribeMessage("/sub/support/rooms/10", principal(2L, "ROLE_ADMIN"));
+        SupportRoom room = buildRoomWithAdmin(10L, 99L, 1L); // adminId=1, 구독자=2
+        ReflectionTestUtils.setField(room, "status", com.chunbaetour.domain.cs.entity.SupportRoomStatus.IN_PROGRESS);
+        given(supportRoomRepository.findById(10L)).willReturn(Optional.of(room));
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> org.assertj.core.api.Assertions.assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_FORBIDDEN));
+    }
+
+    // CLOSED 방 미배정(adminId=null) — ADMIN도 구독 차단 (WAITING만 전체 ADMIN 허용)
+    @Test
+    void subscribe_supportRoom_whenClosedAndNoAdmin_throwsForbidden() {
+        Message<?> message = subscribeMessage("/sub/support/rooms/10", principal(1L, "ROLE_ADMIN"));
+        SupportRoom room = buildRoom(10L, 99L); // adminId=null
+        ReflectionTestUtils.setField(room, "status", com.chunbaetour.domain.cs.entity.SupportRoomStatus.CLOSED);
         given(supportRoomRepository.findById(10L)).willReturn(Optional.of(room));
 
         assertThatThrownBy(() -> interceptor.preSend(message, channel))

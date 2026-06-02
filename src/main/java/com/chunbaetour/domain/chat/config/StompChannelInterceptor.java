@@ -7,6 +7,7 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
+import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import io.jsonwebtoken.JwtException;
 import java.util.List;
@@ -155,8 +156,11 @@ public class StompChannelInterceptor implements ChannelInterceptor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
 
         if (isAdmin) {
-            // 미배정(WAITING) → 모든 ADMIN 구독 가능 / 배정 후 → 담당 ADMIN만
-            if (room.getAdminId() != null && !room.getAdminId().equals(userId)) {
+            // WAITING 상태만 전체 ADMIN 허용 — CLOSED(미배정 가능) 포함 그 외는 담당 ADMIN만
+            if (room.getStatus() == SupportRoomStatus.WAITING) {
+                return message;
+            }
+            if (!userId.equals(room.getAdminId())) {
                 throw new BusinessException(ErrorCode.SUPPORT_ROOM_FORBIDDEN);
             }
             return message;

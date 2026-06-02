@@ -107,18 +107,21 @@ public class SupportRoomService {
         return fetchMessages(supportRoomId, cursor, size);
     }
 
-    // ADMIN 상담방 배정 — 호출한 ADMIN이 담당자로 배정됨, WAITING→IN_PROGRESS 전이
+    // ADMIN 상담방 배정 — WAITING 조건부 UPDATE로 동시 배정 경합 방어
+    // 0 rows affected: 방 미존재·이미 배정·이미 종료 — 재조회로 정확한 에러 반환
     @Transactional
     public SupportRoomResponse assignAdmin(Long supportRoomId, Long adminId) {
-        SupportRoom room = supportRoomRepository.findById(supportRoomId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
-        if (room.getStatus() == SupportRoomStatus.CLOSED) {
-            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
-        }
-        if (room.getStatus() == SupportRoomStatus.IN_PROGRESS) {
+        int updated = supportRoomRepository.assignIfWaiting(supportRoomId, adminId);
+        if (updated == 0) {
+            SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+            if (room.getStatus() == SupportRoomStatus.CLOSED) {
+                throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
+            }
             throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_ASSIGNED);
         }
-        room.assignAdmin(adminId);
+        SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
         return SupportRoomResponse.from(room);
     }
 
