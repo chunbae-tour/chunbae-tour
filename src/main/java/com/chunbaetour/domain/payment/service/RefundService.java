@@ -21,6 +21,7 @@ import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -152,12 +153,47 @@ public class RefundService {
 
     private void markRefundFailed(Long refundId) {
         // PortOne 취소 실패 시 아직 대기 중인 환불만 FAILED로 전환한다.
+        // 첫 재시도는 1분 후 — 충전 직후 실수로 인한 빠른 환불 기대에 대응.
+        LocalDateTime firstRetryAt = LocalDateTime.now(clock).plusMinutes(1);
         refundRepository.findByIdWithLock(refundId)
                 .ifPresent(refund -> {
                     if (refund.getStatus() == RefundStatus.PENDING) {
-                        refund.fail("PORTONE_CANCEL_FAILED");
+                        refund.fail("PORTONE_CANCEL_FAILED", firstRetryAt);
                     }
                 });
+    }
+
+    /**
+     * 스케줄러 재시도 성공 후 환불 완료 처리.
+     * FAILED 상태 환불을 APPROVED로 전환하고 가능한 엽전을 회수한다.
+     * completeRefundAfterGatewayCancel과 동일한 로직이나 FAILED 상태를 허용.
+     */
+    @Transactional
+    public void completeSchedulerRetry(Long refundId, String orderUid, Long amount) {
+        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderUid)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+        Refund refund = refundRepository.findByIdWithLock(refundId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+
+        // 동시 처리 방지 — 이미 완료됐으면 무시
+        if (refund.getStatus() == RefundStatus.APPROVED) {
+            return;
+        }
+        if (refund.getStatus() != RefundStatus.FAILED) {
+            return;
+        }
+
+        if (order.getStatus() == PaymentOrderStatus.COMPLETED
+                || order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED) {
+            long reclaimed = walletService.reclaimAvailableForRefund(
+                    order.getUserId(), amount, order.getId());
+            if (reclaimed == amount && order.getStatus() == PaymentOrderStatus.COMPLETED) {
+                order.refund();
+            } else {
+                order.requireAdjustment();
+            }
+        }
+        refund.approveRetry();
     }
 
     private RefundResponse completeRefundAfterGatewayCancel(PreparedRefund preparation) {

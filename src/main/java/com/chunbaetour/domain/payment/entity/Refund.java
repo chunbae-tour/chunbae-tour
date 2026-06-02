@@ -12,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -53,6 +54,14 @@ public class Refund extends BaseEntity {
     @Column(name = "reject_reason", length = 500)
     private String rejectReason;
 
+    // PG 취소 실패 후 자동 재시도 횟수 (최대 5회)
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount = 0;
+
+    // 다음 재시도 가능 시각 (null이면 재시도 대상 아님)
+    @Column(name = "next_retry_at")
+    private LocalDateTime nextRetryAt;
+
     @Builder
     private Refund(Long paymentOrderId, Long userId, Long amount, String reason) {
         if (amount == null || amount <= 0) {
@@ -82,12 +91,30 @@ public class Refund extends BaseEntity {
         this.status = RefundStatus.APPROVED;
     }
 
-    public void fail(String rejectReason) {
+    public void fail(String rejectReason, LocalDateTime nextRetryAt) {
         if (this.status != RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.FAILED;
         this.rejectReason = rejectReason;
+        this.nextRetryAt = nextRetryAt;
+    }
+
+    /**
+     * 스케줄러 재시도 실패 시 다음 시도 시각 갱신.
+     * 지수 백오프 정책에 따라 nextRetryAt이 계산되어 전달됨.
+     */
+    public void recordRetryFailure(LocalDateTime nextRetryAt) {
+        this.retryCount++;
+        this.nextRetryAt = nextRetryAt;
+    }
+
+    /** 스케줄러 재시도 성공 시 FAILED → APPROVED 전환. */
+    public void approveRetry() {
+        if (this.status != RefundStatus.FAILED) {
+            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+        }
+        this.status = RefundStatus.APPROVED;
     }
 
     /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
