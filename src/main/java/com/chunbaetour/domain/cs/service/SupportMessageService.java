@@ -93,7 +93,7 @@ public class SupportMessageService {
         SupportMessageResponse response = SupportMessageResponse.from(saved);
 
         // 알림 이벤트 발행 — ADMIN 발신 시에만 방 소유자(USER·MERCHANT)에게 알림
-        // USER/MERCHANT 발신 → ADMIN은 알림 인프라 미구축(REST/STOMP 모두 USER 전용)으로 skip
+        // USER/MERCHANT 발신 → ADMIN은 알림 인프라 미구축으로 skip
         if (isAdmin) {
             applicationEventPublisher.publishEvent(new SupportMessageSentEvent(supportRoomId, room.getUserId()));
         }
