@@ -58,7 +58,7 @@ public class YeopjeonHistory extends BaseEntity {
 
     @Builder
     private YeopjeonHistory(Long userId, Long paymentOrderId, Long shopId, YeopjeonHistoryType type,
-            Long amount, Long balanceSnapshot, String description) {
+                            Long amount, Long balanceSnapshot, String description) {
         this.userId = userId;
         this.paymentOrderId = paymentOrderId;
         this.shopId = shopId;
@@ -69,63 +69,94 @@ public class YeopjeonHistory extends BaseEntity {
     }
 
     public static YeopjeonHistory create(Long userId, Long paymentOrderId, Long shopId,
-            YeopjeonHistoryType type, Long amount, Long balanceSnapshot, String description) {
+                                         YeopjeonHistoryType type, Long amount, Long balanceSnapshot, String description) {
         return YeopjeonHistory.builder()
-                .userId(userId)
-                .paymentOrderId(paymentOrderId)
-                .shopId(shopId)
-                .type(type)
-                .amount(amount)
-                .balanceSnapshot(balanceSnapshot)
-                .description(description)
-                .build();
+            .userId(userId)
+            .paymentOrderId(paymentOrderId)
+            .shopId(shopId)
+            .type(type)
+            .amount(amount)
+            .balanceSnapshot(balanceSnapshot)
+            .description(description)
+            .build();
     }
 
     // 엽전 충전 이력 전용 팩토리. shopId·description은 충전 시 해당 없으므로 null 고정
     public static YeopjeonHistory ofCharge(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
         return YeopjeonHistory.builder()
-                .userId(userId)
-                .paymentOrderId(paymentOrderId)
-                .shopId(null)
-                .type(YeopjeonHistoryType.CHARGE)
-                .amount(amount)
-                .balanceSnapshot(balanceSnapshot)
-                .description(null)
-                .build();
+            .userId(userId)
+            .paymentOrderId(paymentOrderId)
+            .shopId(null)
+            .type(YeopjeonHistoryType.CHARGE)
+            .amount(amount)
+            .balanceSnapshot(balanceSnapshot)
+            .description("엽전 충전")
+            .build();
     }
 
-    /** 환불 이력 전용 팩토리. 관리자 승인 후 차감된 엽전 이력 기록. */
+    /**
+     * 환불 이력 전용 팩토리. 관리자 승인 후 차감된 엽전 이력 기록.
+     */
     public static YeopjeonHistory ofRefund(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
         return YeopjeonHistory.builder()
-                .userId(userId)
-                .type(YeopjeonHistoryType.REFUND)
-                .amount(amount)
-                .balanceSnapshot(balanceSnapshot)
-                .paymentOrderId(paymentOrderId)
-                .build();
+            .userId(userId)
+            .type(YeopjeonHistoryType.REFUND)
+            .amount(-Math.abs(amount))
+            .balanceSnapshot(balanceSnapshot)
+            .paymentOrderId(paymentOrderId)
+            .description("충전 환불")
+            .build();
     }
 
-    /** 스토어 상품 구매 차감 이력. paymentOrderId/shopId는 스토어 구매와 직접 연결되지 않아 비워둔다. */
+    public static YeopjeonHistory ofExternalCancelReclaim(
+        Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId, boolean adjustmentRequired) {
+        return YeopjeonHistory.builder()
+            .userId(userId)
+            .type(YeopjeonHistoryType.REFUND)
+            .amount(-Math.abs(amount))
+            .balanceSnapshot(balanceSnapshot)
+            .paymentOrderId(paymentOrderId)
+            .description(adjustmentRequired ? "충전 취소 처리 중" : "충전 취소")
+            .build();
+    }
+
+    public static YeopjeonHistory ofRefundReclaim(
+        Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId, boolean adjustmentRequired) {
+        return YeopjeonHistory.builder()
+            .userId(userId)
+            .type(YeopjeonHistoryType.REFUND)
+            .amount(-Math.abs(amount))
+            .balanceSnapshot(balanceSnapshot)
+            .paymentOrderId(paymentOrderId)
+            .description(adjustmentRequired ? "환불 처리 중" : "충전 환불")
+            .build();
+    }
+
+    /**
+     * 스토어 상품 구매 차감 이력. paymentOrderId/shopId는 스토어 구매와 직접 연결되지 않아 비워둔다.
+     */
     public static YeopjeonHistory ofStorePurchase(
-            Long userId, Long amount, Long balanceSnapshot, String productName) {
+        Long userId, Long amount, Long balanceSnapshot, String productName) {
         return YeopjeonHistory.builder()
-                .userId(userId)
-                .type(YeopjeonHistoryType.PAYMENT)
-                .amount(amount)
-                .balanceSnapshot(balanceSnapshot)
-                .description("스토어 구매 - " + productName)
-                .build();
+            .userId(userId)
+            .type(YeopjeonHistoryType.PAYMENT)
+            .amount(amount)
+            .balanceSnapshot(balanceSnapshot)
+            .description("스토어 구매 - " + productName)
+            .build();
     }
 
-    /** 광고 연장 엽전 차감 이력. */
+    /**
+     * 광고 연장 엽전 차감 이력.
+     */
     public static YeopjeonHistory ofAdExtension(
-            Long userId, Long amount, Long balanceSnapshot, String adType) {
+        Long userId, Long amount, Long balanceSnapshot, String adType) {
         return YeopjeonHistory.builder()
-                .userId(userId)
-                .type(YeopjeonHistoryType.PAYMENT)
-                .amount(amount)
-                .balanceSnapshot(balanceSnapshot)
-                .description("광고 연장 - " + adType)
-                .build();
+            .userId(userId)
+            .type(YeopjeonHistoryType.PAYMENT)
+            .amount(amount)
+            .balanceSnapshot(balanceSnapshot)
+            .description("광고 연장 - " + adType)
+            .build();
     }
 }

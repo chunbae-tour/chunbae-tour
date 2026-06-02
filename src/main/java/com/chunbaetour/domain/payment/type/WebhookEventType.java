@@ -6,6 +6,8 @@ public enum WebhookEventType {
     TRANSACTION_PAID("Transaction.Paid"),
     TRANSACTION_FAILED("Transaction.Failed"),
     TRANSACTION_CANCELLED("Transaction.Cancelled"),
+    TRANSACTION_PARTIAL_CANCELLED("Transaction.PartialCancelled"),
+    TRANSACTION_CANCEL_PENDING("Transaction.CancelPending"),
     UNKNOWN("");
 
     private final String value;

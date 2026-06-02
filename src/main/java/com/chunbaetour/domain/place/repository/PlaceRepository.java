@@ -18,7 +18,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     /** 
      * 4-1. 인기 관광지 Fallback: ACTIVE 상태의 관광지를 가중치(찜, 조회수) 내림차순 정렬
      */
-    @Query("SELECT p FROM Place p WHERE p.status = 'ACTIVE' ORDER BY (p.likeCount * :likeWeight + p.viewCount * :viewWeight) DESC")
+    @Query("SELECT p FROM Place p WHERE p.status = 'ACTIVE' ORDER BY (cast(p.likeCount as double) * :likeWeight + cast(p.viewCount as double) * :viewWeight) DESC")
     List<Place> findTopPopularPlaces(@Param("likeWeight") double likeWeight, @Param("viewWeight") double viewWeight, Pageable pageable);
 
     /**
