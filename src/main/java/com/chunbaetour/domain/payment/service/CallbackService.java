@@ -36,20 +36,22 @@ public class CallbackService {
         scheduleWebhookUnmarkOnRollback(webhookId);
 
         try {
-            if (payload.data() == null) return;
+            WebhookPayload.WebhookData data = payload.data();
+            if (data == null) return;
 
             WebhookEventType eventType = WebhookEventType.from(payload.type());
             switch (eventType) {
                 case TRANSACTION_PAID ->
-                        handleSuccess(payload.data().paymentId(), payload.data().transactionId());
+                        handleSuccess(data.paymentId(), data.transactionId());
                 case TRANSACTION_FAILED ->
-                        handleFail(payload.data().paymentId());
+                        handleFail(data.paymentId());
                 case TRANSACTION_CANCELLED ->
-                        handleCancelled(payload.data().paymentId());
+                        handleCancelled(data.paymentId());
                 case TRANSACTION_PARTIAL_CANCELLED ->
-                        handlePartialCancelled(payload.data().paymentId());
-                case TRANSACTION_CANCEL_PENDING ->
-                        handleCancelPending(payload.data().paymentId());
+                        handlePartialCancelled(data.paymentId());
+                // TRANSACTION_CANCEL_PENDING은 취소 진행 중 상태로, 이후 TRANSACTION_CANCELLED로 확정됨.
+                // 별도 처리 없이 명시적 무시.
+                case TRANSACTION_CANCEL_PENDING -> { }
                 default -> { }
             }
         } catch (PaymentException e) {
@@ -82,7 +84,9 @@ public class CallbackService {
         // COMPLETED 조기 리턴: 도메인 상태 전이상 COMPLETED는 단방향 종착 (이후 REFUNDED는 별도 환불 경로).
         //   cached COMPLETED entity는 DB 현재 상태와 항상 일치 — stale 위험 0이므로 PG 검증 생략 안전.
         //   FAILED는 handleFail 선점 경합일 수 있으므로 계속 진행 (PG PAID 시 CAS UPDATE로 결제 복구).
+        //   scheduleUnmark: 이전 처리에서 afterCommit 장애로 키가 남아있을 경우를 대비해 항상 정리.
         if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
+            scheduleUnmark(order.getIdempotencyKey());
             return;
         }
 
@@ -175,16 +179,37 @@ public class CallbackService {
         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
                 .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
 
-        if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
-            order.partialCancel();
-            // 충전 요청 멱등성 키는 결제 완료 웹훅(handleSuccess)에서 이미 해제된다.
-            // 부분 취소는 결제 완료 이후 후속 이벤트이므로 여기서 다시 해제하지 않는다.
+        // 멱등: 이미 처리된 상태
+        if (order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED
+                || order.getStatus() == PaymentOrderStatus.ADJUSTMENT_REQUIRED) {
+            return;
         }
-    }
 
-    @Transactional
-    public void handleCancelPending(String paymentId) {
-        paymentOrderRepository.findByOrderUid(paymentId);
+        // COMPLETED 이외 상태(PENDING/FAILED/CANCELLED/REFUNDED)는 부분취소 처리 불가
+        if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
+            return;
+        }
+
+        // PG에서 취소 금액 조회 — cancelledAmount가 null이거나 0 이하면 정산 보정 상태로 남김
+        PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(paymentId);
+        Long cancelledAmount = info.cancelledAmount();
+        if (cancelledAmount == null || cancelledAmount <= 0) {
+            order.requireAdjustment();
+            return;
+        }
+
+        // 취소 금액만큼 엽전 회수 (잔액 부족 시 debitUpTo로 가능한 만큼만 회수)
+        long reclaimed = walletService.reclaimAvailableForExternalCancel(
+                order.getUserId(),
+                cancelledAmount,
+                order.getId()
+        );
+        if (reclaimed == cancelledAmount) {
+            order.partialCancel();
+        } else {
+            order.requireAdjustment();
+        }
+        // 충전 멱등성 키는 handleSuccess에서 이미 해제됨 — 재해제 불필요
     }
 
     /**

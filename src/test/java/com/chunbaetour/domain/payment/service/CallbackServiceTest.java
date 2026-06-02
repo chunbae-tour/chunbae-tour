@@ -67,7 +67,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
         given(paymentOrderRepository.completeIfNotCompleted("order-uid-1", "tx-1")).willReturn(1);
 
         callbackService.handleSuccess("order-uid-1", "tx-1");
@@ -78,8 +78,8 @@ class CallbackServiceTest {
     }
 
     @Test
-    @DisplayName("이미 COMPLETED 주문 성공 콜백은 멱등 처리 (PG 검증/CAS UPDATE/charge 호출 없음)")
-    void handleSuccess_already_processed_returns_silently() {
+    @DisplayName("이미 COMPLETED 주문 성공 콜백: PG 검증/CAS UPDATE/charge 없음, 멱등키는 정리 (afterCommit 장애 방어)")
+    void handleSuccess_already_completed_skips_processing_but_releases_idempotency_key() {
         PaymentOrder order = pendingOrder();
         order.complete("tx-prev");
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
@@ -89,7 +89,8 @@ class CallbackServiceTest {
         verify(paymentGatewayClient, never()).verifyPayment(anyString());
         verify(paymentOrderRepository, never()).completeIfNotCompleted(anyString(), anyString());
         verify(walletService, never()).charge(anyLong(), anyLong(), any());
-        verify(idempotencyService, never()).unmark(anyString());
+        // COMPLETED 조기 리턴이어도 이전 afterCommit 장애로 키가 남아있을 수 있으므로 정리
+        verify(idempotencyService).unmark("idem-key-1");
     }
 
     @Test
@@ -100,7 +101,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
         given(paymentOrderRepository.completeIfNotCompleted("order-uid-1", "tx-1")).willReturn(0);
 
         callbackService.handleSuccess("order-uid-1", "tx-1");
@@ -126,7 +127,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 99_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 99_000L, null));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
 
         assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", "tx-1"))
@@ -149,7 +150,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 99_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 99_000L, null));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(0);
 
         callbackService.handleSuccess("order-uid-1", "tx-1");
@@ -166,7 +167,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
 
         assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", null))
@@ -185,7 +186,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
 
         assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", "   "))
@@ -203,7 +204,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("FAILED", 10_000L));
+                .willReturn(new PortOnePaymentInfo("FAILED", 10_000L, null));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
 
         assertThatThrownBy(() -> callbackService.handleSuccess("order-uid-1", "tx-1"))
@@ -330,7 +331,7 @@ class CallbackServiceTest {
         given(idempotencyService.markWebhookIfAbsent("wh-mismatch")).willReturn(true);
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(pendingOrder()));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 99_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 99_000L, null));
         given(paymentOrderRepository.failIfPending("order-uid-1")).willReturn(1);
         WebhookPayload payload = new WebhookPayload("Transaction.Paid",
                 new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
@@ -365,7 +366,7 @@ class CallbackServiceTest {
         given(idempotencyService.markWebhookIfAbsent("wh-new")).willReturn(true);
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(pendingOrder()));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
         given(paymentOrderRepository.completeIfNotCompleted("order-uid-1", "tx-1")).willReturn(1);
         WebhookPayload payload = new WebhookPayload("Transaction.Paid",
                 new WebhookPayload.WebhookData("order-uid-1", "tx-1"));
@@ -385,7 +386,7 @@ class CallbackServiceTest {
         PaymentOrder order = pendingOrder();
         given(paymentOrderRepository.findByOrderUid("order-uid-1")).willReturn(Optional.of(order));
         given(paymentGatewayClient.verifyPayment("order-uid-1"))
-                .willReturn(new PortOnePaymentInfo("PAID", 10_000L));
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
         // handleFail이 read와 CAS 사이에 commit되어 row가 FAILED여도, CAS 조건 "status <> COMPLETED" 통과 → 1 반환
         given(paymentOrderRepository.completeIfNotCompleted("order-uid-1", "tx-1")).willReturn(1);
 
@@ -393,6 +394,96 @@ class CallbackServiceTest {
 
         verify(walletService).charge(eq(1L), eq(10_000L), any());
         verify(idempotencyService).unmark("idem-key-1");
+    }
+
+    @Test
+    @DisplayName("Transaction.PartialCancelled: COMPLETED 주문에서 취소 금액 전액 회수 → PARTIAL_CANCELLED")
+    void handlePartialCancelled_completed_order_full_reclaim_marks_partial_cancelled() {
+        PaymentOrder order = pendingOrder();
+        ReflectionTestUtils.setField(order, "id", 200L);
+        order.complete("tx-1");
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PARTIAL_CANCELLED", 10_000L, 3_000L));
+        given(walletService.reclaimAvailableForExternalCancel(1L, 3_000L, 200L)).willReturn(3_000L);
+
+        callbackService.handlePartialCancelled("order-uid-1");
+
+        assertThat(order.getStatus())
+                .isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.PARTIAL_CANCELLED);
+        verify(walletService).reclaimAvailableForExternalCancel(1L, 3_000L, 200L);
+    }
+
+    @Test
+    @DisplayName("Transaction.PartialCancelled: 잔액 부족으로 일부만 회수 → ADJUSTMENT_REQUIRED")
+    void handlePartialCancelled_insufficient_balance_marks_adjustment_required() {
+        PaymentOrder order = pendingOrder();
+        ReflectionTestUtils.setField(order, "id", 200L);
+        order.complete("tx-1");
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PARTIAL_CANCELLED", 10_000L, 3_000L));
+        given(walletService.reclaimAvailableForExternalCancel(1L, 3_000L, 200L)).willReturn(1_000L);
+
+        callbackService.handlePartialCancelled("order-uid-1");
+
+        assertThat(order.getStatus())
+                .isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.ADJUSTMENT_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("Transaction.PartialCancelled: PG cancelledAmount 0 → ADJUSTMENT_REQUIRED (비정상 payload 방어)")
+    void handlePartialCancelled_zero_cancelled_amount_marks_adjustment_required() {
+        PaymentOrder order = pendingOrder();
+        order.complete("tx-1");
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+        given(paymentGatewayClient.verifyPayment("order-uid-1"))
+                .willReturn(new PortOnePaymentInfo("PARTIAL_CANCELLED", 10_000L, 0L));
+
+        callbackService.handlePartialCancelled("order-uid-1");
+
+        assertThat(order.getStatus())
+                .isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.ADJUSTMENT_REQUIRED);
+        verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("Transaction.PartialCancelled: 이미 PARTIAL_CANCELLED → 멱등 처리 (reclaim 없음)")
+    void handlePartialCancelled_already_partial_cancelled_returns_silently() {
+        PaymentOrder order = pendingOrder();
+        order.complete("tx-1");
+        order.partialCancel();
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+
+        callbackService.handlePartialCancelled("order-uid-1");
+
+        verify(paymentGatewayClient, never()).verifyPayment(anyString());
+        verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("Transaction.PartialCancelled: COMPLETED 아닌 상태(PENDING 등)는 무시")
+    void handlePartialCancelled_non_completed_status_is_ignored() {
+        PaymentOrder order = pendingOrder();
+        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
+
+        callbackService.handlePartialCancelled("order-uid-1");
+
+        verify(paymentGatewayClient, never()).verifyPayment(anyString());
+        verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("handle(): Transaction.CancelPending 이벤트는 명시적 무시 (repository/wallet 호출 없음)")
+    void handle_cancel_pending_event_does_nothing() {
+        given(idempotencyService.markWebhookIfAbsent("wh-cancel-pending")).willReturn(true);
+        WebhookPayload payload = new WebhookPayload("Transaction.CancelPending",
+                new WebhookPayload.WebhookData("order-uid-1", null));
+
+        callbackService.handle("wh-cancel-pending", payload);
+
+        verifyNoInteractions(paymentOrderRepository, paymentGatewayClient, walletService);
+        verify(idempotencyService, never()).unmark(anyString());
     }
 
     @Test

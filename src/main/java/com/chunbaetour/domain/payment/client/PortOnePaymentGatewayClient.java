@@ -54,7 +54,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
                 || response.amount().total() == null) {
                 throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
             }
-            return new PortOnePaymentInfo(response.status(), response.amount().total());
+            return new PortOnePaymentInfo(response.status(), response.amount().total(), response.amount().cancelled());
         } catch (RestClientException e) {
             throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
@@ -81,7 +81,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
     }
 
     private record PortOnePaymentResponse(String status, AmountDetail amount) {
-        record AmountDetail(Long total) {
+        record AmountDetail(Long total, Long cancelled) {
         }
     }
 }
