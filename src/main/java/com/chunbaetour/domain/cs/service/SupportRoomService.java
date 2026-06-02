@@ -152,13 +152,12 @@ public class SupportRoomService {
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
     }
 
-    // IMAGE/FILE 타입은 content가 null일 수 있으므로 fallback 문자열 반환
+    // exhaustive switch — 새 SupportMessageType 추가 시 컴파일 오류로 누락 방지
     private String resolveLastMessageContent(SupportMessage msg) {
-        if (msg.getContent() != null) return msg.getContent();
         return switch (msg.getMessageType()) {
+            case TEXT -> msg.getContent() != null ? msg.getContent() : "";
             case IMAGE -> "[이미지]";
             case FILE -> "[파일]";
-            default -> "";
         };
     }
 
