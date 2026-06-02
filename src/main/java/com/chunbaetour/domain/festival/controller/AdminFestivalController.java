@@ -10,6 +10,7 @@ import com.chunbaetour.domain.festival.service.FestivalService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -57,14 +58,14 @@ public class AdminFestivalController {
     /** 축제 수정 (PUT — 전체 교체). */
     @PutMapping("/{festivalId}")
     public ApiResponse<FestivalAdminMutateResponse> update(
-            @PathVariable Long festivalId,
+            @Positive @PathVariable Long festivalId,
             @Valid @RequestBody FestivalUpdateRequest request) {
         return ApiResponse.success(festivalService.update(festivalId, request));
     }
 
     /** 축제 삭제 (Soft Delete — status = DELETED). */
     @DeleteMapping("/{festivalId}")
-    public ApiResponse<Void> delete(@PathVariable Long festivalId) {
+    public ApiResponse<Void> delete(@Positive @PathVariable Long festivalId) {
         festivalService.delete(festivalId);
         return ApiResponse.success();
     }

@@ -18,5 +18,5 @@ public record FestivalUpdateRequest(
         @NotNull LocalDate endDate,
         String imageUrl,
         String relatedUrl,
-        FestivalStatus status
+        @NotNull FestivalStatus status
 ) {}

@@ -62,6 +62,7 @@ public class Festival extends BaseEntity {
     public static Festival create(String name, String description, String region,
             String address, LocalDate startDate, LocalDate endDate,
             String imageUrl, String relatedUrl, FestivalStatus status) {
+        validateInvariant(name, region, address, startDate, endDate);
         Festival f = new Festival();
         f.name = name;
         f.description = description;
@@ -80,6 +81,7 @@ public class Festival extends BaseEntity {
     public void update(String name, String description, String region,
             String address, LocalDate startDate, LocalDate endDate,
             String imageUrl, String relatedUrl, FestivalStatus status) {
+        validateInvariant(name, region, address, startDate, endDate);
         this.name = name;
         this.description = description;
         this.region = region;
@@ -88,8 +90,17 @@ public class Festival extends BaseEntity {
         this.endDate = endDate;
         this.imageUrl = imageUrl;
         this.relatedUrl = relatedUrl;
-        if (status != null) {
-            this.status = status;
+        this.status = status;
+    }
+
+    private static void validateInvariant(String name, String region, String address,
+            LocalDate startDate, LocalDate endDate) {
+        if (name == null || name.isBlank()
+                || region == null || region.isBlank()
+                || address == null || address.isBlank()
+                || startDate == null || endDate == null
+                || startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("Invalid festival arguments");
         }
     }
 

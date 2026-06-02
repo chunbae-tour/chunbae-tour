@@ -1,7 +1,5 @@
 package com.chunbaetour.domain.festival.controller;
 
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.festival.dto.response.CalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.DailyCalendarResponse;
@@ -37,10 +35,7 @@ public class CalendarController {
     @GetMapping
     public ApiResponse<CalendarResponse> getMonthly(
             @Min(1) @Max(9999) @RequestParam int year,
-            @RequestParam int month) {
-        if (month < 1 || month > 12) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
+            @Min(1) @Max(12) @RequestParam int month) {
         return ApiResponse.success(calendarService.getMonthlyCalendar(year, month));
     }
 

@@ -6,6 +6,7 @@ import com.chunbaetour.domain.festival.dto.response.FestivalResponse;
 import com.chunbaetour.domain.festival.service.FestivalService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -46,7 +47,7 @@ public class FestivalController {
      * 축제 상세 조회 (KAN-98). ACTIVE 축제만 반환.
      */
     @GetMapping("/{festivalId}")
-    public ApiResponse<FestivalResponse> getDetail(@PathVariable Long festivalId) {
+    public ApiResponse<FestivalResponse> getDetail(@Positive @PathVariable Long festivalId) {
         return ApiResponse.success(festivalService.getDetail(festivalId));
     }
 }

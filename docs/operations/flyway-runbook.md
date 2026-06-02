@@ -71,20 +71,21 @@ ORDER BY installed_rank;
 ### 2.1 파일명 규칙
 
 ```text
-src/main/resources/db/migration/V{버전}__{snake_case_설명}.sql
+src/main/resources/db/migration/V{YYYYMMDDHHmm}__{snake_case_설명}.sql
 ```
 
-- **버전 번호 = monotonic integer**. 마지막 V버전 + 1.
-- 설명은 snake_case 동사 위주 (예: `V2__create_admin_action_logs.sql`, `V3__alter_users_add_suspended_reason.sql`).
+- **버전 번호 = 작성 시점 YYYYMMDDHHmm** (예: `202606011430`). V1 baseline 이후 모든 마이그레이션에 적용.
+- 설명은 snake_case 동사 위주 (예: `V202606011430__alter_festivals_replace_geo_fields.sql`).
 - 한 파일 한 의도 — 두 테이블을 같은 V에 묶을 때도 한 주제로 통일.
+- 동시간대 충돌 시 분(mm)을 1 올려서 구분.
 
 ### 2.2 PR 본문 표기
 
-PR 본문에 `Flyway: V{N}__xxx.sql` 한 줄 명시. 리뷰어가 SQL 변경을 빠르게 확인 가능.
+PR 본문에 `Flyway: V{timestamp}__xxx.sql` 한 줄 명시. 리뷰어가 SQL 변경을 빠르게 확인 가능.
 
 ```markdown
 ## Flyway
-- V2__create_admin_action_logs.sql (신규)
+- V202606011430__alter_festivals_replace_geo_fields.sql (신규)
 ```
 
 ### 2.3 작성 원칙
