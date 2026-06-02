@@ -69,8 +69,8 @@ dependencies {
 	implementation 'org.redisson:redisson:3.35.0'
 
 	// ShedLock — 다중 인스턴스 환경에서 @Scheduled 중복 실행 방지 (분산 스케줄러 락)
-	implementation 'net.javacrumbs.shedlock:shedlock-spring:5.16.0'
-	implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.16.0'
+	implementation 'net.javacrumbs.shedlock:shedlock-spring:7.7.0'
+	implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.7.0'
 
 	// Security + JWT (S2~S5에서 본격 사용, S1에서는 BCryptPasswordEncoder + SecurityConfig 최소 구성)
 	implementation 'org.springframework.boot:spring-boot-starter-security'
