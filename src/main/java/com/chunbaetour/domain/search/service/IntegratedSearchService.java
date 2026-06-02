@@ -12,6 +12,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -26,18 +29,18 @@ public class IntegratedSearchService {
 
     public CursorPageResponse<IntegratedSearchItem> searchIntegrated(String keyword, String type, String cursorStr, int size) {
         if (keyword == null || keyword.isBlank()) {
-            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         keyword = keyword.trim();
         if (keyword.length() > 50) {
-            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         boolean searchAll = "ALL".equalsIgnoreCase(type);
         if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL").contains(type.toUpperCase(java.util.Locale.ROOT))) {
-            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         if (cursorStr != null && cursorStr.length() > 1000) {
-            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.INVALID_INPUT_VALUE);
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
         IntegratedSearchCursor cursor = IntegratedSearchCursor.decode(cursorStr);

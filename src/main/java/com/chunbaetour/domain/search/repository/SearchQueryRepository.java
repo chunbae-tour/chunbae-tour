@@ -29,6 +29,11 @@ public class SearchQueryRepository {
     
     private final JPAQueryFactory queryFactory;
 
+    // [기술 부채(Technical Debt) 명시]
+    // 현재 containsIgnoreCase()는 SQL 상에서 LIKE '%keyword%'로 변환되어 B-tree 인덱스를 타지 못하고 Full Table Scan을 유발합니다.
+    // MVP 단계에서는 limit(200) 하드 캡을 통해 메모리 부하를 방어하고 있으나, 데이터가 커질수록 DB 쿼리 자체가 느려질 위험이 있습니다.
+    // 단기적으로는 각 name 컬럼에 Full-Text Index(MATCH ... AGAINST)를 생성하거나, 중장기적으로 Elasticsearch 등 전문 검색 엔진 도입이 필요합니다.
+
     public List<Place> searchPlaces(String keyword) {
         return queryFactory
                 .selectFrom(place)
