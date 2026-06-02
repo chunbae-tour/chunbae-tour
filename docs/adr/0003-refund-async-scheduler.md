@@ -90,7 +90,34 @@ FAILED 5회 초과  → REQUIRES_ADMIN (자동 처리 불가)
 **근거**: 단일 간격 재시도는 PG 장애 상황에서 동시 트래픽 폭발(thundering herd)을 유발.
 간격을 늘릴수록 "일시 장애" vs "심각한 장애" 구분이 명확해져 불필요한 PG 호출 감소.
 
-### 5. 취소-스케줄러 경합 처리
+### 5. 다중 인스턴스 중복 실행 방지 — ShedLock
+
+`@Scheduled`는 인스턴스마다 독립 실행되므로 2대 이상 배포 시 동일 PENDING/FAILED 건에 대해
+`cancelPayment()`가 중복 호출될 수 있다.
+
+**ShedLock** 도입으로 `processPendingRefunds`, `retryFailedRefunds` 각각에 분산 락을 적용.
+공유 DB의 `shedlock` 테이블을 통해 한 인스턴스만 실행. `usingDbTime()`으로 인스턴스 간 시계 편차 무시.
+
+```
+lockAtMostFor = PT3M   # 최대 락 유지 시간 (BATCH_SIZE × PG 호출 최대치 고려)
+lockAtLeastFor = PT30S # 실행 직후 즉시 재실행 방지
+```
+
+Idempotency-Key(`refund-{refundId}`)로 PG 이중 취소도 방어하지만, ShedLock이 불필요한 외부 호출 자체를 차단.
+
+### 6. REQUIRES_ADMIN 처리 경로
+
+5회 재시도 소진 → REQUIRES_ADMIN 전환. 관리자가 `AdminRefundService.approveRefund()`·`rejectRefund()`로 수동 해소 가능.
+
+- `approve()`: PENDING | REQUIRES_ADMIN 허용 → PG 재시도 후 APPROVED 전환
+- `reject()`: PENDING | REQUIRES_ADMIN 허용 → 환불 거절 처리
+
+### 7. 락 획득 순서 통일 — 데드락 방지
+
+admin `approveRefund`와 스케줄러 `completeSchedulerRetry` 모두 **Refund → Order** 순서로 잠금.
+역전 시 교차 대기로 데드락 발생 가능.
+
+### 8. 취소-스케줄러 경합 처리
 
 `cancelPayment()` 성공 ~ `completeSchedulerRetry()` 트랜잭션 사이에 사용자가
 `cancelRefund()`로 PENDING→CANCELLED 전환 가능.
@@ -123,4 +150,7 @@ FAILED 5회 초과  → REQUIRES_ADMIN (자동 처리 불가)
 - `RefundService.requestRefund()` 반환값: APPROVED → PENDING (사용자 응답 변경)
 - `refunds` 테이블: `retry_count`, `next_retry_at` 컬럼 추가 (V202606021200)
 - `refunds.status` enum: `REQUIRES_ADMIN` 추가 (V202606021430)
-- `AdminRefundService`: 변경 없음 (관리자 수동 환불 플로우 별도 유지)
+- `AdminRefundService.approveRefund()`, `rejectRefund()`: REQUIRES_ADMIN 상태도 처리 가능하도록 확장
+- `shedlock` 테이블 추가 (V202606022110) — 다중 인스턴스 분산 락
+- `build.gradle`: `shedlock-spring`, `shedlock-provider-jdbc-template` 의존성 추가
+- 락 순서 통일: `completeSchedulerRetry` Refund→Order (기존 Order→Refund 역전 수정)
