@@ -5,7 +5,8 @@
 --
 -- 필드 책임
 --   shop_id:          인증 대상 가게 (shops.id)
---   status:           PENDING / APPROVED / REJECTED — VARCHAR(32) + JPA @Enumerated(STRING)
+--   status:           PENDING / APPROVED / REJECTED / CANCELLED — VARCHAR(32) + JPA @Enumerated(STRING)
+--                      (CANCELLED = 운영자가 APPROVED 인증을 회수, 방향 B. cancel_reason 기록 + Shop.unmarkCertified())
 --   submitted_reason: 상인이 신청 시 입력한 사유 (nullable)
 --   reject_reason:    운영자 거절 사유 (nullable — 거절 시에만 기록)
 --   cancel_reason:    운영자 취소 사유 (nullable — APPROVED 인증 취소 시에만 기록, 방향 B)

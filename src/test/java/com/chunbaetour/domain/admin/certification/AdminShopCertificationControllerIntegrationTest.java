@@ -135,6 +135,29 @@ class AdminShopCertificationControllerIntegrationTest extends AbstractIntegratio
     }
 
     @Test
+    @DisplayName("이미 인증된 가게의 다른 PENDING 신청 승인 → 409 SHOP_021 (가게당 APPROVED ≤ 1)")
+    void approve_when_shop_already_certified_returns_409() throws Exception {
+        // 불변식: 가게당 유효 인증 1건. 이미 인증된 가게에 남아있는 PENDING 신청을 승인하면
+        // APPROVED가 2건이 되므로 SHOP_ALREADY_CERTIFIED(409)로 거부해야 한다.
+        String adminToken = adminToken();
+        Shop shop = seedShop();
+        shop.markCertified();
+        shopRepository.save(shop);
+        ShopCertification secondPending = certificationRepository.save(
+                ShopCertification.submit(shop.getId(), "중복 신청", LocalDateTime.now()));
+
+        mockMvc.perform(patch("/api/v1/admin/shop-certifications/" + secondPending.getId() + "/approve")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SHOP_021"));
+
+        // 거부됐으므로 신청은 PENDING 그대로, audit 미기록(컨트롤러 AOP는 성공 시에만).
+        assertThat(certificationRepository.findById(secondPending.getId()).orElseThrow().getStatus())
+                .isEqualTo(com.chunbaetour.domain.shop.type.ShopCertificationStatus.PENDING);
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
     @DisplayName("PATCH 거절 → 200 + rejectReason 저장 + audit CERTIFICATION_REJECT")
     void reject_returns_200_and_records_reason() throws Exception {
         String adminToken = adminToken();

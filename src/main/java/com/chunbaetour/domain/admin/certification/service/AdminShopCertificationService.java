@@ -86,12 +86,21 @@ public class AdminShopCertificationService {
 
     /**
      * 인증 승인 — {@code cert.approve()}(PENDING 가드) + {@code shop.markCertified()} 동일 트랜잭션 cascade.
-     * PENDING 외 신청 재승인 시 409, 미존재 신청 404, 미존재 가게 404. 조회는 비관적 락(findByIdForUpdate).
+     * PENDING 외 신청 재승인 시 409, 미존재 신청 404, 미존재 가게 404.
+     *
+     * <p><b>불변식: 가게당 유효(APPROVED) 인증 ≤ 1.</b> 같은 가게에 PENDING 신청이 여러 건 있을 때 둘을 동시에 승인하면
+     * cert row는 서로 다르므로 cert 락만으로는 막지 못해 APPROVED가 2건 생길 수 있다. 이를 막기 위해
+     * <b>cert 행과 shop 행을 모두 비관적 락</b>으로 잡고({@link #findShopForUpdate}), 이미 인증된 가게면
+     * {@link ErrorCode#SHOP_ALREADY_CERTIFIED}(409)로 거부한다. shop 행 잠금 덕에 동시 승인이 직렬화되어 불변식이 보장된다.
      */
     @Transactional
     public ShopCertificationDetailResponse approve(Long certificationId, Long adminUserId) {
         ShopCertification cert = findCertificationForUpdate(certificationId);
-        Shop shop = findShop(cert.getShopId());
+        // shop 행을 잠가 같은 가게에 대한 동시 승인을 직렬화한다(불변식: APPROVED ≤ 1).
+        Shop shop = findShopForUpdate(cert.getShopId());
+        if (shop.isCertified()) {
+            throw new BusinessException(ErrorCode.SHOP_ALREADY_CERTIFIED);
+        }
         cert.approve(adminUserId, LocalDateTime.now(clock));
         shop.markCertified();
         return ShopCertificationDetailResponse.from(cert, shop.isCertified());
@@ -117,7 +126,8 @@ public class AdminShopCertificationService {
     public ShopCertificationDetailResponse cancelCertification(Long certificationId, String reason, Long adminUserId) {
         ShopCertification cert = findCertificationForUpdate(certificationId);
         cert.cancel(adminUserId, reason, LocalDateTime.now(clock));
-        Shop shop = findShop(cert.getShopId());
+        // approve와 대칭으로 shop 행을 잠가 인증 마크 전이(is_certified)가 동시 승인/취소와 경합하지 않게 한다.
+        Shop shop = findShopForUpdate(cert.getShopId());
         shop.unmarkCertified();
         return ShopCertificationDetailResponse.from(cert, shop.isCertified());
     }
@@ -136,6 +146,15 @@ public class AdminShopCertificationService {
 
     private Shop findShop(Long shopId) {
         return shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+    }
+
+    /**
+     * 인증 상태 전이(승인/취소)용 shop 조회 — 행을 비관적 락(PESSIMISTIC_WRITE)으로 잡는다.
+     * 같은 가게에 대한 동시 승인/취소를 직렬화해 is_certified 모순과 "가게당 APPROVED ≤ 1" 위반을 막는다.
+     */
+    private Shop findShopForUpdate(Long shopId) {
+        return shopRepository.findByIdWithLock(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
     }
 }

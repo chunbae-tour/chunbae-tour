@@ -142,10 +142,12 @@ public enum ErrorCode {
     SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_016", "업로드할 파일이 비어 있습니다."),
     SHOP_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,       "SHOP_017", "파일 크기가 최대 허용 용량(5MB)을 초과합니다."),
     SHOP_IMAGE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,     "SHOP_018", "지원하지 않는 이미지 형식입니다. (허용: JPEG, PNG, WebP)"),
-    // SHOP_019~020: 상인 인증 admin (KAN-204, Admin Epic KAN-177 S05)
-    // 취소 가드는 cert 상태(APPROVED) 기반 SHOP_CERTIFICATION_INVALID_STATUS로 통일 — 구 SHOP_021(SHOP_NOT_CERTIFIED) 제거
+    // SHOP_019~021: 상인 인증 admin (KAN-204, Admin Epic KAN-177 S05)
+    // 취소 가드는 cert 상태(APPROVED) 기반 SHOP_CERTIFICATION_INVALID_STATUS로 통일.
+    // SHOP_021은 구 SHOP_NOT_CERTIFIED(취소 가드)로 쓰였다가 제거된 뒤, "가게당 APPROVED 인증 ≤1" 불변식 위반용으로 재사용한다.
     SHOP_CERTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,      "SHOP_019", "존재하지 않는 인증 신청입니다."),
     SHOP_CERTIFICATION_INVALID_STATUS(HttpStatus.CONFLICT,  "SHOP_020", "현재 상태에서는 처리할 수 없는 인증 신청입니다."),
+    SHOP_ALREADY_CERTIFIED(HttpStatus.CONFLICT,             "SHOP_021", "이미 인증된 가게입니다. 가게당 유효 인증은 1건만 허용됩니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
