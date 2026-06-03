@@ -88,15 +88,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/places/**",
             "/api/v1/recommend/**",
             // 검색 조회 API — 인기/장소/축제/자동완성
+            "/api/v1/search",
             "/api/v1/search/popular",
             "/api/v1/search/places",
             "/api/v1/search/festivals",
             "/api/v1/search/suggest",
+            "/api/v2/search/festivals",
             // 커뮤니티 목록·단건 조회 — 비로그인 허용
             "/api/v1/community/posts/companions/**",
             "/api/v1/community/posts/free/**",
             // 스토어 상품 조회 — 비인증 공개 API
-            "/api/v1/store/products/**"
+            "/api/v1/store/products/**",
+            // 축제·캘린더 조회 — 비인증 허용
+            "/api/v1/festivals/**",
+            "/api/v1/calendar/**"
     );
 
     /**
