@@ -21,7 +21,6 @@ import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.hamcrest.Matchers;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
