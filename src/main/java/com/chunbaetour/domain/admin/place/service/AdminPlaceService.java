@@ -45,10 +45,13 @@ public class AdminPlaceService {
      *
      * <p>keyword 공백 문자열은 null로 정규화해 전체 조회로 처리(LIKE '%%' 무의미 매칭 방지). size+1 sentinel로
      * 다음 페이지 존재를 추가 쿼리 없이 판단(AdminUserService 미러). DELETED(soft delete)는 목록에서 제외.
+     *
+     * <p>keyword의 LIKE 와일드카드({@code % _ \})는 {@link #escapeLike}로 이스케이프해 리터럴로 처리한다 —
+     * 운영자가 "50%" 같은 문자를 검색해도 의도치 않은 패턴 매칭/전체 스캔이 되지 않도록(쿼리는 ESCAPE '\' 사용).
      */
     public CursorPageResponse<AdminPlaceListResponse> getPlaces(
             String keyword, PlaceCategory category, String cursor, int size) {
-        String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim() : null;
+        String normalizedKeyword = StringUtils.hasText(keyword) ? escapeLike(keyword.trim()) : null;
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
         PageRequest pageable = PageRequest.of(0, size + 1);
@@ -96,18 +99,37 @@ public class AdminPlaceService {
         return AdminPlaceDetailResponse.from(place);
     }
 
-    /** 관광지 soft delete — {@link Place#delete()}(→DELETED). 없으면 PLACE_NOT_FOUND(404). */
+    /**
+     * 관광지 soft delete — {@link Place#delete()}(→DELETED). 없으면 PLACE_NOT_FOUND(404).
+     *
+     * <p>이미 DELETED인 관광지 재삭제는 {@link ErrorCode#PLACE_ALREADY_DELETED}(409)로 거부한다(S07 리뷰 I) —
+     * 조용한 멱등 204 대신 운영자에게 "이미 삭제됨"을 명확히 알려 중복 액션/오해를 막는다.
+     */
     @Transactional
     public void deletePlace(Long placeId) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+        if (place.getStatus() == PlaceStatus.DELETED) {
+            throw new BusinessException(ErrorCode.PLACE_ALREADY_DELETED);
+        }
         place.delete();
     }
 
     // ── S10 대시보드 의존 카운트 (본 슬라이스는 메서드 노출까지) ────────────────────
 
-    /** 전체 관광지 수 (DELETED 포함 — 필요 시 S10에서 status 필터 분기). */
+    /** 전체 관광지 수 — soft delete(DELETED) 제외(S07 리뷰 H). ACTIVE/HIDDEN만 집계. */
     public long getTotalPlaces() {
-        return placeRepository.count();
+        return placeRepository.countByStatusNot(PlaceStatus.DELETED);
+    }
+
+    /**
+     * LIKE 와일드카드 이스케이프 — {@code \ % _}를 리터럴로 처리(ESCAPE '\' 전제).
+     * 백슬래시를 가장 먼저 치환해 이중 이스케이프를 피한다.
+     */
+    private static String escapeLike(String keyword) {
+        return keyword
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 }

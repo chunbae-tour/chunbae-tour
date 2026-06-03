@@ -75,7 +75,7 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query("SELECT p FROM Place p WHERE "
             + "p.status <> com.chunbaetour.domain.place.type.PlaceStatus.DELETED "
-            + "AND (:keyword IS NULL OR p.name LIKE CONCAT('%', :keyword, '%')) "
+            + "AND (:keyword IS NULL OR p.name LIKE CONCAT('%', :keyword, '%') ESCAPE '\\') "
             + "AND (:category IS NULL OR p.category = :category) "
             + "AND (:cursorId IS NULL OR p.id < :cursorId) "
             + "ORDER BY p.id DESC")
@@ -83,4 +83,10 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
                                @Param("category") PlaceCategory category,
                                @Param("cursorId") Long cursorId,
                                Pageable pageable);
+
+    /**
+     * 운영자 대시보드용 전체 관광지 수 — soft delete(DELETED) 제외(S07 리뷰 H).
+     * 사용자에게 노출되는 ACTIVE/HIDDEN만 집계한다.
+     */
+    long countByStatusNot(PlaceStatus status);
 }

@@ -42,8 +42,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>CUD endpoint에 {@link LogAdminAction}을 부착해 S01 audit 인프라가 자동 기록한다. PATCH/DELETE는
  * {@code targetIdVar = "placeId"}로 path 변수에서 결정적으로 대상 id를 추출한다. POST(등록)는 생성 전 id가
- * 없어 path 변수에서 추출 불가 — aspect는 targetId=null 시 기록을 생략한다(미지정 허용). 목록(GET) endpoint는
- * 상태 전이가 없어 audit 미부착.
+ * 없어 path 변수에서 추출 불가 — {@code returnIdField = "id"}로 응답 본문(생성된 관광지 id)에서 targetId를
+ * 추출한다(S01 aspect 확장, S07/S08/S09 CREATE 공통). 목록(GET) endpoint는 상태 전이가 없어 audit 미부착.
  */
 @Tag(name = "관광지 관리 (ADMIN)", description = "운영자 관광지/전통시장 목록·등록·수정·삭제 (/api/v1/admin/places/**)")
 @RestController
@@ -70,7 +70,8 @@ public class AdminPlaceController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @LogAdminAction(actionType = AdminActionType.PLACE_CREATE,
-            targetType = AdminTargetType.PLACE)
+            targetType = AdminTargetType.PLACE,
+            returnIdField = "id")
     public ApiResponse<AdminPlaceDetailResponse> createPlace(
             @Valid @RequestBody AdminPlaceCreateRequest request
     ) {

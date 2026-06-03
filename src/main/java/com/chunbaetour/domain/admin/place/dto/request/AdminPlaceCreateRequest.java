@@ -6,6 +6,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
@@ -51,7 +52,9 @@ public record AdminPlaceCreateRequest(
 
         @Size(max = 500, message = "썸네일 URL은 최대 500자까지 입력 가능합니다.") String thumbnailUrl,
 
-        String imageUrls,
+        // JSON 배열 문자열로 저장(TEXT 컬럼). @Size로 수 MB 전송 차단(최대 64KB), @Pattern으로 배열 형태 1차 검증.
+        @Size(max = 65535, message = "이미지 URL 목록이 너무 깁니다.")
+        @Pattern(regexp = "(?s)^\\[.*\\]$", message = "이미지 URL은 JSON 배열 형식이어야 합니다.") String imageUrls,
 
         @Size(max = 100, message = "운영시간은 최대 100자까지 입력 가능합니다.") String operatingHours,
 
@@ -61,7 +64,9 @@ public record AdminPlaceCreateRequest(
 
         @Size(max = 50, message = "입장료는 최대 50자까지 입력 가능합니다.") String admissionFee,
 
-        String tags
+        // tags도 JSON 배열 문자열(TEXT). imageUrls와 동일 기준 — 크기 상한 + 배열 형태 검증.
+        @Size(max = 65535, message = "태그 목록이 너무 깁니다.")
+        @Pattern(regexp = "(?s)^\\[.*\\]$", message = "태그는 JSON 배열 형식이어야 합니다.") String tags
 ) {
 
     /** 요청을 {@link Place} 엔티티로 변환한다(빌더 — status는 ACTIVE 고정). */

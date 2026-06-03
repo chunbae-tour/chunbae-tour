@@ -147,8 +147,8 @@ class AdminPlaceControllerIntegrationTest extends AbstractIntegrationTest {
     // ── 등록 ────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("POST 등록 → 201 + Place ACTIVE 저장 (POST는 audit 미기록 — path 변수 부재)")
-    void createPlace_returns_201() throws Exception {
+    @DisplayName("POST 등록 → 201 + Place ACTIVE 저장 + audit PLACE_CREATE(targetId=생성 id, returnIdField)")
+    void createPlace_returns_201_and_audit_targetId_from_return() throws Exception {
         String adminToken = adminToken();
         String json = """
                 {"name":"불국사","category":"TOURIST_SPOT","address":"경주시 진현동",
@@ -164,7 +164,32 @@ class AdminPlaceControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
 
         assertThat(placeRepository.findAll()).hasSize(1);
-        // POST는 생성 전 id 없음 → aspect가 targetId=null로 기록 생략
+        Long createdId = placeRepository.findAll().getFirst().getId();
+
+        // D: POST는 path 변수가 없지만 returnIdField="id"로 응답 본문의 id를 targetId에 기록한다.
+        List<AdminActionLog> logs = adminActionLogRepository.findAll();
+        assertThat(logs).hasSize(1);
+        AdminActionLog log = logs.getFirst();
+        assertThat(log.getActionType()).isEqualTo(AdminActionType.PLACE_CREATE);
+        assertThat(log.getTargetType()).isEqualTo(AdminTargetType.PLACE);
+        assertThat(log.getTargetId()).isEqualTo(createdId);
+    }
+
+    @Test
+    @DisplayName("POST imageUrls 비-JSON-배열 → 400 (형식 검증)")
+    void createPlace_invalid_imageUrls_returns_400() throws Exception {
+        String adminToken = adminToken();
+        String json = """
+                {"name":"불국사","category":"TOURIST_SPOT","address":"경주시 진현동",
+                 "lat":35.7900,"lng":129.3320,"imageUrls":"not-a-json-array"}
+                """;
+
+        mockMvc.perform(post("/api/v1/admin/places")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isBadRequest());
+
         assertThat(adminActionLogRepository.findAll()).isEmpty();
     }
 
@@ -290,6 +315,34 @@ class AdminPlaceControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("PLACE_001"));
 
         assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("DELETE 이미 DELETED → 409 PLACE_015 + audit 미기록 (멱등 가드)")
+    void deletePlace_alreadyDeleted_returns_409() throws Exception {
+        String adminToken = adminToken();
+        Place place = savePlace("경복궁", PlaceCategory.TOURIST_SPOT, PlaceStatus.DELETED);
+
+        mockMvc.perform(delete("/api/v1/admin/places/" + place.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PLACE_015"));
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    // ── cursor ───────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("GET 목록 잘못된 cursor → 400 COMMON_008")
+    void getPlaces_invalidCursor_returns_400() throws Exception {
+        String adminToken = adminToken();
+
+        mockMvc.perform(get("/api/v1/admin/places")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .param("cursor", "!!!not-base64!!!"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_008"));
     }
 
     // ── 접근 제어 ───────────────────────────────────────────────────────────
