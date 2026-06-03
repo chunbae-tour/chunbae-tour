@@ -3,6 +3,7 @@ package com.chunbaetour.domain.festival.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
@@ -51,7 +52,7 @@ class FestivalServiceTest {
     // ── create ────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("create — 유효한 요청으로 축제 등록 성공 및 캐시 전체 무효화")
+    @DisplayName("create — 올바른 Festival 인자로 save 호출 후 응답 반환 및 캐시 전체 무효화")
     void create_성공() {
         FestivalCreateRequest request = new FestivalCreateRequest(
                 "테스트 축제", "축제 설명", "서울", "서울시 강남구 테헤란로 1",
@@ -63,7 +64,8 @@ class FestivalServiceTest {
                 request.status()
         );
         ReflectionTestUtils.setField(saved, "id", 1L);
-        given(festivalRepository.save(any(Festival.class))).willReturn(saved);
+        // argThat: save에 전달된 Festival의 name 검증 — 잘못된 필드로 create() 호출 시 탐지
+        given(festivalRepository.save(argThat(f -> "테스트 축제".equals(f.getName())))).willReturn(saved);
 
         FestivalAdminMutateResponse response = festivalService.create(request);
 
@@ -133,6 +135,8 @@ class FestivalServiceTest {
 
         festivalService.delete(id);
 
+        // JPA dirty-check 의존: @Transactional 내부에서 festival.delete()를 호출하므로
+        // 트랜잭션 커밋 시 DB에 반영됨. 단위 테스트에서는 인메모리 상태로만 검증.
         assertThat(festival.getStatus()).isEqualTo(FestivalStatus.DELETED);
         verify(cacheEvict).evictById(id);
     }
@@ -165,9 +169,23 @@ class FestivalServiceTest {
     // ── getDetail ─────────────────────────────────────────────────────────
 
     @Test
+    @DisplayName("getDetail — ACTIVE 축제 정상 반환")
+    void getDetail_ACTIVE_성공() {
+        Long festivalId = 1L;
+        FestivalCacheData activeData = buildCacheData(festivalId, FestivalStatus.ACTIVE);
+        given(self.findCachedFestival(festivalId)).willReturn(activeData);
+
+        FestivalResponse response = festivalService.getDetail(festivalId);
+
+        assertThat(response.festivalId()).isEqualTo(festivalId);
+        assertThat(response.name()).isEqualTo("축제1");
+        assertThat(response.status()).isEqualTo(FestivalStatus.ACTIVE);
+    }
+
+    @Test
     @DisplayName("getDetail — DELETED 상태 축제 조회 시 FESTIVAL_NOT_FOUND (존재 여부 노출 차단)")
     void getDetail_DELETED_축제_FESTIVAL_NOT_FOUND() {
-        Long festivalId = 1L;
+        Long festivalId = 2L;
         FestivalCacheData deletedData = buildCacheData(festivalId, FestivalStatus.DELETED);
         given(self.findCachedFestival(festivalId)).willReturn(deletedData);
 
@@ -180,7 +198,7 @@ class FestivalServiceTest {
     @Test
     @DisplayName("getDetail — HIDDEN 상태 축제 조회 시 FESTIVAL_NOT_FOUND (사용자 미노출)")
     void getDetail_HIDDEN_축제_FESTIVAL_NOT_FOUND() {
-        Long festivalId = 2L;
+        Long festivalId = 3L;
         FestivalCacheData hiddenData = buildCacheData(festivalId, FestivalStatus.HIDDEN);
         given(self.findCachedFestival(festivalId)).willReturn(hiddenData);
 
@@ -196,6 +214,7 @@ class FestivalServiceTest {
     @DisplayName("getAdminList — size+1 결과이면 hasNext=true, nextCursor 존재")
     void getAdminList_hasNext_true() {
         int size = 2;
+        // CursorUtils.decodeSafe(null) → null 보장 (소스: CursorUtils:70 if(cursor==null) return null)
         given(festivalQueryRepository.findNotDeletedByCursor(null, size + 1))
                 .willReturn(List.of(buildFestival(1L, FestivalStatus.ACTIVE),
                                     buildFestival(2L, FestivalStatus.ACTIVE),

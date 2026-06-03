@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
@@ -37,35 +38,58 @@ class FestivalTest {
     }
 
     @Test
-    @DisplayName("create — startDate가 endDate 이후면 BusinessException")
+    @DisplayName("create — startDate가 endDate 이후면 INVALID_INPUT_VALUE")
     void create_startDate가_endDate_이후_예외() {
         assertThatThrownBy(() ->
                 Festival.create("서울 축제", null, "서울", "서울시 강남구", JUN_23, JUN_18, null, null, FestivalStatus.ACTIVE)
-        ).isInstanceOf(BusinessException.class);
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     @Test
-    @DisplayName("create — name blank이면 BusinessException")
+    @DisplayName("create — name blank이면 INVALID_INPUT_VALUE")
     void create_name_blank_예외() {
         assertThatThrownBy(() ->
                 Festival.create("   ", null, "서울", "서울시 강남구", JUN_18, JUN_23, null, null, FestivalStatus.ACTIVE)
-        ).isInstanceOf(BusinessException.class);
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     @Test
-    @DisplayName("create — region null이면 BusinessException")
+    @DisplayName("create — region null이면 INVALID_INPUT_VALUE")
     void create_region_null_예외() {
         assertThatThrownBy(() ->
                 Festival.create("서울 축제", null, null, "서울시 강남구", JUN_18, JUN_23, null, null, FestivalStatus.ACTIVE)
-        ).isInstanceOf(BusinessException.class);
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     @Test
-    @DisplayName("create — startDate null이면 BusinessException")
+    @DisplayName("create — startDate null이면 INVALID_INPUT_VALUE")
     void create_startDate_null_예외() {
         assertThatThrownBy(() ->
                 Festival.create("서울 축제", null, "서울", "서울시 강남구", null, JUN_23, null, null, FestivalStatus.ACTIVE)
-        ).isInstanceOf(BusinessException.class);
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    @DisplayName("create — endDate null이면 INVALID_INPUT_VALUE")
+    void create_endDate_null_예외() {
+        assertThatThrownBy(() ->
+                Festival.create("서울 축제", null, "서울", "서울시 강남구", JUN_18, null, null, null, FestivalStatus.ACTIVE)
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     @Test
@@ -79,13 +103,15 @@ class FestivalTest {
     // ── update ────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("update — 유효한 값으로 모든 필드 교체")
+    @DisplayName("update — 유효한 값으로 모든 필드 교체 (imageUrl/relatedUrl 포함)")
     void update_필드_변경() {
         Festival f = Festival.create("원래 이름", null, "서울", "서울시 강남구", JUN_18, JUN_23, null, null, FestivalStatus.ACTIVE);
         LocalDate newStart = LocalDate.of(2026, 8, 1);
         LocalDate newEnd = LocalDate.of(2026, 8, 10);
+        String imageUrl = "https://cdn.example.com/img.jpg";
+        String relatedUrl = "https://festival.example.com";
 
-        f.update("새 이름", "새 설명", "부산", "부산시 해운대구", newStart, newEnd, null, null, FestivalStatus.HIDDEN);
+        f.update("새 이름", "새 설명", "부산", "부산시 해운대구", newStart, newEnd, imageUrl, relatedUrl, FestivalStatus.HIDDEN);
 
         assertThat(f.getName()).isEqualTo("새 이름");
         assertThat(f.getDescription()).isEqualTo("새 설명");
@@ -93,17 +119,22 @@ class FestivalTest {
         assertThat(f.getAddress()).isEqualTo("부산시 해운대구");
         assertThat(f.getStartDate()).isEqualTo(newStart);
         assertThat(f.getEndDate()).isEqualTo(newEnd);
+        assertThat(f.getImageUrl()).isEqualTo(imageUrl);
+        assertThat(f.getRelatedUrl()).isEqualTo(relatedUrl);
         assertThat(f.getStatus()).isEqualTo(FestivalStatus.HIDDEN);
     }
 
     @Test
-    @DisplayName("update — status null이면 BusinessException")
+    @DisplayName("update — status null이면 INVALID_INPUT_VALUE")
     void update_status_null_예외() {
         Festival f = Festival.create("서울 축제", null, "서울", "서울시 강남구", JUN_18, JUN_23, null, null, FestivalStatus.ACTIVE);
 
         assertThatThrownBy(() ->
                 f.update("서울 축제", null, "서울", "서울시 강남구", JUN_18, JUN_23, null, null, null)
-        ).isInstanceOf(BusinessException.class);
+        )
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     // ── delete ────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDate;
 import java.util.UUID;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -97,7 +98,7 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.name").value("테스트 축제"))
-                .andExpect(jsonPath("$.data.festivalId").isNumber())
+                .andExpect(jsonPath("$.data.festivalId").value(Matchers.greaterThan(0)))
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
     }
 
@@ -241,6 +242,8 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("GET 목록 — ACTIVE + HIDDEN 모두 반환, DELETED는 제외")
     void getAdminList_HIDDEN_포함_200() throws Exception {
+        // 이전 테스트 잔류 데이터 차단 — 공유 컨테이너 환경에서 count 단언 결정적 보장
+        festivalRepository.deleteAll();
         festivalRepository.save(buildFestival("공개 축제", FestivalStatus.ACTIVE));
         festivalRepository.save(buildFestival("비공개 축제", FestivalStatus.HIDDEN));
         festivalRepository.save(buildFestival("삭제된 축제", FestivalStatus.DELETED));

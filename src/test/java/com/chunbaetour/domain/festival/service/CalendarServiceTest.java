@@ -3,6 +3,7 @@ package com.chunbaetour.domain.festival.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
+import com.chunbaetour.domain.festival.dto.response.CalendarEventItem;
 import com.chunbaetour.domain.festival.dto.response.CalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.DailyCalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.FestivalCacheData;
@@ -20,10 +21,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+// NOTE: @Cacheable(@Cacheable(getMonthlyCalendar, findCachedDailyFestivals))는 Spring 프록시에서
+// 처리되므로 Mockito 단위 테스트에서는 캐시 레이어가 활성화되지 않는다.
+// 캐시 동작(Redis TTL, evict 연동)은 통합 테스트에서 별도 검증 필요.
 @ExtendWith(MockitoExtension.class)
 class CalendarServiceTest {
 
     @Mock private FestivalQueryRepository festivalQueryRepository;
+    // getMonthlyCalendar 테스트는 self 사용 없음 (festivalQueryRepository 직접 호출).
+    // getDailyCalendar 는 self.findCachedDailyFestivals() 를 통해 캐시 레이어 위임.
     @Mock private CalendarService self;
 
     @InjectMocks private CalendarService calendarService;
@@ -36,9 +42,8 @@ class CalendarServiceTest {
     // ── getMonthlyCalendar ─────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getMonthlyCalendar — 6/18~6/23 축제: 18·19·20·21·22·23일 6일 모두 마커 표시")
+    @DisplayName("getMonthlyCalendar — 6/18~6/23 축제: 18일부터 23일까지 6일 모두 마커 표시")
     void getMonthlyCalendar_6월18일부터_23일까지_6일_모두_표시() {
-        // 6/18 시작 ~ 6/23 종료 축제 → 해당 날짜 포함 여부 검증
         LocalDate start = LocalDate.of(2026, 6, 18);
         LocalDate end   = LocalDate.of(2026, 6, 23);
         given(festivalQueryRepository.findActiveInMonth(2026, 6)).willReturn(List.of(buildFestival(1L, start, end)));
@@ -56,9 +61,13 @@ class CalendarServiceTest {
                 LocalDate.of(2026, 6, 22),
                 LocalDate.of(2026, 6, 23)
         );
-        // 각 날짜에 이 축제 1개씩 포함
-        assertThat(response.events().get(LocalDate.of(2026, 6, 18))).hasSize(1);
-        assertThat(response.events().get(LocalDate.of(2026, 6, 20))).hasSize(1);
+        // 이벤트 항목 내용 검증
+        List<CalendarEventItem> day18Events = response.events().get(LocalDate.of(2026, 6, 18));
+        assertThat(day18Events).hasSize(1);
+        assertThat(day18Events.get(0).festivalId()).isEqualTo(1L);
+        assertThat(day18Events.get(0).name()).isEqualTo("축제1");
+        assertThat(day18Events.get(0).type()).isEqualTo("FESTIVAL");
+        // 마지막 날도 동일 이벤트 포함 확인
         assertThat(response.events().get(LocalDate.of(2026, 6, 23))).hasSize(1);
     }
 
@@ -124,6 +133,8 @@ class CalendarServiceTest {
     @DisplayName("getDailyCalendar — 해당 날짜 이벤트 목록 정상 반환")
     void getDailyCalendar_성공() {
         LocalDate date = LocalDate.of(2026, 6, 20);
+        // 6/18~6/23 축제 → 6/20 포함. progressStatus는 LocalDate.now() 기준으로 결정되어
+        // 실행 시점에 따라 달라지므로 asserting 제외.
         FestivalCacheData cacheData = buildCacheData(1L,
                 LocalDate.of(2026, 6, 18), LocalDate.of(2026, 6, 23));
         given(self.findCachedDailyFestivals(date)).willReturn(List.of(cacheData));
