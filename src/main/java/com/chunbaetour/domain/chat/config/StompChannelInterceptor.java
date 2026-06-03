@@ -156,7 +156,7 @@ public class StompChannelInterceptor implements ChannelInterceptor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
 
         if (isAdmin) {
-            // WAITING 상태만 전체 ADMIN 허용 — CLOSED(미배정 가능) 포함 그 외는 담당 ADMIN만
+            // WAITING 상태만 전체 ADMIN 허용 — 그 외(IN_PROGRESS/CLOSED)는 담당 ADMIN(adminId 일치)만
             if (room.getStatus() == SupportRoomStatus.WAITING) {
                 return message;
             }
