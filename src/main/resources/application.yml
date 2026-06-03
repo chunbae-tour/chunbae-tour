@@ -103,6 +103,11 @@ ratelimit:
       path: /api/v1/translations
       limit: 15
       window: PT1M
+    - id: qr-status-poll
+      method: GET
+      path: /api/v1/payments/qr/*/status
+      limit: 30
+      window: PT1M
 
 portone:
   secret: ${PORTONE_SECRET:}
