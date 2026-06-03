@@ -10,6 +10,7 @@ import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.constant.SearchRedisKeys;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
+import com.chunbaetour.domain.search.dto.response.SearchFestivalV1Response;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -176,5 +177,47 @@ public class SearchService {
         return new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
     }
 
+    /**
+     * 축제 검색 v1 — 구 키(location, thumbnailUrl) 응답.
+     * <p>
+     * {@code GET /api/v1/search/festivals} 하위 호환용. 쿼리 로직은 v2와 동일.
+     * </p>
+     */
+    public CursorPageResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp) {
+        log.info("[SearchService] 축제 검색 v1 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}",
+                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size);
+
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new BusinessException(ErrorCode.SEARCH_INVALID_DATE_RANGE);
+        }
+
+        String normalized = keyword;
+        if (keyword != null) {
+            normalized = keyword.strip();
+            if (StringUtils.hasText(normalized) && normalized.length() > 50) {
+                throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
+            }
+            normalized = StringUtils.hasText(normalized) ? normalized : null;
+        }
+
+        List<Festival> items = festivalQueryRepository.searchFestivals(normalized, startDate, endDate, region, cursorId, size);
+
+        boolean hasNext = items.size() > size;
+        List<Festival> resultItems = hasNext ? items.subList(0, size) : items;
+
+        Long nextCursor = resultItems.isEmpty() ? null : resultItems.get(resultItems.size() - 1).getId();
+        String nextCursorStr = nextCursor != null ? String.valueOf(nextCursor) : null;
+
+        LocalDate today = LocalDate.now(clock);
+        List<SearchFestivalV1Response> v1Items = resultItems.stream()
+                .map(item -> SearchFestivalV1Response.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
+                .toList();
+
+        if (StringUtils.hasText(normalized) && !v1Items.isEmpty() && cursorId == null) {
+            popularSearchService.incrementSearchCount(normalized, clientIp);
+        }
+
+        return new CursorPageResponse<>(v1Items, nextCursorStr, hasNext, v1Items.size());
+    }
 
 }

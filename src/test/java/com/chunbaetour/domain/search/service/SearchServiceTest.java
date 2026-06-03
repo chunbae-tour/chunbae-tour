@@ -144,12 +144,9 @@ class SearchServiceTest {
         // given
         int size = 10;
         List<Festival> mockResult = new ArrayList<>();
-        Festival festival = Festival.builder()
-                .name("축제1").description("설명").region("서울").location("주소")
-                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(LocalDate.now().minusDays(1)).endDate(LocalDate.now().plusDays(1))
-                .thumbnailUrl("http://url.com")
-                .build();
+        Festival festival = Festival.create("축제1", "설명", "서울", "주소",
+                LocalDate.now().minusDays(1), LocalDate.now().plusDays(1),
+                "http://url.com", null, FestivalStatus.ACTIVE);
         // 리플렉션으로 ID 세팅
         org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 1L);
         mockResult.add(festival);
@@ -173,22 +170,16 @@ class SearchServiceTest {
         List<Festival> mockResult = new ArrayList<>();
         LocalDate today = LocalDate.now();
         
-        Festival pastFestival = Festival.builder()
-                .name("지난 축제").description("설명").region("서울").location("주소")
-                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(today.minusDays(10)).endDate(today.minusDays(5)).thumbnailUrl("http://url.com").build();
+        Festival pastFestival = Festival.create("지난 축제", "설명", "서울", "주소",
+                today.minusDays(10), today.minusDays(5), "http://url.com", null, FestivalStatus.ACTIVE);
         org.springframework.test.util.ReflectionTestUtils.setField(pastFestival, "id", 3L);
         
-        Festival ongoingFestival = Festival.builder()
-                .name("진행중 축제").description("설명").region("서울").location("주소")
-                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(today.minusDays(1)).endDate(today.plusDays(5)).thumbnailUrl("http://url.com").build();
+        Festival ongoingFestival = Festival.create("진행중 축제", "설명", "서울", "주소",
+                today.minusDays(1), today.plusDays(5), "http://url.com", null, FestivalStatus.ACTIVE);
         org.springframework.test.util.ReflectionTestUtils.setField(ongoingFestival, "id", 2L);
         
-        Festival futureFestival = Festival.builder()
-                .name("예정 축제").description("설명").region("서울").location("주소")
-                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(today.plusDays(5)).endDate(today.plusDays(10)).thumbnailUrl("http://url.com").build();
+        Festival futureFestival = Festival.create("예정 축제", "설명", "서울", "주소",
+                today.plusDays(5), today.plusDays(10), "http://url.com", null, FestivalStatus.ACTIVE);
         org.springframework.test.util.ReflectionTestUtils.setField(futureFestival, "id", 1L);
 
         mockResult.add(pastFestival);
@@ -237,12 +228,8 @@ class SearchServiceTest {
         LocalDate startDate = LocalDate.now();
         int size = 10;
         List<Festival> mockResult = new ArrayList<>();
-        Festival festival = Festival.builder()
-                .name("축제1").description("설명").region("서울").location("주소")
-                .lat(new java.math.BigDecimal("37.0")).lng(new java.math.BigDecimal("127.0"))
-                .startDate(startDate).endDate(startDate.plusDays(5))
-                .thumbnailUrl("http://url.com")
-                .build();
+        Festival festival = Festival.create("축제1", "설명", "서울", "주소",
+                startDate, startDate.plusDays(5), "http://url.com", null, FestivalStatus.ACTIVE);
         org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 1L);
         mockResult.add(festival);
 
@@ -266,12 +253,8 @@ class SearchServiceTest {
         LocalDate endDate = LocalDate.now().plusDays(10);
         int size = 10;
         List<Festival> mockResult = new ArrayList<>();
-        Festival festival = Festival.builder()
-                .name("축제2").description("설명").region("부산").location("주소")
-                .lat(new java.math.BigDecimal("35.0")).lng(new java.math.BigDecimal("129.0"))
-                .startDate(endDate.minusDays(3)).endDate(endDate)
-                .thumbnailUrl("http://url.com")
-                .build();
+        Festival festival = Festival.create("축제2", "설명", "부산", "주소",
+                endDate.minusDays(3), endDate, "http://url.com", null, FestivalStatus.ACTIVE);
         org.springframework.test.util.ReflectionTestUtils.setField(festival, "id", 2L);
         mockResult.add(festival);
 
