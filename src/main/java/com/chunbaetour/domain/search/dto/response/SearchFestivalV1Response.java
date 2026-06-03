@@ -1,25 +1,24 @@
 package com.chunbaetour.domain.search.dto.response;
 
+import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.type.FestivalProgressStatus;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDate;
 
-public record SearchFestivalResponse(
+public record SearchFestivalV1Response(
         Long festivalId,
         String name,
         String description,
         String region,
-        String address,
+        String location,
         LocalDate startDate,
         LocalDate endDate,
-        String imageUrl,
+        String thumbnailUrl,
         FestivalStatus status,
         FestivalProgressStatus progressStatus
 ) {
-    public static SearchFestivalResponse from(com.chunbaetour.domain.festival.entity.Festival festival, FestivalProgressStatus progressStatus) {
-        return new SearchFestivalResponse(
+    public static SearchFestivalV1Response from(Festival festival, FestivalProgressStatus progressStatus) {
+        return new SearchFestivalV1Response(
                 festival.getId(),
                 festival.getName(),
                 festival.getDescription(),
@@ -33,4 +32,3 @@ public record SearchFestivalResponse(
         );
     }
 }
-
