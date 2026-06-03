@@ -62,12 +62,6 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
         accountRepository.deleteAll();
     }
 
-    @AfterEach
-    void cleanup() {
-        festivalRepository.deleteAll();
-        accountRepository.deleteAll();
-    }
-
     // ── POST: 권한 검증 ────────────────────────────────────────────────────
 
     @Test
@@ -105,7 +99,7 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.name").value("테스트 축제"))
-                .andExpect(jsonPath("$.data.festivalId").value(Matchers.greaterThan(0)))
+                .andExpect(jsonPath("$.data.festivalId").value(Matchers.greaterThan(0))) // JsonPath parses small ints as Integer
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
     }
 
@@ -130,7 +124,8 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_004")); // INVALID_INPUT_VALUE — 도메인 불변식 위반
     }
 
     // ── PUT ───────────────────────────────────────────────────────────────

@@ -145,6 +145,7 @@ class CalendarServiceTest {
         assertThat(response.events()).hasSize(1);
         assertThat(response.events().get(0).festivalId()).isEqualTo(1L);
         assertThat(response.events().get(0).name()).isEqualTo("축제1");
+        assertThat(response.events().get(0).type()).isEqualTo("FESTIVAL");
     }
 
     @Test

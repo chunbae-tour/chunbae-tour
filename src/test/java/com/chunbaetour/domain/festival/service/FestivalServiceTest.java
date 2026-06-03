@@ -2,7 +2,6 @@ package com.chunbaetour.domain.festival.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -64,8 +63,13 @@ class FestivalServiceTest {
                 request.status()
         );
         ReflectionTestUtils.setField(saved, "id", 1L);
-        // argThat: save에 전달된 Festival의 name 검증 — 잘못된 필드로 create() 호출 시 탐지
-        given(festivalRepository.save(argThat(f -> "테스트 축제".equals(f.getName())))).willReturn(saved);
+        // argThat: save에 전달된 Festival 핵심 필드 검증 — 인자 순서 오류 시 탐지
+        given(festivalRepository.save(argThat(f ->
+                "테스트 축제".equals(f.getName())
+                && "서울".equals(f.getRegion())
+                && START.equals(f.getStartDate())
+                && END.equals(f.getEndDate())
+        ))).willReturn(saved);
 
         FestivalAdminMutateResponse response = festivalService.create(request);
 
