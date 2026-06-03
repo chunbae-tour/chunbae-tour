@@ -64,14 +64,20 @@ class AdminDashboardServiceTest {
                 objectMapper);
     }
 
+    // S06 카운트 stub 고정값 — 사용자 카운트 인자와 겹치지 않는 독립 distinct 값.
+    // loadSummary 6개 인자 순서가 swap돼도 잡히도록(같은 값 재사용 시 swap을 못 잡음).
+    private static final long S06_TOTAL_SHOPS = 11L;
+    private static final long S06_PENDING_CERTS = 5L;
+    private static final long S06_PENDING_APPLICATIONS = 2L;
+
     private void stubCounts(long total, long today, long suspended) {
         given(adminUserService.getTotalUsers()).willReturn(total);
         given(adminUserService.getNewUsersToday()).willReturn(today);
         given(adminUserService.getSuspendedUsers()).willReturn(suspended);
-        // S06 가게/인증/상인신청 카운트 — loadSummary(캐시 miss) 경로에서만 호출.
-        given(adminShopService.getTotalShops()).willReturn(total);
-        given(adminShopCertificationService.getPendingCertificationsCount()).willReturn(today);
-        given(adminMerchantApplicationService.getPendingApplicationsCount()).willReturn(suspended);
+        // S06 가게/인증/상인신청 카운트 — loadSummary(캐시 miss) 경로에서만 호출. 사용자 카운트와 구별되는 독립값.
+        given(adminShopService.getTotalShops()).willReturn(S06_TOTAL_SHOPS);
+        given(adminShopCertificationService.getPendingCertificationsCount()).willReturn(S06_PENDING_CERTS);
+        given(adminMerchantApplicationService.getPendingApplicationsCount()).willReturn(S06_PENDING_APPLICATIONS);
     }
 
     @Test
@@ -83,13 +89,13 @@ class AdminDashboardServiceTest {
 
         AdminDashboardResponse response = service().getSummary();
 
+        // 6필드 전부 distinct 값으로 단정 — loadSummary 인자 순서/매핑이 어긋나면 잡힌다.
         assertThat(response.totalUsers()).isEqualTo(42L);
         assertThat(response.newUsersToday()).isEqualTo(7L);
         assertThat(response.suspendedUsers()).isEqualTo(3L);
-        // S06 카운트 3종도 도메인 서비스 결과로 매핑 (stubCounts: total/today/suspended 재사용).
-        assertThat(response.totalShops()).isEqualTo(42L);
-        assertThat(response.pendingCertifications()).isEqualTo(7L);
-        assertThat(response.pendingMerchantApplications()).isEqualTo(3L);
+        assertThat(response.totalShops()).isEqualTo(S06_TOTAL_SHOPS);
+        assertThat(response.pendingCertifications()).isEqualTo(S06_PENDING_CERTS);
+        assertThat(response.pendingMerchantApplications()).isEqualTo(S06_PENDING_APPLICATIONS);
     }
 
     @Test
@@ -98,7 +104,9 @@ class AdminDashboardServiceTest {
         given(redisTemplate.opsForValue()).willReturn(valueOps);
         stubCounts(10L, 2L, 1L);
 
-        AdminDashboardResponse cachedValue = new AdminDashboardResponse(10L, 2L, 1L, 10L, 2L, 1L);
+        // 캐시에 저장될 값 = 1번째(miss) loadSummary 결과와 동일해야 함 — S06은 독립 stub값(11/5/2).
+        AdminDashboardResponse cachedValue =
+                new AdminDashboardResponse(10L, 2L, 1L, S06_TOTAL_SHOPS, S06_PENDING_CERTS, S06_PENDING_APPLICATIONS);
         AtomicReference<String> store = new AtomicReference<>();
         given(valueOps.get(anyString())).willAnswer(inv -> store.get());
         willAnswer(inv -> {
@@ -120,35 +128,8 @@ class AdminDashboardServiceTest {
         then(adminUserService).should(times(1)).getSuspendedUsers();
     }
 
-    @Test
-    @DisplayName("캐시 호환: 구버전 3필드 JSON 역직렬화 시 S06 3필드는 null (실패 없음)")
-    void deserialize_legacyThreeFieldJson_newFieldsNull() {
-        // 실제 Jackson3 ObjectMapper로 배포 직후 남아있는 구버전 캐시 JSON 라운드트립 시뮬레이션.
-        ObjectMapper realMapper = new ObjectMapper();
-        String legacyJson = "{\"totalUsers\":42,\"newUsersToday\":7,\"suspendedUsers\":3}";
-
-        AdminDashboardResponse response = realMapper.readValue(legacyJson, AdminDashboardResponse.class);
-
-        assertThat(response.totalUsers()).isEqualTo(42L);
-        assertThat(response.newUsersToday()).isEqualTo(7L);
-        assertThat(response.suspendedUsers()).isEqualTo(3L);
-        // append + nullable이므로 구버전 JSON에 없는 S06 필드는 null로 채워짐 (역직렬화 실패 X).
-        assertThat(response.totalShops()).isNull();
-        assertThat(response.pendingCertifications()).isNull();
-        assertThat(response.pendingMerchantApplications()).isNull();
-    }
-
-    @Test
-    @DisplayName("캐시 라운드트립: 6필드 직렬화→역직렬화 동일성")
-    void serialize_then_deserialize_sixFields_roundTrip() {
-        ObjectMapper realMapper = new ObjectMapper();
-        AdminDashboardResponse original = new AdminDashboardResponse(42L, 7L, 3L, 11L, 5L, 2L);
-
-        String json = realMapper.writeValueAsString(original);
-        AdminDashboardResponse restored = realMapper.readValue(json, AdminDashboardResponse.class);
-
-        assertThat(restored).isEqualTo(original);
-    }
+    // 캐시 JSON 직렬화/역직렬화(구버전 호환 + 6필드 라운드트립)는 프로덕션 ObjectMapper 빈으로 검증해야
+    // 의미가 있어 AdminDashboardControllerIntegrationTest로 이동했다(bare new ObjectMapper()는 빈 설정 불일치).
 
     @Test
     @DisplayName("Redis 조회 장애 → 예외 전파 없이 DB 폴백 (graceful)")

@@ -78,6 +78,9 @@ public class AdminDashboardService {
     /**
      * 카운트 6종을 각 도메인 서비스에서 조합. 본 서비스는 조합만 담당하며 직접 쿼리하지 않는다.
      * 사용자 3종({@link AdminUserService}) + S06 가게/인증/상인신청 3종을 합친다.
+     *
+     * <p>현재 6개 COUNT를 직렬 호출한다. 카운트 종류가 늘어나는 S10(대시보드 3차) 시점에 쿼리 수가
+     * 더 늘면 병렬화(예: CompletableFuture)나 단일 집계 쿼리를 검토한다 — 현 규모(6개, 1분 캐시)에서는 무해.
      */
     private AdminDashboardResponse loadSummary() {
         return new AdminDashboardResponse(

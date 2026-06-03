@@ -1,11 +1,13 @@
 package com.chunbaetour.domain.admin.dashboard;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.chunbaetour.domain.admin.dashboard.dto.response.AdminDashboardResponse;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.AccountSeedFactory;
 import com.chunbaetour.domain.auth.AccountStatus;
@@ -97,6 +99,36 @@ class AdminDashboardControllerIntegrationTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/dashboard"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    // ── 캐시 JSON 직렬화 (프로덕션 ObjectMapper 빈으로 검증) ────────────────────
+
+    @Test
+    @DisplayName("캐시 호환: 구버전 3필드 JSON 역직렬화 → S06 3필드 null (실패 없음)")
+    void cache_legacyThreeFieldJson_deserializes_newFieldsNull() throws Exception {
+        // 배포 직후 Redis에 남은 구버전(3필드) 캐시 JSON을 프로덕션 빈이 역직렬화해도 깨지지 않아야 한다.
+        String legacyJson = "{\"totalUsers\":42,\"newUsersToday\":7,\"suspendedUsers\":3}";
+
+        AdminDashboardResponse response = objectMapper.readValue(legacyJson, AdminDashboardResponse.class);
+
+        assertThat(response.totalUsers()).isEqualTo(42L);
+        assertThat(response.newUsersToday()).isEqualTo(7L);
+        assertThat(response.suspendedUsers()).isEqualTo(3L);
+        // append + nullable이라 구버전 JSON에 없는 S06 필드는 null (역직렬화 실패 X).
+        assertThat(response.totalShops()).isNull();
+        assertThat(response.pendingCertifications()).isNull();
+        assertThat(response.pendingMerchantApplications()).isNull();
+    }
+
+    @Test
+    @DisplayName("캐시 라운드트립: 6필드 직렬화→역직렬화 동일성 (프로덕션 빈)")
+    void cache_sixField_roundTrip() throws Exception {
+        AdminDashboardResponse original = new AdminDashboardResponse(42L, 7L, 3L, 11L, 5L, 2L);
+
+        String json = objectMapper.writeValueAsString(original);
+        AdminDashboardResponse restored = objectMapper.readValue(json, AdminDashboardResponse.class);
+
+        assertThat(restored).isEqualTo(original);
     }
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────
