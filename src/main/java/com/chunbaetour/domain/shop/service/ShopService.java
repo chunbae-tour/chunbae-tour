@@ -69,6 +69,9 @@ public class ShopService {
      */
     @Transactional
     public ShopResponse updateMyShop(Long userId, Long shopId, ShopUpdateRequest request) {
+        // 서비스 직접 호출 대비 null 방어
+        if (request == null) throw new BusinessException(ErrorCode.INVALID_REQUEST);
+
         // shopId + userId 조합으로 본인 가게 조회
         Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
@@ -121,7 +124,8 @@ public class ShopService {
     /**
      * 가게 공개 정보 + 메뉴 목록 조회 (비인증 공개).
      * QR 스캔·앱 탐색 등 진입 경로 무관. 실제 결제(POST /payments/qr)는 USER 인증 필수.
-     * SUSPENDED/CLOSED 가게도 조회 허용 — 영업 종료 가게 정보도 열람 가능해야 함.
+     * CLOSED 가게는 조회 허용 — 영업 종료 가게 정보도 열람 가능해야 함.
+     * SUSPENDED 가게는 차단 — 관리자 신고 정지, 존재 여부 노출 방지로 SHOP_NOT_FOUND 통일.
      * 삭제된 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함 — 프론트에서 비활성 표시.
      */
     public ShopInfoResponse getShopInfo(Long shopId) {
@@ -142,6 +146,20 @@ public class ShopService {
     }
 
     /**
+     * 상인 직접 가게 상태 전환 (KAN-213). ACTIVE ↔ CLOSED만 허용.
+     * SUSPENDED 요청 시 SHOP_STATUS_FORBIDDEN. 현재 SUSPENDED 가게는 SHOP_INACTIVE.
+     */
+    @Transactional
+    public void updateMyShopStatus(Long userId, Long shopId, ShopStatus newStatus) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // 도메인 메서드에서 SUSPENDED 전환 차단 및 SUSPENDED 상태 가드 처리
+        shop.merchantChangeStatus(newStatus);
+    }
+
+    /**
      * 관리자 가게 상태 변경 (ACTIVE ↔ SUSPENDED).
      * CLOSED 상태 가게 변경 불가 — SHOP_INACTIVE.
      * CLOSED로 변경 불가 — INVALID_INPUT_VALUE (폐업은 별도 처리).
@@ -154,10 +172,10 @@ public class ShopService {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
         // 도메인 가드(CLOSED 불변) 우회 방지 — 명시적 전이 메서드로 위임
+        // CLOSED는 초반 guard에서 이미 차단 — switch는 ACTIVE/SUSPENDED만 처리
         switch (newStatus) {
             case ACTIVE -> shop.activate();
             case SUSPENDED -> shop.hide();
-            case CLOSED -> throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
     }
 
