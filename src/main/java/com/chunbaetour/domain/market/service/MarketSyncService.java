@@ -11,12 +11,16 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import net.javacrumbs.shedlock.core.LockConfiguration;
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.core.SimpleLock;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,17 +41,20 @@ public class MarketSyncService {
     private final RestClient restClient;
     private final TraditionalMarketRepository marketRepository;
     private final PublicDataApiProperties apiProperties;
+    private final LockProvider lockProvider;
 
     @Autowired @Lazy private MarketSyncService self;
 
     public MarketSyncService(
         @Qualifier("publicDataRestClient") RestClient restClient,
         TraditionalMarketRepository marketRepository,
-        PublicDataApiProperties apiProperties
+        PublicDataApiProperties apiProperties,
+        LockProvider lockProvider
     ) {
         this.restClient = restClient;
         this.marketRepository = marketRepository;
         this.apiProperties = apiProperties;
+        this.lockProvider = lockProvider;
     }
 
     /** 한 번에 수집할 최대 행 수 (API 제한: 최대 1000) */
@@ -55,13 +62,31 @@ public class MarketSyncService {
 
     /**
      * 전체 전통시장 데이터 동기화 (공통 진입점).
-     * 스케줄러·관리자 수동 모두 이 메서드 호출 → @SchedulerLock으로 중복 실행 차단.
+     * 스케줄러·관리자 수동 모두 이 메서드 호출. LockProvider로 다중 인스턴스 중복 실행 차단.
      * 페이징으로 전체 데이터 수집 후 아이템 단위 REQUIRES_NEW upsert.
      *
-     * @return 동기화된 시장 개수
+     * @return 동기화된 시장 개수 (락 획득 실패 시 0)
      */
-    @SchedulerLock(name = "market_sync_all", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
     public int syncAllMarkets() {
+        // 분산 락 획득: 스케줄러·admin 공통 진입점 → 한 인스턴스만 실행
+        LockConfiguration lockConfig = new LockConfiguration(
+                Instant.now(), "market_sync_all",
+                Duration.ofMinutes(10), Duration.ofMinutes(1));
+        Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
+
+        if (lock.isEmpty()) {
+            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중");
+            return 0;
+        }
+
+        try {
+            return doSync();
+        } finally {
+            lock.get().unlock();
+        }
+    }
+
+    private int doSync() {
         log.info("[MarketSync] 전통시장 데이터 동기화 시작");
         int totalSynced = 0;
         int currentPage = 1;
