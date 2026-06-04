@@ -2,6 +2,7 @@ package com.chunbaetour.domain.search.service;
 
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.festival.entity.Festival;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.search.dto.request.IntegratedSearchCursor;
 import com.chunbaetour.domain.search.dto.response.integrated.*;
@@ -36,7 +37,7 @@ public class IntegratedSearchService {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         boolean searchAll = "ALL".equalsIgnoreCase(type);
-        if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL").contains(type.toUpperCase(java.util.Locale.ROOT))) {
+        if (!searchAll && !List.of("PLACE", "SHOP", "MENU", "FESTIVAL", "TRADITIONAL_MARKET").contains(type.toUpperCase(java.util.Locale.ROOT))) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         if (cursorStr != null && cursorStr.length() > 1000) {
@@ -120,6 +121,24 @@ public class IntegratedSearchService {
                         .content(f.getDescription())
                         .build();
                 allItems.add(new ItemWrapper(score, 40, "FESTIVAL", f.getId(), item));
+            }
+        }
+
+        // 5. TRADITIONAL_MARKET
+        if (searchAll || "TRADITIONAL_MARKET".equalsIgnoreCase(type)) {
+            List<TraditionalMarket> markets = searchQueryRepository.searchTraditionalMarkets(keyword);
+            for (TraditionalMarket m : markets) {
+                double score = calculateScore(m.getName(), keyword);
+                IntegratedTraditionalMarketItem item = IntegratedTraditionalMarketItem.builder()
+                        .id(m.getId())
+                        .name(m.getName())
+                        .marketType(m.getMarketType())
+                        .address(m.getAddress())
+                        .phoneNumber(m.getPhoneNumber())
+                        .homepageUrl(m.getHomepageUrl())
+                        .establishYear(m.getEstablishYear())
+                        .build();
+                allItems.add(new ItemWrapper(score, 50, "TRADITIONAL_MARKET", m.getId(), item));
             }
         }
 
