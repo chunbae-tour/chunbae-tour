@@ -3,7 +3,7 @@ package com.chunbaetour.domain.festival.repository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.entity.Festival;
-import com.chunbaetour.domain.festival.entity.QFestival;
+import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 
 import static com.chunbaetour.domain.festival.entity.QFestival.festival;
@@ -21,18 +22,20 @@ public class FestivalQueryRepository {
 
     private final JPAQueryFactory queryFactory;
 
+    // ── SearchService 전용 (지역/날짜/키워드 복합 검색) ─────────────────────
+
     /**
-     * 축제 검색 (Phase 2-3)
+     * 축제 검색 (SearchService 전용).
      *
-     * @param keyword 검색어 (옵션)
+     * @param keyword   검색어 (옵션)
      * @param startDate 시작일 필터 (옵션)
-     * @param endDate 종료일 필터 (옵션)
-     * @param region 지역 필터 (옵션)
-     * @param cursorId 커서용 마지막 festivalId
-     * @param size 페이지 사이즈
-     * @return 커서 페이지네이션이 적용된 축제 검색 결과
+     * @param endDate   종료일 필터 (옵션)
+     * @param region    지역 필터 (옵션)
+     * @param cursorId  커서용 마지막 festivalId
+     * @param size      페이지 사이즈
      */
-    public List<Festival> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size) {
+    public List<Festival> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate,
+            String region, Long cursorId, int size) {
         if (size <= 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
@@ -43,51 +46,115 @@ public class FestivalQueryRepository {
                         dateBetween(startDate, endDate),
                         regionEq(region),
                         cursorIdLt(cursorId),
-                        festival.status.eq(com.chunbaetour.domain.festival.type.FestivalStatus.ACTIVE)
+                        festival.status.eq(FestivalStatus.ACTIVE)
                 )
                 .orderBy(festival.id.desc())
                 .limit(size + 1)
                 .fetch();
     }
 
+    // ── FestivalController 전용 (사용자 목록 조회) ────────────────────────
+
+    /**
+     * 사용자 축제 목록 조회 — ACTIVE만, 날짜·지역 필터, cursor 페이징.
+     *
+     * @param dateFilter 해당 날짜가 기간 내에 포함되는 축제 필터 (옵션)
+     * @param region     지역 필터 (옵션)
+     * @param cursorId   cursor (null = 첫 페이지)
+     * @param size       limit (size+1 전달 — hasNext 판단은 호출자)
+     */
+    public List<Festival> findActiveByFilter(LocalDate dateFilter, String region,
+            Long cursorId, int size) {
+        return queryFactory
+                .selectFrom(festival)
+                .where(
+                        festival.status.eq(FestivalStatus.ACTIVE),
+                        dateContains(dateFilter),
+                        regionEq(region),
+                        cursorIdLt(cursorId)
+                )
+                .orderBy(festival.id.desc())
+                .limit(size)
+                .fetch();
+    }
+
+    // ── AdminFestivalController 전용 (관리자 전체 목록 — HIDDEN 포함) ──────
+
+    /**
+     * 관리자 축제 목록 — DELETED 제외 전체 (ACTIVE + HIDDEN), cursor 페이징.
+     */
+    public List<Festival> findNotDeletedByCursor(Long cursorId, int size) {
+        return queryFactory
+                .selectFrom(festival)
+                .where(
+                        festival.status.ne(FestivalStatus.DELETED),
+                        cursorIdLt(cursorId)
+                )
+                .orderBy(festival.id.desc())
+                .limit(size)
+                .fetch();
+    }
+
+    // ── CalendarService 전용 ──────────────────────────────────────────────
+
+    /**
+     * 월별 캘린더용 — 해당 월과 기간이 겹치는 ACTIVE 축제 전체.
+     */
+    public List<Festival> findActiveInMonth(int year, int month) {
+        YearMonth ym = YearMonth.of(year, month);
+        LocalDate firstDay = ym.atDay(1);
+        LocalDate lastDay = ym.atEndOfMonth();
+        return queryFactory
+                .selectFrom(festival)
+                .where(
+                        festival.status.eq(FestivalStatus.ACTIVE),
+                        festival.startDate.loe(lastDay),
+                        festival.endDate.goe(firstDay)
+                )
+                .orderBy(festival.startDate.asc(), festival.id.asc())
+                .fetch();
+    }
+
+    /**
+     * 일별 캘린더용 — 해당 날짜를 포함하는 ACTIVE 축제.
+     */
+    public List<Festival> findActiveOnDate(LocalDate date) {
+        return queryFactory
+                .selectFrom(festival)
+                .where(
+                        festival.status.eq(FestivalStatus.ACTIVE),
+                        festival.startDate.loe(date),
+                        festival.endDate.goe(date)
+                )
+                .orderBy(festival.startDate.asc(), festival.id.asc())
+                .fetch();
+    }
+
+    // ── 공통 조건 헬퍼 ────────────────────────────────────────────────────
+
     private BooleanExpression keywordContains(String keyword) {
-        if (!StringUtils.hasText(keyword)) {
-            return null;
-        }
+        if (!StringUtils.hasText(keyword)) return null;
         return festival.name.containsIgnoreCase(keyword)
                 .or(festival.description.containsIgnoreCase(keyword));
     }
 
     /**
-     * 날짜 범위 조건을 생성한다.
-     * <p>
-     * startDate/endDate 역순 유효성 검증({@code startDate.isAfter(endDate)})은
-     * 호출자인 {@link com.chunbaetour.domain.search.service.SearchService}에서
-     * {@code SEARCH_INVALID_DATE_RANGE}로 사전 검증 후 이 메서드를 호출하므로
-     * 여기서는 중복 검증하지 않는다.
-     * </p>
-     * <ul>
-     *   <li>both null   → 조건 없음 (전체 조회)</li>
-     *   <li>both set    → 기간 겹침 조건 (startDate ≤ endDate AND festival.startDate ≤ endDate)</li>
-     *   <li>startDate only → festival.endDate ≥ startDate (시작일 이후 종료되는 축제)</li>
-     *   <li>endDate only   → festival.startDate ≤ endDate (종료일 이전 시작하는 축제)</li>
-     * </ul>
+     * 날짜 범위 조건 (SearchService용).
+     * 호출 전 startDate ≤ endDate 검증은 호출자(SearchService) 책임.
      */
     private BooleanExpression dateBetween(LocalDate startDate, LocalDate endDate) {
-        if (startDate == null && endDate == null) {
-            return null;
-        }
+        if (startDate == null && endDate == null) return null;
         if (startDate != null && endDate != null) {
-            // 기간 겹침 조건: festival의 기간이 [startDate, endDate]와 교차하는 경우를 필터링한다.
-            // (festival.startDate <= endDate) AND (festival.endDate >= startDate)
             return festival.endDate.goe(startDate).and(festival.startDate.loe(endDate));
         }
-        if (startDate != null) {
-            // startDate만 지정: startDate 이후 종료되는 축제 (진행 중 + 예정 포함)
-            return festival.endDate.goe(startDate);
-        }
-        // endDate만 지정: endDate 이전 시작한 축제 (진행 중 + 종료 포함)
+        if (startDate != null) return festival.endDate.goe(startDate);
         return festival.startDate.loe(endDate);
+    }
+
+    /** 단일 날짜가 축제 기간 내 포함되는 조건 (FestivalController용). */
+    private BooleanExpression dateContains(LocalDate date) {
+        if (date == null) return null;
+        return festival.startDate.loe(date).and(festival.endDate.goe(date));
     }
 
     private BooleanExpression regionEq(String region) {

@@ -114,6 +114,9 @@ class ChargeServiceTest {
     @Test
     @DisplayName("동일 멱등성 키로 재요청 시 PAY_007(중복 결제)을 던진다")
     void charge_duplicate_idempotency_throws_PAY_007() {
+        // storeId/channelKey 검증이 멱등성 체크보다 먼저 실행되므로 선행 조건 스텁 필요
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
         willThrow(new PaymentException(ErrorCode.DUPLICATE_PAYMENT_REQUEST))
                 .given(idempotencyService).checkAndMark("dup-key");
 
@@ -126,6 +129,8 @@ class ChargeServiceTest {
     @Test
     @DisplayName("PG 사전등록 실패 시 멱등성 키를 해제하고 예외를 던진다")
     void charge_preRegister_failure_unmarks_idempotency_key() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
         willDoNothing().given(idempotencyService).checkAndMark(anyString());
         willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
                 .given(paymentGatewayClient).preRegister(anyString(), anyLong());
@@ -141,6 +146,8 @@ class ChargeServiceTest {
     @Test
     @DisplayName("DB 저장 실패 시 멱등성 키를 해제하고 예외를 던진다")
     void charge_save_failure_unmarks_idempotency_key() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
         willDoNothing().given(idempotencyService).checkAndMark(anyString());
         willDoNothing().given(paymentGatewayClient).preRegister(anyString(), anyLong());
         willThrow(new RuntimeException("DB error"))
