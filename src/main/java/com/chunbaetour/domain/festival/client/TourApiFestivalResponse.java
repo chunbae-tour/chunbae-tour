@@ -44,8 +44,8 @@ public record TourApiFestivalResponse(
             try {
                 return Integer.parseInt(totalCount);
             } catch (NumberFormatException e) {
-                log.warn("totalCount 파싱 실패: '{}' — itemList 비어있을 때까지 페이징 진행", totalCount);
-                return Integer.MAX_VALUE;
+                log.error("totalCount 파싱 실패 — 수집 중단: '{}'", totalCount);
+                throw new IllegalStateException("TourAPI totalCount 파싱 실패: " + totalCount, e);
             }
         }
     }

@@ -49,11 +49,19 @@ public class FestivalFetchService {
 
     enum UpsertResult { CREATED, UPDATED, SKIPPED }
 
-    @Scheduled(cron = "${tour-api.sync-cron}")
+    @Scheduled(cron = "${tour-api.sync-cron}", zone = "Asia/Seoul")
     public void scheduledFetch() {
-        FestivalFetchResult result = fetchNow();
-        log.info("Festival scheduled fetch complete: fetched={}, created={}, updated={}, skipped={}",
-                result.fetched(), result.created(), result.updated(), result.skipped());
+        try {
+            FestivalFetchResult result = fetchNow();
+            log.info("Festival scheduled fetch complete: fetched={}, created={}, updated={}, skipped={}",
+                    result.fetched(), result.created(), result.updated(), result.skipped());
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.FESTIVAL_FETCH_IN_PROGRESS) {
+                log.warn("Festival scheduled fetch skipped — 다른 인스턴스 수집 중");
+                return;
+            }
+            throw e;
+        }
     }
 
     /**
