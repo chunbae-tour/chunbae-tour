@@ -12,12 +12,12 @@ public class LocationUtils {
         // 경도는 위도에 따라 거리가 달라지므로 cos 적용
         double lngDegree = radiusMeters / (111000.0 * Math.cos(Math.toRadians(lat)));
 
-        // MySQL 8 SRID 4326은 위도(lat) 경도(lng) 순서를 따름
+        // DB 마이그레이션과 일치하도록 POINT(lng lat) 순서 사용
         return String.format("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
-                lat - latDegree, lng - lngDegree,
-                lat - latDegree, lng + lngDegree,
-                lat + latDegree, lng + lngDegree,
-                lat + latDegree, lng - lngDegree,
-                lat - latDegree, lng - lngDegree);
+                lng - lngDegree, lat - latDegree,
+                lng + lngDegree, lat - latDegree,
+                lng + lngDegree, lat + latDegree,
+                lng - lngDegree, lat + latDegree,
+                lng - lngDegree, lat - latDegree);
     }
 }

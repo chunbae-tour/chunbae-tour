@@ -199,4 +199,9 @@ public class Place {
     public java.math.BigDecimal getLng() {
         return location != null ? java.math.BigDecimal.valueOf(location.getX()) : null;
     }
+
+    /** UI 표시용 float 평점 반환 (예: 45 -> 4.5f) */
+    public float getDisplayRating() {
+        return rating / 10.0f;
+    }
 }

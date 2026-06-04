@@ -28,8 +28,7 @@ public class PlaceQueryRepository {
     // 위치 기반 근처 관광지 (Nearby) 쿼리
     // ──────────────────────────────────────────────────────────────────────────
 
-    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters,
-                                                       int offset, int size) {
+    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters) {
         // MBR 박스 계산 (1도 당 약 111km 가정, 반경에 따른 대략적인 사각형)
         double latDegree = radiusMeters / 111000.0;
         double lngDegree = radiusMeters / (111000.0 * Math.cos(Math.toRadians(lat)));
@@ -42,8 +41,8 @@ public class PlaceQueryRepository {
                 lng - lngDegree, lat - latDegree);
 
         NumberTemplate<Double> distanceExpression = Expressions.numberTemplate(Double.class,
-                "ST_Distance_Sphere({0}, ST_GeomFromText({1}, 4326))",
-                place.location, String.format("POINT(%f %f)", lat, lng));
+                "ST_Distance_Sphere({0}, ST_GeomFromText({1}, 4326, 'axis-order=long-lat'))",
+                place.location, String.format("POINT(%f %f)", lng, lat));
 
         return queryFactory
                 .select(Projections.constructor(NearbyPlaceResponse.class,
@@ -59,13 +58,11 @@ public class PlaceQueryRepository {
                 ))
                 .from(place)
                 .where(
-                        Expressions.booleanTemplate("MBRContains(ST_GeomFromText({0}, 4326), {1})", mbrPolygon, place.location),
+                        Expressions.booleanTemplate("MBRContains(ST_GeomFromText({0}, 4326, 'axis-order=long-lat'), {1})", mbrPolygon, place.location),
                         distanceExpression.loe(radiusMeters),
                         place.status.eq(PlaceStatus.ACTIVE)
                 )
                 .orderBy(distanceExpression.asc(), place.id.asc())
-                .offset(offset)
-                .limit(size + 1)
                 .fetch();
     }
 

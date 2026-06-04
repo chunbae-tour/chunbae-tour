@@ -35,9 +35,9 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' " +
-                   "AND MBRContains(ST_GeomFromText(?4, 4326), p.location) " +
-                   "AND ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?1, ' ', ?2, ')'), 4326), p.location) <= (?3 * 1000) " +
-                   "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?1, ' ', ?2, ')'), 4326), p.location) ASC " +
+                   "AND MBRContains(ST_GeomFromText(?4, 4326, 'axis-order=long-lat'), p.location) " +
+                   "AND ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) <= (?3 * 1000) " +
+                   "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) ASC " +
                    "LIMIT ?5", nativeQuery = true)
     List<Place> findNearbyPlacesWithinRadius(double lat, double lng, double radiusKm, String mbrPolygon, int limit);
 
@@ -48,8 +48,8 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query(value = "SELECT * FROM places p " +
             "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
-            "AND MBRContains(ST_GeomFromText(?5, 4326), p.location) " +
-            "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?1, ' ', ?2, ')'), 4326), p.location) ASC " +
+            "AND MBRContains(ST_GeomFromText(?5, 4326, 'axis-order=long-lat'), p.location) " +
+            "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) ASC " +
             "LIMIT ?6", nativeQuery = true)
     List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, String mbrPolygon, int limit);
 

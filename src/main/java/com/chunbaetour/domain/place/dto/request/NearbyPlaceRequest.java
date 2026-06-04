@@ -7,6 +7,8 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import io.swagger.v3.oas.annotations.Parameter;
 public record NearbyPlaceRequest(
     @NotNull(message = "위도는 필수입니다.")
     @DecimalMin(value = "-90.0", message = "위도는 -90 이상이어야 합니다.")
@@ -19,20 +21,21 @@ public record NearbyPlaceRequest(
     Double lng,
 
     @NotNull(message = "반경(m)은 필수입니다.")
-    @DecimalMin(value = "100.0", message = "반경은 100m 이상이어야 합니다.")
+    @Positive(message = "반경은 0보다 커야 합니다.")
     @DecimalMax(value = "20000.0", message = "반경은 20000m 이하이어야 합니다.")
     Double radius,
-    @Min(value = 0, message = "page는 0 이상이어야 합니다.")
-    Integer page,
 
-    @Min(value = 1, message = "size는 1 이상이어야 합니다.")
-    @Max(value = 50, message = "size는 50 이하이어야 합니다.")
+    @Parameter(description = "다음 페이지 조회를 위한 커서 (마지막 장소의 ID)")
+    Long cursor,
+
+    @Parameter(description = "다음 페이지 조회를 위한 커서 (마지막 장소의 거리)")
+    Double cursorDistance,
+
+    @Min(value = 1, message = "크기는 1 이상이어야 합니다.")
+    @Max(value = 100, message = "크기는 100을 초과할 수 없습니다.")
     Integer size
 ) {
     public NearbyPlaceRequest {
-        if (page == null) {
-            page = 0;
-        }
         if (size == null) {
             size = 10;
         }

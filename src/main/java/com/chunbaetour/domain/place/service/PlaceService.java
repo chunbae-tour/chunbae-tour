@@ -36,55 +36,81 @@ public class PlaceService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final Duration PLACE_DETAIL_TTL         = Duration.ofMinutes(10);
+    private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
 
     @Transactional(readOnly = true)
-    public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Integer page, int size) {
+    public NearbyPlacePageResponse findNearby(double lat, double lng, double radius,
+                                                             Long cursor, Double cursorDistance, Integer size) {
         // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
         String latRounded = String.format("%.3f", lat);
         String lngRounded = String.format("%.3f", lng);
         double radiusRounded = Math.round(radius);
-        int pageValue = page != null ? page : 0;
-        String cacheKey = String.format("nearby:%s:%s:%.0f:%d:%d", latRounded, lngRounded, radiusRounded, pageValue, size);
 
-        // 첫 페이지일 경우에만 캐시 조회
-        boolean isFirstPage = (pageValue == 0);
+        // 첫 페이지일 경우에만 캐시 조회 (cursor 없음)
+        boolean isFirstPage = (cursor == null);
+        String cacheKey = String.format("nearby:%s:%s:%.0f:%d", latRounded, lngRounded, radiusRounded, size);
+        
         if (isFirstPage) {
             String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
             if (cachedData != null) {
                 try {
                     log.debug("Redis Cache Hit");
-                    return objectMapper.readValue(cachedData, new TypeReference<>() {});
+                    return objectMapper.readValue(cachedData, new TypeReference<NearbyPlacePageResponse>() {});
                 } catch (Exception e) {
                     log.error("Redis Cache parsing error", e);
                 }
             }
         }
 
-        // DB 쿼리 (Haversine) - 다음 페이지 존재 여부 확인을 위해 size + 1 요청
         log.info("Redis Cache Miss or Paging: Fetching from DB");
-        int offset = pageValue * size;
-        List<NearbyPlaceResponse> places = placeQueryRepository.findNearbyPlaces(lat, lng, radius, offset, size + 1);
+        // 1. MBR 필터링을 통해 반경 내 모든 후보군 조회 (limit 없이 가져옴)
+        List<NearbyPlaceResponse> allNearby = placeQueryRepository.findNearbyPlaces(lat, lng, radius);
+
+        // 2. Java 단에서 정렬 (거리 오름차순, ID 오름차순)
+        allNearby.sort((p1, p2) -> {
+            int cmp = Double.compare(p1.distanceMeters(), p2.distanceMeters());
+            if (cmp != 0) return cmp;
+            return p1.placeId().compareTo(p2.placeId());
+        });
+
+        // 3. 커서가 주어진 경우 해당 위치 찾기
+        int startIndex = 0;
+        if (cursor != null && cursorDistance != null) {
+            for (int i = 0; i < allNearby.size(); i++) {
+                NearbyPlaceResponse p = allNearby.get(i);
+                // 거리나 ID가 커서와 정확히 일치하거나 그보다 큰 항목을 다음 시작점으로 (부동소수점 오차 허용)
+                if (p.distanceMeters() > cursorDistance || 
+                   (Math.abs(p.distanceMeters() - cursorDistance) < 0.001 && p.placeId() > cursor)) {
+                    startIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // 4. 서브리스트로 페이징 적용 (요청한 size + 1 개수만큼 추출 시도하여 hasNext 확인)
+        int endIndex = Math.min(startIndex + size + 1, allNearby.size());
+        List<NearbyPlaceResponse> pagedPlaces = new java.util.ArrayList<>(allNearby.subList(startIndex, endIndex));
 
         boolean hasNext = false;
-        if (places.size() > size) {
+
+        if (pagedPlaces.size() > size) {
             hasNext = true;
-            places.remove(size); // 초과 조회한 마지막 요소 제거
+            pagedPlaces.remove(size.intValue()); // 초과 조회한 마지막 요소 제거
         }
-        
-        NearbyPlacePageResponse pageResponse = new NearbyPlacePageResponse(places, hasNext);
+
+        NearbyPlacePageResponse response = new NearbyPlacePageResponse(pagedPlaces, hasNext);
 
         // 첫 페이지 결과 캐싱 (TTL 5분)
-        if (isFirstPage && !places.isEmpty()) {
+        if (isFirstPage && !pagedPlaces.isEmpty()) {
             try {
-                String json = objectMapper.writeValueAsString(pageResponse);
+                String json = objectMapper.writeValueAsString(response);
                 stringRedisTemplate.opsForValue().set(cacheKey, json, Duration.ofMinutes(5));
             } catch (Exception e) {
                 log.error("Redis Cache writing error", e);
             }
         }
 
-        return pageResponse;
+        return response;
     }
 
     /**
