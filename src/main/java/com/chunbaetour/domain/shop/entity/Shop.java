@@ -98,8 +98,8 @@ public class Shop extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ShopStatus status;
 
-    // 소속 장소 — 통합검색 시 Place 기준으로 가게/메뉴 조회에 사용. nullable (연결 없는 가게 허용)
-    @Column(name = "place_id")
+    // 소속 장소 — 모든 가게는 반드시 하나의 Place에 속해야 함 (KAN-217 정책, NOT NULL)
+    @Column(name = "place_id", nullable = false)
     private Long placeId;
 
     // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
@@ -108,7 +108,8 @@ public class Shop extends BaseEntity {
 
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,
-            String address, BigDecimal lat, BigDecimal lng, String phone, String description) {
+            String address, BigDecimal lat, BigDecimal lng, String phone, String description,
+            Long placeId) {
         this.userId = userId;
         this.applicationId = applicationId;
         this.shopName = shopName;
@@ -118,11 +119,12 @@ public class Shop extends BaseEntity {
         this.lng = lng;
         this.phone = phone;
         this.description = description;
+        this.placeId = placeId;
         this.status = ShopStatus.ACTIVE;
     }
 
-    /** 관리자 상인 승인 시 MerchantApplication으로부터 가게 생성 (STORY-09). */
-    public static Shop fromApplication(MerchantApplication application) {
+    /** 관리자 상인 승인 시 MerchantApplication + placeId로 가게 생성 (STORY-09, KAN-217). */
+    public static Shop fromApplication(MerchantApplication application, Long placeId) {
         return Shop.builder()
                 .userId(application.getUserId())
                 .applicationId(application.getId())
@@ -133,6 +135,7 @@ public class Shop extends BaseEntity {
                 .lng(application.getLng())
                 .phone(application.getPhone())
                 .description(application.getDescription())
+                .placeId(placeId)
                 .build();
     }
 

@@ -65,13 +65,12 @@ public class AdminMerchantApplicationController {
         return ApiResponse.success(adminMerchantApplicationService.getApplication(applicationId));
     }
 
-    @Operation(summary = "상인 신청 승인 (placeId 선택적 연결)")
+    @Operation(summary = "상인 신청 승인 (placeId 필수 — 모든 가게는 Place에 속해야 함)")
     @PatchMapping("/{applicationId}/approve")
     public ApiResponse<MerchantApplicationDetailResponse> approve(
             @PathVariable @Positive Long applicationId,
-            @RequestBody(required = false) AdminApproveRequest request) {
-        Long placeId = request != null ? request.placeId() : null;
-        return ApiResponse.success(adminMerchantApplicationService.approve(applicationId, placeId));
+            @Valid @RequestBody AdminApproveRequest request) {
+        return ApiResponse.success(adminMerchantApplicationService.approve(applicationId, request.placeId()));
     }
 
     @Operation(summary = "상인 신청 거절")

@@ -115,9 +115,7 @@ public class AdminMerchantApplicationService {
         account.promoteToMerchant();          // USER → MERCHANT 승격 (MERCHANT면 멱등 skip, ADMIN이면 예외)
         try {
             // Shop 생성 후 즉시 ShopWallet도 생성 — "Shop 존재 → ShopWallet 존재" 불변식 보장
-            Shop shop = shopRepository.save(Shop.fromApplication(application));
-            // placeId 연결 — null이면 장소 미연결 상태 유지
-            if (placeId != null) shop.linkPlace(placeId);
+            Shop shop = shopRepository.save(Shop.fromApplication(application, placeId));
             shopWalletRepository.save(ShopWallet.create(shop.getId()));
         } catch (DataIntegrityViolationException e) {
             String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();
