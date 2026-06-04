@@ -11,8 +11,6 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,9 +18,7 @@ import java.util.List;
 @Component
 public class TourApiClient {
 
-    private static final String OPERATION = "/searchFestival2";
     private static final int PAGE_SIZE = 100;
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final RestClient restClient;
     private final String serviceKey;
@@ -34,23 +30,20 @@ public class TourApiClient {
             @Value("${tour-api.base-url}") String baseUrl) {
         this.restClient = restClient;
         this.serviceKey = serviceKey;
-        this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        this.baseUrl = baseUrl;
     }
 
     public List<TourApiFestivalItem> fetchAll() {
-        String startDate = LocalDate.now().minusYears(1).format(DATE_FMT);
-        String endDate   = LocalDate.now().plusYears(2).format(DATE_FMT);
-
         List<TourApiFestivalItem> result = new ArrayList<>();
         int pageNo = 1;
 
         while (true) {
-            TourApiFestivalResponse response = fetchPage(startDate, endDate, pageNo);
+            TourApiFestivalResponse response = fetchPage(pageNo);
             TourApiFestivalResponse.Body body = response.response().body();
 
             result.addAll(body.itemList());
 
-            if (body.itemList().isEmpty() || result.size() >= body.totalCount()) break;
+            if (body.itemList().isEmpty() || result.size() >= body.totalCountInt()) break;
             pageNo++;
         }
 
@@ -58,8 +51,8 @@ public class TourApiClient {
         return result;
     }
 
-    private TourApiFestivalResponse fetchPage(String startDate, String endDate, int pageNo) {
-        String uri = buildUri(startDate, endDate, pageNo);
+    private TourApiFestivalResponse fetchPage(int pageNo) {
+        String uri = buildUri(pageNo);
         try {
             TourApiFestivalResponse response = restClient.get()
                     .uri(uri)
@@ -70,7 +63,7 @@ public class TourApiClient {
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
             }
             String resultCode = response.response().header().resultCode();
-            if (!"0000".equals(resultCode)) {
+            if (!"00".equals(resultCode)) {
                 log.error("TourAPI error: resultCode={}, resultMsg={}",
                         resultCode, response.response().header().resultMsg());
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
@@ -85,17 +78,12 @@ public class TourApiClient {
         }
     }
 
-    private String buildUri(String startDate, String endDate, int pageNo) {
-        return UriComponentsBuilder.fromUriString(baseUrl + OPERATION)
+    private String buildUri(int pageNo) {
+        return UriComponentsBuilder.fromUriString(baseUrl)
                 .queryParam("serviceKey", serviceKey)
-                .queryParam("MobileOS", "ETC")
-                .queryParam("MobileApp", "ChunbaeTour")
-                .queryParam("_type", "json")
-                .queryParam("eventStartDate", startDate)
-                .queryParam("eventEndDate", endDate)
-                .queryParam("numOfRows", PAGE_SIZE)
                 .queryParam("pageNo", pageNo)
-                .queryParam("arrange", "C")
+                .queryParam("numOfRows", PAGE_SIZE)
+                .queryParam("type", "json")
                 .encode()
                 .build()
                 .toUriString();

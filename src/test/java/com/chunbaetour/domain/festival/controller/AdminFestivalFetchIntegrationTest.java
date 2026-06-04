@@ -63,9 +63,9 @@ class AdminFestivalFetchIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("USER 토큰 → 403 AUTH_007")
     void user_token_forbidden() throws Exception {
-        seedFactory.seedAdmin("admin@test.com", PASSWORD, "관리자");
-        seedFactory.seed("user@test.com", PASSWORD, "유저", Role.USER, AccountStatus.ACTIVE);
-        String userToken = loginAndGetToken("/api/v1/users/auth/login", "user@test.com");
+        seedFactory.seedAdmin("admin-fetch@test.com", PASSWORD, "관리자");
+        seedFactory.seed("user-fetch@test.com", PASSWORD, "유저", Role.USER, AccountStatus.ACTIVE);
+        String userToken = loginAndGetToken("/api/v1/users/auth/login", "user-fetch@test.com");
 
         mockMvc.perform(post("/api/v1/admin/festivals/fetch")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken))
@@ -76,8 +76,8 @@ class AdminFestivalFetchIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("MERCHANT 토큰 → 403 AUTH_007")
     void merchant_token_forbidden() throws Exception {
-        seedFactory.seedMerchant("merchant@test.com", PASSWORD, "상인");
-        String merchantToken = loginAndGetToken("/api/v1/merchants/auth/login", "merchant@test.com");
+        seedFactory.seedMerchant("merchant-fetch@test.com", PASSWORD, "상인");
+        String merchantToken = loginAndGetToken("/api/v1/merchants/auth/login", "merchant-fetch@test.com");
 
         mockMvc.perform(post("/api/v1/admin/festivals/fetch")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + merchantToken))
@@ -93,8 +93,8 @@ class AdminFestivalFetchIntegrationTest extends AbstractIntegrationTest {
     }
 
     private String adminToken() throws Exception {
-        seedFactory.seedAdmin("admin@test.com", PASSWORD, "관리자");
-        return loginAndGetToken("/api/v1/admin/auth/login", "admin@test.com");
+        seedFactory.seedAdmin("admin-fetch@test.com", PASSWORD, "관리자");
+        return loginAndGetToken("/api/v1/admin/auth/login", "admin-fetch@test.com");
     }
 
     private String loginAndGetToken(String endpoint, String email) throws Exception {

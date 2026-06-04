@@ -5,11 +5,17 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record TourApiFestivalItem(
-        @JsonProperty("contentid")      String contentid,
-        @JsonProperty("title")          String title,
-        @JsonProperty("addr1")          String addr1,
-        @JsonProperty("eventstartdate") String eventstartdate,
-        @JsonProperty("eventenddate")   String eventenddate,
-        @JsonProperty("firstimage")     String firstimage,
-        @JsonProperty("lDongRegnCd")    String lDongRegnCd
+        @JsonProperty("insttCode")      String insttCode,
+        @JsonProperty("fstvlNm")        String fstvlNm,
+        @JsonProperty("opar")           String opar,
+        @JsonProperty("fstvlStartDate") String fstvlStartDate,
+        @JsonProperty("fstvlEndDate")   String fstvlEndDate,
+        @JsonProperty("fstvlCo")        String fstvlCo,
+        @JsonProperty("mnnstNm")        String mnnstNm,
+        @JsonProperty("rdnmadr")        String rdnmadr,
+        @JsonProperty("homepageUrl")    String homepageUrl,
+        @JsonProperty("phoneNumber")    String phoneNumber,
+        @JsonProperty("latitude")       String latitude,
+        @JsonProperty("longitude")      String longitude,
+        @JsonProperty("insttNm")        String insttNm
 ) {}

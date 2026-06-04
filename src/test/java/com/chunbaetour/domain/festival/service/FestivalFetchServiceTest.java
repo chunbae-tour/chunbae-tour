@@ -37,15 +37,23 @@ class FestivalFetchServiceTest {
         ReflectionTestUtils.setField(fetchService, "self", fetchService);
     }
 
-    private TourApiFestivalItem item(String contentid) {
-        return new TourApiFestivalItem(contentid, "Seoul Festival", "Seoul Korea",
-                "20260701", "20260710", "https://img.example.com/1.jpg", "11");
+    private TourApiFestivalItem item(String insttCode) {
+        return new TourApiFestivalItem(insttCode, "의령 리치리치 페스티벌", "서동생활공원",
+                "2026-10-02", "2026-10-05", "개막식+메인프로그램",
+                "의령 리치리치 페스티벌 추진위원회",
+                "경상남도 의령군 의령읍 의병로8길 44",
+                "https://www.uiryeong.go.kr/festival", "055-570-2512",
+                "35.31545351", "128.2558931", "경상남도 의령군");
+    }
+
+    private String externalId(String insttCode) {
+        return insttCode + "_의령 리치리치 페스티벌";
     }
 
     @Test
     void 신규항목_저장_created_1() {
-        given(tourApiClient.fetchAll()).willReturn(List.of(item("C001")));
-        given(festivalRepository.findByExternalId("C001")).willReturn(Optional.empty());
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.empty());
         given(festivalRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         FestivalFetchResult result = fetchService.fetchNow();
@@ -58,26 +66,28 @@ class FestivalFetchServiceTest {
 
     @Test
     void 기존항목_ACTIVE_updateFromApi_호출() {
-        Festival existing = Festival.createFromApi("C001", "Old Name", "서울특별시", "Seoul Korea",
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10), null);
-        given(tourApiClient.fetchAll()).willReturn(List.of(item("C001")));
-        given(festivalRepository.findByExternalId("C001")).willReturn(Optional.of(existing));
+        Festival existing = Festival.createFromApi(
+                externalId("5390000"), "Old Name", "경상남도", "경상남도 의령군 의령읍",
+                LocalDate.of(2025, 10, 2), LocalDate.of(2025, 10, 5), null);
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.of(existing));
 
         FestivalFetchResult result = fetchService.fetchNow();
 
         assertThat(result.created()).isEqualTo(0);
         assertThat(result.skipped()).isEqualTo(1);
-        assertThat(existing.getName()).isEqualTo("Seoul Festival");
+        assertThat(existing.getName()).isEqualTo("의령 리치리치 페스티벌");
         verify(festivalRepository, never()).save(any());
     }
 
     @Test
     void 기존항목_DELETED_updateFromApi_미호출() {
-        Festival deleted = Festival.createFromApi("C001", "Old Name", "서울특별시", "Seoul Korea",
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10), null);
+        Festival deleted = Festival.createFromApi(
+                externalId("5390000"), "Old Name", "경상남도", "경상남도 의령군 의령읍",
+                LocalDate.of(2025, 10, 2), LocalDate.of(2025, 10, 5), null);
         deleted.delete();
-        given(tourApiClient.fetchAll()).willReturn(List.of(item("C001")));
-        given(festivalRepository.findByExternalId("C001")).willReturn(Optional.of(deleted));
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.of(deleted));
 
         FestivalFetchResult result = fetchService.fetchNow();
 
@@ -87,9 +97,10 @@ class FestivalFetchServiceTest {
     }
 
     @Test
-    void contentid_없는항목_스킵() {
-        TourApiFestivalItem invalid = new TourApiFestivalItem(null, "Festival", "Seoul",
-                "20260701", "20260710", null, "11");
+    void insttCode_없는항목_스킵() {
+        TourApiFestivalItem invalid = new TourApiFestivalItem(null, "축제", "서동생활공원",
+                "2026-10-02", "2026-10-05", "내용", "주관", "경상남도 의령군",
+                "", "", "35.0", "128.0", "경상남도 의령군");
         given(tourApiClient.fetchAll()).willReturn(List.of(invalid));
 
         FestivalFetchResult result = fetchService.fetchNow();
@@ -101,8 +112,9 @@ class FestivalFetchServiceTest {
 
     @Test
     void 날짜역전_항목_스킵() {
-        TourApiFestivalItem invalid = new TourApiFestivalItem("C001", "Festival", "Seoul",
-                "20260710", "20260701", null, "11");
+        TourApiFestivalItem invalid = new TourApiFestivalItem("5390000", "축제", "장소",
+                "2026-10-05", "2026-10-02", "내용", "주관",
+                "경상남도 의령군 의령읍", "", "", "", "", "경상남도 의령군");
         given(tourApiClient.fetchAll()).willReturn(List.of(invalid));
 
         FestivalFetchResult result = fetchService.fetchNow();
@@ -114,9 +126,11 @@ class FestivalFetchServiceTest {
 
     @Test
     void upsertItem_예외_스킵후_다음항목_계속_처리() {
-        given(tourApiClient.fetchAll()).willReturn(List.of(item("C001"), item("C002")));
-        given(festivalRepository.findByExternalId("C001")).willThrow(new RuntimeException("DB error"));
-        given(festivalRepository.findByExternalId("C002")).willReturn(Optional.empty());
+        TourApiFestivalItem bad  = item("5390000");
+        TourApiFestivalItem good = item("3050000");
+        given(tourApiClient.fetchAll()).willReturn(List.of(bad, good));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willThrow(new RuntimeException("DB error"));
+        given(festivalRepository.findByExternalId(externalId("3050000"))).willReturn(Optional.empty());
         given(festivalRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         FestivalFetchResult result = fetchService.fetchNow();
@@ -137,8 +151,8 @@ class FestivalFetchServiceTest {
 
     @Test
     void created_있으면_cacheEvict_호출() {
-        given(tourApiClient.fetchAll()).willReturn(List.of(item("C001")));
-        given(festivalRepository.findByExternalId("C001")).willReturn(Optional.empty());
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.empty());
         given(festivalRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
         fetchService.fetchNow();
@@ -147,29 +161,26 @@ class FestivalFetchServiceTest {
     }
 
     @Test
-    void lDongRegnCd_서울코드_서울특별시_매핑() {
-        given(tourApiClient.fetchAll()).willReturn(List.of(item("C001")));
-        given(festivalRepository.findByExternalId("C001")).willReturn(Optional.empty());
+    void externalId_insttCode_fstvlNm_조합() {
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.empty());
         ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
         given(festivalRepository.save(captor.capture())).willAnswer(inv -> inv.getArgument(0));
 
         fetchService.fetchNow();
 
-        assertThat(captor.getValue().getRegion()).isEqualTo("서울특별시");
+        assertThat(captor.getValue().getExternalId()).isEqualTo("5390000_의령 리치리치 페스티벌");
     }
 
     @Test
-    void 알수없는코드_addr1_공백분리_첫번째_토큰() {
-        // resolveRegion: lDongRegnCd unknown → addr1.split(" ")[0]
-        TourApiFestivalItem unknown = new TourApiFestivalItem("C001", "Festival", "Busan Metro City",
-                "20260701", "20260710", null, "99");
-        given(tourApiClient.fetchAll()).willReturn(List.of(unknown));
-        given(festivalRepository.findByExternalId("C001")).willReturn(Optional.empty());
+    void region_rdnmadr_첫번째_토큰() {
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.empty());
         ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
         given(festivalRepository.save(captor.capture())).willAnswer(inv -> inv.getArgument(0));
 
         fetchService.fetchNow();
 
-        assertThat(captor.getValue().getRegion()).isEqualTo("Busan");
+        assertThat(captor.getValue().getRegion()).isEqualTo("경상남도");
     }
 }

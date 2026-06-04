@@ -16,37 +16,13 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class FestivalFetchService {
-
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
-
-    private static final Map<String, String> REGION_MAP = Map.ofEntries(
-            Map.entry("11", "서울특별시"),
-            Map.entry("26", "부산광역시"),
-            Map.entry("27", "대구광역시"),
-            Map.entry("28", "인천광역시"),
-            Map.entry("29", "광주광역시"),
-            Map.entry("30", "대전광역시"),
-            Map.entry("31", "울산광역시"),
-            Map.entry("36", "세종특별자치시"),
-            Map.entry("41", "경기도"),
-            Map.entry("42", "강원특별자치도"),
-            Map.entry("43", "충청북도"),
-            Map.entry("44", "충청남도"),
-            Map.entry("45", "전북특별자치도"),
-            Map.entry("46", "전라남도"),
-            Map.entry("47", "경상북도"),
-            Map.entry("48", "경상남도"),
-            Map.entry("50", "제주특별자치도")
-    );
 
     private final TourApiClient tourApiClient;
     private final FestivalRepository festivalRepository;
@@ -87,52 +63,54 @@ public class FestivalFetchService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean upsertItem(TourApiFestivalItem item) {
         try {
-            Optional<Festival> existing = festivalRepository.findByExternalId(item.contentid());
+            String externalId = item.insttCode() + "_" + item.fstvlNm();
+            Optional<Festival> existing = festivalRepository.findByExternalId(externalId);
             if (existing.isEmpty()) {
-                festivalRepository.save(toNewFestival(item));
+                festivalRepository.save(toNewFestival(item, externalId));
                 return true;
             }
             Festival festival = existing.get();
             if (festival.getStatus() == FestivalStatus.DELETED) {
-                log.warn("Festival item skipped — DELETED status preserved: contentid={}", item.contentid());
+                log.warn("Festival item skipped — DELETED status preserved: externalId={}", externalId);
                 return false;
             }
             festival.updateFromApi(
-                    item.title(),
-                    resolveRegion(item.lDongRegnCd(), item.addr1()),
-                    item.addr1(),
-                    parseDate(item.eventstartdate()),
-                    parseDate(item.eventenddate()),
-                    item.firstimage()
+                    item.fstvlNm(),
+                    resolveRegion(item),
+                    resolveAddress(item),
+                    LocalDate.parse(item.fstvlStartDate()),
+                    LocalDate.parse(item.fstvlEndDate()),
+                    null
             );
             return false;
         } catch (Exception e) {
-            log.warn("Festival item skipped: contentid={}, reason={}", item.contentid(), e.getMessage());
+            log.warn("Festival item skipped: insttCode={}, fstvlNm={}, reason={}",
+                    item.insttCode(), item.fstvlNm(), e.getMessage());
             return false;
         }
     }
 
-    private Festival toNewFestival(TourApiFestivalItem item) {
+    private Festival toNewFestival(TourApiFestivalItem item, String externalId) {
         return Festival.createFromApi(
-                item.contentid(),
-                item.title(),
-                resolveRegion(item.lDongRegnCd(), item.addr1()),
-                item.addr1(),
-                parseDate(item.eventstartdate()),
-                parseDate(item.eventenddate()),
-                item.firstimage()
+                externalId,
+                item.fstvlNm(),
+                resolveRegion(item),
+                resolveAddress(item),
+                LocalDate.parse(item.fstvlStartDate()),
+                LocalDate.parse(item.fstvlEndDate()),
+                null
         );
     }
 
     private boolean isValid(TourApiFestivalItem item) {
-        if (item.contentid() == null || item.contentid().isBlank()) return false;
-        if (item.title() == null || item.title().isBlank()) return false;
-        if (item.addr1() == null || item.addr1().isBlank()) return false;
-        if (item.eventstartdate() == null || item.eventstartdate().isBlank()) return false;
-        if (item.eventenddate() == null || item.eventenddate().isBlank()) return false;
+        if (item.insttCode() == null || item.insttCode().isBlank()) return false;
+        if (item.fstvlNm() == null || item.fstvlNm().isBlank()) return false;
+        if (item.fstvlStartDate() == null || item.fstvlStartDate().isBlank()) return false;
+        if (item.fstvlEndDate() == null || item.fstvlEndDate().isBlank()) return false;
+        if (resolveAddress(item).isBlank()) return false;
         try {
-            LocalDate start = parseDate(item.eventstartdate());
-            LocalDate end   = parseDate(item.eventenddate());
+            LocalDate start = LocalDate.parse(item.fstvlStartDate());
+            LocalDate end   = LocalDate.parse(item.fstvlEndDate());
             if (start.isAfter(end)) return false;
         } catch (Exception e) {
             return false;
@@ -140,18 +118,19 @@ public class FestivalFetchService {
         return true;
     }
 
-    private LocalDate parseDate(String yyyymmdd) {
-        return LocalDate.parse(yyyymmdd, DATE_FMT);
-    }
-
-    private String resolveRegion(String lDongRegnCd, String addr1) {
-        if (lDongRegnCd != null && REGION_MAP.containsKey(lDongRegnCd)) {
-            return REGION_MAP.get(lDongRegnCd);
+    private String resolveRegion(TourApiFestivalItem item) {
+        if (item.rdnmadr() != null && !item.rdnmadr().isBlank()) {
+            return item.rdnmadr().split(" ")[0];
         }
-        if (addr1 != null && !addr1.isBlank()) {
-            String[] parts = addr1.split(" ");
-            return parts[0];
+        if (item.insttNm() != null && !item.insttNm().isBlank()) {
+            return item.insttNm().split(" ")[0];
         }
         return "기타";
+    }
+
+    private String resolveAddress(TourApiFestivalItem item) {
+        if (item.rdnmadr() != null && !item.rdnmadr().isBlank()) return item.rdnmadr();
+        if (item.opar() != null && !item.opar().isBlank()) return item.opar();
+        return "";
     }
 }

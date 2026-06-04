@@ -3,7 +3,6 @@ package com.chunbaetour.domain.festival.entity;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.festival.client.TourApiFestivalItem;
 import com.chunbaetour.domain.festival.type.FestivalCategory;
 import com.chunbaetour.domain.festival.type.FestivalSource;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
