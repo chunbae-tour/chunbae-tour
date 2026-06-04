@@ -146,8 +146,8 @@ class CompanionReviewServiceTest {
 
         assertThat(response.averageScore()).isEqualTo(4.5f);
         assertThat(response.reviewCount()).isEqualTo(2);
-        assertThat(response.scoreDistribution().get(5)).isEqualTo(2L);
-        assertThat(response.scoreDistribution().get(1)).isEqualTo(0L);
+        assertThat(response.scoreDistribution().get("5")).isEqualTo(2L);
+        assertThat(response.scoreDistribution().get("1")).isEqualTo(0L);
     }
 
     private Account buildAccount(Long id, float score, int count) {

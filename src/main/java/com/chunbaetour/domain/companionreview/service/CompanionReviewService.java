@@ -13,6 +13,7 @@ import com.chunbaetour.domain.companionreview.entity.CompanionReview;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,8 @@ public class CompanionReviewService {
     private final ChatRoomMemberRepository chatRoomMemberRepository;
 
     // 동행 리뷰 등록 — 참여자 검증, 자기 자신 방지, 중복 방지, companionScore 증분 갱신
+    // 등록 후 target 캐시 즉시 삭제 — 새 리뷰 반영된 점수 즉시 조회 가능
+    @CacheEvict(value = "companionScore", key = "#request.targetUserId()")
     @Transactional
     public CompanionReviewCreateResponse createReview(Long reviewerId, CompanionReviewCreateRequest request) {
         if (reviewerId.equals(request.targetUserId())) {
