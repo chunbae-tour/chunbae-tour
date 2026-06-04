@@ -1,5 +1,8 @@
 package com.chunbaetour.domain.festival.controller;
 
+import com.chunbaetour.domain.admin.audit.AdminActionType;
+import com.chunbaetour.domain.admin.audit.AdminTargetType;
+import com.chunbaetour.domain.admin.audit.LogAdminAction;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.festival.dto.request.FestivalCreateRequest;
@@ -46,9 +49,13 @@ public class AdminFestivalController {
         return ApiResponse.success(festivalService.getAdminList(cursor, size));
     }
 
+    // POST는 생성 전 path id가 없어 returnIdField로 응답 본문의 festivalId를 targetId에 기록(S07 PLACE_CREATE 패턴).
     @Operation(summary = "축제 수동 등록", description = "source=MANUAL. 201 반환.")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @LogAdminAction(actionType = AdminActionType.FESTIVAL_CREATE,
+            targetType = AdminTargetType.FESTIVAL,
+            returnIdField = "festivalId")
     public ApiResponse<FestivalAdminMutateResponse> create(
             @Valid @RequestBody FestivalCreateRequest request) {
         return ApiResponse.success(festivalService.create(request));
@@ -56,6 +63,9 @@ public class AdminFestivalController {
 
     @Operation(summary = "축제 수정", description = "전체 필드 교체 (PUT). MANUAL·API_FETCH 모두 가능.")
     @PutMapping("/{festivalId}")
+    @LogAdminAction(actionType = AdminActionType.FESTIVAL_UPDATE,
+            targetType = AdminTargetType.FESTIVAL,
+            targetIdVar = "festivalId")
     public ApiResponse<FestivalAdminMutateResponse> update(
             @Positive @PathVariable Long festivalId,
             @Valid @RequestBody FestivalUpdateRequest request) {
@@ -64,6 +74,9 @@ public class AdminFestivalController {
 
     @Operation(summary = "축제 삭제", description = "Soft delete — status=DELETED.")
     @DeleteMapping("/{festivalId}")
+    @LogAdminAction(actionType = AdminActionType.FESTIVAL_DELETE,
+            targetType = AdminTargetType.FESTIVAL,
+            targetIdVar = "festivalId")
     public ApiResponse<Void> delete(@Positive @PathVariable Long festivalId) {
         festivalService.delete(festivalId);
         return ApiResponse.success();
