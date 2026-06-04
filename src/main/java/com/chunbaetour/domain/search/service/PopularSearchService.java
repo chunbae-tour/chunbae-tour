@@ -71,8 +71,7 @@ public class PopularSearchService {
     // Redis Key 상수
     // ──────────────────────────────────────────────────────────────────────────
 
-    /** 스케줄러 분산 락 만료 시간 */
-    private static final long RESET_LOCK_LEASE_SECONDS = 10L;
+    /** 스케줄러 분산 락 만료 시간 (Watchdog 도입으로 상수 제거) */
 
     // ──────────────────────────────────────────────────────────────────────────
     // Public API
@@ -291,9 +290,9 @@ public class PopularSearchService {
         long startTime = System.currentTimeMillis();
 
         try {
-            // 0초 대기(즉시 실패), 자동 만료는 상수로 분리.
-            // 0초 대기는 다른 인스턴스가 이미 진행 중이면 바로 포기함을 의미한다.
-            isLocked = lock.tryLock(0, RESET_LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
+            // 0초 대기(즉시 실패). leaseTime을 지정하지 않으면 Redisson Watchdog이 동작하여
+            // 락을 쥔 스레드가 살아있는 한 30초 단위로 자동 연장하므로 중간에 풀릴 위험이 없습니다.
+            isLocked = lock.tryLock(0, TimeUnit.SECONDS);
 
             if (!isLocked) {
                 log.info("[PopularSearch] 이미 다른 인스턴스에서 랭킹 초기화를 진행 중입니다. 스케줄러를 건너뜁니다.");
@@ -316,7 +315,7 @@ public class PopularSearchService {
             log.error("[PopularSearch] 랭킹 초기화 분산 락 획득 중 인터럽트 발생", e);
             Thread.currentThread().interrupt();
         } finally {
-            if (isLocked) {
+            if (isLocked && lock.isHeldByCurrentThread()) {
                 try {
                     lock.unlock();
                 } catch (Exception e) {
