@@ -1,9 +1,9 @@
 package com.chunbaetour.domain.market.service;
 
 import com.chunbaetour.domain.common.config.PublicDataApiProperties;
+import com.chunbaetour.domain.common.dto.response.PublicDataApiWrapper;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
-import com.chunbaetour.domain.market.dto.response.PublicDataApiWrapper;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -124,7 +124,12 @@ public class MarketSyncService {
                 return null;
             }
 
-            return wrapper.getResponse().getBody();
+            Object body = wrapper.getResponse().getBody();
+            if (body instanceof MarketApiResponse) {
+                return (MarketApiResponse) body;
+            }
+            log.error("[MarketSync] body 타입 오류 (pageNo={}): {}", pageNo, body.getClass().getName());
+            return null;
         } catch (Exception e) {
             log.error("[MarketSync] API 호출 실패 (pageNo={})", pageNo, e);
             return null;

@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.market.dto.response;
+package com.chunbaetour.domain.common.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * 공공데이터포털 API 전체 응답 구조.
+ * 전통시장, 관광지 등 모든 공공데이터 API 응답에서 공용으로 사용.
  * header(resultCode)와 body(실제 데이터)를 포함.
  */
 @Getter
@@ -22,7 +23,7 @@ public class PublicDataApiWrapper {
         public Header header;
 
         @JsonProperty("body")
-        public MarketApiResponse body;
+        public Object body;
     }
 
     @Getter
