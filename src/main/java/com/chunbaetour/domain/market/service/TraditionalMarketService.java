@@ -1,7 +1,6 @@
 package com.chunbaetour.domain.market.service;
 
 import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.market.dto.response.TraditionalMarketNearbyResponse;
 import com.chunbaetour.domain.market.repository.TraditionalMarketQueryRepository;
 import java.math.BigDecimal;
@@ -15,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 전통시장 조회 서비스.
+ * 위치 기반 조회: Base64 커서 (id|distance 전정밀도) + keyset pagination.
  */
 @Service
 @Slf4j
@@ -67,11 +67,12 @@ public class TraditionalMarketService {
             results = results.subList(0, size);
         }
 
-        // 다음 커서: "id|distance" → Base64 인코딩
+        // 다음 커서: "id|distance(전정밀도)" → Base64 인코딩
+        // 경계행 중복 방지: 거리를 반올림하지 않고 전정밀도로 인코딩
         String nextCursor = null;
         if (!results.isEmpty() && hasNext) {
             TraditionalMarketNearbyResponse lastItem = results.get(results.size() - 1);
-            String raw = String.format("%d|%.6f", lastItem.id(), lastItem.distanceMeters());
+            String raw = String.format("%d|%s", lastItem.id(), Double.toString(lastItem.distanceMeters()));
             nextCursor = Base64.getUrlEncoder().withoutPadding()
                     .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
         }

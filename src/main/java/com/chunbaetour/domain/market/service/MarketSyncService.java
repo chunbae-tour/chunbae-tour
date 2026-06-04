@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -53,12 +54,13 @@ public class MarketSyncService {
     private static final int PAGE_SIZE = 1000;
 
     /**
-     * 전체 전통시장 데이터 동기화.
-     * 페이징으로 전체 데이터를 수집하고 upsert 처리.
-     * MarketSyncScheduler 또는 AdminMarketController에서 호출.
+     * 전체 전통시장 데이터 동기화 (공통 진입점).
+     * 스케줄러·관리자 수동 모두 이 메서드 호출 → @SchedulerLock으로 중복 실행 차단.
+     * 페이징으로 전체 데이터 수집 후 아이템 단위 REQUIRES_NEW upsert.
      *
      * @return 동기화된 시장 개수
      */
+    @SchedulerLock(name = "market_sync_all", lockAtMostFor = "PT10M", lockAtLeastFor = "PT1M")
     public int syncAllMarkets() {
         log.info("[MarketSync] 전통시장 데이터 동기화 시작");
         int totalSynced = 0;
@@ -74,13 +76,13 @@ public class MarketSyncService {
             int totalPages = (int) Math.ceil((double) totalCount / PAGE_SIZE);
             log.info("[MarketSync] 총 {} 건, {} 페이지 수집 예정", totalCount, totalPages);
 
-            // 첫 페이지 처리 (프록시 경유 TX 적용)
-            totalSynced += self.processBatch(firstBody.itemList());
+            // 첫 페이지 처리 (아이템 단위 REQUIRES_NEW TX)
+            totalSynced += processBatch(firstBody.itemList());
 
-            // 나머지 페이지 처리 (각 배치마다 별도 TX)
+            // 나머지 페이지 처리 (각 배치마다 독립 TX)
             for (int page = 2; page <= totalPages; page++) {
                 MarketApiResponse.Response response = fetchMarketsPage(page);
-                totalSynced += self.processBatch(response.body().itemList());
+                totalSynced += processBatch(response.body().itemList());
             }
 
             log.info("[MarketSync] 동기화 완료: {} 건", totalSynced);
@@ -189,11 +191,11 @@ public class MarketSyncService {
     }
 
     /**
-     * 배치의 시장 항목들을 upsert 처리.
-     * 각 아이템은 독립 TX (REQUIRES_NEW)로 격리 → 1건 위반이 그 1건만 롤백.
+     * 배치의 시장 항목들을 순회하며 upsert.
+     * 각 아이템은 upsertItem()으로 독립 TX (REQUIRES_NEW) 격리 → 1건 위반이 그 1건만 롤백.
      *
      * @param items API 응답 아이템 목록
-     * @return 처리된 개수
+     * @return 성공한 개수
      */
     public int processBatch(List<MarketApiItem> items) {
         if (items == null || items.isEmpty()) {

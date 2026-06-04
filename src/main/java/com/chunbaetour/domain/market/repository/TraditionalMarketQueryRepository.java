@@ -88,15 +88,16 @@ public class TraditionalMarketQueryRepository {
 
     /**
      * Keyset 기반 커서 조건: dist > c OR (dist = c AND id > cid).
-     * 정밀도 손실 없이 경계 행 누락 방지.
+     * 커서의 거리는 Double.toString() 전정밀도로 인코딩되므로, 파싱 후 Double.parseDouble에서
+     * 정확히 복원된다. 따라서 distanceExpression.eq(cursorDistance)가 정밀하게 작동.
      */
     private BooleanExpression cursorCondition(
             Long cursorId, Double cursorDistance, NumberTemplate<Double> distanceExpression) {
         if (cursorId == null || cursorDistance == null) {
             return null;
         }
-        // dist > cursorDistance 또는
-        // (dist = cursorDistance AND id > cursorId)
+        // Keyset: dist > c OR (dist = c AND id > cid)
+        // 경계행 중복 없음 (distanceExpression과 cursorDistance가 전정밀도 일치)
         return distanceExpression.gt(cursorDistance)
                 .or(distanceExpression.eq(cursorDistance).and(traditionalMarket.id.gt(cursorId)));
     }
