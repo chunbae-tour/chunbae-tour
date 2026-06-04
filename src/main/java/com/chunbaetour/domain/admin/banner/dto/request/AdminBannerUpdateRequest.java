@@ -12,6 +12,13 @@ import java.time.LocalDate;
  * body({@code {}})는 의미 없는 수정이므로 컨트롤러 진입부에서 {@code INVALID_INPUT_VALUE}(400)로 거부한다
  * ({@link #isEmpty()}) — audit(BANNER_UPDATE) 대상이라 "아무 것도 안 바꾸는 수정"을 명시적 오류로 둔다.
  *
+ * <p>null-skip의 한계 — 본 슬라이스는 "값 클리어"(linkUrl/노출 기간을 명시적으로 null로 비우기)를 지원하지 않는다.
+ * null은 항상 "미수정"으로 해석한다(YAGNI). 운영에서 링크 제거/상시 노출 전환이 실제로 필요해지면 후속 슬라이스에서
+ * JsonNullable 등으로 "미전달 vs null 전달"을 구분한다.
+ *
+ * <p>status는 본 요청의 수정 범위 밖이다 — 노출/숨김/삭제 상태 전이는 별도 endpoint(DELETE soft delete) 책임이라
+ * {@link #isEmpty()} 판정 필드에도 포함하지 않는다.
+ *
  * <p>공백 차단(S04/S07 리뷰 교훈): {@code (?s)}(DOTALL)로 멀티라인 값도 공백-only는 거부한다. title/url은 단일
  * 라인이지만 일관성을 위해 동일 패턴을 적용한다.
  *

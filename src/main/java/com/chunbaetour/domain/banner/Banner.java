@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.banner;
 
 import com.chunbaetour.domain.banner.type.BannerStatus;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -143,10 +145,16 @@ public class Banner {
         this.status = BannerStatus.ACTIVE;
     }
 
-    /** 노출 기간 불변식 — 둘 다 지정된 경우에만 startDate <= endDate 요구. */
+    /**
+     * 노출 기간 불변식 — 둘 다 지정된 경우에만 startDate <= endDate 요구.
+     *
+     * <p>{@link BusinessException}(INVALID_INPUT_VALUE, 400)을 던진다 — create의 {@code @AssertTrue}(400)와
+     * 동일한 응답으로 일관화. PATCH partial에서 한쪽 날짜만 수정해 기존 값과 역전되는 경우는 DTO 검증으로 못 잡고
+     * 도메인 병합 시점에 드러나므로, 여기서 IllegalArgumentException(→500)이 아닌 400으로 돌려준다.
+     */
     private static void validatePeriod(LocalDate startDate, LocalDate endDate) {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("노출 시작일은 종료일보다 늦을 수 없습니다.");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
 }

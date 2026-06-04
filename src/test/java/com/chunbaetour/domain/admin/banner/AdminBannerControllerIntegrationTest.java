@@ -19,6 +19,7 @@ import com.chunbaetour.domain.banner.Banner;
 import com.chunbaetour.domain.banner.repository.BannerRepository;
 import com.chunbaetour.domain.banner.type.BannerStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -284,6 +285,28 @@ class AdminBannerControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(adminActionLogRepository.findAll()).isEmpty();
     }
 
+    @Test
+    @DisplayName("PATCH 한쪽 날짜만 수정해 기존 값과 역전 → 400 + audit 미기록 (리뷰 R1 회귀)")
+    void updateBanner_periodInversion_returns_400() throws Exception {
+        String adminToken = adminToken();
+        // 기존 start=7/1, end=8/31
+        Banner banner = bannerRepository.save(Banner.builder()
+                .title("기간 배너")
+                .imageUrl("https://cdn/img.png")
+                .startDate(LocalDate.of(2026, 7, 1))
+                .endDate(LocalDate.of(2026, 8, 31))
+                .build());
+
+        // endDate만 6/1로 수정 → 기존 startDate(7/1)보다 빨라 역전 → 도메인 병합 재검증 400
+        mockMvc.perform(patch("/api/v1/admin/banners/" + banner.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"endDate\":\"2026-06-01\"}"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
     // ── 삭제 ────────────────────────────────────────────────────────────────
 
     @Test
@@ -350,6 +373,18 @@ class AdminBannerControllerIntegrationTest extends AbstractIntegrationTest {
                         .param("cursor", "!!!not-base64!!!"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON_008"));
+    }
+
+    @Test
+    @DisplayName("GET 목록 status=DELETED 필터 → 400 COMMON_004 (미지원 입력, 리뷰 #3)")
+    void getBanners_statusDeleted_returns_400() throws Exception {
+        String adminToken = adminToken();
+
+        mockMvc.perform(get("/api/v1/admin/banners")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .param("status", "DELETED"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_004"));
     }
 
     // ── 접근 제어 ───────────────────────────────────────────────────────────

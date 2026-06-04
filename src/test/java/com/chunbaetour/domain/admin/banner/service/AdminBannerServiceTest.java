@@ -73,7 +73,7 @@ class AdminBannerServiceTest {
     }
 
     @Test
-    @DisplayName("수정: 한쪽 날짜만 수정해 기존 값과 역전되면 IllegalArgumentException (병합 재검증)")
+    @DisplayName("수정: 한쪽 날짜만 수정해 기존 값과 역전되면 INVALID_INPUT_VALUE(400) (병합 재검증)")
     void updateBanner_periodInversion_rejected() {
         Banner banner = activeBanner(); // start=7/1, end=8/31
         given(bannerRepository.findById(1L)).willReturn(Optional.of(banner));
@@ -82,8 +82,20 @@ class AdminBannerServiceTest {
         AdminBannerUpdateRequest request = new AdminBannerUpdateRequest(
                 null, null, null, null, null, LocalDate.of(2026, 6, 1));
 
+        // Banner.validatePeriod가 BusinessException(400)을 던져 글로벌 500이 아닌 400으로 응답(리뷰 R1)
         assertThatThrownBy(() -> service().updateBanner(1L, request))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    @DisplayName("목록: status=DELETED 필터 → INVALID_INPUT_VALUE(400) (미지원 입력 거부, 리뷰 #3)")
+    void getBanners_statusDeleted_rejected() {
+        assertThatThrownBy(() -> service().getBanners(BannerStatus.DELETED, null, 20))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     @Test
