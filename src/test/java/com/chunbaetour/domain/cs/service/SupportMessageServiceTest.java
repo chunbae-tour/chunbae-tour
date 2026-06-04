@@ -13,6 +13,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import com.chunbaetour.domain.cs.dto.request.SupportSendMessageRequest;
+import com.chunbaetour.domain.cs.event.SupportMessageSentEvent;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
@@ -22,6 +23,7 @@ import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.time.Duration;
 import java.util.Optional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -36,6 +38,7 @@ class SupportMessageServiceTest {
     @Mock private SupportMessageRepository supportMessageRepository;
     @Mock private SupportRedisPubSubService supportRedisPubSubService;
     @Mock private RateLimiter rateLimiter;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     // rate limit 초과 → TOO_MANY_REQUESTS, 이후 DB 조회 없음
     @Test
@@ -164,17 +167,31 @@ class SupportMessageServiceTest {
         verify(supportRedisPubSubService).publish(eq(1L), any());
     }
 
-    // ADMIN IN_PROGRESS 방 발신 — save·publish 호출 확인
+    // ADMIN IN_PROGRESS 방 발신 — save·publish 호출 + 방 소유자에게 이벤트 발행 확인
     @Test
-    void sendMessage_whenAdminSendsToInProgressRoom_savesAndPublishes() {
+    void sendMessage_whenAdminSendsToInProgressRoom_savesAndPublishesAndNotifies() {
+        SupportRoom room = buildRoom(1L, 99L, SupportRoomStatus.IN_PROGRESS, 1L); // userId=99, adminId=1 (발신자)
         given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
-        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoomWithAdmin(1L, 99L, 1L, SupportRoomStatus.IN_PROGRESS)));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(supportMessageRepository.save(any())).willReturn(buildMessage(101L, 1L));
 
         supportMessageService.sendMessage(1L, 1L, true, req("확인했습니다"));
 
         verify(supportMessageRepository).save(any(SupportMessage.class));
         verify(supportRedisPubSubService).publish(eq(1L), any());
+        verify(applicationEventPublisher).publishEvent(new SupportMessageSentEvent(1L, 99L));
+    }
+
+    // USER 발신 — 이벤트 발행 없음 (ADMIN 알림 인프라 미구축)
+    @Test
+    void sendMessage_whenOwnerSends_doesNotPublishEvent() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+        given(supportMessageRepository.save(any())).willReturn(buildMessage(100L, 1L));
+
+        supportMessageService.sendMessage(1L, 1L, false, req("안녕하세요"));
+
+        verify(applicationEventPublisher, never()).publishEvent(any());
     }
 
     private SupportSendMessageRequest req(String content) {
@@ -201,10 +218,10 @@ class SupportMessageServiceTest {
     }
 
     private SupportRoom buildRoom(Long id, Long userId, SupportRoomStatus status) {
-        return buildRoomWithAdmin(id, userId, null, status);
+        return buildRoom(id, userId, status, null);
     }
 
-    private SupportRoom buildRoomWithAdmin(Long id, Long userId, Long adminId, SupportRoomStatus status) {
+    private SupportRoom buildRoom(Long id, Long userId, SupportRoomStatus status, Long adminId) {
         SupportRoom room = SupportRoom.builder().userId(userId).build();
         try {
             var idField = SupportRoom.class.getDeclaredField("id");

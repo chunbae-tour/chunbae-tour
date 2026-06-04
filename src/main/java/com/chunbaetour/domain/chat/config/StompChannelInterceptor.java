@@ -156,7 +156,7 @@ public class StompChannelInterceptor implements ChannelInterceptor {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
 
         if (isAdmin) {
-            // WAITING 상태만 전체 ADMIN 허용 — CLOSED(미배정 가능) 포함 그 외는 담당 ADMIN만
+            // WAITING 상태만 전체 ADMIN 허용 — 그 외(IN_PROGRESS/CLOSED)는 담당 ADMIN(adminId 일치)만
             if (room.getStatus() == SupportRoomStatus.WAITING) {
                 return message;
             }
@@ -172,14 +172,15 @@ public class StompChannelInterceptor implements ChannelInterceptor {
         return message;
     }
 
-    // /user/queue/notifications 구독 — USER 역할만 허용 (MERCHANT/ADMIN 차단, REST 알림 API 정책 일치)
+    // /user/queue/notifications 구독 — USER·MERCHANT 허용 (ADMIN 차단, REST 알림 API 정책 일치)
+    // MERCHANT도 고객센터 상담 알림 수신 대상 — USER와 동일 입장
     private Message<?> handleNotificationSubscribe(Message<?> message, StompHeaderAccessor accessor) {
         if (!(accessor.getUser() instanceof UsernamePasswordAuthenticationToken auth)) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
-        boolean isUser = auth.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_USER"));
-        if (!isUser) {
+        boolean isUserOrMerchant = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_USER") || a.getAuthority().equals("ROLE_MERCHANT"));
+        if (!isUserOrMerchant) {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
         return message;
