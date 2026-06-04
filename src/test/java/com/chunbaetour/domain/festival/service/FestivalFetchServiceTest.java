@@ -14,6 +14,8 @@ import com.chunbaetour.domain.festival.repository.FestivalRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.core.SimpleLock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,12 +31,14 @@ class FestivalFetchServiceTest {
     @Mock TourApiClient tourApiClient;
     @Mock FestivalRepository festivalRepository;
     @Mock FestivalCacheEvictUtil cacheEvict;
+    @Mock LockProvider lockProvider;
+    @Mock SimpleLock simpleLock;
     @InjectMocks FestivalFetchService fetchService;
 
     @BeforeEach
     void setUp() {
-        // self 필드는 @Autowired @Lazy 자기 프록시 — Spring 없이 주입 필요
         ReflectionTestUtils.setField(fetchService, "self", fetchService);
+        given(lockProvider.lock(any())).willReturn(Optional.of(simpleLock));
     }
 
     private TourApiFestivalItem item(String insttCode) {
@@ -129,9 +133,7 @@ class FestivalFetchServiceTest {
 
     @Test
     void upsertItem_예외_스킵후_다음항목_계속_처리() {
-        TourApiFestivalItem bad  = item("5390000");
-        TourApiFestivalItem good = item("3050000");
-        given(tourApiClient.fetchAll()).willReturn(List.of(bad, good));
+        given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000"), item("3050000")));
         given(festivalRepository.findByExternalId(externalId("5390000"))).willThrow(new RuntimeException("DB error"));
         given(festivalRepository.findByExternalId(externalId("3050000"))).willReturn(Optional.empty());
         given(festivalRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
@@ -161,6 +163,17 @@ class FestivalFetchServiceTest {
         fetchService.fetchNow();
 
         verify(cacheEvict).evictAll();
+    }
+
+    @Test
+    void 락_획득_실패시_빈_결과_반환() {
+        given(lockProvider.lock(any())).willReturn(Optional.empty());
+
+        FestivalFetchResult result = fetchService.fetchNow();
+
+        assertThat(result.fetched()).isEqualTo(0);
+        assertThat(result.created()).isEqualTo(0);
+        verify(tourApiClient, never()).fetchAll();
     }
 
     @Test
