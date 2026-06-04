@@ -126,7 +126,9 @@ public class Place {
         }
         
         Point finalLocation = location;
-        if (finalLocation == null && lat != null && lng != null) {
+        if (finalLocation != null) {
+            finalLocation.setSRID(4326);
+        } else if (lat != null && lng != null) {
             org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
             finalLocation = gf.createPoint(new org.locationtech.jts.geom.Coordinate(lng.doubleValue(), lat.doubleValue()));
             finalLocation.setSRID(4326);

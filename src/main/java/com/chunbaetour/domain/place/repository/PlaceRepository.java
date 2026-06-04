@@ -49,9 +49,10 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     @Query(value = "SELECT * FROM places p " +
             "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
             "AND MBRContains(ST_GeomFromText(?5, 4326, 'axis-order=long-lat'), p.location) " +
+            "AND ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) <= ?6 " +
             "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) ASC " +
-            "LIMIT ?6", nativeQuery = true)
-    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, String mbrPolygon, int limit);
+            "LIMIT ?7", nativeQuery = true)
+    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, String mbrPolygon, double radiusMeters, int limit);
 
     /**
      * 상태 기반 단건 관광지 조회

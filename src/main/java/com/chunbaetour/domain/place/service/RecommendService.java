@@ -251,6 +251,7 @@ public class RecommendService {
                 basePlace.getCategory().name(),
                 placeId,
                 mbrPolygon,
+                20000.0,
                 PLACE_BASED_RECOMMEND_LIMIT
         );
 

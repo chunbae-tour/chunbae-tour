@@ -12,7 +12,7 @@ ALTER TABLE places ADD COLUMN new_rating INT NOT NULL DEFAULT 0 AFTER admission_
 -- 3. 데이터 마이그레이션 (lat/lng -> POINT 변환, float rating -> int 변환)
 UPDATE places 
 SET location = ST_GeomFromText(CONCAT('POINT(', lng, ' ', lat, ')'), 4326, 'axis-order=long-lat'),
-    new_rating = CAST(rating * 10 AS UNSIGNED);
+    new_rating = CAST(COALESCE(rating, 0) * 10 AS UNSIGNED);
 
 -- 4. 제약 조건 강화
 ALTER TABLE places MODIFY COLUMN location POINT NOT NULL SRID 4326;

@@ -88,7 +88,7 @@ class PlaceRepositoryIntegrationTest extends AbstractIntegrationTest {
         // when
         String mbrPolygon = com.chunbaetour.domain.place.util.LocationUtils.calculateMbrPolygon(baseLat, baseLng, 20000.0);
         List<Place> result = placeRepository.findNearbyPlacesByCategory(
-                baseLat, baseLng, PlaceCategory.TOURIST_SPOT.name(), basePlace.getId(), mbrPolygon, 5
+                baseLat, baseLng, PlaceCategory.TOURIST_SPOT.name(), basePlace.getId(), mbrPolygon, 20000.0, 5
         );
 
         // then

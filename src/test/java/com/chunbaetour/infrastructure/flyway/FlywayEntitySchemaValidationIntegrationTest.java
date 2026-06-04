@@ -82,7 +82,10 @@ class FlywayEntitySchemaValidationIntegrationTest {
                                  if (modified) {
                                      java.nio.file.Files.writeString(p, content);
                                  }
-                             } catch (Exception e) {}
+                             } catch (Exception e) {
+                                 e.printStackTrace();
+                                 throw new RuntimeException("Failed to modify migration file: " + p, e);
+                             }
                          });
                 }
             }

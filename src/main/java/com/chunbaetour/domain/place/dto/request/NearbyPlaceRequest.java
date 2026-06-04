@@ -40,5 +40,11 @@ public record NearbyPlaceRequest(
             size = 10;
         }
     }
+
+    @AssertTrue(message = "커서와 커서 거리는 둘 다 제공되거나 둘 다 제공되지 않아야 합니다.")
+    @JsonIgnore
+    public boolean isCursorPairValid() {
+        return (cursor == null && cursorDistance == null) || (cursor != null && cursorDistance != null);
+    }
 }
 

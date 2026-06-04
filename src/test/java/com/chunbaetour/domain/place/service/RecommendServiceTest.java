@@ -261,7 +261,7 @@ class RecommendServiceTest {
         when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(5)))
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(20000.0), eq(5)))
                 .thenReturn(List.of(nearbyPlace));
 
         String jsonResult = "[{}]";
@@ -305,7 +305,7 @@ class RecommendServiceTest {
         when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(5)))
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(20000.0), eq(5)))
                 .thenReturn(List.of(nearbyPlace));
 
         // when
@@ -321,6 +321,7 @@ class RecommendServiceTest {
                 eq("TOURIST_SPOT"),
                 eq(placeId),
                 anyString(),
+                eq(20000.0),
                 eq(5)
         );
     }

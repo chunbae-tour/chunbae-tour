@@ -76,26 +76,33 @@ public class PlaceService {
         // 3. 커서가 주어진 경우 해당 위치 찾기
         int startIndex = 0;
         if (cursor != null && cursorDistance != null) {
+            boolean cursorFound = false;
             for (int i = 0; i < allNearby.size(); i++) {
                 NearbyPlaceResponse p = allNearby.get(i);
                 // 거리나 ID가 커서와 정확히 일치하거나 그보다 큰 항목을 다음 시작점으로 (부동소수점 오차 허용)
                 if (p.distanceMeters() > cursorDistance || 
                    (Math.abs(p.distanceMeters() - cursorDistance) < 0.001 && p.placeId() > cursor)) {
                     startIndex = i;
+                    cursorFound = true;
                     break;
                 }
+            }
+            if (!cursorFound) {
+                log.warn("Cursor not found: cursor={}, distance={}. Returning empty result.", cursor, cursorDistance);
+                return new NearbyPlacePageResponse(Collections.emptyList(), false);
             }
         }
 
         // 4. 서브리스트로 페이징 적용 (요청한 size + 1 개수만큼 추출 시도하여 hasNext 확인)
-        int endIndex = Math.min(startIndex + size + 1, allNearby.size());
+        int safeSize = (size != null) ? size : 10;
+        int endIndex = Math.min(startIndex + safeSize + 1, allNearby.size());
         List<NearbyPlaceResponse> pagedPlaces = new java.util.ArrayList<>(allNearby.subList(startIndex, endIndex));
 
         boolean hasNext = false;
 
-        if (pagedPlaces.size() > size) {
+        if (pagedPlaces.size() > safeSize) {
             hasNext = true;
-            pagedPlaces.remove(size.intValue()); // 초과 조회한 마지막 요소 제거
+            pagedPlaces.remove(safeSize); // 초과 조회한 마지막 요소 제거
         }
 
         NearbyPlacePageResponse response = new NearbyPlacePageResponse(pagedPlaces, hasNext);
