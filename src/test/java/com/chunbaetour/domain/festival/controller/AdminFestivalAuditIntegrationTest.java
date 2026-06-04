@@ -49,7 +49,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
+class AdminFestivalAuditIntegrationTest extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "Pa$$w0rd1!";
 
