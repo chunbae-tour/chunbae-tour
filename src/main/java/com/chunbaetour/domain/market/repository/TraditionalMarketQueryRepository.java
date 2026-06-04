@@ -26,12 +26,14 @@ public class TraditionalMarketQueryRepository {
     private final JPAQueryFactory queryFactory;
 
     /**
-     * 지정 좌표 기준 반경 내 전통시장 조회.
-     * 거리 오름차순 정렬 + 커서 기반 페이지네이션.
+     * 지정 좌표 기반 반경 내 전통시장 조회.
+     * 1단계: 바운딩박스 필터 (lat/lng BETWEEN, idx_traditional_markets_lat_lng 활용)
+     * 2단계: ST_Distance_Sphere 정밀 거리 계산 (범위 필터 후)
+     * keyset pagination: dist > c OR (dist = c AND id > cid)
      *
      * @param lat 위도
      * @param lng 경도
-     * @param radiusMeters 반경
+     * @param radiusMeters 반경 (미터)
      * @param cursorId 커서 ID
      * @param cursorDistance 커서 거리
      * @param size 페이지 크기
@@ -41,6 +43,11 @@ public class TraditionalMarketQueryRepository {
             double lat, double lng, double radiusMeters,
             Long cursorId, Double cursorDistance, int size) {
 
+        // 대략적인 경위도 변화: 1도 ≈ 111km
+        // 반경 radiusMeters에서 대략적인 bbox 계산
+        double latDelta = (radiusMeters / 1000.0) / 111.0;
+        double lngDelta = latDelta / Math.cos(Math.toRadians(lat));
+
         NumberTemplate<Double> distance = Expressions.numberTemplate(Double.class,
                 "ST_Distance_Sphere(POINT({0}, {1}), POINT({2}, {3}))",
                 traditionalMarket.lng, traditionalMarket.lat, lng, lat);
@@ -49,6 +56,10 @@ public class TraditionalMarketQueryRepository {
                 .select(traditionalMarket, distance)
                 .from(traditionalMarket)
                 .where(
+                        // 1단계: 바운딩박스 선필터 (idx_traditional_markets_lat_lng 활용)
+                        traditionalMarket.lat.between(lat - latDelta, lat + latDelta),
+                        traditionalMarket.lng.between(lng - lngDelta, lng + lngDelta),
+                        // 2단계: 정밀 거리 필터
                         distance.loe(radiusMeters),
                         cursorCondition(cursorId, cursorDistance, distance)
                 )
@@ -76,18 +87,17 @@ public class TraditionalMarketQueryRepository {
     }
 
     /**
-     * 커서 기반 페이지네이션 조건.
-     * 거리 > 커서거리 || (거리 ≈ 커서거리 && id > 커서ID)
+     * Keyset 기반 커서 조건: dist > c OR (dist = c AND id > cid).
+     * 정밀도 손실 없이 경계 행 누락 방지.
      */
     private BooleanExpression cursorCondition(
             Long cursorId, Double cursorDistance, NumberTemplate<Double> distanceExpression) {
         if (cursorId == null || cursorDistance == null) {
             return null;
         }
-        // gt: 거리가 더 멂 (다음 페이지)
-        // between + id.gt: 거리가 거의 같으면 id로 구분
+        // dist > cursorDistance 또는
+        // (dist = cursorDistance AND id > cursorId)
         return distanceExpression.gt(cursorDistance)
-                .or(distanceExpression.between(cursorDistance - 0.001, cursorDistance + 0.001)
-                        .and(traditionalMarket.id.gt(cursorId)));
+                .or(distanceExpression.eq(cursorDistance).and(traditionalMarket.id.gt(cursorId)));
     }
 }

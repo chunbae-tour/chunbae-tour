@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -188,14 +189,12 @@ public class MarketSyncService {
     }
 
     /**
-     * 배치의 시장 항목들을 upsert 처리 (프록시 경유 TX).
-     * 각 배치는 별도 트랜잭션으로 격리 (per-batch TX).
-     * public + @Lazy self 호출로 Spring 프록시 어드바이스 적용.
+     * 배치의 시장 항목들을 upsert 처리.
+     * 각 아이템은 독립 TX (REQUIRES_NEW)로 격리 → 1건 위반이 그 1건만 롤백.
      *
      * @param items API 응답 아이템 목록
      * @return 처리된 개수
      */
-    @Transactional
     public int processBatch(List<MarketApiItem> items) {
         if (items == null || items.isEmpty()) {
             return 0;
@@ -203,47 +202,62 @@ public class MarketSyncService {
 
         int count = 0;
         for (MarketApiItem item : items) {
-            try {
-                // 필수 필드 검증
-                if (item.getMrktNm() == null || item.getMrktNm().isBlank() ||
-                    item.getRdnmadr() == null || item.getRdnmadr().isBlank() ||
-                    item.getLatitude() == null || item.getLongitude() == null) {
-                    log.warn("[MarketSync] 필수 필드 누락: {}", item.getMrktNm());
-                    continue;
-                }
-
-                // upsert: name + address 복합 키 (동명 이장 대응)
-                Optional<TraditionalMarket> existing = marketRepository.findByNameAndAddress(
-                    item.getMrktNm(), item.getRdnmadr()
-                );
-
-                if (existing.isPresent()) {
-                    // 기존 데이터 업데이트
-                    TraditionalMarket market = existing.get();
-                    market.update(
-                        item.getMrktType(),
-                        item.getPhoneNumber(),
-                        item.getHomepageUrl(),
-                        item.getEstblYear() != null && !item.getEstblYear().isBlank()
-                            ? Integer.parseInt(item.getEstblYear())
-                            : null
-                    );
-                    marketRepository.save(market);
-                    log.debug("[MarketSync] 시장 정보 업데이트: {} ({})", item.getMrktNm(), item.getRdnmadr());
-                } else {
-                    // 신규 데이터 생성
-                    TraditionalMarket newMarket = item.toEntity();
-                    marketRepository.save(newMarket);
-                    log.debug("[MarketSync] 시장 정보 신규 저장: {} ({})", item.getMrktNm(), item.getRdnmadr());
-                }
+            if (self.upsertItem(item)) {
                 count++;
-            } catch (DataIntegrityViolationException e) {
-                // 동시 삽입 또는 제약 위반 (예: 중복 키) → 로그하고 계속
-                log.warn("[MarketSync] DB 제약 위반 (시장: {}): {}", item.getMrktNm(), e.getMessage());
-            } catch (Exception e) {
-                log.error("[MarketSync] 시장 처리 오류: {}", item.getMrktNm(), e);
             }
         }
         return count;
+    }
+
+    /**
+     * 단일 아이템 upsert (아이템 단위 독립 TX).
+     * REQUIRES_NEW: 호출 TX와 무관하게 새 TX 시작 → 예외 시 해당 아이템만 롤백.
+     *
+     * @param item API 응답 아이템
+     * @return 성공 여부
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean upsertItem(MarketApiItem item) {
+        try {
+            // 필수 필드 검증
+            if (item.getMrktNm() == null || item.getMrktNm().isBlank() ||
+                item.getRdnmadr() == null || item.getRdnmadr().isBlank() ||
+                item.getLatitude() == null || item.getLongitude() == null) {
+                log.warn("[MarketSync] 필수 필드 누락: {}", item.getMrktNm());
+                return false;
+            }
+
+            // upsert: name + address 복합 키
+            Optional<TraditionalMarket> existing = marketRepository.findByNameAndAddress(
+                item.getMrktNm(), item.getRdnmadr()
+            );
+
+            if (existing.isPresent()) {
+                // 업데이트
+                TraditionalMarket market = existing.get();
+                market.update(
+                    item.getMrktType(),
+                    item.getPhoneNumber(),
+                    item.getHomepageUrl(),
+                    item.getEstblYear() != null && !item.getEstblYear().isBlank()
+                        ? Integer.parseInt(item.getEstblYear())
+                        : null
+                );
+                marketRepository.save(market);
+                log.debug("[MarketSync] 시장 정보 업데이트: {} ({})", item.getMrktNm(), item.getRdnmadr());
+            } else {
+                // 신규
+                TraditionalMarket newMarket = item.toEntity();
+                marketRepository.save(newMarket);
+                log.debug("[MarketSync] 시장 정보 신규 저장: {} ({})", item.getMrktNm(), item.getRdnmadr());
+            }
+            return true;
+        } catch (DataIntegrityViolationException e) {
+            log.warn("[MarketSync] DB 제약 위반 (시장: {}): {}", item.getMrktNm(), e.getMessage());
+            return false;
+        } catch (Exception e) {
+            log.error("[MarketSync] 시장 처리 오류: {}", item.getMrktNm(), e);
+            return false;
+        }
     }
 }

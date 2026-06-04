@@ -7,6 +7,8 @@ import com.chunbaetour.domain.market.service.TraditionalMarketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
@@ -34,8 +36,8 @@ public class TraditionalMarketController {
     @Operation(summary = "전통시장 주변 조회 (위치 기반)")
     @GetMapping("/nearby")
     public ApiResponse<CursorPageResponse<TraditionalMarketNearbyResponse>> nearby(
-            @RequestParam(name = "lat") BigDecimal lat,
-            @RequestParam(name = "lng") BigDecimal lng,
+            @RequestParam(name = "lat") @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
+            @RequestParam(name = "lng") @DecimalMin("-180") @DecimalMax("180") BigDecimal lng,
             @RequestParam(name = "radius", defaultValue = "3000") @Min(100) @Max(50000) int radius,
             @RequestParam(name = "cursor", required = false) String cursor,
             @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) int size
