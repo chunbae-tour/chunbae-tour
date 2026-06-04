@@ -35,8 +35,8 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' " +
-                   "AND (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) <= ?3 " +
-                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) ASC " +
+                   "AND ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326), p.location) <= (?3 * 1000) " +
+                   "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326), p.location) ASC " +
                    "LIMIT ?4", nativeQuery = true)
     List<Place> findNearbyPlacesWithinRadius(double lat, double lng, double radiusKm, int limit);
 
@@ -46,9 +46,9 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      * TODO: 데이터 증가 시 성능 저하(풀스캔) 우려. lat, lng에 대한 BETWEEN(bounding-box) 조건 추가 검토 필요
      */
     @Query(value = "SELECT * FROM places p " +
-                   "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
-                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) ASC " +
-                   "LIMIT ?5", nativeQuery = true)
+            "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
+            "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?1, ' ', ?2, ')'), 4326), p.location) ASC " +
+            "LIMIT ?5", nativeQuery = true)
     List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, int limit);
 
     /**

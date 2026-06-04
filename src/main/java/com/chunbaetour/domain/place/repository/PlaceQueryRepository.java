@@ -30,10 +30,20 @@ public class PlaceQueryRepository {
 
     public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters,
                                                        Long cursorId, Double cursorDistance, int size) {
-        // MySQL ST_Distance_Sphere (returns meters). Arguments for POINT are (longitude, latitude)
+        // MBR 박스 계산 (1도 당 약 111km 가정, 반경에 따른 대략적인 사각형)
+        double latDegree = radiusMeters / 111000.0;
+        double lngDegree = radiusMeters / (111000.0 * Math.cos(Math.toRadians(lat)));
+        
+        String mbrPolygon = String.format("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+                lng - lngDegree, lat - latDegree,
+                lng + lngDegree, lat - latDegree,
+                lng + lngDegree, lat + latDegree,
+                lng - lngDegree, lat + latDegree,
+                lng - lngDegree, lat - latDegree);
+
         NumberTemplate<Double> distanceExpression = Expressions.numberTemplate(Double.class,
-                "ST_Distance_Sphere(POINT({0}, {1}), POINT({2}, {3}))",
-                place.lng, place.lat, lng, lat);
+                "ST_Distance_Sphere({0}, ST_GeomFromText({1}, 4326))",
+                place.location, String.format("POINT(%f %f)", lng, lat));
 
         return queryFactory
                 .select(Projections.constructor(NearbyPlaceResponse.class,
@@ -41,20 +51,21 @@ public class PlaceQueryRepository {
                         place.name,
                         place.category,
                         place.thumbnailUrl,
-                        place.lat,
-                        place.lng,
-                        place.rating,
+                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_Y({0})", place.location),
+                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_X({0})", place.location),
+                        place.rating, // rating은 내부적으로 int이지만 QueryDSL이 Projections로 매핑할 때 DTO 생성자를 탐색합니다.
                         place.reviewCount,
                         distanceExpression
                 ))
                 .from(place)
                 .where(
+                        Expressions.booleanTemplate("MBRContains(ST_GeomFromText({0}, 4326), {1})", mbrPolygon, place.location),
                         distanceExpression.loe(radiusMeters),
                         cursorCondition(cursorId, cursorDistance, distanceExpression),
                         place.status.eq(PlaceStatus.ACTIVE)
                 )
                 .orderBy(distanceExpression.asc(), place.id.asc())
-                .limit(size)
+                .limit(size + 1)
                 .fetch();
     }
 
@@ -63,8 +74,10 @@ public class PlaceQueryRepository {
         if (cursorId == null || cursorDistance == null) {
             return null;
         }
+        // 부동소수점 오차 완화를 위해 커서의 거리(mm 단위 오차 0.001) 대신 1미터(1.0) 오차를 허용하거나
+        // MBR + DB 정렬 후 Java 단 정렬로 전환 가능하지만 일단 기존 시그니처 호환성을 유지하기 위해 1.0으로 수정
         return distanceExpression.gt(cursorDistance)
-                .or(distanceExpression.between(cursorDistance - 0.001, cursorDistance + 0.001)
+                .or(distanceExpression.between(cursorDistance - 1.0, cursorDistance + 1.0)
                         .and(place.id.gt(cursorId)));
     }
 
@@ -211,7 +224,7 @@ public class PlaceQueryRepository {
                 )
                 // 1차: 평점 높은 순, 2차: ID 내림차순 (커서 안정성 보장)
                 .orderBy(place.rating.desc(), place.id.desc())
-                .limit(size)
+                .limit(size + 1)
                 .fetch();
     }
 
@@ -242,8 +255,10 @@ public class PlaceQueryRepository {
         if (cursorId == null || cursorRating == null) {
             return null; // 첫 페이지 — 커서 조건 없음
         }
+        // DB의 rating은 Float 값의 10배인 Integer로 저장되어 있음
+        int cursorRatingInt = Math.round(cursorRating * 10);
         // (rating < cursorRating) OR (rating = cursorRating AND id < cursorId)
-        return place.rating.lt(cursorRating)
-                .or(place.rating.eq(cursorRating).and(place.id.lt(cursorId)));
+        return place.rating.lt(cursorRatingInt)
+                .or(place.rating.eq(cursorRatingInt).and(place.id.lt(cursorId)));
     }
 }

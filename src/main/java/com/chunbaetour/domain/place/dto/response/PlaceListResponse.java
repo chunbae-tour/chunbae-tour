@@ -67,5 +67,11 @@ public record PlaceListResponse(
 
             /** 리뷰 개수 */
             int reviewCount
-    ) {}
+    ) {
+        // QueryDSL이 Projections.constructor로 객체를 생성할 때 int 타입인 rating 값을
+        // 매핑할 수 있도록 int 타입 rating을 받는 생성자를 제공합니다.
+        public PlaceListItem(Long id, String name, PlaceCategory category, String address, String thumbnailUrl, int storedRating, int reviewCount) {
+            this(id, name, category, address, thumbnailUrl, storedRating / 10.0f, reviewCount);
+        }
+    }
 }

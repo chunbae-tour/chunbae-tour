@@ -217,15 +217,18 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
     private Place savePlace(String name, PlaceCategory category, PlaceStatus status,
-                             float rating, String address) {
+                            float rating, String address) {
+        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
+        org.locationtech.jts.geom.Point location = gf.createPoint(new org.locationtech.jts.geom.Coordinate(126.9780, 37.5665));
+        location.setSRID(4326);
+
         Place place = Place.builder()
                 .name(name)
                 .category(category)
-                .description("설명")
+                .description("테스트 설명")
                 .address(address)
-                .lat(new BigDecimal("33.4500"))
-                .lng(new BigDecimal("126.9300"))
-                .operatingHours("09:00-18:00")
+                .location(location)
+                .thumbnailUrl("http://example.com/test.jpg")
                 .build();
         if (status == PlaceStatus.HIDDEN) {
             place.hide();

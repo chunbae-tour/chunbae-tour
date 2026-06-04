@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> {
 
     /**
@@ -55,5 +57,5 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
      * 관광지 평점 재계산용: ACTIVE 리뷰의 평균 별점 합계와 개수를 한 번에 조회.
      */
     @Query("SELECT SUM(r.rating), COUNT(r) FROM PlaceReview r WHERE r.place.id = :placeId AND r.status = 'ACTIVE'")
-    Object[] sumRatingAndCount(@Param("placeId") Long placeId);
+    List<Object[]> sumRatingAndCount(@Param("placeId") Long placeId);
 }
