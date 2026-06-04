@@ -37,6 +37,7 @@ class RefundRequireAdminTest {
     @DisplayName("FAILED 상태에서 requireAdmin() 호출 — REQUIRES_ADMIN 전환 성공")
     void requireAdmin_fromFailed_success() {
         Refund refund = createRefund(RefundStatus.FAILED);
+        ReflectionTestUtils.setField(refund, "nextRetryAt", java.time.LocalDateTime.now().plusMinutes(1));
 
         refund.requireAdmin();
 
