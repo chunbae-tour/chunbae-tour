@@ -80,6 +80,11 @@ public enum ErrorCode {
     // PLACE_015: 이미 soft delete(DELETED)된 관광지를 다시 삭제 시도 (운영자 멱등 가드, S07 리뷰 I)
     PLACE_ALREADY_DELETED(HttpStatus.CONFLICT,            "PLACE_015", "이미 삭제된 관광지입니다."),
 
+    // ===== BANNER (담당: 정민교, Admin Epic KAN-177 S09) =====
+    BANNER_NOT_FOUND(HttpStatus.NOT_FOUND,                 "BANNER_001", "존재하지 않는 배너입니다."),
+    // BANNER_002: 이미 soft delete(DELETED)된 배너를 다시 수정/삭제 시도 (운영자 멱등 가드, S07 정책 미러)
+    BANNER_ALREADY_DELETED(HttpStatus.CONFLICT,            "BANNER_002", "이미 삭제된 배너입니다."),
+
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
     CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 5,000원 이상이어야 합니다."),
@@ -201,7 +206,12 @@ public enum ErrorCode {
     // CS_004: WAITING 상태 상담방 이미 존재 — 중복 생성 차단
     SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
     // CS_005: 이미 배정된 상담방 — 중복 배정 차단
-    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다.");
+    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다."),
+
+    // ===== COMPANION REVIEW (담당: 임하은) =====
+    COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),
+    COMPANION_REVIEW_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "CR_002", "자기 자신에게 리뷰를 작성할 수 없습니다."),
+    COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "해당 채팅방 참여자가 아니면 리뷰를 작성할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
