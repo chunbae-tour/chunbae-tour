@@ -55,4 +55,20 @@ public @interface LogAdminAction {
      * <p>예: {@code @LogAdminAction(..., targetIdVar = "userId")}
      */
     String targetIdVar() default "";
+
+    /**
+     * targetId를 메서드 <b>반환값</b>에서 추출할 필드(접근자) 이름. 생성(POST) endpoint처럼 호출 시점에 대상 id가
+     * 아직 없고 응답 본문에만 존재하는 경우 사용한다(예: {@code PLACE_CREATE}).
+     *
+     * <p>동작: path 변수 추출({@link #targetIdVar()})로 targetId를 못 구했고 본 속성이 비어있지 않으면, advice가
+     * 반환값(컨트롤러 표준 {@code ApiResponse<T>}의 {@code data()})에서 <b>동일 이름의 record accessor 메서드</b>
+     * (예: {@code id()})를 호출해 targetId를 얻는다. record 전용이라 bean getter({@code getId()})가 아닌
+     * 접근자 이름과 정확히 일치해야 한다.
+     *
+     * <p><b>하위호환</b>: 미지정(기본 "")이면 반환값 추출 경로에 진입하지 않는다 → 기존(path-only) 동작과 동일.
+     * 추출 실패(타입 불일치/접근자 없음/null)는 흡수되어 targetId=null로 처리(record skip).
+     *
+     * <p>예: {@code @LogAdminAction(..., returnIdField = "id")}
+     */
+    String returnIdField() default "";
 }

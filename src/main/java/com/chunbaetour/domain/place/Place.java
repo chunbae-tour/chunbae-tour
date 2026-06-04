@@ -26,7 +26,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
     name = "places",
     indexes = {
         @Index(name = "idx_places_category", columnList = "category"),
-        @Index(name = "idx_places_status",   columnList = "status"),
+        // 운영자 목록(searchForAdmin)은 status<>DELETED 필터 + id DESC 정렬 → (status, id) 복합으로 filesort 회피.
+        // 기존 단일 idx_places_status는 본 복합의 leftmost prefix라 중복 → 제거(KAN-209 S07 리뷰 G).
+        @Index(name = "idx_places_status_id", columnList = "status, id"),
         @Index(name = "idx_places_lat_lng",  columnList = "lat, lng"),
         // SA ERD 기준 FULLTEXT INDEX idx_places_name — 키워드 검색용
         // JPA @Index는 FULLTEXT 미지원: schema.sql 또는 migration에서 직접 생성 필요

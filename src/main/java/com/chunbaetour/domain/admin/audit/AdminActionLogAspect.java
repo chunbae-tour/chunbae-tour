@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.admin.audit;
 
+import com.chunbaetour.domain.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import java.lang.reflect.Method;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +56,11 @@ public class AdminActionLogAspect {
         try {
             Long adminUserId = extractAdminUserId();
             Long targetId = extractTargetIdFromPath(logAdminAction.targetIdVar());
+            // path에서 못 구했고 returnIdField 지정 시(생성 endpoint 등) 반환값에서 추출. 하위호환:
+            // returnIdField 미지정("")이면 이 경로 진입 안 함 → 기존 동작 불변.
+            if (targetId == null && !logAdminAction.returnIdField().isBlank()) {
+                targetId = extractTargetIdFromReturn(result, logAdminAction.returnIdField());
+            }
             if (adminUserId == null || targetId == null) {
                 // 추출 실패 = 인증/URL 패턴 비표준. 로그 기록을 강제로 시도해 잘못된 데이터를 남기는 것보다
                 // 흡수 + 운영자 후속 확인이 안전 (record 호출 자체를 생략).
@@ -148,6 +155,38 @@ public class AdminActionLogAspect {
             candidate = parsed;
         }
         return candidate;
+    }
+
+    /**
+     * 메서드 반환값에서 targetId를 추출한다(생성 endpoint 등 path에 id가 없는 경우).
+     *
+     * <p>컨트롤러 표준 반환은 {@code ApiResponse<T>} 래퍼이므로 {@code data()}로 본문 DTO를 꺼낸 뒤, DTO가
+     * record라는 전제로 {@code fieldName}과 동일 이름의 <b>접근자 메서드</b>(예: {@code id()})를 리플렉션 호출한다.
+     * bean getter 규칙({@code getId()})이 아니라 record accessor 이름과 정확히 일치해야 한다.
+     *
+     * <p>접근자 부재/타입 불일치/null 등 추출 실패는 {@code null}로 흡수 — record는 skip되고 본 요청에는 영향 없음.
+     *
+     * <p>{@code getDeclaredMethod} + {@code setAccessible(true)}를 쓰는 이유: record accessor는 public이지만
+     * DTO 클래스 자체가 package-private이면 {@code getMethod}로 얻은 핸들도 invoke 시 IllegalAccessException이
+     * 날 수 있다(선언 클래스 비공개). 향후 S08/S09 등에서 비공개 DTO를 써도 견고하도록 declared + accessible로 호출한다.
+     */
+    private Long extractTargetIdFromReturn(Object result, String fieldName) {
+        Object body = (result instanceof ApiResponse<?> response) ? response.data() : result;
+        if (body == null) {
+            return null;
+        }
+        try {
+            Method accessor = body.getClass().getDeclaredMethod(fieldName);
+            accessor.setAccessible(true);
+            return parseLongOrNull(accessor.invoke(body));
+        } catch (Exception e) {
+            log.warn(
+                    "AdminActionLog return id extraction failed — field={}, type={}, cause={}",
+                    fieldName,
+                    body.getClass().getSimpleName(),
+                    e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     /** path 변수 값을 Long으로 parse. null/비Long 시 null. */
