@@ -1,0 +1,1523 @@
+diff --git a/src/main/java/com/chunbaetour/domain/payment/client/PaymentGatewayClient.java b/src/main/java/com/chunbaetour/domain/payment/client/PaymentGatewayClient.java
+index 9dbfb40..0809006 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/client/PaymentGatewayClient.java
++++ b/src/main/java/com/chunbaetour/domain/payment/client/PaymentGatewayClient.java
+@@ -15,12 +15,17 @@ public interface PaymentGatewayClient {
+     // 결제 검증 — 콜백 수신 후 포트원에서 실제 결제 상태/금액 확인 (위변조 방지)
+     PortOnePaymentInfo verifyPayment(String paymentId);
+ 
+-    // 결제 취소(환불) — 관리자 환불 승인 시 포트원에 전액 취소 요청
+-    void cancelPayment(String pgTransactionId, Long amount, String reason);
++    // 결제 취소(환불) — 관리자 환불 승인 시 포트원에 전액 취소 요청.
++    // idempotencyKey: "refund-{refundId}" 형식으로 전달해 네트워크 타임아웃 후 재시도 시 이중 취소 방지.
++    void cancelPayment(String pgTransactionId, Long amount, String reason, String idempotencyKey);
+ 
+     record PortOnePaymentInfo(String status, Long totalAmount, Long cancelledAmount) {
+         public boolean isPaid() {
+             return "PAID".equals(status);
+         }
++
++        public boolean isCancelled() {
++            return "CANCELLED".equals(status);
++        }
+     }
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java b/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java
+index f129ea1..c00bbcb 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java
++++ b/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java
+@@ -61,11 +61,13 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
+     }
+ 
+     @Override
+-    public void cancelPayment(String pgTransactionId, Long amount, String reason) {
++    public void cancelPayment(String pgTransactionId, Long amount, String reason, String idempotencyKey) {
+         try {
+             portOneRestClient.post()
+                 .uri("/payments/{paymentId}/cancel", pgTransactionId)
+                 .header("Authorization", "PortOne " + properties.getSecret())
++                // refundId 기반 멱등키: 동일 환불 건 재시도 시 PortOne이 이미 처리한 요청을 중복 없이 반환
++                .header("Idempotency-Key", idempotencyKey)
+                 .body(new CancelRequest(properties.getStoreId(), reason, amount))
+                 .retrieve()
+                 .toBodilessEntity();
+diff --git a/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java b/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java
+index 2dfc30a..a0523a2 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java
++++ b/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java
+@@ -12,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
+ import jakarta.persistence.GenerationType;
+ import jakarta.persistence.Id;
+ import jakarta.persistence.Table;
++import java.time.LocalDateTime;
+ import lombok.AccessLevel;
+ import lombok.Builder;
+ import lombok.Getter;
+@@ -53,6 +54,14 @@ public class Refund extends BaseEntity {
+     @Column(name = "reject_reason", length = 500)
+     private String rejectReason;
+ 
++    // PG 취소 실패 후 자동 재시도 횟수 (최대 5회)
++    @Column(name = "retry_count", nullable = false)
++    private int retryCount = 0;
++
++    // 다음 재시도 가능 시각 (null이면 재시도 대상 아님)
++    @Column(name = "next_retry_at")
++    private LocalDateTime nextRetryAt;
++
+     @Builder
+     private Refund(Long paymentOrderId, Long userId, Long amount, String reason) {
+         if (amount == null || amount <= 0) {
+@@ -82,12 +91,47 @@ public class Refund extends BaseEntity {
+         this.status = RefundStatus.APPROVED;
+     }
+ 
+-    public void fail(String rejectReason) {
++    public void fail(String rejectReason, LocalDateTime nextRetryAt) {
+         if (this.status != RefundStatus.PENDING) {
+             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+         }
+         this.status = RefundStatus.FAILED;
+         this.rejectReason = rejectReason;
++        this.nextRetryAt = nextRetryAt;
++    }
++
++    /**
++     * 스케줄러 재시도 실패 시 다음 시도 시각 갱신.
++     * 지수 백오프 정책에 따라 nextRetryAt이 계산되어 전달됨.
++     */
++    public void recordRetryFailure(LocalDateTime nextRetryAt) {
++        this.retryCount++;
++        this.nextRetryAt = nextRetryAt;
++    }
++
++    /** 최대 재시도 횟수 초과 — 자동 처리 불가, 관리자 직접 확인 필요 상태로 전환. */
++    public void requireAdmin() {
++        if (this.status != RefundStatus.FAILED) {
++            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
++        }
++        this.status = RefundStatus.REQUIRES_ADMIN;
++        this.nextRetryAt = null;
++    }
++
++    /** 스케줄러 재시도 성공 시 FAILED → APPROVED 전환. */
++    public void approveRetry() {
++        if (this.status != RefundStatus.FAILED) {
++            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
++        }
++        this.status = RefundStatus.APPROVED;
++    }
++
++    /** 스케줄러가 PENDING 또는 FAILED 상태 환불을 APPROVED로 전환. */
++    public void approveFromScheduler() {
++        if (this.status != RefundStatus.PENDING && this.status != RefundStatus.FAILED) {
++            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
++        }
++        this.status = RefundStatus.APPROVED;
+     }
+ 
+     /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
+diff --git a/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java b/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java
+index 48b56c5..1967242 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java
++++ b/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java
+@@ -3,6 +3,7 @@ package com.chunbaetour.domain.payment.repository;
+ import com.chunbaetour.domain.payment.entity.Refund;
+ import com.chunbaetour.domain.payment.type.RefundStatus;
+ import jakarta.persistence.LockModeType;
++import java.time.LocalDateTime;
+ import java.util.List;
+ import java.util.Optional;
+ import org.springframework.data.domain.Pageable;
+@@ -31,6 +32,27 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
+     @Query("SELECT r FROM Refund r WHERE (:cursorId IS NULL OR r.id < :cursorId) ORDER BY r.id DESC")
+     List<Refund> findWithCursor(@Param("cursorId") Long cursorId, Pageable pageable);
+ 
++    /**
++     * 스케줄러 재시도 대상 조회 — FAILED이면서 next_retry_at이 도래하고 최대 횟수 미만인 건만.
++     * idx_refunds_retry (status, next_retry_at) 인덱스 사용.
++     */
++    @Query("SELECT r FROM Refund r WHERE r.status = :status " +
++           "AND r.retryCount < :maxRetryCount " +
++           "AND r.nextRetryAt IS NOT NULL " +
++           "AND r.nextRetryAt <= :now " +
++           "ORDER BY r.nextRetryAt ASC")
++    List<Refund> findRetryableRefunds(
++            @Param("now") LocalDateTime now,
++            @Param("maxRetryCount") int maxRetryCount,
++            @Param("status") RefundStatus status,
++            Pageable pageable);
++
++    /** 스케줄러 최초 처리 대상 — PENDING 상태 환불, 생성 순으로 처리 */
++    @Query("SELECT r FROM Refund r WHERE r.status = :status ORDER BY r.createdAt ASC")
++    List<Refund> findByStatusOrderByCreatedAt(
++            @Param("status") RefundStatus status,
++            Pageable pageable);
++
+     /** 사용자 환불 목록 — status/cursor 모두 선택적 (null이면 조건 미적용) */
+     @Query("SELECT r FROM Refund r WHERE r.userId = :userId " +
+            "AND (:status IS NULL OR r.status = :status) " +
+diff --git a/src/main/java/com/chunbaetour/domain/payment/service/AdminRefundService.java b/src/main/java/com/chunbaetour/domain/payment/service/AdminRefundService.java
+index 70d909b..b01004f 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/service/AdminRefundService.java
++++ b/src/main/java/com/chunbaetour/domain/payment/service/AdminRefundService.java
+@@ -77,7 +77,8 @@ public class AdminRefundService {
+         paymentGatewayClient.cancelPayment(
+             order.getOrderUid(),
+             refund.getAmount(),
+-            refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
++            refund.getReason() != null ? refund.getReason() : "관리자 환불 승인",
++            "refund-" + refund.getId()
+         );
+         // 승인 완료된 환불 정보를 DTO로 변환해서 반환
+         return RefundDetailResponse.from(refund);
+diff --git a/src/main/java/com/chunbaetour/domain/payment/service/RefundRetryScheduler.java b/src/main/java/com/chunbaetour/domain/payment/service/RefundRetryScheduler.java
+new file mode 100644
+index 0000000..bf86c3b
+--- /dev/null
++++ b/src/main/java/com/chunbaetour/domain/payment/service/RefundRetryScheduler.java
+@@ -0,0 +1,145 @@
++package com.chunbaetour.domain.payment.service;
++
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
++import com.chunbaetour.domain.payment.entity.Refund;
++import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
++import com.chunbaetour.domain.payment.repository.RefundRepository;
++import com.chunbaetour.domain.payment.type.RefundStatus;
++import java.time.Clock;
++import java.time.LocalDateTime;
++import lombok.RequiredArgsConstructor;
++import lombok.extern.slf4j.Slf4j;
++import org.springframework.data.domain.PageRequest;
++import org.springframework.scheduling.annotation.Scheduled;
++import org.springframework.stereotype.Component;
++import org.springframework.transaction.support.TransactionTemplate;
++
++@Slf4j
++@Component
++@RequiredArgsConstructor
++public class RefundRetryScheduler {
++
++    /**
++     * 지수 백오프 정책: 재시도 횟수에 따라 다음 시도 간격을 점진적으로 늘린다.
++     * - 첫 재시도(1분): 충전 직후 실수로 빠른 환불을 기대하는 사용자 경험 고려.
++     * - 이후 간격 증가: 대부분의 PG 일시 장애가 5분 내 해결되고, 그 이후는 더 심각한 장애일 가능성이 높음.
++     * - 서버/PG 부하 분산: 장애 상황에서 FAILED 건이 쌓여도 동시에 몰리지 않도록 간격을 늘린다.
++     * - 5회 초과 시 자동 재시도 중단 → 관리자가 직접 확인.
++     */
++    private static final int[] RETRY_INTERVALS_MINUTES = {1, 5, 15, 60, 240};
++    private static final int MAX_RETRY_COUNT = 5;
++
++    // 한 번 실행에 처리할 최대 건수 — 병렬 처리 없이 순차 실행해 PG 동시 호출 폭발 방지
++    private static final int BATCH_SIZE = 20;
++
++    private final RefundRepository refundRepository;
++    private final PaymentOrderRepository paymentOrderRepository;
++    private final PaymentGatewayClient paymentGatewayClient;
++    private final RefundService refundService;
++    private final TransactionTemplate transactionTemplate;
++    private final Clock clock;
++
++    /**
++     * PENDING 환불 최초 처리.
++     * requestRefund()에서 PG 호출 없이 PENDING으로 접수된 환불을 1분마다 처리한다.
++     * 처음부터 cancelPayment를 배치로 처리해 API 응답 속도와 장애 격리를 보장한다.
++     */
++    @Scheduled(fixedDelay = 60_000)
++    public void processPendingRefunds() {
++        var pageable = PageRequest.of(0, BATCH_SIZE);
++        var pending = refundRepository.findByStatusOrderByCreatedAt(RefundStatus.PENDING, pageable);
++
++        if (pending.isEmpty()) {
++            return;
++        }
++        log.info("환불 처리 스케줄러 실행: {}건 대상", pending.size());
++
++        for (Refund refund : pending) {
++            processSingleRefund(refund);
++        }
++    }
++
++    /**
++     * FAILED 환불 재시도.
++     * 지수 백오프 정책: next_retry_at 조건으로 실제 PG 호출은 도래한 건만 처리.
++     * 스케줄러 주기(1분) ≠ 재시도 간격.
++     */
++    @Scheduled(fixedDelay = 60_000)
++    public void retryFailedRefunds() {
++        LocalDateTime now = LocalDateTime.now(clock);
++        var pageable = PageRequest.of(0, BATCH_SIZE);
++        var retryable = refundRepository.findRetryableRefunds(now, MAX_RETRY_COUNT, RefundStatus.FAILED, pageable);
++
++        if (retryable.isEmpty()) {
++            return;
++        }
++        log.info("환불 재시도 스케줄러 실행: {}건 대상", retryable.size());
++
++        for (Refund refund : retryable) {
++            processSingleRefund(refund);
++        }
++    }
++
++    private void processSingleRefund(Refund refund) {
++        var order = paymentOrderRepository.findById(refund.getPaymentOrderId()).orElse(null);
++        if (order == null) {
++            log.warn("환불 처리 실패: paymentOrderId={} 주문 없음, refundId={}",
++                    refund.getPaymentOrderId(), refund.getId());
++            return;
++        }
++
++        String orderUid = order.getOrderUid();
++        try {
++            paymentGatewayClient.cancelPayment(
++                    orderUid, refund.getAmount(), refund.getReason(), "refund-" + refund.getId());
++        } catch (RuntimeException e) {
++            // cancelPayment 실패 시 PG 상태 재확인 (타임아웃 후 실제로 취소됐을 수 있음)
++            try {
++                PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(orderUid);
++                if (info.isCancelled()) {
++                    completeRefund(refund, orderUid);
++                    return;
++                }
++            } catch (RuntimeException ignored) {
++                // PG 상태 조회도 실패 → 다음 시도로 넘김
++            }
++            recordFailure(refund);
++            log.warn("환불 PG 호출 실패 (retryCount={}): refundId={}, orderUid={}",
++                    refund.getRetryCount() + 1, refund.getId(), orderUid);
++            return;
++        }
++
++        completeRefund(refund, orderUid);
++        log.info("환불 처리 완료: refundId={}, orderUid={}", refund.getId(), orderUid);
++    }
++
++    private void completeRefund(Refund refund, String orderUid) {
++        transactionTemplate.executeWithoutResult(status ->
++                refundService.completeSchedulerRetry(refund.getId(), orderUid, refund.getAmount()));
++    }
++
++    private void recordFailure(Refund refund) {
++        transactionTemplate.executeWithoutResult(status -> {
++            // detached entity를 DB에서 다시 조회해 Hibernate 변경 추적 활성화
++            Refund managed = refundRepository.findById(refund.getId()).orElse(null);
++            if (managed == null) return;
++
++            if (managed.getStatus() == RefundStatus.PENDING) {
++                // PENDING 첫 번째 PG 실패 → FAILED 전환, 첫 재시도 1분 후 예약
++                LocalDateTime firstRetryAt = LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[0]);
++                managed.fail("PORTONE_CANCEL_FAILED", firstRetryAt);
++            } else if (managed.getStatus() == RefundStatus.FAILED) {
++                // FAILED 재시도 실패 → retryCount 증가, 다음 재시도 시각 갱신
++                int nextCount = managed.getRetryCount() + 1;
++                if (nextCount >= MAX_RETRY_COUNT) {
++                    // 최대 재시도 횟수 초과 → 자동 처리 불가, 관리자 직접 확인 필요
++                    managed.requireAdmin();
++                } else {
++                    LocalDateTime nextRetryAt = LocalDateTime.now(clock).plusMinutes(RETRY_INTERVALS_MINUTES[nextCount]);
++                    managed.recordRetryFailure(nextRetryAt);
++                }
++            }
++        });
++    }
++}
+diff --git a/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java b/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java
+index f4dcd93..4edf72b 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java
++++ b/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java
+@@ -4,13 +4,11 @@ import com.chunbaetour.domain.common.error.BusinessException;
+ import com.chunbaetour.domain.common.error.ErrorCode;
+ import com.chunbaetour.domain.common.response.CursorPageResponse;
+ import com.chunbaetour.domain.common.util.CursorUtils;
+-import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+ import com.chunbaetour.domain.payment.dto.request.RefundRequest;
+ import com.chunbaetour.domain.payment.dto.response.RefundResponse;
+ import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
+ import com.chunbaetour.domain.payment.entity.PaymentOrder;
+ import com.chunbaetour.domain.payment.entity.Refund;
+-import com.chunbaetour.domain.payment.exception.PaymentException;
+ import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+ import com.chunbaetour.domain.payment.repository.RefundRepository;
+ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
+@@ -37,94 +35,89 @@ public class RefundService {
+ 
+     private static final int REFUND_PERIOD_DAYS = 7;
+     private static final String UK_REFUNDS_PAYMENT_ORDER_ID = "uk_refunds_payment_order_id";
++    private static final String PARTIAL_REFUND_REJECT_REASON = "부분환불은 불가합니다";
+ 
+     private final PaymentOrderRepository paymentOrderRepository;
+     private final RefundRepository refundRepository;
+     private final WalletRepository walletRepository;
+-    private final PaymentGatewayClient paymentGatewayClient;
+     private final WalletService walletService;
+     private final Clock clock;
+     private final TransactionTemplate transactionTemplate;
+ 
+-    // 외부 PortOne API 호출 중 DB 트랜잭션/락을 오래 잡지 않도록 메서드 전체 트랜잭션을 사용하지 않는다.
+-    // 필요한 DB 작업은 TransactionTemplate으로 짧게 나눠 실행한다.
++    /**
++     * 환불 요청 접수.
++     *
++     * <p>전액환불 정책: 잔액 == 충전액인 경우만 PENDING으로 접수, 스케줄러가 PG 취소 처리.
++     * 잔액이 부족한 경우(부분 사용) 즉시 REJECTED 기록을 남기고 에러 반환.
++     * PG 직접 호출 없이 DB 저장만 수행해 응답 속도와 장애 격리를 보장한다.
++     */
+     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
+-        // 환불 가능 여부를 먼저 짧은 트랜잭션에서 검증하고 PENDING 환불 이력을 생성한다.
+-        PreparedRefund preparation = transactionTemplate.execute(status ->
+-                prepareRefund(userId, orderId, request.reason()));
++        Refund refund = transactionTemplate.execute(status ->
++                prepareRefundRecord(userId, orderId, request.reason()));
+ 
+-        // 이미 승인된 환불이면 PortOne을 다시 호출하지 않고 기존 환불 응답을 반환한다.
+-        if (preparation.alreadyApprovedRefund() != null) {
+-            return RefundResponse.from(preparation.alreadyApprovedRefund());
+-        }
+-
+-        try {
+-            // PortOne 원결제 취소 호출은 DB/Wallet 락을 잡지 않은 상태에서 실행한다.
+-            paymentGatewayClient.cancelPayment(preparation.orderUid(), preparation.amount(), preparation.reason());
+-        } catch (RuntimeException e) {
+-            // PortOne 취소 실패나 예상치 못한 런타임 예외는 환불 이력만 FAILED로 남긴다.
+-            transactionTemplate.executeWithoutResult(status -> markRefundFailed(preparation.refundId()));
+-            throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
++        // 부분환불 거절 — REJECTED 기록은 저장됨, 사용자에게 에러 반환
++        if (refund.getStatus() == RefundStatus.REJECTED) {
++            throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+         }
+-
+-        // PortOne 취소 성공 후 짧은 트랜잭션에서 주문 상태와 엽전 회수를 확정한다.
+-        return transactionTemplate.execute(status -> completeRefundAfterGatewayCancel(preparation));
++        // PENDING 접수 완료 — 스케줄러가 처리
++        return RefundResponse.from(refund);
+     }
+ 
+-    private PreparedRefund prepareRefund(Long userId, String orderId, String reason) {
+-        // 결제 주문을 비관적 락으로 조회해 동시에 같은 주문 환불이 처리되지 않게 한다.
++    private Refund prepareRefundRecord(Long userId, String orderId, String reason) {
++        // 결제 주문 비관적 락 조회 — 동시 환불 요청 방지
+         PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+ 
+-        // 요청 사용자가 결제 주문 소유자가 아니면 환불 요청을 거절한다.
+         if (!order.getUserId().equals(userId)) {
+             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+         }
+ 
+-        // 기존 환불 이력이 있는지 확인해 중복 환불 요청을 방어한다.
++        // 최근 환불 이력 확인
+         Refund existingRefund = refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(order.getId()).orElse(null);
+-        // 주문이 이미 환불 완료 상태라면 APPROVED 환불 이력만 멱등 성공으로 반환한다.
++
++        // 이미 환불 완료된 주문 — 멱등 응답
+         if (order.getStatus() == PaymentOrderStatus.REFUNDED) {
+             if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
+-                return PreparedRefund.alreadyApproved(existingRefund);
++                return existingRefund;
+             }
+             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+         }
+ 
+-        // 결제 완료 주문만 사용자 환불 대상이다.
++        // COMPLETED 주문만 환불 가능
+         if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
+             throw new BusinessException(ErrorCode.REFUND_NOT_ELIGIBLE);
+         }
+ 
+-        // 충전일 기준 환불 가능 기간이 지났으면 환불을 거절한다.
++        // 환불 가능 기간 검증
+         if (order.getCreatedAt().isBefore(LocalDateTime.now(clock).minusDays(REFUND_PERIOD_DAYS))) {
+             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
+         }
+ 
+-        // PortOne 호출 전 1차 잔액 검증만 수행한다. 실제 차감은 PG 성공 후 락을 잡고 다시 처리한다.
+-        Wallet wallet = walletRepository.findByUserId(order.getUserId())
+-                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+-        if (wallet.getBalance() < order.getAmount()) {
+-            throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+-        }
+-
+-        // 기존 환불이 이미 승인된 상태면 같은 결과를 반환하고 PortOne 중복 취소를 막는다.
+-        if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
+-            return PreparedRefund.alreadyApproved(existingRefund);
+-        }
+-        // 기존 환불이 대기 중이면 중복 요청으로 판단한다.
++        // PENDING 중복 요청 방지
+         if (existingRefund != null && existingRefund.getStatus() == RefundStatus.PENDING) {
+             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+         }
+ 
++        // 잔액 확인 — 전액 환불 정책
++        Wallet wallet = walletRepository.findByUserId(order.getUserId())
++                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
++
+         try {
+-            // PortOne 호출 전에 PENDING 환불 이력을 먼저 생성해 실패/재시도 상태를 추적할 수 있게 한다.
+             Refund refund = Refund.create(order.getId(), userId, order.getAmount(), reason);
++
++            if (wallet.getBalance() < order.getAmount()) {
++                // 부분 사용 감지 → 즉시 REJECTED 저장, 이력 보존
++                refund.reject(PARTIAL_REFUND_REJECT_REASON);
++                refundRepository.save(refund);
++                return refund; // REJECTED 상태
++            }
++
++            // 전액 잔액 — PENDING 접수
+             refundRepository.saveAndFlush(refund);
+-            return PreparedRefund.pending(order.getOrderUid(), order.getAmount(), refund.getId(), reason);
++            return refund; // PENDING 상태
+         } catch (DataIntegrityViolationException e) {
+-            // 동일 주문 환불 동시 요청으로 유니크 제약이 터지면 중복 환불 요청으로 변환한다.
++            // 동시 요청 UK 위반 → 중복 요청으로 변환
+             Throwable cause = e;
+             while (cause != null) {
+                 if (cause instanceof ConstraintViolationException cve
+@@ -137,54 +130,37 @@ public class RefundService {
+         }
+     }
+ 
+-    private void markRefundFailed(Long refundId) {
+-        // PortOne 취소 실패 시 아직 대기 중인 환불만 FAILED로 전환한다.
+-        refundRepository.findByIdWithLock(refundId)
+-                .ifPresent(refund -> {
+-                    if (refund.getStatus() == RefundStatus.PENDING) {
+-                        refund.fail("PORTONE_CANCEL_FAILED");
+-                    }
+-                });
+-    }
+-
+-    private RefundResponse completeRefundAfterGatewayCancel(PreparedRefund preparation) {
+-        // PortOne 취소 성공 후 주문을 다시 잠금 조회해 최신 상태 기준으로 확정 처리한다.
+-        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(preparation.orderUid())
++    /**
++     * 스케줄러 PG 취소 성공 후 환불 완료 처리.
++     * PENDING(최초 처리) 또는 FAILED(재시도) 상태 환불을 APPROVED로 전환하고 엽전을 회수한다.
++     */
++    @Transactional
++    public void completeSchedulerRetry(Long refundId, String orderUid, Long amount) {
++        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderUid)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+-        // 환불 이력도 잠금 조회해 중복 확정 처리를 방지한다.
+-        Refund refund = refundRepository.findByIdWithLock(preparation.refundId())
++        Refund refund = refundRepository.findByIdWithLock(refundId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+ 
+-        // 환불이 이미 승인 상태라면 기존 승인 응답을 반환한다.
+         if (refund.getStatus() == RefundStatus.APPROVED) {
+-            return RefundResponse.from(refund);
++            return; // 이미 처리됨 (멱등)
+         }
+-        // PENDING이 아닌 환불은 현재 확정 처리할 수 없는 상태다.
+-        if (refund.getStatus() != RefundStatus.PENDING) {
+-            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
++        if (refund.getStatus() != RefundStatus.PENDING && refund.getStatus() != RefundStatus.FAILED) {
++            return; // 처리 불가 상태
+         }
+ 
+-        // 아직 앱 DB에서 회수 가능한 주문 상태라면 가능한 엽전을 회수한다.
++        // PG 취소 완료 — 가능한 엽전 회수
+         if (order.getStatus() == PaymentOrderStatus.COMPLETED
+                 || order.getStatus() == PaymentOrderStatus.PARTIAL_CANCELLED) {
+             long reclaimed = walletService.reclaimAvailableForRefund(
+-                    order.getUserId(),
+-                    order.getAmount(),
+-                    order.getId()
+-            );
+-            // PARTIAL_CANCELLED: PG 부분취소 이후 관리자 환불이 겹친 동시성 경합 케이스.
+-            // order.refund()는 COMPLETED만 허용하므로 throw → PG 취소는 이미 성공, reclaim은 롤백 → 정산 불일치.
+-            // 금액 복잡성(PG 부분취소분 중복 가능)으로 관리자 확인 상태로 남긴다.
+-            if (reclaimed == order.getAmount() && order.getStatus() == PaymentOrderStatus.COMPLETED) {
++                    order.getUserId(), amount, order.getId());
++            // PARTIAL_CANCELLED: PG 부분취소와 환불이 겹친 동시성 케이스 — 관리자 확인
++            if (reclaimed == amount && order.getStatus() == PaymentOrderStatus.COMPLETED) {
+                 order.refund();
+             } else {
+                 order.requireAdjustment();
+             }
+         }
+-
+-        // PortOne 취소는 성공했으므로 환불 이력은 승인 완료로 확정한다.
+-        refund.approve();
+-        return RefundResponse.from(refund);
++        refund.approveFromScheduler();
+     }
+ 
+     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
+@@ -206,36 +182,13 @@ public class RefundService {
+ 
+     @Transactional
+     public void cancelRefund(Long userId, Long refundId) {
+-        // 환불 요청을 잠금 조회해 관리자 승인과 사용자 취소가 동시에 처리되지 않게 한다.
+         Refund refund = refundRepository.findByIdWithLock(refundId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+ 
+-        // 본인 환불 요청이 아니면 취소할 수 없다.
+         if (!refund.getUserId().equals(userId)) {
+             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+         }
+ 
+-        // PENDING 환불 요청만 취소 상태로 전환한다.
+         refund.cancel();
+     }
+-
+-    // 환불 준비 단계에서 만든 서비스 내부 전달 객체다.
+-    // PortOne 호출에 필요한 주문 정보와, 이미 승인된 환불이면 기존 Refund 엔티티를 함께 담는다.
+-    private record PreparedRefund(
+-            String orderUid,
+-            Long amount,
+-            Long refundId,
+-            String reason,
+-            Refund alreadyApprovedRefund
+-    ) {
+-        private static PreparedRefund pending(String orderUid, Long amount, Long refundId, String reason) {
+-            // PortOne 취소 호출에 필요한 주문 식별자와 환불 이력 id를 담아 반환한다.
+-            return new PreparedRefund(orderUid, amount, refundId, reason, null);
+-        }
+-
+-        private static PreparedRefund alreadyApproved(Refund refund) {
+-            // 이미 승인된 환불은 외부 PG 호출 없이 반환할 기존 환불 이력만 담는다.
+-            return new PreparedRefund(null, null, null, null, refund);
+-        }
+-    }
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java b/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java
+index e10c843..7412c8a 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java
++++ b/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java
+@@ -1,9 +1,10 @@
+ package com.chunbaetour.domain.payment.type;
+ 
+ public enum RefundStatus {
+-    PENDING,
+-    APPROVED,
+-    REJECTED,
+-    CANCELLED,
+-    FAILED
++    PENDING,        // 환불 요청 접수 — 스케줄러가 PG 취소 처리 대기 중
++    APPROVED,       // 환불 완료 — PG 취소 성공, 엽전 회수 완료
++    REJECTED,       // 환불 불가 — 부분 사용 등 정책상 거절 (이력 보존용)
++    CANCELLED,      // 사용자 철회 — PG 호출 전 본인이 요청 취소
++    FAILED,         // PG 취소 실패 — 재시도 스케줄러 처리 대기 중
++    REQUIRES_ADMIN  // 재시도 횟수 초과 — 자동 처리 불가, 관리자 직접 확인 필요
+ }
+diff --git a/src/main/resources/db/migration/V202606021200__refund_retry_fields.sql b/src/main/resources/db/migration/V202606021200__refund_retry_fields.sql
+new file mode 100644
+index 0000000..5ffcd43
+--- /dev/null
++++ b/src/main/resources/db/migration/V202606021200__refund_retry_fields.sql
+@@ -0,0 +1,4 @@
++ALTER TABLE refunds
++    ADD COLUMN retry_count   INT          NOT NULL DEFAULT 0,
++    ADD COLUMN next_retry_at DATETIME(6)  NULL,
++    ADD INDEX idx_refunds_retry (status, next_retry_at);
+diff --git a/src/main/resources/db/migration/V202606021430__refund_status_requires_admin.sql b/src/main/resources/db/migration/V202606021430__refund_status_requires_admin.sql
+new file mode 100644
+index 0000000..0e8d150
+--- /dev/null
++++ b/src/main/resources/db/migration/V202606021430__refund_status_requires_admin.sql
+@@ -0,0 +1,9 @@
++ALTER TABLE refunds
++    MODIFY COLUMN status ENUM(
++        'APPROVED',
++        'CANCELLED',
++        'FAILED',
++        'PENDING',
++        'REJECTED',
++        'REQUIRES_ADMIN'
++    ) NOT NULL;
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceIntegrationTest.java b/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceIntegrationTest.java
+index 49199d6..491a6eb 100644
+--- a/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceIntegrationTest.java
++++ b/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceIntegrationTest.java
+@@ -102,7 +102,7 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
+         PaymentOrder order = saveCompletedOrder();
+         saveWalletWithBalance(AMOUNT);
+         Refund refund = savePendingRefund(order.getId());
+-        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
++        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+ 
+         RefundDetailResponse response = adminRefundService.approveRefund(refund.getId());
+ 
+@@ -117,7 +117,7 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
+         Wallet savedWallet = walletRepository.findByUserId(USER_ID).orElseThrow();
+         assertThat(savedWallet.getBalance()).isZero();
+ 
+-        verify(paymentGatewayClient).cancelPayment(any(), any(), any());
++        verify(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+     }
+ 
+     @Test
+@@ -127,7 +127,7 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
+         saveWalletWithBalance(AMOUNT);
+         Refund refund = savePendingRefund(order.getId());
+         willThrow(new RuntimeException("PG timeout"))
+-                .given(paymentGatewayClient).cancelPayment(any(), any(), any());
++                .given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+ 
+         assertThatThrownBy(() -> adminRefundService.approveRefund(refund.getId()))
+                 .isInstanceOf(RuntimeException.class)
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceTest.java b/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceTest.java
+index 8dd9a6b..3571d6c 100644
+--- a/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceTest.java
++++ b/src/test/java/com/chunbaetour/domain/payment/service/AdminRefundServiceTest.java
+@@ -83,12 +83,12 @@ class AdminRefundServiceTest {
+         given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+         willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
+-        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
++        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+ 
+         RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID);
+ 
+         verify(walletService).reclaimForRefund(USER_ID, AMOUNT, ORDER_ID);
+-        verify(paymentGatewayClient).cancelPayment(eq("pg-txn-123"), eq(AMOUNT), any());
++        verify(paymentGatewayClient).cancelPayment(eq("uid-1"), eq(AMOUNT), any(), any());
+         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+         assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
+     }
+@@ -147,7 +147,7 @@ class AdminRefundServiceTest {
+         given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+         willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
+         willThrow(new RuntimeException("PG timeout"))
+-                .given(paymentGatewayClient).cancelPayment(any(), any(), any());
++                .given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+ 
+         assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                 .isInstanceOf(RuntimeException.class)
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/RefundRetrySchedulerIntegrationTest.java b/src/test/java/com/chunbaetour/domain/payment/service/RefundRetrySchedulerIntegrationTest.java
+new file mode 100644
+index 0000000..b570ea6
+--- /dev/null
++++ b/src/test/java/com/chunbaetour/domain/payment/service/RefundRetrySchedulerIntegrationTest.java
+@@ -0,0 +1,195 @@
++package com.chunbaetour.domain.payment.service;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.BDDMockito.given;
++import static org.mockito.BDDMockito.willDoNothing;
++import static org.mockito.BDDMockito.willThrow;
++import static org.mockito.Mockito.verify;
++
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
++import com.chunbaetour.domain.payment.entity.PaymentOrder;
++import com.chunbaetour.domain.payment.entity.Refund;
++import com.chunbaetour.domain.payment.exception.PaymentException;
++import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
++import com.chunbaetour.domain.payment.repository.RefundRepository;
++import com.chunbaetour.domain.payment.type.PaymentMethod;
++import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
++import com.chunbaetour.domain.payment.type.RefundStatus;
++import com.chunbaetour.domain.common.error.ErrorCode;
++import com.chunbaetour.domain.support.AbstractIntegrationTest;
++import com.chunbaetour.domain.yeopjeon.entity.Wallet;
++import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
++import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
++import org.springframework.test.util.ReflectionTestUtils;
++import java.time.Clock;
++import java.time.LocalDateTime;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.test.context.SpringBootTest;
++import org.springframework.test.context.TestPropertySource;
++import org.springframework.test.context.bean.override.mockito.MockitoBean;
++
++@SpringBootTest
++@TestPropertySource(properties = {
++        "portone.secret=test-secret",
++        "portone.webhook-secret=test-webhook-secret",
++        "portone.store-id=test-store",
++        "portone.base-url=http://localhost:9999",
++        "portone.channel.card=test-channel-card"
++})
++class RefundRetrySchedulerIntegrationTest extends AbstractIntegrationTest {
++
++    private static final Long USER_ID = 200L;
++    private static final String ORDER_UID = "order-retry-integration-1";
++    private static final Long AMOUNT = 10_000L;
++
++    @Autowired private RefundRetryScheduler refundRetryScheduler;
++    @Autowired private PaymentOrderRepository paymentOrderRepository;
++    @Autowired private RefundRepository refundRepository;
++    @Autowired private WalletRepository walletRepository;
++    @Autowired private YeopjeonHistoryRepository yeopjeonHistoryRepository;
++
++    @MockitoBean private PaymentGatewayClient paymentGatewayClient;
++
++    private PaymentOrder savedOrder;
++
++    @BeforeEach
++    void setup() {
++        // 충전 완료된 사용자: 지갑 잔액 = 충전 금액
++        Wallet wallet = Wallet.create(USER_ID);
++        ReflectionTestUtils.setField(wallet, "balance", AMOUNT);
++        walletRepository.save(wallet);
++        PaymentOrder order = PaymentOrder.create(ORDER_UID, USER_ID, AMOUNT, "idem-key-retry", PaymentMethod.CARD, "pg-order-retry");
++        order.complete("tx-retry-1");
++        savedOrder = paymentOrderRepository.save(order);
++    }
++
++    @AfterEach
++    void cleanup() {
++        yeopjeonHistoryRepository.deleteAll();
++        refundRepository.deleteAll();
++        paymentOrderRepository.deleteAll();
++        walletRepository.deleteAll();
++    }
++
++    private Refund createFailedRefund() {
++        Refund refund = Refund.create(savedOrder.getId(), USER_ID, AMOUNT, "user request");
++        // 재시도 시각이 이미 도래한 FAILED 환불 생성
++        refund.fail("PORTONE_CANCEL_FAILED", LocalDateTime.now(Clock.systemUTC()).minusMinutes(5));
++        return refundRepository.save(refund);
++    }
++
++    private Refund createPendingRefund() {
++        Refund refund = Refund.create(savedOrder.getId(), USER_ID, AMOUNT, "user request");
++        return refundRepository.save(refund); // PENDING 상태 저장
++    }
++
++    @Test
++    @DisplayName("[비동기 처리] PENDING 환불 → 스케줄러 cancelPayment → APPROVED, wallet 차감, order REFUNDED")
++    void processPendingRefunds_cancelSucceeds_approvesRefund() {
++        Refund refund = createPendingRefund();
++        willDoNothing().given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++
++        refundRetryScheduler.processPendingRefunds();
++
++        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
++        PaymentOrder reloadedOrder = paymentOrderRepository.findByOrderUid(ORDER_UID).orElseThrow();
++        Wallet wallet = walletRepository.findByUserId(USER_ID).orElseThrow();
++
++        verify(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.APPROVED);
++        assertThat(reloadedOrder.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
++        assertThat(wallet.getBalance()).isZero();
++    }
++
++    @Test
++    @DisplayName("[비동기 처리] PENDING 환불 cancelPayment 실패 → FAILED 전환, 재시도 스케줄러 대상 등록")
++    void processPendingRefunds_cancelFails_marksAsFailed() {
++        Refund refund = createPendingRefund();
++        willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++        given(paymentGatewayClient.verifyPayment(ORDER_UID))
++                .willReturn(new PortOnePaymentInfo("PAID", AMOUNT, null));
++
++        refundRetryScheduler.processPendingRefunds();
++
++        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
++        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.FAILED);
++        assertThat(reloaded.getNextRetryAt()).isNotNull();
++    }
++
++    @Test
++    @DisplayName("[장애 복구] FAILED 환불 재시도: cancelPayment 성공 → refund APPROVED, wallet 차감, order REFUNDED")
++    void retryFailedRefunds_cancelSucceeds_completesRefund() {
++        Refund refund = createFailedRefund();
++        willDoNothing().given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++
++        refundRetryScheduler.retryFailedRefunds();
++
++        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
++        PaymentOrder reloadedOrder = paymentOrderRepository.findByOrderUid(ORDER_UID).orElseThrow();
++        Wallet wallet = walletRepository.findByUserId(USER_ID).orElseThrow();
++
++        verify(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.APPROVED);
++        assertThat(reloadedOrder.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
++        assertThat(wallet.getBalance()).isZero();
++    }
++
++    @Test
++    @DisplayName("[장애 복구] cancelPayment 실패 + PG CANCELLED → 타임아웃 후 재시도 시 환불 완료 처리")
++    void retryFailedRefunds_cancelFails_butPGAlreadyCancelled_completesRefund() {
++        // 시나리오: 이전 시도에서 cancelPayment 타임아웃 → PG는 취소 완료, DB는 FAILED.
++        // 재시도 시 cancelPayment가 "이미 취소됨" 에러 반환 → verifyPayment CANCELLED → 환불 완료.
++        Refund refund = createFailedRefund();
++        willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++        given(paymentGatewayClient.verifyPayment(ORDER_UID))
++                .willReturn(new PortOnePaymentInfo("CANCELLED", AMOUNT, AMOUNT));
++
++        refundRetryScheduler.retryFailedRefunds();
++
++        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
++        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.APPROVED);
++    }
++
++    @Test
++    @DisplayName("[재시도 실패] cancelPayment + verifyPayment 모두 실패 → retryCount 증가, FAILED 유지")
++    void retryFailedRefunds_allCallsFail_incrementsRetryCount() {
++        Refund refund = createFailedRefund();
++        willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .given(paymentGatewayClient).cancelPayment(eq(ORDER_UID), eq(AMOUNT), any(), any());
++        given(paymentGatewayClient.verifyPayment(ORDER_UID))
++                .willThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE));
++
++        refundRetryScheduler.retryFailedRefunds();
++
++        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
++        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.FAILED);
++        assertThat(reloaded.getRetryCount()).isEqualTo(1);
++        // 다음 재시도 시각(5분 후)이 설정됨
++        assertThat(reloaded.getNextRetryAt()).isAfter(LocalDateTime.now(Clock.systemUTC()));
++    }
++
++    @Test
++    @DisplayName("next_retry_at 미도래 건은 스케줄러 대상에서 제외")
++    void retryFailedRefunds_futureNextRetryAt_skipsRefund() {
++        Refund refund = Refund.create(savedOrder.getId(), USER_ID, AMOUNT, "user request");
++        // 5분 후 재시도 예정 — 아직 도래 안 함
++        refund.fail("PORTONE_CANCEL_FAILED", LocalDateTime.now(Clock.systemUTC()).plusMinutes(5));
++        refundRepository.save(refund);
++
++        refundRetryScheduler.retryFailedRefunds();
++
++        // PG 호출 없어야 함
++        verify(paymentGatewayClient, org.mockito.Mockito.never()).cancelPayment(any(), any(), any(), any());
++        Refund reloaded = refundRepository.findById(refund.getId()).orElseThrow();
++        assertThat(reloaded.getStatus()).isEqualTo(RefundStatus.FAILED);
++    }
++}
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/RefundRetrySchedulerTest.java b/src/test/java/com/chunbaetour/domain/payment/service/RefundRetrySchedulerTest.java
+new file mode 100644
+index 0000000..920eeae
+--- /dev/null
++++ b/src/test/java/com/chunbaetour/domain/payment/service/RefundRetrySchedulerTest.java
+@@ -0,0 +1,207 @@
++package com.chunbaetour.domain.payment.service;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.BDDMockito.given;
++import static org.mockito.Mockito.never;
++import static org.mockito.Mockito.verify;
++
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient.PortOnePaymentInfo;
++import com.chunbaetour.domain.payment.entity.PaymentOrder;
++import com.chunbaetour.domain.payment.entity.Refund;
++import com.chunbaetour.domain.payment.exception.PaymentException;
++import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
++import com.chunbaetour.domain.payment.repository.RefundRepository;
++import com.chunbaetour.domain.payment.type.PaymentMethod;
++import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
++import com.chunbaetour.domain.payment.type.RefundStatus;
++import com.chunbaetour.domain.common.error.ErrorCode;
++import java.time.Clock;
++import java.time.Instant;
++import java.time.LocalDateTime;
++import java.time.ZoneId;
++import java.util.List;
++import java.util.Optional;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.DisplayName;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.extension.ExtendWith;
++import org.mockito.InjectMocks;
++import org.mockito.Mock;
++import org.mockito.junit.jupiter.MockitoExtension;
++import org.springframework.data.domain.PageRequest;
++import org.springframework.test.util.ReflectionTestUtils;
++import org.springframework.transaction.support.TransactionTemplate;
++
++@ExtendWith(MockitoExtension.class)
++class RefundRetrySchedulerTest {
++
++    @Mock private RefundRepository refundRepository;
++    @Mock private PaymentOrderRepository paymentOrderRepository;
++    @Mock private PaymentGatewayClient paymentGatewayClient;
++    @Mock private RefundService refundService;
++    @Mock private TransactionTemplate transactionTemplate;
++    @Mock private Clock clock;
++
++    @InjectMocks
++    private RefundRetryScheduler scheduler;
++
++    @BeforeEach
++    void setUp() {
++        org.mockito.Mockito.lenient().when(clock.instant()).thenReturn(Instant.parse("2026-06-02T12:00:00Z"));
++        org.mockito.Mockito.lenient().when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
++        // TransactionTemplate: 콜백 즉시 실행
++        org.mockito.Mockito.lenient().doAnswer(inv -> {
++            inv.<java.util.function.Consumer<?>>getArgument(0).accept(null);
++            return null;
++        }).when(transactionTemplate).executeWithoutResult(any());
++    }
++
++    private Refund failedRefund(Long id, Long paymentOrderId, int retryCount) {
++        Refund refund = Refund.create(paymentOrderId, 1L, 10_000L, "user request");
++        ReflectionTestUtils.setField(refund, "id", id);
++        ReflectionTestUtils.setField(refund, "status", RefundStatus.FAILED);
++        ReflectionTestUtils.setField(refund, "retryCount", retryCount);
++        ReflectionTestUtils.setField(refund, "nextRetryAt", LocalDateTime.now().minusMinutes(1));
++        return refund;
++    }
++
++    private PaymentOrder completedOrder(Long id, String orderUid) {
++        PaymentOrder order = PaymentOrder.create(orderUid, 1L, 10_000L, "idem-key", PaymentMethod.CARD, "pg-order");
++        ReflectionTestUtils.setField(order, "id", id);
++        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.COMPLETED);
++        return order;
++    }
++
++    private Refund pendingRefund(Long id, Long paymentOrderId) {
++        Refund refund = Refund.create(paymentOrderId, 1L, 10_000L, "user request");
++        ReflectionTestUtils.setField(refund, "id", id);
++        // PENDING은 기본 상태 (Refund.create가 PENDING으로 생성)
++        return refund;
++    }
++
++    @Test
++    @DisplayName("PENDING 환불 처리: cancelPayment 성공 → completeSchedulerRetry 호출")
++    void processPendingRefunds_cancelSucceeds_completesRefund() {
++        Refund refund = pendingRefund(1L, 100L);
++        PaymentOrder order = completedOrder(100L, "order-uid-1");
++        given(refundRepository.findByStatusOrderByCreatedAt(eq(RefundStatus.PENDING), any(PageRequest.class)))
++                .willReturn(List.of(refund));
++        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
++
++        scheduler.processPendingRefunds();
++
++        verify(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
++        verify(refundService).completeSchedulerRetry(1L, "order-uid-1", 10_000L);
++    }
++
++    @Test
++    @DisplayName("PENDING 환불 처리 실패 → FAILED 전환 (첫 재시도 1분 후 예약)")
++    void processPendingRefunds_cancelFails_marksAsFailed() {
++        Refund refund = pendingRefund(1L, 100L);
++        PaymentOrder order = completedOrder(100L, "order-uid-1");
++        given(refundRepository.findByStatusOrderByCreatedAt(eq(RefundStatus.PENDING), any(PageRequest.class)))
++                .willReturn(List.of(refund));
++        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
++        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
++        org.mockito.Mockito.doThrow(new com.chunbaetour.domain.payment.exception.PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
++        given(paymentGatewayClient.verifyPayment("order-uid-1"))
++                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
++
++        scheduler.processPendingRefunds();
++
++        verify(refundService, never()).completeSchedulerRetry(any(), any(), any());
++        // PENDING → FAILED 전환
++        assertThat(refund.getStatus()).isEqualTo(RefundStatus.FAILED);
++        assertThat(refund.getNextRetryAt()).isNotNull();
++    }
++
++    @Test
++    @DisplayName("재시도 대상 없으면 PG 호출 없음")
++    void retryFailedRefunds_noRetryable_doesNothing() {
++        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
++                .willReturn(List.of());
++
++        scheduler.retryFailedRefunds();
++
++        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any(), any());
++    }
++
++    @Test
++    @DisplayName("cancelPayment 성공 → completeSchedulerRetry 호출")
++    void retryFailedRefunds_cancelSucceeds_completesRefund() {
++        Refund refund = failedRefund(1L, 100L, 0);
++        PaymentOrder order = completedOrder(100L, "order-uid-1");
++        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
++                .willReturn(List.of(refund));
++        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
++
++        scheduler.retryFailedRefunds();
++
++        verify(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
++        verify(refundService).completeSchedulerRetry(1L, "order-uid-1", 10_000L);
++    }
++
++    @Test
++    @DisplayName("cancelPayment 실패 + PG CANCELLED → completeSchedulerRetry 호출 (타임아웃 후 재시도)")
++    void retryFailedRefunds_cancelFails_butPGCancelled_completesRefund() {
++        Refund refund = failedRefund(1L, 100L, 0);
++        PaymentOrder order = completedOrder(100L, "order-uid-1");
++        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
++                .willReturn(List.of(refund));
++        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
++        org.mockito.Mockito.doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
++        given(paymentGatewayClient.verifyPayment("order-uid-1"))
++                .willReturn(new PortOnePaymentInfo("CANCELLED", 10_000L, 10_000L));
++
++        scheduler.retryFailedRefunds();
++
++        verify(refundService).completeSchedulerRetry(1L, "order-uid-1", 10_000L);
++    }
++
++    @Test
++    @DisplayName("cancelPayment 실패 + PG PAID → retryCount 증가, nextRetryAt 갱신")
++    void retryFailedRefunds_cancelFails_pgStillPaid_recordsFailure() {
++        Refund refund = failedRefund(1L, 100L, 0);
++        PaymentOrder order = completedOrder(100L, "order-uid-1");
++        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
++                .willReturn(List.of(refund));
++        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
++        // recordFailure가 DB에서 refund를 다시 로드하므로 stub 필요
++        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
++        org.mockito.Mockito.doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
++        given(paymentGatewayClient.verifyPayment("order-uid-1"))
++                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
++
++        scheduler.retryFailedRefunds();
++
++        verify(refundService, never()).completeSchedulerRetry(any(), any(), any());
++        assertThat(refund.getRetryCount()).isEqualTo(1);
++        assertThat(refund.getNextRetryAt()).isNotNull();
++    }
++
++    @Test
++    @DisplayName("retryCount MAX 도달 시 → REQUIRES_ADMIN 전환 (자동 처리 불가, 관리자 직접 확인)")
++    void retryFailedRefunds_maxRetryReached_transitionsToRequiresAdmin() {
++        Refund refund = failedRefund(1L, 100L, 4); // 4회 실패, 5번째(마지막) 시도
++        PaymentOrder order = completedOrder(100L, "order-uid-1");
++        given(refundRepository.findRetryableRefunds(any(), eq(5), eq(RefundStatus.FAILED), any(PageRequest.class)))
++                .willReturn(List.of(refund));
++        given(paymentOrderRepository.findById(100L)).willReturn(Optional.of(order));
++        given(refundRepository.findById(1L)).willReturn(Optional.of(refund));
++        org.mockito.Mockito.doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .when(paymentGatewayClient).cancelPayment(eq("order-uid-1"), eq(10_000L), eq("user request"), eq("refund-1"));
++        given(paymentGatewayClient.verifyPayment("order-uid-1"))
++                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null));
++
++        scheduler.retryFailedRefunds();
++
++        assertThat(refund.getStatus()).isEqualTo(RefundStatus.REQUIRES_ADMIN);
++        assertThat(refund.getNextRetryAt()).isNull();
++    }
++}
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java b/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java
+index e83faf8..60bc332 100644
+--- a/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java
++++ b/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java
+@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.any;
+ import static org.mockito.ArgumentMatchers.eq;
+ import static org.mockito.BDDMockito.given;
+ import static org.mockito.Mockito.doAnswer;
+-import static org.mockito.Mockito.doThrow;
+ import static org.mockito.Mockito.lenient;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.never;
+@@ -16,13 +15,11 @@ import com.chunbaetour.domain.common.error.BusinessException;
+ import com.chunbaetour.domain.common.error.ErrorCode;
+ import com.chunbaetour.domain.common.response.CursorPageResponse;
+ import com.chunbaetour.domain.common.util.CursorUtils;
+-import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+ import com.chunbaetour.domain.payment.dto.request.RefundRequest;
+ import com.chunbaetour.domain.payment.dto.response.RefundResponse;
+ import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
+ import com.chunbaetour.domain.payment.entity.PaymentOrder;
+ import com.chunbaetour.domain.payment.entity.Refund;
+-import com.chunbaetour.domain.payment.exception.PaymentException;
+ import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+ import com.chunbaetour.domain.payment.repository.RefundRepository;
+ import com.chunbaetour.domain.payment.type.PaymentMethod;
+@@ -59,26 +56,12 @@ class RefundServiceTest {
+     private static final Long ORDER_ID = 100L;
+     private static final Long REFUND_ID = 200L;
+ 
+-    @Mock
+-    private PaymentOrderRepository paymentOrderRepository;
+-
+-    @Mock
+-    private RefundRepository refundRepository;
+-
+-    @Mock
+-    private WalletRepository walletRepository;
+-
+-    @Mock
+-    private PaymentGatewayClient paymentGatewayClient;
+-
+-    @Mock
+-    private WalletService walletService;
+-
+-    @Mock
+-    private Clock clock;
+-
+-    @Mock
+-    private TransactionTemplate transactionTemplate;
++    @Mock private PaymentOrderRepository paymentOrderRepository;
++    @Mock private RefundRepository refundRepository;
++    @Mock private WalletRepository walletRepository;
++    @Mock private WalletService walletService;
++    @Mock private Clock clock;
++    @Mock private TransactionTemplate transactionTemplate;
+ 
+     @InjectMocks
+     private RefundService refundService;
+@@ -98,192 +81,129 @@ class RefundServiceTest {
+     }
+ 
+     @Test
+-    @DisplayName("미사용 충전분 환불은 PortOne 취소 후 주문/환불/엽전 회수를 완료한다")
+-    void requestRefund_success_refundsImmediately() {
++    @DisplayName("전액 잔액 환불 요청 → PENDING 접수, PG 호출 없음")
++    void requestRefund_fullBalance_returnsPendingRefund() {
+         PaymentOrder order = completedOrder(USER_ID);
+         stubRefundSave();
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+-        given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(AMOUNT);
+ 
+         RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
+ 
+-        verify(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+-        verify(walletService).reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID);
+-        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+-        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
++        assertThat(response.status()).isEqualTo(RefundStatus.PENDING);
++        verify(refundRepository).saveAndFlush(any(Refund.class));
++        verify(walletService, never()).reclaimAvailableForRefund(any(), any(), any());
+     }
+ 
+     @Test
+-    @DisplayName("잔액이 부족하면 PortOne 취소 호출 전에 환불을 거절한다")
+-    void requestRefund_partialUse_throws() {
++    @DisplayName("부분 사용 후 환불 요청 → REJECTED 기록 저장 + REFUND_BALANCE_INSUFFICIENT 에러")
++    void requestRefund_partialUse_savesRejectedRecordAndThrows() {
+         PaymentOrder order = completedOrder(USER_ID);
++        AtomicReference<Refund> refundRef = new AtomicReference<>();
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT - 1)));
+-
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+-
+-        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+-    }
+-
+-    @Test
+-    @DisplayName("충전 이후 다른 사용 이력이 있어도 잔액이 충분하면 환불을 허용한다")
+-    void requestRefund_laterSpendHistoryDoesNotBlockWhenBalanceEnough() {
+-        PaymentOrder order = completedOrder(USER_ID);
+-        stubRefundSave();
+-        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+-        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+-        given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(AMOUNT);
+-
+-        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
+-
+-        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+-    }
+-
+-    @Test
+-    @DisplayName("PortOne 취소 실패 시 주문은 환불 완료로 바꾸지 않고 환불 이력만 FAILED 처리한다")
+-    void requestRefund_portOneFailure_doesNotMarkRefunded() {
+-        PaymentOrder order = completedOrder(USER_ID);
+-        AtomicReference<Refund> refundRef = stubRefundSave();
+-        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+-        doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
+-                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
++        given(refundRepository.save(any(Refund.class))).willAnswer(inv -> {
++            Refund r = inv.getArgument(0);
++            refundRef.set(r);
++            return r;
++        });
+ 
+         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
++                .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+ 
+-        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+-        assertThat(refundRef.get().getStatus()).isEqualTo(RefundStatus.FAILED);
++        assertThat(refundRef.get().getStatus()).isEqualTo(RefundStatus.REJECTED);
++        assertThat(refundRef.get().getRejectReason()).isEqualTo("부분환불은 불가합니다");
+         verify(walletService, never()).reclaimAvailableForRefund(any(), any(), any());
+     }
+ 
+     @Test
+-    @DisplayName("PortOne 취소 중 예상치 못한 예외가 발생해도 환불 이력만 FAILED 처리한다")
+-    void requestRefund_portOneUnexpectedRuntimeException_marksRefundFailed() {
++    @DisplayName("이미 REFUNDED 주문 + APPROVED 환불 이력 → 멱등 응답")
++    void requestRefund_alreadyRefunded_returnsApprovedIdempotent() {
+         PaymentOrder order = completedOrder(USER_ID);
+-        AtomicReference<Refund> refundRef = stubRefundSave();
++        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.REFUNDED);
++        Refund approvedRefund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "reason");
++        approvedRefund.approve();
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+-        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+-        doThrow(new IllegalStateException("unexpected gateway failure"))
+-                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+-
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID))
++                .willReturn(Optional.of(approvedRefund));
+ 
+-        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
+-        assertThat(refundRef.get().getStatus()).isEqualTo(RefundStatus.FAILED);
+-        verify(walletService, never()).reclaimAvailableForRefund(any(), any(), any());
+-    }
+-
+-    @Test
+-    @DisplayName("PortOne 취소 성공 후 회수 가능 잔액이 부족하면 회수필요 상태로 남긴다")
+-    void requestRefund_gatewaySuccessButWalletShort_marksAdjustmentRequired() {
+-        PaymentOrder order = completedOrder(USER_ID);
+-        stubRefundSave();
+-        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
+-        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+-        given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(3_000L);
+-
+-        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
++        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason"));
+ 
+         assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+-        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.ADJUSTMENT_REQUIRED);
+     }
+ 
+     @Test
+-    @DisplayName("이미 환불 완료된 주문은 기존 APPROVED 환불을 멱등 반환한다")
+-    void requestRefund_alreadyRefunded_returnsExistingRefund() {
+-        PaymentOrder order = completedOrder(USER_ID);
+-        order.refund();
+-        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "user request");
+-        refund.approve();
+-        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+-        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.of(refund));
+-
+-        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
+-
+-        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+-        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+-    }
+-
+-    @Test
+-    @DisplayName("존재하지 않는 주문은 PAY_009")
++    @DisplayName("존재하지 않는 주문 → PAY_009")
+     void requestRefund_orderNotFound_throws() {
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.empty());
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+     }
+ 
+     @Test
+-    @DisplayName("타인 주문 환불은 PAY_011")
+-    void requestRefund_otherUser_throws() {
+-        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(completedOrder(999L)));
++    @DisplayName("타인 주문 환불 → PAY_011")
++    void requestRefund_otherUserOrder_throws() {
++        PaymentOrder order = completedOrder(999L);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+     }
+ 
+     @Test
+-    @DisplayName("COMPLETED가 아닌 주문은 PAY_015")
+-    void requestRefund_nonCompleted_throws() {
++    @DisplayName("COMPLETED 아닌 주문 환불 → PAY_014")
++    void requestRefund_nonCompletedOrder_throws() {
+         PaymentOrder order = completedOrder(USER_ID);
+-        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.PENDING);
++        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.CANCELLED);
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.REFUND_NOT_ELIGIBLE);
+     }
+ 
+     @Test
+-    @DisplayName("환불 기간이 지난 주문은 PAY_010")
++    @DisplayName("환불 기간 만료 → PAY_010")
+     void requestRefund_expiredPeriod_throws() {
+         PaymentOrder order = completedOrder(USER_ID);
+         ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusDays(8));
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.REFUND_PERIOD_EXPIRED);
+     }
+ 
+     @Test
+-    @DisplayName("PENDING 환불이 이미 있으면 PAY_016")
++    @DisplayName("PENDING 중복 요청 → PAY_016")
+     void requestRefund_duplicatePending_throws() {
+         PaymentOrder order = completedOrder(USER_ID);
+-        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "user request");
++        Refund pendingRefund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "reason");
+         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
+-        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.of(refund));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID))
++                .willReturn(Optional.of(pendingRefund));
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
+     }
+ 
+     @Test
+-    @DisplayName("동시 환불 요청으로 DB 제약 위반 시 PAY_016")
++    @DisplayName("동시 환불 요청 UK 위반 → PAY_016")
+     void requestRefund_concurrentDuplicate_throws() {
+         PaymentOrder order = completedOrder(USER_ID);
+         ConstraintViolationException cve = Mockito.mock(ConstraintViolationException.class);
+@@ -294,14 +214,46 @@ class RefundServiceTest {
+         given(refundRepository.saveAndFlush(any(Refund.class)))
+                 .willThrow(new DataIntegrityViolationException("duplicate", cve));
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
+     }
+ 
+     @Test
+-    @DisplayName("환불 내역 조회: 상태 필터")
++    @DisplayName("스케줄러 완료: PENDING → APPROVED, 엽전 회수, 주문 REFUNDED")
++    void completeSchedulerRetry_pendingRefund_approvesAndReclaims() {
++        PaymentOrder order = completedOrder(USER_ID);
++        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "reason");
++        ReflectionTestUtils.setField(refund, "id", REFUND_ID);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
++        given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(AMOUNT);
++
++        refundService.completeSchedulerRetry(REFUND_ID, ORDER_UID, AMOUNT);
++
++        assertThat(refund.getStatus()).isEqualTo(RefundStatus.APPROVED);
++        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
++    }
++
++    @Test
++    @DisplayName("스케줄러 완료: FAILED → APPROVED (재시도 성공)")
++    void completeSchedulerRetry_failedRefund_approvesOnRetry() {
++        PaymentOrder order = completedOrder(USER_ID);
++        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "reason");
++        ReflectionTestUtils.setField(refund, "id", REFUND_ID);
++        ReflectionTestUtils.setField(refund, "status", RefundStatus.FAILED);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
++        given(walletService.reclaimAvailableForRefund(USER_ID, AMOUNT, ORDER_ID)).willReturn(AMOUNT);
++
++        refundService.completeSchedulerRetry(REFUND_ID, ORDER_UID, AMOUNT);
++
++        assertThat(refund.getStatus()).isEqualTo(RefundStatus.APPROVED);
++    }
++
++    @Test
++    @DisplayName("환불 내역 조회")
+     void getUserRefundHistory_statusFilter() {
+         Refund refund = mockRefund(10L, RefundStatus.PENDING);
+         given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(RefundStatus.PENDING), eq(null), any(PageRequest.class)))
+@@ -311,28 +263,10 @@ class RefundServiceTest {
+                 refundService.getUserRefundHistory(USER_ID, RefundStatus.PENDING, null, 20);
+ 
+         assertThat(result.content()).hasSize(1);
+-        assertThat(result.content().get(0).status()).isEqualTo(RefundStatus.PENDING);
+-    }
+-
+-    @Test
+-    @DisplayName("환불 내역 조회: 다음 페이지 cursor 반환")
+-    void getUserRefundHistory_hasNext() {
+-        Refund r1 = mockRefund(10L, RefundStatus.PENDING);
+-        Refund r2 = mockRefund(9L, RefundStatus.APPROVED);
+-        Refund r3 = mock(Refund.class);
+-        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(null), any(PageRequest.class)))
+-                .willReturn(List.of(r1, r2, r3));
+-
+-        CursorPageResponse<UserRefundResponse> result =
+-                refundService.getUserRefundHistory(USER_ID, null, null, 2);
+-
+-        assertThat(result.content()).hasSize(2);
+-        assertThat(result.hasNext()).isTrue();
+-        assertThat(result.nextCursor()).isEqualTo(CursorUtils.encode(9L));
+     }
+ 
+     @Test
+-    @DisplayName("잘못된 환불 내역 cursor는 INVALID_CURSOR")
++    @DisplayName("잘못된 cursor → INVALID_CURSOR")
+     void getUserRefundHistory_invalidCursor_throws() {
+         assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, "not-valid-base64!!", 20))
+                 .isInstanceOf(BusinessException.class)
+@@ -341,7 +275,7 @@ class RefundServiceTest {
+     }
+ 
+     @Test
+-    @DisplayName("PENDING 환불 요청은 소유자가 취소할 수 있다")
++    @DisplayName("PENDING 환불 취소 성공")
+     void cancelRefund_success() {
+         Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "reason");
+         given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
+@@ -352,7 +286,7 @@ class RefundServiceTest {
+     }
+ 
+     @Test
+-    @DisplayName("존재하지 않는 환불 취소는 PAY_018")
++    @DisplayName("존재하지 않는 환불 취소 → PAY_018")
+     void cancelRefund_notFound_throws() {
+         given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.empty());
+ 
+@@ -363,7 +297,7 @@ class RefundServiceTest {
+     }
+ 
+     @Test
+-    @DisplayName("타인 환불 취소는 PAY_011")
++    @DisplayName("타인 환불 취소 → PAY_011")
+     void cancelRefund_otherUser_throws() {
+         Refund refund = Refund.create(ORDER_ID, 999L, AMOUNT, "reason");
+         given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
+@@ -375,7 +309,7 @@ class RefundServiceTest {
+     }
+ 
+     @Test
+-    @DisplayName("PENDING이 아닌 환불 취소는 PAY_019")
++    @DisplayName("PENDING 아닌 환불 취소 → PAY_019")
+     void cancelRefund_nonPending_throws() {
+         Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "reason");
+         refund.approve();
+@@ -395,8 +329,6 @@ class RefundServiceTest {
+             saved.set(refund);
+             return refund;
+         });
+-        doAnswer(invocation -> Optional.ofNullable(saved.get()))
+-                .when(refundRepository).findByIdWithLock(REFUND_ID);
+         return saved;
+     }
+ 

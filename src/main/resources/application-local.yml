@@ -1,6 +1,15 @@
 spring:
   config:
     import: optional:file:.env[.properties]
+  flyway:
+    out-of-order: false
+    validate-on-migrate: false
+    locations: classpath:db/migration
+    # Flyway MySQL named lock 해제 후 autocommit 복구 시 연결 끊김 버그 우회 (로컬 전용)
+    # useLocalSessionState=true: MySQL 드라이버가 autocommit 상태 로컬 추적 → 서버 재전송 없음
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&useLocalSessionState=true
+    user: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}

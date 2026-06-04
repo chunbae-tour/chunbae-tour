@@ -1,0 +1,376 @@
+diff --git a/src/main/java/com/chunbaetour/domain/payment/controller/QrPayController.java b/src/main/java/com/chunbaetour/domain/payment/controller/QrPayController.java
+index defc9ef..e55816e 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/controller/QrPayController.java
++++ b/src/main/java/com/chunbaetour/domain/payment/controller/QrPayController.java
+@@ -4,12 +4,14 @@ import com.chunbaetour.domain.common.response.ApiResponse;
+ import com.chunbaetour.domain.payment.dto.request.QrPayConfirmRequest;
+ import com.chunbaetour.domain.payment.dto.request.QrPayCreateRequest;
+ import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
++import com.chunbaetour.domain.payment.dto.response.QrPayStatusResponse;
+ import com.chunbaetour.domain.payment.service.QrPayService;
+ import io.swagger.v3.oas.annotations.Operation;
+ import io.swagger.v3.oas.annotations.tags.Tag;
+ import jakarta.validation.Valid;
+ import lombok.RequiredArgsConstructor;
+ import org.springframework.security.core.annotation.AuthenticationPrincipal;
++import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PatchMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.PostMapping;
+@@ -38,6 +40,14 @@ public class QrPayController {
+         return ApiResponse.success(qrPayService.createQrPayRequest(userId, request));
+     }
+ 
++    @Operation(summary = "QR 결제 상태 폴링 (USER)", description = "푸시 미도달 시 결제 완료 여부 확인 수단")
++    @GetMapping("/{payRequestId}/status")
++    public ApiResponse<QrPayStatusResponse> getQrPayStatus(
++            @AuthenticationPrincipal Long userId,
++            @PathVariable String payRequestId) {
++        return ApiResponse.success(qrPayService.getQrPayStatus(userId, payRequestId));
++    }
++
+     @Operation(summary = "QR 결제 승인 (MERCHANT)")
+     @PatchMapping("/{payRequestId}/confirm")
+     public ApiResponse<Void> confirmQrPayRequest(
+diff --git a/src/main/java/com/chunbaetour/domain/payment/dto/response/QrPayStatusResponse.java b/src/main/java/com/chunbaetour/domain/payment/dto/response/QrPayStatusResponse.java
+new file mode 100644
+index 0000000..eca0bee
+--- /dev/null
++++ b/src/main/java/com/chunbaetour/domain/payment/dto/response/QrPayStatusResponse.java
+@@ -0,0 +1,25 @@
++package com.chunbaetour.domain.payment.dto.response;
++
++import com.chunbaetour.domain.payment.entity.QrPayRequest;
++import com.chunbaetour.domain.payment.type.QrPayStatus;
++import java.time.LocalDateTime;
++
++public record QrPayStatusResponse(
++        String payRequestId,
++        QrPayStatus status,
++        Long amount,
++        Long shopId,
++        LocalDateTime expiredAt,
++        LocalDateTime completedAt
++) {
++    public static QrPayStatusResponse from(QrPayRequest req) {
++        return new QrPayStatusResponse(
++                req.getPayRequestId(),
++                req.getStatus(),
++                req.getAmount(),
++                req.getShopId(),
++                req.getExpiredAt(),
++                req.getCompletedAt()
++        );
++    }
++}
+diff --git a/src/main/java/com/chunbaetour/domain/payment/service/QrPayService.java b/src/main/java/com/chunbaetour/domain/payment/service/QrPayService.java
+index ac07e3b..1b792c2 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/service/QrPayService.java
++++ b/src/main/java/com/chunbaetour/domain/payment/service/QrPayService.java
+@@ -9,6 +9,7 @@ import com.chunbaetour.domain.payment.dto.request.QrPayCreateRequest;
+ import com.chunbaetour.domain.payment.dto.request.QrPayItemRequest;
+ import com.chunbaetour.domain.payment.dto.response.PendingQrPayResponse;
+ import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse;
++import com.chunbaetour.domain.payment.dto.response.QrPayStatusResponse;
+ import com.chunbaetour.domain.payment.dto.response.QrPayCreateResponse.MenuSnapshotItem;
+ import com.chunbaetour.domain.payment.entity.QrPayRequest;
+ import com.chunbaetour.domain.payment.repository.QrPayRequestRepository;
+@@ -84,65 +85,89 @@ public class QrPayService {
+     /**
+      * QR 결제 요청 생성.
+      * 결제 시점 메뉴 정보를 JSON 스냅샷으로 저장 — 이후 메뉴 수정/삭제 시에도 영수증에 당시 가격 보존.
+-     *
+-     * TODO(refactor): validation, snapshot building, wallet check를 private helper로 분리
+      */
+     @Transactional
+     public QrPayCreateResponse createQrPayRequest(Long userId, QrPayCreateRequest request) {
+-        // 가게 존재 확인
+         Shop shop = shopRepository.findById(request.shopId())
+                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
++        validateShop(shop, userId);
++
++        MenuSnapshotResult snapshot = buildMenuSnapshot(request.menuItems(), request.shopId());
++
++        // 동일 사용자·가게에 유효한 PENDING 요청 사전 차단 — 만료된 PENDING은 제외 (스케줄러 60초 지연 대응)
++        // DB unique 제약(pendingKey)은 동시 레이스 케이스 최종 방어용으로 병행 유지
++        if (qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
++                userId, shop.getId(), QrPayStatus.PENDING, LocalDateTime.now(clock))) {
++            throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
++        }
++
++        validateWalletBalance(userId, snapshot.totalAmount());
++
++        // 결제 시점 메뉴 정보 JSON 스냅샷 직렬화
++        // 생성 이후 메뉴 가격 변경/삭제 시에도 결제 금액은 생성 시점 기준으로 고정됨 (의도된 정책)
++        String menuItemsJson = serializeSnapshots(snapshot.snapshots());
++
++        // QrPayRequest 생성 — expiredAt = 현재 + 5분, 상인 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
++        LocalDateTime expiredAt = LocalDateTime.now(clock).plusMinutes(QR_PAY_EXPIRY_MINUTES);
++        QrPayRequest qrPayRequest = QrPayRequest.create(
++                UUID.randomUUID().toString(), userId, shop.getId(),
++                snapshot.totalAmount(), menuItemsJson, expiredAt);
++        // pending_key unique 위반 = 동시 요청 레이스 케이스 → DUPLICATE
++        // 그 외 무결성 오류(pay_request_id 충돌 등)는 내부 서버 오류로 처리
++        try {
++            qrPayRequestRepository.saveAndFlush(qrPayRequest);
++        } catch (DataIntegrityViolationException e) {
++            if (containsPendingKeyConstraint(e)) {
++                throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
++            }
++            log.error("[QR 결제 요청] 예상치 못한 DB 무결성 오류 발생", e);
++            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
++        }
++
++        return new QrPayCreateResponse(
++                qrPayRequest.getPayRequestId(), shop.getId(), shop.getShopName(),
++                snapshot.totalAmount(), snapshot.snapshots(), expiredAt);
++    }
+ 
+-        // ACTIVE 상태 가드 — SUSPENDED/CLOSED 가게는 결제 불가
++    // ACTIVE 상태 가드 + 자가 결제 차단
++    private void validateShop(Shop shop, Long userId) {
+         if (shop.getStatus() != ShopStatus.ACTIVE) {
+             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+         }
+-
+-        // 본인 가게 자가 결제 차단 — 실수·악용 모두 방지
+         if (shop.getUserId().equals(userId)) {
+             throw new BusinessException(ErrorCode.SELF_PAYMENT_NOT_ALLOWED);
+         }
++    }
+ 
+-        // 중복 menuId 검증
+-        // 정상 프론트라면 메뉴별 수량만 조절하므로 같은 menuId가 두 번 들어올 일 없음.
+-        // 단, 프론트 버그 또는 API 직접 호출 시 [{menuId:100, qty:2}, {menuId:100, qty:3}] 형태로
+-        // 중복 요청이 들어오면 스냅샷에 같은 메뉴가 2줄 생기고 totalAmount도 두 번 누적되어
+-        // 결제 금액이 의도와 다르게 계산됨. 서버에서 사전 차단.
+-        List<Long> menuIds = request.menuItems().stream()
+-                .map(QrPayItemRequest::menuId)
+-                .toList();
+-        Set<Long> uniqueMenuIds = new HashSet<>(menuIds);
+-        if (uniqueMenuIds.size() != menuIds.size()) {
++    /**
++     * 메뉴 중복 검증 + 일괄 조회 + 스냅샷 구성 + totalAmount 계산.
++     * 프론트 버그·직접 호출로 같은 menuId가 두 번 들어오면 금액이 두 번 누적되므로 서버에서 사전 차단.
++     */
++    private MenuSnapshotResult buildMenuSnapshot(List<QrPayItemRequest> items, Long shopId) {
++        List<Long> menuIds = items.stream().map(QrPayItemRequest::menuId).toList();
++        if (new HashSet<>(menuIds).size() != menuIds.size()) {
+             throw new BusinessException(ErrorCode.INVALID_REQUEST);
+         }
+ 
+-        // 메뉴 일괄 조회 (N+1 방지)
++        // N+1 방지: 메뉴 일괄 조회
+         Map<Long, Menu> menuMap = menuRepository.findAllById(menuIds).stream()
+                 .collect(Collectors.toMap(Menu::getId, m -> m));
+ 
+-        // 메뉴별 검증 + 스냅샷 구성
+         List<MenuSnapshotItem> snapshots = new ArrayList<>();
+         long totalAmount = 0;
+-        for (QrPayItemRequest item : request.menuItems()) {
++        for (QrPayItemRequest item : items) {
+             Menu menu = menuMap.get(item.menuId());
+-
+-            // 메뉴 존재 확인 — soft delete 메뉴는 @SQLRestriction으로 자동 제외
+-            if (menu == null) {
++            // soft delete 메뉴는 @SQLRestriction으로 자동 제외, 다른 가게 메뉴 접근 차단
++            if (menu == null || !menu.getShopId().equals(shopId)) {
+                 throw new BusinessException(ErrorCode.MENU_NOT_FOUND);
+             }
+-            // 다른 가게 메뉴 접근 차단
+-            if (!menu.getShopId().equals(request.shopId())) {
+-                throw new BusinessException(ErrorCode.MENU_NOT_FOUND);
+-            }
+-            // 품절/비활성 메뉴 결제 차단
+             if (!menu.isAvailable()) {
+                 throw new BusinessException(ErrorCode.MENU_UNAVAILABLE);
+             }
+-            // 메뉴 가격 음수/0 방어 — DB 데이터 오류 시 비정상 결제 생성 방지
++            // DB 데이터 오류 시 비정상 결제 생성 방지
+             if (menu.getPrice() <= 0) {
+                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
+             }
+-
+             snapshots.add(new MenuSnapshotItem(menu.getId(), menu.getName(), menu.getPrice(), item.quantity()));
+             try {
+                 long itemTotal = Math.multiplyExact(menu.getPrice(), (long) item.quantity());
+@@ -152,62 +177,24 @@ public class QrPayService {
+             }
+         }
+ 
+-        // totalAmount 0 이하 차단 — price <= 0 방어에도 불구하고 결제 금액 이상 발생 시 최종 방어
++        // price <= 0 방어에도 불구하고 결제 금액 이상 발생 시 최종 방어
+         if (totalAmount <= 0) {
+             throw new BusinessException(ErrorCode.ZERO_AMOUNT_NOT_ALLOWED);
+         }
++        return new MenuSnapshotResult(snapshots, totalAmount);
++    }
+ 
+-        // 동일 사용자·가게에 유효한 PENDING 요청 사전 차단 — 만료된 PENDING은 제외 (스케줄러 60초 지연 대응)
+-        // DB unique 제약(pendingKey)은 동시 레이스 케이스 최종 방어용으로 병행 유지
+-        if (qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
+-                userId, shop.getId(), QrPayStatus.PENDING, LocalDateTime.now(clock))) {
+-            throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
+-        }
+-
+-        // 결제 요청 시점 잔액 사전 체크 — 명백한 잔액 부족 조기 차단 (실제 차감은 상인 승인 시 STORY-14)
+-        // STORY-14에서 wallet row lock + 잔액 재검증 필수 (생성~승인 사이 잔액 변동 가능)
++    // 결제 요청 시점 잔액 사전 체크 — 실제 차감은 상인 승인 시 wallet row lock + 재검증 (STORY-14)
++    private void validateWalletBalance(Long userId, long totalAmount) {
+         Wallet wallet = walletRepository.findByUserId(userId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+         if (wallet.getBalance() < totalAmount) {
+             throw new BusinessException(ErrorCode.INSUFFICIENT_BALANCE);
+         }
+-
+-        // 결제 시점 메뉴 정보 JSON 스냅샷 직렬화
+-        // 생성 이후 메뉴 가격 변경/삭제 시에도 결제 금액은 생성 시점 기준으로 고정됨 (의도된 정책)
+-        String menuItemsJson = serializeSnapshots(snapshots);
+-
+-        // QrPayRequest 생성 — expiredAt = 현재 + 5분, 상인 미응답 시 STORY-15 스케줄러가 EXPIRED 처리
+-        LocalDateTime expiredAt = LocalDateTime.now(clock).plusMinutes(QR_PAY_EXPIRY_MINUTES);
+-        QrPayRequest qrPayRequest = QrPayRequest.create(
+-                UUID.randomUUID().toString(),
+-                userId,
+-                shop.getId(),
+-                totalAmount,
+-                menuItemsJson,
+-                expiredAt
+-        );
+-        // pending_key unique 위반 = 동시 요청 레이스 케이스 → DUPLICATE
+-        // 그 외 무결성 오류(pay_request_id 충돌 등)는 내부 서버 오류로 처리
+-        try {
+-            qrPayRequestRepository.saveAndFlush(qrPayRequest);
+-        } catch (DataIntegrityViolationException e) {
+-            if (containsPendingKeyConstraint(e)) {
+-                throw new BusinessException(ErrorCode.DUPLICATE_QR_PAY_REQUEST);
+-            }
+-            log.error("[QR 결제 요청] 예상치 못한 DB 무결성 오류 발생", e);
+-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+-        }
+-
+-        return new QrPayCreateResponse(
+-                qrPayRequest.getPayRequestId(),
+-                shop.getId(),
+-                shop.getShopName(),
+-                totalAmount,
+-                snapshots,
+-                expiredAt
+-        );
+     }
+ 
++    private record MenuSnapshotResult(List<MenuSnapshotItem> snapshots, long totalAmount) {}
++
+     /**
+      * QR 결제 승인/거절 (STORY-14, MERCHANT 전용).
+      *
+@@ -286,17 +273,16 @@ public class QrPayService {
+             wallet.debit(amount);
+             shopWallet.credit(amount);
+ 
+-            // 이력 기록
+-            // TODO(KAN-???): YeopjeonHistory에 payRequestId 연결 — 정산/환불 추적 시 필요 (STORY-17 또는 환불 슬라이스 전 처리)
+-            yeopjeonHistoryRepository.save(YeopjeonHistory.create(
+-                    lockedRequest.getUserId(), null, lockedRequest.getShopId(),
++            // 이력 기록 — payRequestId 연결로 QR 결제 원본 요청 역추적 가능 (KAN-206)
++            yeopjeonHistoryRepository.save(YeopjeonHistory.createForQrPay(
++                    lockedRequest.getUserId(), lockedRequest.getShopId(), payRequestId,
+                     YeopjeonHistoryType.PAYMENT, amount, wallet.getBalance(),
+                     messageSource.getMessage("history.payment.description",
+                             new Object[]{shop.getShopName()}, LocaleContextHolder.getLocale())
+             ));
+             // merchantUserId == shop.getUserId() 는 소유권 검증으로 보장됨 — 위치 변경 시 재검증 필요
+-            yeopjeonHistoryRepository.save(YeopjeonHistory.create(
+-                    merchantUserId, null, lockedRequest.getShopId(),
++            yeopjeonHistoryRepository.save(YeopjeonHistory.createForQrPay(
++                    merchantUserId, lockedRequest.getShopId(), payRequestId,
+                     YeopjeonHistoryType.RECEIVED_PAYMENT, amount, shopWallet.getBalance(),
+                     messageSource.getMessage("history.received.description",
+                             null, LocaleContextHolder.getLocale())
+@@ -316,6 +302,24 @@ public class QrPayService {
+         }
+     }
+ 
++    /**
++     * QR 결제 상태 폴링 (STORY-13, USER 전용).
++     * 푸시 알림 미도달 시 사용자가 결제 완료 여부를 확인하는 수단.
++     * 본인 요청만 조회 가능 — 타인 payRequestId로 조회 시 NOT_FOUND 처리.
++     */
++    @Transactional(readOnly = true)
++    public QrPayStatusResponse getQrPayStatus(Long userId, String payRequestId) {
++        QrPayRequest qrPayRequest = qrPayRequestRepository.findByPayRequestId(payRequestId)
++                .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
++
++        // 본인 요청만 조회 가능 — 타인 요청 노출 차단
++        if (!qrPayRequest.getUserId().equals(userId)) {
++            throw new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
++        }
++
++        return QrPayStatusResponse.from(qrPayRequest);
++    }
++
+     /**
+      * 상인 대기중 QR 결제 목록 조회.
+      * 상인 소유 가게 전체의 PENDING 요청을 만료 시각 오름차순으로 반환.
+diff --git a/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java b/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java
+index 60d91b5..ac18d11 100644
+--- a/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java
++++ b/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java
+@@ -42,6 +42,10 @@ public class YeopjeonHistory extends BaseEntity {
+     @Column(name = "shop_id")
+     private Long shopId;
+ 
++    // QR 결제 이력에서 원본 결제 요청 역추적용. PAYMENT/RECEIVED_PAYMENT(QR) 타입에서만 설정.
++    @Column(name = "pay_request_id", length = 36)
++    private String payRequestId;
++
+     @Enumerated(EnumType.STRING)
+     @Column(nullable = false, length = 20)
+     private YeopjeonHistoryType type;
+@@ -57,11 +61,12 @@ public class YeopjeonHistory extends BaseEntity {
+     private String description;
+ 
+     @Builder
+-    private YeopjeonHistory(Long userId, Long paymentOrderId, Long shopId, YeopjeonHistoryType type,
+-                            Long amount, Long balanceSnapshot, String description) {
++    private YeopjeonHistory(Long userId, Long paymentOrderId, Long shopId, String payRequestId,
++                            YeopjeonHistoryType type, Long amount, Long balanceSnapshot, String description) {
+         this.userId = userId;
+         this.paymentOrderId = paymentOrderId;
+         this.shopId = shopId;
++        this.payRequestId = payRequestId;
+         this.type = type;
+         this.amount = amount;
+         this.balanceSnapshot = balanceSnapshot;
+@@ -81,6 +86,21 @@ public class YeopjeonHistory extends BaseEntity {
+             .build();
+     }
+ 
++    // QR 결제 이력 전용 팩토리 — payRequestId 추적 포함
++    public static YeopjeonHistory createForQrPay(Long userId, Long shopId, String payRequestId,
++                                                  YeopjeonHistoryType type, Long amount, Long balanceSnapshot,
++                                                  String description) {
++        return YeopjeonHistory.builder()
++            .userId(userId)
++            .shopId(shopId)
++            .payRequestId(payRequestId)
++            .type(type)
++            .amount(amount)
++            .balanceSnapshot(balanceSnapshot)
++            .description(description)
++            .build();
++    }
++
+     // 엽전 충전 이력 전용 팩토리. shopId·description은 충전 시 해당 없으므로 null 고정
+     public static YeopjeonHistory ofCharge(Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId) {
+         return YeopjeonHistory.builder()
+diff --git a/src/main/resources/db/migration/V202606021700__yeopjeon_history_pay_request_id.sql b/src/main/resources/db/migration/V202606021700__yeopjeon_history_pay_request_id.sql
+new file mode 100644
+index 0000000..a894ff0
+--- /dev/null
++++ b/src/main/resources/db/migration/V202606021700__yeopjeon_history_pay_request_id.sql
+@@ -0,0 +1,4 @@
++-- QR 결제 이력에서 원본 결제 요청 역추적을 위한 컬럼 추가 (KAN-206)
++ALTER TABLE yeopjeon_histories
++    ADD COLUMN pay_request_id VARCHAR(36) NULL,
++    ALGORITHM = INSTANT;

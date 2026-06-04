@@ -1,0 +1,412 @@
+diff --git a/src/main/java/com/chunbaetour/domain/auth/config/SecurityConfig.java b/src/main/java/com/chunbaetour/domain/auth/config/SecurityConfig.java
+index 936d943..71bb088 100644
+--- a/src/main/java/com/chunbaetour/domain/auth/config/SecurityConfig.java
++++ b/src/main/java/com/chunbaetour/domain/auth/config/SecurityConfig.java
+@@ -99,6 +99,8 @@ public class SecurityConfig {
+                         // 검색 조회 API는 와일드카드 대신 화이트리스트 방식으로 명시하여 권한 누수 방지
+                         // 2-1 인기 검색어, 2-2 관광지 검색, 2-3 축제 검색, 2-4 자동완성
+                         .requestMatchers(HttpMethod.GET, "/api/v1/search/popular", "/api/v1/search/places", "/api/v1/search/festivals", "/api/v1/search/suggest").permitAll()
++                        // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
++                        .requestMatchers(HttpMethod.GET, "/api/v1/shops/**").permitAll()
+                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
+                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
+                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
+diff --git a/src/main/java/com/chunbaetour/domain/shop/controller/MerchantQrController.java b/src/main/java/com/chunbaetour/domain/shop/controller/MerchantQrController.java
+new file mode 100644
+index 0000000..94763c2
+--- /dev/null
++++ b/src/main/java/com/chunbaetour/domain/shop/controller/MerchantQrController.java
+@@ -0,0 +1,29 @@
++package com.chunbaetour.domain.shop.controller;
++
++import com.chunbaetour.domain.common.response.ApiResponse;
++import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
++import com.chunbaetour.domain.shop.service.ShopService;
++import lombok.RequiredArgsConstructor;
++import org.springframework.security.core.annotation.AuthenticationPrincipal;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++/**
++ * 상인 QR 코드 발급 API (STORY-12).
++ * GET /api/v1/merchants/me/qr — MERCHANT 권한 필요.
++ * SecurityConfig: /api/v1/merchants/** → MERCHANT 권한 필요.
++ */
++@RestController
++@RequestMapping("/api/v1/merchants/me/qr")
++@RequiredArgsConstructor
++public class MerchantQrController {
++
++    private final ShopService shopService;
++
++    /** 내 가게 QR payload 조회 — 클라이언트가 qrPayload로 QR 이미지 렌더링 */
++    @GetMapping
++    public ApiResponse<QrCodeResponse> getMyQrCode(@AuthenticationPrincipal Long userId) {
++        return ApiResponse.success(shopService.getMyQrCode(userId));
++    }
++}
+diff --git a/src/main/java/com/chunbaetour/domain/shop/controller/ShopPublicController.java b/src/main/java/com/chunbaetour/domain/shop/controller/ShopPublicController.java
+new file mode 100644
+index 0000000..a5ae87e
+--- /dev/null
++++ b/src/main/java/com/chunbaetour/domain/shop/controller/ShopPublicController.java
+@@ -0,0 +1,30 @@
++package com.chunbaetour.domain.shop.controller;
++
++import com.chunbaetour.domain.common.response.ApiResponse;
++import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
++import com.chunbaetour.domain.shop.service.ShopService;
++import lombok.RequiredArgsConstructor;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++/**
++ * 가게 공개 API (STORY-12).
++ * GET /api/v1/shops/{shopId} — 비인증 공개.
++ * QR 스캔·앱 탐색 등 진입 경로 무관하게 가게 정보를 누구나 조회 가능.
++ * 실제 결제 요청(POST /payments/qr)은 USER 인증 필수 — 이 엔드포인트는 메뉴 확인 단계.
++ */
++@RestController
++@RequestMapping("/api/v1/shops")
++@RequiredArgsConstructor
++public class ShopPublicController {
++
++    private final ShopService shopService;
++
++    /** 가게 공개 정보 + 메뉴 목록 조회 — 비로그인 접근 가능 */
++    @GetMapping("/{shopId}")
++    public ApiResponse<ShopInfoResponse> getShopInfo(@PathVariable Long shopId) {
++        return ApiResponse.success(shopService.getShopInfo(shopId));
++    }
++}
+diff --git a/src/main/java/com/chunbaetour/domain/shop/dto/response/QrCodeResponse.java b/src/main/java/com/chunbaetour/domain/shop/dto/response/QrCodeResponse.java
+new file mode 100644
+index 0000000..8aeb181
+--- /dev/null
++++ b/src/main/java/com/chunbaetour/domain/shop/dto/response/QrCodeResponse.java
+@@ -0,0 +1,15 @@
++package com.chunbaetour.domain.shop.dto.response;
++
++import com.chunbaetour.domain.shop.entity.Shop;
++
++/** 상인 QR 코드 응답 — qrPayload를 프론트에서 QR 이미지로 렌더링 */
++public record QrCodeResponse(Long shopId, String shopName, String qrPayload) {
++
++    public static QrCodeResponse from(Shop shop) {
++        return new QrCodeResponse(
++                shop.getId(),
++                shop.getShopName(),
++                "YEOPJEON_PAY:SHOP:" + shop.getId()
++        );
++    }
++}
+diff --git a/src/main/java/com/chunbaetour/domain/shop/dto/response/ShopInfoResponse.java b/src/main/java/com/chunbaetour/domain/shop/dto/response/ShopInfoResponse.java
+new file mode 100644
+index 0000000..2b58a52
+--- /dev/null
++++ b/src/main/java/com/chunbaetour/domain/shop/dto/response/ShopInfoResponse.java
+@@ -0,0 +1,50 @@
++package com.chunbaetour.domain.shop.dto.response;
++
++import com.chunbaetour.domain.shop.entity.Menu;
++import com.chunbaetour.domain.shop.entity.Shop;
++import java.util.List;
++
++/**
++ * 가게 공개 정보 + 메뉴 목록 응답 — GET /api/v1/shops/{shopId}, 비인증 공개.
++ *
++ * <p>ShopResponse와 구분:
++ * <ul>
++ *   <li>{@link ShopResponse} — MERCHANT 인증 전용 (GET/PATCH /merchants/me/shop).
++ *       본인 가게 관리용이라 userId, lat/lng, imageUrls, status 포함.</li>
++ *   <li>{@link ShopInfoResponse} — 누구나 접근 가능한 공개 뷰.
++ *       userId·lat/lng·imageUrls·status 제외, 메뉴 목록(menus) 추가.
++ *       QR 스캔·앱 탐색 등 진입 경로 무관하게 사용.</li>
++ * </ul>
++ */
++public record ShopInfoResponse(
++        Long shopId,
++        String shopName,
++        String category,
++        String address,
++        String phone,
++        String description,
++        String operatingHours,
++        String closedDays,
++        double rating,
++        int reviewCount,
++        boolean isCertified,
++        List<MenuResponse> menus
++) {
++
++    public static ShopInfoResponse from(Shop shop, List<Menu> menus) {
++        return new ShopInfoResponse(
++                shop.getId(),
++                shop.getShopName(),
++                shop.getCategory(),
++                shop.getAddress(),
++                shop.getPhone(),
++                shop.getDescription(),
++                shop.getOperatingHours(),
++                shop.getClosedDays(),
++                shop.getRating(),
++                shop.getReviewCount(),
++                shop.isCertified(),
++                menus.stream().map(MenuResponse::from).toList()
++        );
++    }
++}
+diff --git a/src/main/java/com/chunbaetour/domain/shop/repository/MenuRepository.java b/src/main/java/com/chunbaetour/domain/shop/repository/MenuRepository.java
+index cb986af..fbdd6a9 100644
+--- a/src/main/java/com/chunbaetour/domain/shop/repository/MenuRepository.java
++++ b/src/main/java/com/chunbaetour/domain/shop/repository/MenuRepository.java
+@@ -1,10 +1,13 @@
+ package com.chunbaetour.domain.shop.repository;
+ 
+ import com.chunbaetour.domain.shop.entity.Menu;
++import java.util.List;
+ import java.util.Optional;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ 
+ public interface MenuRepository extends JpaRepository<Menu, Long> {
+ 
+     Optional<Menu> findByIdAndShopId(Long id, Long shopId);
++
++    List<Menu> findByShopId(Long shopId);
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/shop/service/ShopService.java b/src/main/java/com/chunbaetour/domain/shop/service/ShopService.java
+index d36fabf..1f95432 100644
+--- a/src/main/java/com/chunbaetour/domain/shop/service/ShopService.java
++++ b/src/main/java/com/chunbaetour/domain/shop/service/ShopService.java
+@@ -3,12 +3,17 @@ package com.chunbaetour.domain.shop.service;
+ import com.chunbaetour.domain.common.error.BusinessException;
+ import com.chunbaetour.domain.common.error.ErrorCode;
+ import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
++import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
++import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
+ import com.chunbaetour.domain.shop.dto.response.ShopResponse;
++import com.chunbaetour.domain.shop.entity.Menu;
+ import com.chunbaetour.domain.shop.entity.Shop;
++import com.chunbaetour.domain.shop.repository.MenuRepository;
+ import com.chunbaetour.domain.shop.repository.ShopRepository;
+ import com.chunbaetour.domain.shop.type.ShopStatus;
+ import com.fasterxml.jackson.core.JsonProcessingException;
+ import com.fasterxml.jackson.databind.ObjectMapper;
++import java.util.List;
+ import lombok.RequiredArgsConstructor;
+ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
+@@ -24,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
+ public class ShopService {
+ 
+     private final ShopRepository shopRepository;
++    private final MenuRepository menuRepository;
+     private final ObjectMapper objectMapper;
+ 
+     /**
+@@ -66,6 +72,36 @@ public class ShopService {
+         return ShopResponse.from(shop);
+     }
+ 
++    /**
++     * 내 가게 QR 코드 payload 조회.
++     * qrPayload = "YEOPJEON_PAY:SHOP:{shopId}" — 클라이언트가 이 문자열로 QR 이미지 렌더링.
++     * 가게가 없으면 SHOP_001. SUSPENDED/CLOSED여도 QR 확인 허용 — 결제 차단은 STORY-13에서 처리.
++     */
++    public QrCodeResponse getMyQrCode(Long userId) {
++        // userId로 내 가게 조회 — 가게 없으면 SHOP_001
++        Shop shop = shopRepository.findByUserId(userId)
++                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
++
++        return QrCodeResponse.from(shop);
++    }
++
++    /**
++     * 가게 공개 정보 + 메뉴 목록 조회 (비인증 공개).
++     * QR 스캔·앱 탐색 등 진입 경로 무관. 실제 결제(POST /payments/qr)는 USER 인증 필수.
++     * SUSPENDED/CLOSED 가게도 조회 허용 — 영업 종료 가게 정보도 열람 가능해야 함.
++     * 삭제된 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함 — 프론트에서 비활성 표시.
++     */
++    public ShopInfoResponse getShopInfo(Long shopId) {
++        // shopId로 가게 조회 — 없으면 SHOP_001
++        Shop shop = shopRepository.findById(shopId)
++                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
++
++        // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
++        List<Menu> menus = menuRepository.findByShopId(shopId);
++
++        return ShopInfoResponse.from(shop, menus);
++    }
++
+     /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */
+     private void validateImageUrls(String imageUrls) {
+         if (imageUrls == null) return;
+diff --git a/src/test/java/com/chunbaetour/domain/shop/service/ShopServiceTest.java b/src/test/java/com/chunbaetour/domain/shop/service/ShopServiceTest.java
+index a30a885..b340b44 100644
+--- a/src/test/java/com/chunbaetour/domain/shop/service/ShopServiceTest.java
++++ b/src/test/java/com/chunbaetour/domain/shop/service/ShopServiceTest.java
+@@ -8,11 +8,16 @@ import static org.mockito.Mockito.mock;
+ import com.chunbaetour.domain.common.error.BusinessException;
+ import com.chunbaetour.domain.common.error.ErrorCode;
+ import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
++import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
++import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
+ import com.chunbaetour.domain.shop.dto.response.ShopResponse;
++import com.chunbaetour.domain.shop.entity.Menu;
+ import com.chunbaetour.domain.shop.entity.Shop;
++import com.chunbaetour.domain.shop.repository.MenuRepository;
+ import com.chunbaetour.domain.shop.repository.ShopRepository;
+ import com.chunbaetour.domain.shop.type.ShopStatus;
+ import com.fasterxml.jackson.databind.ObjectMapper;
++import java.util.List;
+ import java.util.Optional;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+@@ -20,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
+ import org.mockito.InjectMocks;
+ import org.mockito.Mock;
+ import org.mockito.junit.jupiter.MockitoExtension;
++import org.springframework.test.util.ReflectionTestUtils;
+ 
+ @ExtendWith(MockitoExtension.class)
+ class ShopServiceTest {
+@@ -27,6 +33,9 @@ class ShopServiceTest {
+     @Mock
+     private ShopRepository shopRepository;
+ 
++    @Mock
++    private MenuRepository menuRepository;
++
+     @Mock
+     private ObjectMapper objectMapper;
+ 
+@@ -34,6 +43,7 @@ class ShopServiceTest {
+     private ShopService shopService;
+ 
+     private static final Long USER_ID = 1L;
++    private static final Long SHOP_ID = 10L;
+ 
+     /** 실제 Shop 인스턴스 생성 — 빌더 기본값: status=ACTIVE */
+     private Shop createShop() {
+@@ -146,4 +156,118 @@ class ShopServiceTest {
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+     }
++
++    // ── GET /merchants/me/qr ───────────────────────────────────────────────
++
++    @Test
++    @DisplayName("QR 코드 조회 — 성공: qrPayload 형식 검증")
++    void getMyQrCode_success() {
++        // given — id 있는 Shop 필요 (qrPayload에 shopId 포함)
++        Shop shop = createShop();
++        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
++        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
++
++        // when
++        QrCodeResponse response = shopService.getMyQrCode(USER_ID);
++
++        // then
++        assertThat(response.shopId()).isEqualTo(SHOP_ID);
++        assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
++        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
++    }
++
++    @Test
++    @DisplayName("QR 코드 조회 — 가게 없음 → SHOP_NOT_FOUND")
++    void getMyQrCode_notFound_throws() {
++        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
++
++        assertThatThrownBy(() -> shopService.getMyQrCode(USER_ID))
++                .isInstanceOf(BusinessException.class)
++                .extracting(ex -> ((BusinessException) ex).getErrorCode())
++                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
++    }
++
++    @Test
++    @DisplayName("QR 코드 조회 — SUSPENDED 가게도 QR 정상 반환 (상태 가드 없음)")
++    void getMyQrCode_suspendedShop_success() {
++        // given — SUSPENDED 상태 가게도 상인이 QR 확인 가능해야 함, 상태 체크 없이 바로 반환
++        Shop shop = mock(Shop.class);
++        given(shop.getId()).willReturn(SHOP_ID);
++        given(shop.getShopName()).willReturn("광화문 떡볶이");
++        given(shopRepository.findByUserId(USER_ID)).willReturn(Optional.of(shop));
++
++        QrCodeResponse response = shopService.getMyQrCode(USER_ID);
++
++        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
++    }
++
++    // ── GET /shops/{shopId}/qr-info ────────────────────────────────────────
++
++    @Test
++    @DisplayName("QR 스캔 가게 정보 조회 — 성공: 메뉴 목록 포함")
++    void getShopInfo_success() {
++        // given
++        Shop shop = createShop();
++        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
++        Menu menu = Menu.builder().shopId(SHOP_ID).name("떡볶이").price(5000L).build();
++        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
++        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(menu));
++
++        // when
++        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
++
++        // then
++        assertThat(response.shopId()).isEqualTo(SHOP_ID);
++        assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
++        assertThat(response.menus()).hasSize(1);
++        assertThat(response.menus().get(0).name()).isEqualTo("떡볶이");
++    }
++
++    @Test
++    @DisplayName("QR 스캔 가게 정보 조회 — 가게 없음 → SHOP_NOT_FOUND")
++    void getShopInfo_notFound_throws() {
++        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
++
++        assertThatThrownBy(() -> shopService.getShopInfo(SHOP_ID))
++                .isInstanceOf(BusinessException.class)
++                .extracting(ex -> ((BusinessException) ex).getErrorCode())
++                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
++    }
++
++    @Test
++    @DisplayName("QR 스캔 가게 정보 조회 — 메뉴 없는 가게도 빈 목록으로 성공")
++    void getShopInfo_noMenus_success() {
++        Shop shop = createShop();
++        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
++        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
++        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of());
++
++        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
++
++        assertThat(response.menus()).isEmpty();
++    }
++
++    @Test
++    @DisplayName("가게 공개 정보 조회 — isAvailable=false 메뉴도 응답에 포함")
++    void getShopInfo_includesUnavailableMenus() {
++        // given — 품절 메뉴(isAvailable=false)도 응답에 포함 — 프론트에서 비활성 표시 처리
++        Shop shop = createShop();
++        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
++        Menu availableMenu = Menu.builder().shopId(SHOP_ID).name("떡볶이").price(5000L).build();
++        Menu unavailableMenu = mock(Menu.class);
++        given(unavailableMenu.getId()).willReturn(2L);
++        given(unavailableMenu.getShopId()).willReturn(SHOP_ID);
++        given(unavailableMenu.getName()).willReturn("순대");
++        given(unavailableMenu.getDescription()).willReturn(null);
++        given(unavailableMenu.getPrice()).willReturn(4000L);
++        given(unavailableMenu.getImageUrl()).willReturn(null);
++        given(unavailableMenu.isAvailable()).willReturn(false);
++        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
++        given(menuRepository.findByShopId(SHOP_ID)).willReturn(List.of(availableMenu, unavailableMenu));
++
++        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
++
++        assertThat(response.menus()).hasSize(2);
++        assertThat(response.menus()).anyMatch(m -> m.name().equals("순대") && !m.isAvailable());
++    }
+ }

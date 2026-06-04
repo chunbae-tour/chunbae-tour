@@ -1,0 +1,1086 @@
+diff --git a/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java b/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java
+index f0edce1..a0141cc 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java
++++ b/src/main/java/com/chunbaetour/domain/payment/client/PortOnePaymentGatewayClient.java
+@@ -66,7 +66,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
+             portOneRestClient.post()
+                 .uri("/payments/{paymentId}/cancel", pgTransactionId)
+                 .header("Authorization", "PortOne " + properties.getSecret())
+-                .body(new CancelRequest(reason, amount))
++                .body(new CancelRequest(properties.getStoreId(), reason, amount))
+                 .retrieve()
+                 .toBodilessEntity();
+         } catch (RestClientException e) {
+@@ -77,7 +77,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
+     private record PreRegisterRequest(String storeId, Long totalAmount, String currency) {
+     }
+ 
+-    private record CancelRequest(String reason, Long amount) {
++    private record CancelRequest(String storeId, String reason, Long amount) {
+     }
+ 
+     private record PortOnePaymentResponse(String status, AmountDetail amount) {
+diff --git a/src/main/java/com/chunbaetour/domain/payment/entity/PaymentOrder.java b/src/main/java/com/chunbaetour/domain/payment/entity/PaymentOrder.java
+index 85e01f8..c294583 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/entity/PaymentOrder.java
++++ b/src/main/java/com/chunbaetour/domain/payment/entity/PaymentOrder.java
+@@ -92,6 +92,26 @@ public class PaymentOrder extends BaseEntity {
+         this.status = PaymentOrderStatus.FAILED;
+     }
+ 
++    public void cancel() {
++        if (this.status == PaymentOrderStatus.REFUNDED) {
++            return;
++        }
++        this.status = PaymentOrderStatus.CANCELLED;
++    }
++
++    public void requireAdjustment() {
++        if (this.status == PaymentOrderStatus.CANCELLED || this.status == PaymentOrderStatus.REFUNDED) {
++            return;
++        }
++        this.status = PaymentOrderStatus.ADJUSTMENT_REQUIRED;
++    }
++
++    public void partialCancel() {
++        if (this.status == PaymentOrderStatus.COMPLETED) {
++            this.status = PaymentOrderStatus.PARTIAL_CANCELLED;
++        }
++    }
++
+     /** 환불 승인 완료 후 주문 상태를 REFUNDED로 전이. COMPLETED 아니면 PaymentException. */
+     public void refund() {
+         if (this.status != PaymentOrderStatus.COMPLETED) {
+diff --git a/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java b/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java
+index ccb608e..2dfc30a 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java
++++ b/src/main/java/com/chunbaetour/domain/payment/entity/Refund.java
+@@ -82,6 +82,14 @@ public class Refund extends BaseEntity {
+         this.status = RefundStatus.APPROVED;
+     }
+ 
++    public void fail(String rejectReason) {
++        if (this.status != RefundStatus.PENDING) {
++            throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
++        }
++        this.status = RefundStatus.FAILED;
++        this.rejectReason = rejectReason;
++    }
++
+     /** 관리자 거절 시 상태 전이 + 거절 사유 저장. PENDING이 아니면 PAY_020. */
+     public void reject(String rejectReason) {
+         if (this.status != RefundStatus.PENDING) {
+diff --git a/src/main/java/com/chunbaetour/domain/payment/repository/PaymentOrderRepository.java b/src/main/java/com/chunbaetour/domain/payment/repository/PaymentOrderRepository.java
+index e02c6a9..398a09b 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/repository/PaymentOrderRepository.java
++++ b/src/main/java/com/chunbaetour/domain/payment/repository/PaymentOrderRepository.java
+@@ -16,6 +16,10 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
+     @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
+     Optional<PaymentOrder> findByOrderUid(@Param("orderUid") String orderUid);
+ 
++    @Lock(LockModeType.PESSIMISTIC_WRITE)
++    @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
++    Optional<PaymentOrder> findByOrderUidWithLock(@Param("orderUid") String orderUid);
++
+     /** 멱등성 키로 PENDING 주문 조회 — 재시도 시 기존 주문 재활용 */
+     @Query("SELECT p FROM PaymentOrder p WHERE p.idempotencyKey = :idempotencyKey AND p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING")
+     Optional<PaymentOrder> findPendingByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+diff --git a/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java b/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java
+index 78d54cf..48b56c5 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java
++++ b/src/main/java/com/chunbaetour/domain/payment/repository/RefundRepository.java
+@@ -16,6 +16,8 @@ public interface RefundRepository extends JpaRepository<Refund, Long> {
+     /** 동일 주문에 대해 중복 환불 요청 방지 검사 */
+     boolean existsByPaymentOrderIdAndStatus(Long paymentOrderId, RefundStatus status);
+ 
++    Optional<Refund> findFirstByPaymentOrderIdOrderByIdDesc(Long paymentOrderId);
++
+     // TODO [DB 마이그레이션]: payment_order_id 전체 unique 제약 제거 후 서비스 레이어 검사로 대체 중.
+     //                        이상적인 해결책은 status = 'PENDING' 조건의 partial unique index.
+     //                        MySQL 8.4는 partial index 미지원 → 별도 컬럼/함수 인덱스로 구현하거나 현행 유지.
+diff --git a/src/main/java/com/chunbaetour/domain/payment/service/CallbackService.java b/src/main/java/com/chunbaetour/domain/payment/service/CallbackService.java
+index 57d0099..5e3f405 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/service/CallbackService.java
++++ b/src/main/java/com/chunbaetour/domain/payment/service/CallbackService.java
+@@ -41,8 +41,14 @@ public class CallbackService {
+             switch (eventType) {
+                 case TRANSACTION_PAID ->
+                         handleSuccess(payload.data().paymentId(), payload.data().transactionId());
+-                case TRANSACTION_FAILED, TRANSACTION_CANCELLED ->
++                case TRANSACTION_FAILED ->
+                         handleFail(payload.data().paymentId());
++                case TRANSACTION_CANCELLED ->
++                        handleCancelled(payload.data().paymentId());
++                case TRANSACTION_PARTIAL_CANCELLED ->
++                        handlePartialCancelled(payload.data().paymentId());
++                case TRANSACTION_CANCEL_PENDING ->
++                        handleCancelPending(payload.data().paymentId());
+                 default -> { }
+             }
+         } catch (PaymentException e) {
+@@ -129,6 +135,56 @@ public class CallbackService {
+         scheduleUnmark(order.getIdempotencyKey());
+     }
+ 
++    @Transactional
++    public void handleCancelled(String paymentId) {
++        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
++                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
++
++        if (order.getStatus() == PaymentOrderStatus.CANCELLED
++                || order.getStatus() == PaymentOrderStatus.REFUNDED) {
++            return;
++        }
++
++        if (order.getStatus() == PaymentOrderStatus.PENDING || order.getStatus() == PaymentOrderStatus.FAILED) {
++            order.cancel();
++            scheduleUnmark(order.getIdempotencyKey());
++            return;
++        }
++
++        if (order.getStatus() != PaymentOrderStatus.COMPLETED
++                && order.getStatus() != PaymentOrderStatus.PARTIAL_CANCELLED) {
++            return;
++        }
++
++        long reclaimed = walletService.reclaimAvailableForExternalCancel(
++                order.getUserId(),
++                order.getAmount(),
++                order.getId()
++        );
++        if (reclaimed == order.getAmount()) {
++            order.cancel();
++        } else {
++            order.requireAdjustment();
++        }
++        scheduleUnmark(order.getIdempotencyKey());
++    }
++
++    @Transactional
++    public void handlePartialCancelled(String paymentId) {
++        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(paymentId)
++                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
++
++        if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
++            order.partialCancel();
++        }
++    }
++
++    @Transactional
++    public void handleCancelPending(String paymentId) {
++        paymentOrderRepository.findByOrderUid(paymentId)
++                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
++    }
++
+     /**
+      * 멱등성 키 해제를 DB 커밋 이후로 예약.
+      *
+diff --git a/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java b/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java
+index a8501eb..7bd639c 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java
++++ b/src/main/java/com/chunbaetour/domain/payment/service/RefundService.java
+@@ -3,18 +3,24 @@ package com.chunbaetour.domain.payment.service;
+ import com.chunbaetour.domain.common.error.BusinessException;
+ import com.chunbaetour.domain.common.error.ErrorCode;
+ import com.chunbaetour.domain.common.response.CursorPageResponse;
++import com.chunbaetour.domain.common.util.CursorUtils;
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+ import com.chunbaetour.domain.payment.dto.request.RefundRequest;
+ import com.chunbaetour.domain.payment.dto.response.RefundResponse;
+ import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
+ import com.chunbaetour.domain.payment.entity.PaymentOrder;
+ import com.chunbaetour.domain.payment.entity.Refund;
++import com.chunbaetour.domain.payment.exception.PaymentException;
+ import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+ import com.chunbaetour.domain.payment.repository.RefundRepository;
+ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
+ import com.chunbaetour.domain.payment.type.RefundStatus;
+ import com.chunbaetour.domain.yeopjeon.entity.Wallet;
++import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
+ import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+-import com.chunbaetour.domain.common.util.CursorUtils;
++import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
++import com.chunbaetour.domain.yeopjeon.service.WalletService;
++import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
+ import java.time.Clock;
+ import java.time.LocalDateTime;
+ import java.util.List;
+@@ -25,11 +31,6 @@ import org.springframework.data.domain.PageRequest;
+ import org.springframework.stereotype.Service;
+ import org.springframework.transaction.annotation.Transactional;
+ 
+-/**
+- * 환불 요청 서비스 (STORY-06, KAN-115).
+- * 유저가 환불을 요청하면 Refund 엔티티를 PENDING으로 생성.
+- * 실제 PG 환불은 STORY-07 관리자 승인 시점에 수행.
+- */
+ @Service
+ @RequiredArgsConstructor
+ @Transactional(readOnly = true)
+@@ -41,70 +42,65 @@ public class RefundService {
+     private final PaymentOrderRepository paymentOrderRepository;
+     private final RefundRepository refundRepository;
+     private final WalletRepository walletRepository;
++    private final YeopjeonHistoryRepository yeopjeonHistoryRepository;
++    private final PaymentGatewayClient paymentGatewayClient;
++    private final WalletService walletService;
+     private final Clock clock;
+ 
+-    /**
+-     * 환불 요청 생성.
+-     * orderId = PaymentOrder.orderUid (UUID 문자열, 충전 응답으로 전달받은 값).
+-     *
+-     * <p>검증 순서:
+-     * 1. 주문 존재 확인 → PAY_009
+-     * 2. 본인 주문 확인 → PAY_011
+-     * 3. COMPLETED 상태 확인 → PAY_015
+-     * 4. 환불 기간(7일) 확인 → PAY_010
+-     * 5. 잔액 전액 보유 확인 → PAY_017 (부분 사용 후 환불 불가)
+-     * 6. 중복 환불 요청 확인 → PAY_016
+-     *
+-     * <p><b>잔액 검증 주의:</b> 본 메서드는 요청 시점 잔액만 검증한다.
+-     * PENDING 상태에서 사용자가 엽전을 추가 소비하면 잔액이 줄 수 있으므로,
+-     * 관리자 승인(STORY-07) 시점에 잔액 재검증 + 차감을 원자적으로 수행해야 한다.
+-     */
+-    @Transactional
++    @Transactional(noRollbackFor = BusinessException.class)
+     public RefundResponse requestRefund(Long userId, String orderId, RefundRequest request) {
+-        // 1. 주문 조회 — orderId는 충전 시 발급된 orderUid(UUID), PK(id)가 아님
+-        PaymentOrder order = paymentOrderRepository.findByOrderUid(orderId)
++        PaymentOrder order = paymentOrderRepository.findByOrderUidWithLock(orderId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+ 
+-        // 2. 본인 주문 확인 — 다른 사용자의 주문에 환불 요청 불가
+         if (!order.getUserId().equals(userId)) {
+             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+         }
+ 
+-        // 3. 결제 완료 상태 확인 — PENDING(결제 진행 중)/FAILED/CANCELLED 주문은 환불 대상 아님
++        Refund existingRefund = refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(order.getId()).orElse(null);
++        if (order.getStatus() == PaymentOrderStatus.REFUNDED) {
++            if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
++                return RefundResponse.from(existingRefund);
++            }
++            throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
++        }
++
+         if (order.getStatus() != PaymentOrderStatus.COMPLETED) {
+             throw new BusinessException(ErrorCode.REFUND_NOT_ELIGIBLE);
+         }
+ 
+-        // 4. 환불 기간(7일) 초과 확인 — 충전일 기준 7일 이내만 환불 허용
+         if (order.getCreatedAt().isBefore(LocalDateTime.now(clock).minusDays(REFUND_PERIOD_DAYS))) {
+             throw new BusinessException(ErrorCode.REFUND_PERIOD_EXPIRED);
+         }
+ 
+-        // 5. 사용자 지갑 조회 (요청 시점 잔액 1차 검증용)
+-        Wallet wallet = walletRepository.findByUserId(userId)
++        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
+-        // 현재 총 잔액이 환불 금액 미만이면 거부 — 충전 엽전을 일부라도 소비했으면 balance < amount
+-        // 2차 검증은 관리자 승인 시 WalletService.reclaimForRefund()에서 비관적 락 + 재확인
+-        if (wallet.getBalance() < order.getAmount()) {
++        if (wallet.getBalance() < order.getAmount() || isChargeUsed(order)) {
+             throw new BusinessException(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+         }
+ 
+-        // 6. 동일 주문에 이미 PENDING 환불이 있는지 확인 — 순차적 중복 요청 차단
+-        // 동시 요청은 아래 saveAndFlush의 UK 제약이 최종 방어
+-        if (refundRepository.existsByPaymentOrderIdAndStatus(order.getId(), RefundStatus.PENDING)) {
++        if (existingRefund != null && existingRefund.getStatus() == RefundStatus.APPROVED) {
++            return RefundResponse.from(existingRefund);
++        }
++        if (existingRefund != null && existingRefund.getStatus() == RefundStatus.PENDING) {
+             throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
+         }
+ 
+         try {
+-            // 7. 환불 요청 엔티티 생성 (전액 환불, PENDING 상태)
+             Refund refund = Refund.create(order.getId(), userId, order.getAmount(), request.reason());
+-            // DB에 즉시 저장 — save()는 트랜잭션 종료 시 flush라 UK 위반을 늦게 감지, saveAndFlush로 즉시 감지
+             refundRepository.saveAndFlush(refund);
+-            // 생성된 환불 요청을 응답 DTO로 변환해서 반환
++
++            try {
++                paymentGatewayClient.cancelPayment(order.getOrderUid(), order.getAmount(), request.reason());
++            } catch (PaymentException e) {
++                refund.fail("PORTONE_CANCEL_FAILED");
++                throw new BusinessException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
++            }
++
++            order.refund();
++            refund.approve();
++            walletService.reclaimForRefund(userId, order.getAmount(), order.getId());
+             return RefundResponse.from(refund);
+         } catch (DataIntegrityViolationException e) {
+-            // UK 제약(uk_refunds_payment_order_id) 위반 시 동시 중복 요청 → DUPLICATE_REFUND_REQUEST로 변환
+-            // Hibernate/드라이버 버전에 따라 cause depth가 달라질 수 있어 전체 chain 탐색
+             Throwable cause = e;
+             while (cause != null) {
+                 if (cause instanceof ConstraintViolationException cve
+@@ -113,56 +109,50 @@ public class RefundService {
+                 }
+                 cause = cause.getCause();
+             }
+-            // UK 위반 아닌 그 외 DB 예외는 그대로 전파
+             throw e;
+         }
+     }
+ 
+-    /**
+-     * 사용자 환불 내역 cursor 페이징 조회 (KAN-115).
+-     * status 파라미터 생략 시 전체 상태 조회.
+-     * cursor는 Refund.id를 Base64URL 인코딩한 값이며, id DESC 기준으로 조회한다.
+-     * 클라이언트는 nextCursor를 다음 요청의 cursor로 그대로 전달하면 된다.
+-     */
+     public CursorPageResponse<UserRefundResponse> getUserRefundHistory(
+             Long userId, RefundStatus status, String cursor, int size) {
+-        // size+1을 DB에 요청 — 마지막 원소 존재 여부로 다음 페이지 판단
+         PageRequest pageable = PageRequest.of(0, size + 1);
+-        // cursor가 있으면 Base64URL 디코딩해서 마지막으로 받은 id 추출, 없으면 null(첫 페이지)
+         Long cursorId = CursorUtils.decodeSafe(cursor);
+-        // status/cursorId null이면 조건 미적용 (4가지 조합을 쿼리 1개로 처리)
+         List<Refund> refunds = refundRepository.findByUserIdWithFilter(userId, status, cursorId, pageable);
+ 
+-        // size+1개 왔으면 다음 페이지 존재
+         boolean hasNext = refunds.size() > size;
+-        // 실제 응답은 size개만 — size+1번째 원소는 hasNext 판단 후 제거
+         List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
+-        // 다음 페이지 cursor — 마지막 원소 id를 Base64URL로 인코딩해서 클라이언트에 전달
+         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
+ 
+-        // Refund 엔티티를 사용자용 응답 DTO로 변환
+         List<UserRefundResponse> responses = content.stream()
+                 .map(UserRefundResponse::from)
+                 .toList();
+ 
+-        // cursor 페이지 응답 조립 후 반환
+         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+     }
+ 
+-    /** 환불 요청 취소. PENDING 상태만 취소 가능 → PAY_019. 타인 요청 취소 시 → PAY_011. */
+     @Transactional
+     public void cancelRefund(Long userId, Long refundId) {
+-        // 환불 요청 조회 + 비관적 락 획득 — 관리자 approve()와 사용자 cancel()이 동시에 들어와도 하나만 처리
+         Refund refund = refundRepository.findByIdWithLock(refundId)
+                 .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
+ 
+-        // 본인 환불 요청인지 확인 — 타인 요청 취소 시 FORBIDDEN
+         if (!refund.getUserId().equals(userId)) {
+             throw new BusinessException(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+         }
+ 
+-        // PENDING → CANCELLED 상태 전이 — PENDING이 아니면 엔티티 내부에서 PAY_019 throw
+         refund.cancel();
+     }
+ 
++    private boolean isChargeUsed(PaymentOrder order) {
++        return yeopjeonHistoryRepository.findFirstByPaymentOrderIdAndTypeOrderByIdAsc(
++                        order.getId(),
++                        YeopjeonHistoryType.CHARGE
++                )
++                .map(YeopjeonHistory::getId)
++                .map(chargeHistoryId -> yeopjeonHistoryRepository.existsByUserIdAndIdGreaterThanAndTypeIn(
++                        order.getUserId(),
++                        chargeHistoryId,
++                        List.of(YeopjeonHistoryType.PAYMENT)
++                ))
++                .orElse(false);
++    }
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/payment/type/PaymentOrderStatus.java b/src/main/java/com/chunbaetour/domain/payment/type/PaymentOrderStatus.java
+index c343b6a..10f35af 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/type/PaymentOrderStatus.java
++++ b/src/main/java/com/chunbaetour/domain/payment/type/PaymentOrderStatus.java
+@@ -1,9 +1,11 @@
+ package com.chunbaetour.domain.payment.type;
+ 
+ public enum PaymentOrderStatus {
+-    PENDING,    // 결제 요청 생성 후 사용자가 PG 결제창에서 결제 진행 중
+-    COMPLETED,  // PG 결제 완료 후 포트원 웹훅으로 승인 확인됨
+-    FAILED,     // PG 결제 실패 또는 승인 거절됨
+-    CANCELLED,  // 사용자가 결제창을 이탈하거나 결제 요청이 만료됨
+-    REFUNDED    // 관리자 환불 승인 후 PG 취소까지 완료됨
++    PENDING,
++    COMPLETED,
++    FAILED,
++    CANCELLED,
++    REFUNDED,
++    PARTIAL_CANCELLED,
++    ADJUSTMENT_REQUIRED
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java b/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java
+index 94b8fd0..e10c843 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java
++++ b/src/main/java/com/chunbaetour/domain/payment/type/RefundStatus.java
+@@ -1,8 +1,9 @@
+ package com.chunbaetour.domain.payment.type;
+ 
+ public enum RefundStatus {
+-    PENDING,    // 환불 요청 접수, 관리자 검토 대기
+-    APPROVED,   // 관리자 승인 + PG 환불 완료
+-    REJECTED,   // 관리자 거절
+-    CANCELLED   // 사용자 취소
++    PENDING,
++    APPROVED,
++    REJECTED,
++    CANCELLED,
++    FAILED
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/payment/type/WebhookEventType.java b/src/main/java/com/chunbaetour/domain/payment/type/WebhookEventType.java
+index 25570c4..cd11847 100644
+--- a/src/main/java/com/chunbaetour/domain/payment/type/WebhookEventType.java
++++ b/src/main/java/com/chunbaetour/domain/payment/type/WebhookEventType.java
+@@ -6,6 +6,8 @@ public enum WebhookEventType {
+     TRANSACTION_PAID("Transaction.Paid"),
+     TRANSACTION_FAILED("Transaction.Failed"),
+     TRANSACTION_CANCELLED("Transaction.Cancelled"),
++    TRANSACTION_PARTIAL_CANCELLED("Transaction.PartialCancelled"),
++    TRANSACTION_CANCEL_PENDING("Transaction.CancelPending"),
+     UNKNOWN("");
+ 
+     private final String value;
+diff --git a/src/main/java/com/chunbaetour/domain/yeopjeon/entity/Wallet.java b/src/main/java/com/chunbaetour/domain/yeopjeon/entity/Wallet.java
+index d8c1ef3..04f4cd9 100644
+--- a/src/main/java/com/chunbaetour/domain/yeopjeon/entity/Wallet.java
++++ b/src/main/java/com/chunbaetour/domain/yeopjeon/entity/Wallet.java
+@@ -60,4 +60,13 @@ public class Wallet extends BaseEntity {
+         }
+         this.balance -= amount;
+     }
++
++    public long debitUpTo(long amount) {
++        if (amount <= 0) {
++            throw new BusinessException(ErrorCode.INVALID_REQUEST);
++        }
++        long debited = Math.min(this.balance, amount);
++        this.balance -= debited;
++        return debited;
++    }
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java b/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java
+index 85869a8..665af4c 100644
+--- a/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java
++++ b/src/main/java/com/chunbaetour/domain/yeopjeon/entity/YeopjeonHistory.java
+@@ -105,6 +105,18 @@ public class YeopjeonHistory extends BaseEntity {
+                 .build();
+     }
+ 
++    public static YeopjeonHistory ofExternalCancelReclaim(
++            Long userId, Long amount, Long balanceSnapshot, Long paymentOrderId, boolean adjustmentRequired) {
++        return YeopjeonHistory.builder()
++                .userId(userId)
++                .type(YeopjeonHistoryType.REFUND)
++                .amount(amount)
++                .balanceSnapshot(balanceSnapshot)
++                .paymentOrderId(paymentOrderId)
++                .description(adjustmentRequired ? "EXTERNAL_CANCEL_ADJUSTMENT_REQUIRED" : "EXTERNAL_CANCEL_RECLAIM")
++                .build();
++    }
++
+     /** 스토어 상품 구매 차감 이력. paymentOrderId/shopId는 스토어 구매와 직접 연결되지 않아 비워둔다. */
+     public static YeopjeonHistory ofStorePurchase(
+             Long userId, Long amount, Long balanceSnapshot, String productName) {
+diff --git a/src/main/java/com/chunbaetour/domain/yeopjeon/repository/YeopjeonHistoryRepository.java b/src/main/java/com/chunbaetour/domain/yeopjeon/repository/YeopjeonHistoryRepository.java
+index 60bbab0..103f945 100644
+--- a/src/main/java/com/chunbaetour/domain/yeopjeon/repository/YeopjeonHistoryRepository.java
++++ b/src/main/java/com/chunbaetour/domain/yeopjeon/repository/YeopjeonHistoryRepository.java
+@@ -1,7 +1,9 @@
+ package com.chunbaetour.domain.yeopjeon.repository;
+ 
+ import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
++import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
+ import java.util.List;
++import java.util.Optional;
+ import org.springframework.data.domain.Pageable;
+ import org.springframework.data.jpa.repository.JpaRepository;
+ import org.springframework.data.jpa.repository.Query;
+@@ -28,4 +30,15 @@ public interface YeopjeonHistoryRepository extends JpaRepository<YeopjeonHistory
+             @Param("userId") Long userId,
+             Pageable pageable
+     );
++
++    Optional<YeopjeonHistory> findFirstByPaymentOrderIdAndTypeOrderByIdAsc(
++            Long paymentOrderId,
++            YeopjeonHistoryType type
++    );
++
++    boolean existsByUserIdAndIdGreaterThanAndTypeIn(
++            Long userId,
++            Long id,
++            List<YeopjeonHistoryType> types
++    );
+ }
+diff --git a/src/main/java/com/chunbaetour/domain/yeopjeon/service/WalletService.java b/src/main/java/com/chunbaetour/domain/yeopjeon/service/WalletService.java
+index 863c858..822af60 100644
+--- a/src/main/java/com/chunbaetour/domain/yeopjeon/service/WalletService.java
++++ b/src/main/java/com/chunbaetour/domain/yeopjeon/service/WalletService.java
+@@ -80,6 +80,24 @@ public class WalletService {
+         );
+     }
+ 
++    @Transactional
++    public long reclaimAvailableForExternalCancel(Long userId, Long amount, Long paymentOrderId) {
++        Wallet wallet = walletRepository.findByUserIdWithLock(userId)
++                .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
++
++        long reclaimed = wallet.debitUpTo(amount);
++        yeopjeonHistoryRepository.save(
++                YeopjeonHistory.ofExternalCancelReclaim(
++                        userId,
++                        reclaimed,
++                        wallet.getBalance(),
++                        paymentOrderId,
++                        reclaimed < amount
++                )
++        );
++        return reclaimed;
++    }
++
+     /**
+      * 스토어 상품 구매 시 엽전 차감 + 구매 이력 저장.
+      * SELECT FOR UPDATE로 지갑 행 락 획득 후 잔액 차감.
+diff --git a/src/main/resources/db/migration/V11__payment_cancel_refund_states.sql b/src/main/resources/db/migration/V11__payment_cancel_refund_states.sql
+new file mode 100644
+index 0000000..89feffd
+--- /dev/null
++++ b/src/main/resources/db/migration/V11__payment_cancel_refund_states.sql
+@@ -0,0 +1,19 @@
++ALTER TABLE payment_orders
++    MODIFY COLUMN status ENUM(
++        'CANCELLED',
++        'COMPLETED',
++        'FAILED',
++        'PENDING',
++        'REFUNDED',
++        'PARTIAL_CANCELLED',
++        'ADJUSTMENT_REQUIRED'
++    ) NOT NULL;
++
++ALTER TABLE refunds
++    MODIFY COLUMN status ENUM(
++        'APPROVED',
++        'CANCELLED',
++        'FAILED',
++        'PENDING',
++        'REJECTED'
++    ) NOT NULL;
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/CallbackServiceTest.java b/src/test/java/com/chunbaetour/domain/payment/service/CallbackServiceTest.java
+index 532e79e..4d11130 100644
+--- a/src/test/java/com/chunbaetour/domain/payment/service/CallbackServiceTest.java
++++ b/src/test/java/com/chunbaetour/domain/payment/service/CallbackServiceTest.java
+@@ -27,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
+ import org.mockito.InjectMocks;
+ import org.mockito.Mock;
+ import org.mockito.junit.jupiter.MockitoExtension;
++import org.springframework.test.util.ReflectionTestUtils;
+ 
+ /**
+  * CallbackService 단위 테스트.
+@@ -250,6 +251,49 @@ class CallbackServiceTest {
+                 .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+     }
+ 
++    @Test
++    @DisplayName("Transaction.Cancelled: COMPLETED 주문은 지급 엽전을 회수하고 CANCELLED 처리한다")
++    void handleCancelled_completed_order_reclaims_wallet_and_cancels_order() {
++        PaymentOrder order = pendingOrder();
++        ReflectionTestUtils.setField(order, "id", 100L);
++        order.complete("tx-1");
++        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
++        given(walletService.reclaimAvailableForExternalCancel(1L, 10_000L, 100L)).willReturn(10_000L);
++
++        callbackService.handleCancelled("order-uid-1");
++
++        assertThat(order.getStatus()).isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.CANCELLED);
++        verify(walletService).reclaimAvailableForExternalCancel(1L, 10_000L, 100L);
++        verify(idempotencyService).unmark("idem-key-1");
++    }
++
++    @Test
++    @DisplayName("Transaction.Cancelled: 회수 가능한 잔액이 부족하면 음수 잔액 없이 회수필요 상태로 남긴다")
++    void handleCancelled_insufficient_balance_marks_adjustment_required() {
++        PaymentOrder order = pendingOrder();
++        ReflectionTestUtils.setField(order, "id", 100L);
++        order.complete("tx-1");
++        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
++        given(walletService.reclaimAvailableForExternalCancel(1L, 10_000L, 100L)).willReturn(3_000L);
++
++        callbackService.handleCancelled("order-uid-1");
++
++        assertThat(order.getStatus()).isEqualTo(com.chunbaetour.domain.payment.type.PaymentOrderStatus.ADJUSTMENT_REQUIRED);
++        verify(walletService).reclaimAvailableForExternalCancel(1L, 10_000L, 100L);
++    }
++
++    @Test
++    @DisplayName("Transaction.Cancelled: 이미 취소된 주문은 멱등하게 처리한다")
++    void handleCancelled_already_cancelled_returns_silently() {
++        PaymentOrder order = pendingOrder();
++        order.cancel();
++        given(paymentOrderRepository.findByOrderUidWithLock("order-uid-1")).willReturn(Optional.of(order));
++
++        callbackService.handleCancelled("order-uid-1");
++
++        verify(walletService, never()).reclaimAvailableForExternalCancel(anyLong(), anyLong(), anyLong());
++    }
++
+     @Test
+     @DisplayName("handle(): 중복 webhook-id → 조용히 리턴 (결제 처리 없음)")
+     void handle_duplicate_webhookId_returns_silently() {
+diff --git a/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java b/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java
+index c337cdd..bd847b3 100644
+--- a/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java
++++ b/src/test/java/com/chunbaetour/domain/payment/service/RefundServiceTest.java
+@@ -5,36 +5,41 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
+ import static org.mockito.ArgumentMatchers.any;
+ import static org.mockito.ArgumentMatchers.eq;
+ import static org.mockito.BDDMockito.given;
++import static org.mockito.Mockito.doThrow;
+ import static org.mockito.Mockito.lenient;
+ import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.never;
+ import static org.mockito.Mockito.verify;
+ 
+ import com.chunbaetour.domain.common.error.BusinessException;
+ import com.chunbaetour.domain.common.error.ErrorCode;
+ import com.chunbaetour.domain.common.response.CursorPageResponse;
++import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+ import com.chunbaetour.domain.payment.dto.request.RefundRequest;
+ import com.chunbaetour.domain.payment.dto.response.RefundResponse;
+ import com.chunbaetour.domain.payment.dto.response.UserRefundResponse;
+ import com.chunbaetour.domain.payment.entity.PaymentOrder;
+ import com.chunbaetour.domain.payment.entity.Refund;
++import com.chunbaetour.domain.payment.exception.PaymentException;
+ import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+ import com.chunbaetour.domain.payment.repository.RefundRepository;
+ import com.chunbaetour.domain.payment.type.PaymentMethod;
+ import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
+ import com.chunbaetour.domain.payment.type.RefundStatus;
+ import com.chunbaetour.domain.yeopjeon.entity.Wallet;
++import com.chunbaetour.domain.yeopjeon.entity.YeopjeonHistory;
+ import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
+-import com.chunbaetour.domain.common.util.CursorUtils;
++import com.chunbaetour.domain.yeopjeon.repository.YeopjeonHistoryRepository;
++import com.chunbaetour.domain.yeopjeon.service.WalletService;
++import com.chunbaetour.domain.yeopjeon.type.YeopjeonHistoryType;
+ import java.time.Clock;
+ import java.time.LocalDateTime;
+ import java.util.List;
+ import java.util.Optional;
+-import org.hibernate.exception.ConstraintViolationException;
+-import org.mockito.Mockito;
++import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.extension.ExtendWith;
+-import org.junit.jupiter.api.BeforeEach;
+ import org.mockito.InjectMocks;
+ import org.mockito.Mock;
+ import org.mockito.junit.jupiter.MockitoExtension;
+@@ -44,6 +49,10 @@ import org.springframework.test.util.ReflectionTestUtils;
+ @ExtendWith(MockitoExtension.class)
+ class RefundServiceTest {
+ 
++    private static final Long USER_ID = 1L;
++    private static final String ORDER_UID = "test-order-uid";
++    private static final Long AMOUNT = 10_000L;
++
+     @Mock
+     private PaymentOrderRepository paymentOrderRepository;
+ 
+@@ -53,6 +62,15 @@ class RefundServiceTest {
+     @Mock
+     private WalletRepository walletRepository;
+ 
++    @Mock
++    private YeopjeonHistoryRepository yeopjeonHistoryRepository;
++
++    @Mock
++    private PaymentGatewayClient paymentGatewayClient;
++
++    @Mock
++    private WalletService walletService;
++
+     @Mock
+     private Clock clock;
+ 
+@@ -62,285 +80,164 @@ class RefundServiceTest {
+     @BeforeEach
+     void setUp() {
+         Clock systemClock = Clock.systemUTC();
+-        // clock은 requestRefund 경로 테스트에서만 사용 — 미사용 테스트에서 UnnecessaryStubbingException 방지
+         lenient().when(clock.instant()).thenReturn(systemClock.instant());
+         lenient().when(clock.getZone()).thenReturn(systemClock.getZone());
+     }
+ 
+-    private static final Long USER_ID = 1L;
+-    private static final String ORDER_UID = "test-order-uid";
+-    private static final Long AMOUNT = 10_000L;
+-
+-    private Wallet makeWallet(long balance) {
+-        Wallet wallet = Wallet.create(USER_ID);
+-        ReflectionTestUtils.setField(wallet, "balance", balance);
+-        return wallet;
+-    }
+-
+-    private PaymentOrder makeCompletedOrder(Long userId) {
+-        PaymentOrder order = PaymentOrder.create(ORDER_UID, userId, AMOUNT, "idem-key", PaymentMethod.CARD, "pg-order-id");
+-        // JPA 어노테이션(@CreatedDate 등)은 unit test에서 자동 주입 안 되므로 직접 설정
+-        ReflectionTestUtils.setField(order, "id", 100L);
+-        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.COMPLETED);
+-        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now());
+-        return order;
+-    }
+-
+     @Test
+-    @DisplayName("정상 환불 요청 시 PENDING 상태 Refund가 생성된다")
+-    void requestRefund_success_creates_pending_refund() {
+-        PaymentOrder order = makeCompletedOrder(USER_ID);
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT)));
+-        given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(false);
++    @DisplayName("unused charge refund calls PortOne cancel and completes refund")
++    void requestRefund_success_refunds_immediately() {
++        PaymentOrder order = completedOrder(USER_ID);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(100L)).willReturn(Optional.empty());
+         given(refundRepository.saveAndFlush(any(Refund.class))).willAnswer(inv -> inv.getArgument(0));
+ 
+-        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("단순 변심"));
++        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
+ 
+-        verify(refundRepository).saveAndFlush(any(Refund.class));
+-        assertThat(response.amount()).isEqualTo(AMOUNT);
+-        assertThat(response.status()).isEqualTo(RefundStatus.PENDING);
++        verify(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
++        verify(walletService).reclaimForRefund(USER_ID, AMOUNT, 100L);
++        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
++        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
+     }
+ 
+     @Test
+-    @DisplayName("존재하지 않는 주문 조회 시 PAY_009(PAYMENT_HISTORY_NOT_FOUND)를 던진다")
+-    void requestRefund_order_not_found_throws_PAY_009() {
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.empty());
++    @DisplayName("partially used charge refund is rejected")
++    void requestRefund_partialUse_throws() {
++        PaymentOrder order = completedOrder(USER_ID);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet(AMOUNT - 1)));
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+-    }
+-
+-    @Test
+-    @DisplayName("타인 주문 환불 요청 시 PAY_011(PAYMENT_HISTORY_FORBIDDEN)를 던진다")
+-    void requestRefund_other_user_order_throws_PAY_011() {
+-        PaymentOrder order = makeCompletedOrder(999L); // 다른 유저 주문
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
++                .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
++        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+     }
+ 
+     @Test
+-    @DisplayName("COMPLETED가 아닌 주문 환불 요청 시 PAY_015(REFUND_NOT_ELIGIBLE)를 던진다")
+-    void requestRefund_non_completed_order_throws_PAY_015() {
+-        PaymentOrder order = makeCompletedOrder(USER_ID);
+-        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.PENDING);
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+-
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.REFUND_NOT_ELIGIBLE);
+-    }
++    @DisplayName("charge with later spend history is rejected even when wallet still has enough balance")
++    void requestRefund_laterSpendHistory_throws() {
++        PaymentOrder order = completedOrder(USER_ID);
++        YeopjeonHistory chargeHistory = mock(YeopjeonHistory.class);
++        given(chargeHistory.getId()).willReturn(10L);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
++        given(yeopjeonHistoryRepository.findFirstByPaymentOrderIdAndTypeOrderByIdAsc(100L, YeopjeonHistoryType.CHARGE))
++                .willReturn(Optional.of(chargeHistory));
++        given(yeopjeonHistoryRepository.existsByUserIdAndIdGreaterThanAndTypeIn(
++                USER_ID,
++                10L,
++                List.of(YeopjeonHistoryType.PAYMENT)
++        )).willReturn(true);
+ 
+-    @Test
+-    @DisplayName("환불 기간(7일) 초과 시 PAY_010(REFUND_PERIOD_EXPIRED)를 던진다")
+-    void requestRefund_expired_period_throws_PAY_010() {
+-        PaymentOrder order = makeCompletedOrder(USER_ID);
+-        // createdAt을 8일 전으로 설정
+-        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now().minusDays(8));
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+-
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.REFUND_PERIOD_EXPIRED);
+-    }
++                .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+ 
+-    @Test
+-    @DisplayName("동시 환불 요청으로 DB 제약 위반 시 PAY_016(DUPLICATE_REFUND_REQUEST)를 던진다")
+-    void requestRefund_concurrent_request_throws_PAY_016() {
+-        PaymentOrder order = makeCompletedOrder(USER_ID);
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT)));
+-        given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(false);
+-
+-        // ConstraintViolationException cause 세팅 — 서비스가 constraintName으로 분기하므로 필수
+-        ConstraintViolationException cve = Mockito.mock(ConstraintViolationException.class);
+-        Mockito.when(cve.getConstraintName()).thenReturn("uk_refunds_payment_order_id");
+-        given(refundRepository.saveAndFlush(any(Refund.class)))
+-                .willThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate", cve));
+-
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("단순 변심")))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
++        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+     }
+ 
+     @Test
+-    @DisplayName("엽전을 일부 사용한 경우 PAY_017(REFUND_BALANCE_INSUFFICIENT)를 던진다")
+-    void requestRefund_partial_use_throws_PAY_017() {
+-        PaymentOrder order = makeCompletedOrder(USER_ID);
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT - 1)));
++    @DisplayName("PortOne cancel failure keeps order unrefunded and records failed refund")
++    void requestRefund_portOneFailure_doesNotMarkRefunded() {
++        PaymentOrder order = completedOrder(USER_ID);
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(walletRepository.findByUserIdWithLock(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(100L)).willReturn(Optional.empty());
++        given(refundRepository.saveAndFlush(any(Refund.class))).willAnswer(inv -> inv.getArgument(0));
++        doThrow(new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE))
++                .when(paymentGatewayClient).cancelPayment(ORDER_UID, AMOUNT, "user request");
+ 
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("단순 변심")))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.REFUND_BALANCE_INSUFFICIENT);
+-    }
++                .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
+ 
+-    @Test
+-    @DisplayName("이미 PENDING 환불 요청이 있으면 PAY_016(DUPLICATE_REFUND_REQUEST)를 던진다")
+-    void requestRefund_duplicate_pending_throws_PAY_016() {
+-        PaymentOrder order = makeCompletedOrder(USER_ID);
+-        given(paymentOrderRepository.findByOrderUid(ORDER_UID)).willReturn(Optional.of(order));
+-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(makeWallet(AMOUNT)));
+-        given(refundRepository.existsByPaymentOrderIdAndStatus(100L, RefundStatus.PENDING)).willReturn(true);
+-
+-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest(null)))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
++        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.COMPLETED);
++        verify(walletService, never()).reclaimForRefund(any(), any(), any());
+     }
+ 
+     @Test
+-    @DisplayName("PENDING 환불 요청 취소 시 상태가 CANCELLED로 변경된다")
+-    void cancelRefund_success_changes_status_to_cancelled() {
+-        Refund refund = Refund.create(100L, USER_ID, AMOUNT, "단순 변심");
+-        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
+-
+-        refundService.cancelRefund(USER_ID, 1L);
++    @DisplayName("duplicate refund request for already refunded order is idempotent")
++    void requestRefund_alreadyRefunded_returnsExistingRefund() {
++        PaymentOrder order = completedOrder(USER_ID);
++        order.refund();
++        Refund refund = Refund.create(100L, USER_ID, AMOUNT, "user request");
++        refund.approve();
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
++        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(100L)).willReturn(Optional.of(refund));
+ 
+-        assertThat(refund.getStatus()).isEqualTo(RefundStatus.CANCELLED);
+-    }
++        RefundResponse response = refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request"));
+ 
+-    @Test
+-    @DisplayName("존재하지 않는 환불 요청 취소 시 PAY_018(REFUND_NOT_FOUND)를 던진다")
+-    void cancelRefund_not_found_throws_PAY_018() {
+-        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.empty());
+-
+-        assertThatThrownBy(() -> refundService.cancelRefund(USER_ID, 1L))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.REFUND_NOT_FOUND);
++        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
++        verify(paymentGatewayClient, never()).cancelPayment(any(), any(), any());
+     }
+ 
+     @Test
+-    @DisplayName("타인의 환불 요청 취소 시 PAY_011(PAYMENT_HISTORY_FORBIDDEN)를 던진다")
+-    void cancelRefund_other_user_throws_PAY_011() {
+-        Refund refund = Refund.create(100L, 999L, AMOUNT, "단순 변심");
+-        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
++    @DisplayName("non-owner refund request is forbidden")
++    void requestRefund_otherUser_throws() {
++        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(completedOrder(999L)));
+ 
+-        assertThatThrownBy(() -> refundService.cancelRefund(USER_ID, 1L))
++        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("user request")))
+                 .isInstanceOf(BusinessException.class)
+                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                 .isEqualTo(ErrorCode.PAYMENT_HISTORY_FORBIDDEN);
+     }
+ 
+     @Test
+-    @DisplayName("PENDING이 아닌 환불 요청 취소 시 PAY_019(REFUND_CANCEL_NOT_ALLOWED)를 던진다")
+-    void cancelRefund_non_pending_throws_PAY_019() {
+-        Refund refund = Refund.create(100L, USER_ID, AMOUNT, "단순 변심");
+-        ReflectionTestUtils.setField(refund, "status", RefundStatus.APPROVED);
+-        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
+-
+-        assertThatThrownBy(() -> refundService.cancelRefund(USER_ID, 1L))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.REFUND_CANCEL_NOT_ALLOWED);
+-    }
+-
+-    // ── GET /payments/refunds ─────────────────────────────────────────────────
+-
+-    private Refund makeRefund(Long id, RefundStatus status) {
++    @DisplayName("refund history supports status filter")
++    void getUserRefundHistory_statusFilter() {
+         Refund refund = mock(Refund.class);
+-        given(refund.getId()).willReturn(id);
++        given(refund.getId()).willReturn(10L);
+         given(refund.getPaymentOrderId()).willReturn(100L);
+         given(refund.getAmount()).willReturn(AMOUNT);
+-        given(refund.getStatus()).willReturn(status);
+-        given(refund.getReason()).willReturn("단순 변심");
++        given(refund.getStatus()).willReturn(RefundStatus.PENDING);
++        given(refund.getReason()).willReturn("reason");
+         given(refund.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 25, 10, 0, 0));
+-        return refund;
+-    }
+-
+-    @Test
+-    @DisplayName("환불 내역 조회 — 성공: 상태 필터 없음, 첫 페이지")
+-    void getUserRefundHistory_noFilter_firstPage() {
+-        // given
+-        Refund r1 = makeRefund(10L, RefundStatus.PENDING);
+-        Refund r2 = makeRefund(9L, RefundStatus.APPROVED);
+-        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(null), any(PageRequest.class)))
+-                .willReturn(List.of(r1, r2));
+-
+-        // when
+-        CursorPageResponse<UserRefundResponse> result =
+-                refundService.getUserRefundHistory(USER_ID, null, null, 20);
+-
+-        // then
+-        assertThat(result.content()).hasSize(2);
+-        assertThat(result.hasNext()).isFalse();
+-        assertThat(result.nextCursor()).isNull();
+-        assertThat(result.content().get(0).refundId()).isEqualTo(10L);
+-    }
+-
+-    @Test
+-    @DisplayName("환불 내역 조회 — 성공: PENDING 상태 필터")
+-    void getUserRefundHistory_statusFilter() {
+-        // given
+-        Refund r1 = makeRefund(10L, RefundStatus.PENDING);
+         given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(RefundStatus.PENDING), eq(null), any(PageRequest.class)))
+-                .willReturn(List.of(r1));
++                .willReturn(List.of(refund));
+ 
+-        // when
+         CursorPageResponse<UserRefundResponse> result =
+                 refundService.getUserRefundHistory(USER_ID, RefundStatus.PENDING, null, 20);
+ 
+-        // then
+         assertThat(result.content()).hasSize(1);
+         assertThat(result.content().get(0).status()).isEqualTo(RefundStatus.PENDING);
+     }
+ 
+     @Test
+-    @DisplayName("환불 내역 조회 — hasNext true, nextCursor 반환")
+-    void getUserRefundHistory_hasNext() {
+-        // given — size=2 요청, 저장소에서 3개(size+1) 반환 → hasNext=true
+-        Refund r1 = makeRefund(10L, RefundStatus.PENDING);
+-        Refund r2 = makeRefund(9L, RefundStatus.APPROVED);
+-        Refund r3 = mock(Refund.class); // slice 대상 — from() 호출 안 됨, stub 불필요
+-        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(null), any(PageRequest.class)))
+-                .willReturn(List.of(r1, r2, r3));
+-
+-        // when
+-        CursorPageResponse<UserRefundResponse> result =
+-                refundService.getUserRefundHistory(USER_ID, null, null, 2);
+-
+-        // then
+-        assertThat(result.content()).hasSize(2);
+-        assertThat(result.hasNext()).isTrue();
+-        assertThat(result.nextCursor()).isNotNull();
++    @DisplayName("invalid refund history cursor throws")
++    void getUserRefundHistory_invalidCursor_throws() {
++        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, "not-valid-base64!!", 20))
++                .isInstanceOf(BusinessException.class)
++                .extracting(ex -> ((BusinessException) ex).getErrorCode())
++                .isEqualTo(ErrorCode.INVALID_CURSOR);
+     }
+ 
+     @Test
+-    @DisplayName("환불 내역 조회 — cursor 전달 시 다음 페이지 조회")
+-    void getUserRefundHistory_withCursor() {
+-        // given — id=9 CursorUtils 인코딩
+-        String cursor = CursorUtils.encode(9L);
+-        Refund r1 = makeRefund(8L, RefundStatus.APPROVED);
+-        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(9L), any(PageRequest.class)))
+-                .willReturn(List.of(r1));
+-
+-        // when
+-        CursorPageResponse<UserRefundResponse> result =
+-                refundService.getUserRefundHistory(USER_ID, null, cursor, 20);
++    @DisplayName("pending refund can be cancelled by owner")
++    void cancelRefund_success() {
++        Refund refund = Refund.create(100L, USER_ID, AMOUNT, "reason");
++        given(refundRepository.findByIdWithLock(1L)).willReturn(Optional.of(refund));
+ 
+-        // then
+-        assertThat(result.content()).hasSize(1);
+-        assertThat(result.content().get(0).refundId()).isEqualTo(8L);
++        refundService.cancelRefund(USER_ID, 1L);
++
++        assertThat(refund.getStatus()).isEqualTo(RefundStatus.CANCELLED);
+     }
+ 
+-    @Test
+-    @DisplayName("환불 내역 조회 — 잘못된 cursor → INVALID_CURSOR")
+-    void getUserRefundHistory_invalidCursor_throws() {
+-        assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, "not-valid-base64!!", 20))
+-                .isInstanceOf(BusinessException.class)
+-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+-                .isEqualTo(ErrorCode.INVALID_CURSOR);
++    private Wallet wallet(long balance) {
++        Wallet wallet = Wallet.create(USER_ID);
++        ReflectionTestUtils.setField(wallet, "balance", balance);
++        return wallet;
+     }
+ 
++    private PaymentOrder completedOrder(Long userId) {
++        PaymentOrder order = PaymentOrder.create(ORDER_UID, userId, AMOUNT, "idem-key", PaymentMethod.CARD, "pg-order-id");
++        ReflectionTestUtils.setField(order, "id", 100L);
++        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.COMPLETED);
++        ReflectionTestUtils.setField(order, "createdAt", LocalDateTime.now());
++        return order;
++    }
+ }
