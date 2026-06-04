@@ -1,7 +1,9 @@
 package com.chunbaetour.domain.admin.dashboard.service;
 
+import com.chunbaetour.domain.admin.banner.service.AdminBannerService;
 import com.chunbaetour.domain.admin.certification.service.AdminShopCertificationService;
 import com.chunbaetour.domain.admin.dashboard.dto.response.AdminDashboardResponse;
+import com.chunbaetour.domain.admin.place.service.AdminPlaceService;
 import com.chunbaetour.domain.admin.shop.service.AdminShopService;
 import com.chunbaetour.domain.admin.user.service.AdminUserService;
 import com.chunbaetour.domain.merchant.service.AdminMerchantApplicationService;
@@ -38,6 +40,8 @@ public class AdminDashboardService {
     private final AdminShopService adminShopService;
     private final AdminShopCertificationService adminShopCertificationService;
     private final AdminMerchantApplicationService adminMerchantApplicationService;
+    private final AdminPlaceService adminPlaceService;
+    private final AdminBannerService adminBannerService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -76,11 +80,14 @@ public class AdminDashboardService {
     }
 
     /**
-     * 카운트 6종을 각 도메인 서비스에서 조합. 본 서비스는 조합만 담당하며 직접 쿼리하지 않는다.
-     * 사용자 3종({@link AdminUserService}) + S06 가게/인증/상인신청 3종을 합친다.
+     * 카운트 9종을 각 도메인 서비스에서 조합. 본 서비스는 조합만 담당하며 직접 쿼리하지 않는다.
+     * 사용자 3종({@link AdminUserService}) + S06 가게/인증/상인신청 3종 + S10 관광지/배너 3종을 합친다.
      *
-     * <p>현재 6개 COUNT를 직렬 호출한다. 카운트 종류가 늘어나는 S10(대시보드 3차) 시점에 쿼리 수가
-     * 더 늘면 병렬화(예: CompletableFuture)나 단일 집계 쿼리를 검토한다 — 현 규모(6개, 1분 캐시)에서는 무해.
+     * <p><b>축제 제외</b>: FestivalService가 카운트 메서드를 노출하지 않는 cross-track이라 본 슬라이스 범위
+     * 밖(별도 follow-up). 관광지({@link AdminPlaceService}) + 배너({@link AdminBannerService})만 추가한다.
+     *
+     * <p>현재 9개 COUNT를 직렬 호출한다. 쿼리 수가 더 늘면 병렬화(CompletableFuture)나 단일 집계 쿼리를
+     * 검토한다 — 현 규모(9개, 1분 캐시)에서는 무해.
      */
     private AdminDashboardResponse loadSummary() {
         return new AdminDashboardResponse(
@@ -89,6 +96,9 @@ public class AdminDashboardService {
                 adminUserService.getSuspendedUsers(),
                 adminShopService.getTotalShops(),
                 adminShopCertificationService.getPendingCertificationsCount(),
-                adminMerchantApplicationService.getPendingApplicationsCount());
+                adminMerchantApplicationService.getPendingApplicationsCount(),
+                adminPlaceService.getTotalPlaces(),
+                adminBannerService.getTotalBanners(),
+                adminBannerService.getActiveBannersCount());
     }
 }
