@@ -9,7 +9,6 @@ import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
-import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.shop.entity.Shop;
@@ -47,9 +46,12 @@ public class AdminMerchantApplicationService {
     /**
      * 상인 신청 목록 cursor 페이징 조회 (status 필터).
      * cursor 형식: id → Base64URL 인코딩 (CursorUtils 공통 유틸 사용).
-     * size 유효성(@Min(1)/@Max(100))은 컨트롤러에서 처리.
+     * size 유효성(@Min(1)/@Max(100))은 컨트롤러에서 처리. 서비스 레벨 이중 방어 포함.
      */
     public CursorPageResponse<MerchantApplicationDetailResponse> getApplications(String cursor, int size, MerchantApplicationStatus status) {
+        // size 방어 — 컨트롤러 @Min(1)/@Max(100) 우회 및 서비스 직접 호출 대비
+        if (size <= 0 || size > 100) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+
         // size+1개 조회 — 다음 페이지 존재 여부를 추가 쿼리 없이 판단하기 위한 sentinel 조회
         PageRequest pageable = PageRequest.of(0, size + 1);
         List<MerchantApplication> applications = (cursor == null)

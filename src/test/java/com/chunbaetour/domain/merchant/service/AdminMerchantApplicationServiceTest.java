@@ -281,6 +281,26 @@ class AdminMerchantApplicationServiceTest {
                 .hasMessageContaining(ErrorCode.INVALID_CURSOR.getMessage());
     }
 
+    @Test
+    @DisplayName("목록 조회: size=0 → INVALID_INPUT_VALUE")
+    void getApplications_sizeZero_throws() {
+        assertThatThrownBy(() -> adminMerchantApplicationService.getApplications(
+                null, 0, MerchantApplicationStatus.PENDING))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    @DisplayName("목록 조회: size > 100 → INVALID_INPUT_VALUE")
+    void getApplications_sizeOverLimit_throws() {
+        assertThatThrownBy(() -> adminMerchantApplicationService.getApplications(
+                null, 101, MerchantApplicationStatus.PENDING))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
     // ===== getApplication 단건 상세 조회 (KAN-182, Epic KAN-177 S13) =====
 
     @Test

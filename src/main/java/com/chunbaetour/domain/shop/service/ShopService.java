@@ -165,6 +165,7 @@ public class ShopService {
      * 관리자 가게-장소 수동 연결 (KAN-217).
      * placeId=null 허용 — 기존 연결 해제.
      * placeId 전달 시 Place 존재 여부 검증.
+     * 상태 무관 연결/해제 허용 — SUSPENDED/CLOSED 가게도 관리자가 장소 정비 가능해야 함 (의도적).
      */
     @Transactional
     public void updateShopPlace(Long shopId, Long placeId) {
@@ -188,6 +189,8 @@ public class ShopService {
      */
     @Transactional
     public void updateShopStatus(Long shopId, ShopStatus newStatus) {
+        // null 방어 — switch NPE 방지
+        if (newStatus == null) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         if (newStatus == ShopStatus.CLOSED) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
