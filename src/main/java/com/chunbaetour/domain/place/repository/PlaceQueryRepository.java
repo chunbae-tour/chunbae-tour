@@ -2,6 +2,7 @@ package com.chunbaetour.domain.place.repository;
 
 import com.chunbaetour.domain.place.QPlace;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceListResponse.PlaceListItem;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.querydsl.core.types.Projections;
@@ -11,6 +12,7 @@ import com.querydsl.core.types.dsl.NumberTemplate;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -157,5 +159,68 @@ public class PlaceQueryRepository {
                 .limit(limit)
                 .fetch();
     }
-}
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 목록 조회 (List) 쿼리 — PHASE 8-2
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 관광지 목록 조회 (카테고리/지역 필터 + 커서 기반 페이지네이션).
+     *
+     * <p>정렬 기준: 평점 내림차순({@code rating DESC}) → ID 내림차순({@code id DESC}).
+     * 평점이 같은 데이터가 많을 수 있어 ID를 2차 정렬 키로 사용하여 커서 안정성을 보장합니다.
+     *
+     * <p>커서 방식: ID 기반 ({@code id < cursorId}).
+     * 평점이 같은 경우에도 정렬 순서가 보장되도록 동일 평점 내에서 ID 내림차순을 사용하므로,
+     * 단순 {@code id < cursorId} 조건이 유효합니다.
+     *
+     * <p>hasNext 판단을 위해 {@code size + 1}건을 조회하므로 호출부에서 마지막 요소를 제거해야 합니다.
+     *
+     * @param category   카테고리 필터 (null 허용 — null이면 전체 카테고리)
+     * @param region     지역 필터 (null 허용 — null이면 전체 지역, {@code address LIKE '%region%'} 방식)
+     * @param cursorId   이전 페이지 마지막 관광지의 ID (null이면 첫 페이지)
+     * @param size       한 페이지 최대 건수 (hasNext 판단을 위해 호출부에서 size + 1 전달)
+     * @return           PlaceListItem 목록
+     */
+    public List<PlaceListItem> findByFilter(PlaceCategory category, String region, Long cursorId, int size) {
+        return queryFactory
+                .select(Projections.constructor(PlaceListItem.class,
+                        place.id,
+                        place.name,
+                        place.category,
+                        place.address,
+                        place.thumbnailUrl,
+                        place.rating,
+                        place.reviewCount
+                ))
+                .from(place)
+                .where(
+                        place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE),
+                        categoryFilter(category),
+                        regionFilter(region),
+                        cursorConditionForList(cursorId)
+                )
+                // 1차: 평점 높은 순, 2차: ID 내림차순 (최신 등록 우선, 커서 안정성 보장)
+                .orderBy(place.rating.desc(), place.id.desc())
+                .limit(size)
+                .fetch();
+    }
+
+    /** 카테고리 필터 — null이면 조건 생략 (전체 카테고리) */
+    private BooleanExpression categoryFilter(PlaceCategory category) {
+        return category != null ? place.category.eq(category) : null;
+    }
+
+    /** 지역 필터 — null 또는 공백이면 조건 생략. {@code address LIKE '%region%'} 방식이라 인덱스 미사용 주의. */
+    private BooleanExpression regionFilter(String region) {
+        return StringUtils.hasText(region) ? place.address.contains(region) : null;
+    }
+
+    /**
+     * 목록 조회용 커서 조건 — ID 내림차순 정렬에서 다음 페이지를 가져오기 위해 {@code id < cursorId}.
+     * cursorId가 null이면 첫 페이지 조회로 간주하여 조건 생략.
+     */
+    private BooleanExpression cursorConditionForList(Long cursorId) {
+        return cursorId != null ? place.id.lt(cursorId) : null;
+    }
+}

@@ -2,9 +2,11 @@ package com.chunbaetour.domain.place.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
+import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
 import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
 import com.chunbaetour.domain.place.service.PlaceService;
@@ -31,6 +33,7 @@ import jakarta.validation.constraints.Min;
 
 import java.util.List;
 
+
 @Tag(name = "관광지", description = "관광지 조회·찜·주변 상점·추천 (/api/v1/places/**)")
 @RestController
 @RequestMapping("/api/v1/places")
@@ -41,6 +44,29 @@ public class PlaceController {
     private final PlaceService placeService;
     private final PlaceLikeService placeLikeService;
     private final RecommendService recommendService;
+
+    /**
+     * 관광지 목록 조회 (PHASE 8-2)
+     * GET /api/v1/places
+     *
+     * <p>카테고리 / 지역 필터 + 커서 기반 페이지네이션을 지원합니다.
+     * - 비로그인 허용 (permitAll). SecurityConfig의 {@code GET /api/v1/places/**} 규칙이 이미 커버.
+     * - 정렬: 평점 내림차순 → ID 내림차순.
+     *
+     * <p>사용 예시:
+     * <pre>
+     *   GET /api/v1/places                            // 전체 목록 (첫 페이지)
+     *   GET /api/v1/places?category=TOURIST_SPOT      // 관광지만 필터링
+     *   GET /api/v1/places?region=서귀포               // 서귀포 지역만
+     *   GET /api/v1/places?cursor=50&size=10          // 커서 페이징 (다음 페이지)
+     * </pre>
+     */
+    @SecurityRequirements
+    @Operation(summary = "관광지 목록 조회", description = "카테고리/지역 필터 + 커서 페이징 지원. 정렬: 평점 내림차순.")
+    @GetMapping
+    public ApiResponse<PlaceListResponse> getPlaceList(@Valid @ModelAttribute PlaceListRequest request) {
+        return ApiResponse.success(placeService.findList(request));
+    }
 
     @SecurityRequirements
     @Operation(summary = "주변 관광지 조회")

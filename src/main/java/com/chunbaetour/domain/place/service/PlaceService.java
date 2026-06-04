@@ -4,10 +4,12 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
+import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
 import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
@@ -266,6 +268,36 @@ public class PlaceService {
             log.warn("imageUrls JSON parsing failed: {}", imageUrlsJson, e);
             return Collections.emptyList();
         }
+    }
+    /**
+     * 관광지 목록 조회 (PHASE 8-2)
+     *
+     * <p>카테고리/지역 필터와 커서 기반 페이지네이션을 지원합니다.
+     * 필터 조합이 너무 다양하여 Redis 캐싱 효율이 낮으므로 캐싱은 미적용합니다.
+     * (인기 목록은 추천 API의 Redis ZSet 방식을 사용합니다.)
+     *
+     * @param request 목록 조회 요청 DTO (category, region, cursor, size)
+     * @return 관광지 목록 응답 (items, hasNext, nextCursor)
+     */
+    @Transactional(readOnly = true)
+    public PlaceListResponse findList(PlaceListRequest request) {
+        // hasNext 판단을 위해 size + 1개 조회
+        List<PlaceListResponse.PlaceListItem> items = placeQueryRepository.findByFilter(
+                request.category(),
+                request.region(),
+                request.cursor(),
+                request.size() + 1
+        );
+
+        boolean hasNext = items.size() > request.size();
+        if (hasNext) {
+            items = items.subList(0, request.size()); // 초과 조회한 마지막 요소 제거
+        }
+
+        // 다음 페이지 커서: 현재 페이지 마지막 아이템의 ID
+        Long nextCursor = (hasNext && !items.isEmpty()) ? items.get(items.size() - 1).id() : null;
+
+        return new PlaceListResponse(items, hasNext, nextCursor);
     }
 }
 
