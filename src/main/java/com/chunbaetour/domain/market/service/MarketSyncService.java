@@ -5,9 +5,10 @@ import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,8 @@ public class MarketSyncService {
     private final RestClient restClient;
     private final TraditionalMarketRepository marketRepository;
     private final PublicDataApiProperties apiProperties;
+
+    @Autowired @Lazy private MarketSyncService self;
 
     public MarketSyncService(
         @Qualifier("publicDataRestClient") RestClient restClient,
@@ -70,13 +73,13 @@ public class MarketSyncService {
             int totalPages = (int) Math.ceil((double) totalCount / PAGE_SIZE);
             log.info("[MarketSync] 총 {} 건, {} 페이지 수집 예정", totalCount, totalPages);
 
-            // 첫 페이지 처리 (TX 분리)
-            totalSynced += processBatch(firstBody.itemList());
+            // 첫 페이지 처리 (프록시 경유 TX 적용)
+            totalSynced += self.processBatch(firstBody.itemList());
 
             // 나머지 페이지 처리 (각 배치마다 별도 TX)
             for (int page = 2; page <= totalPages; page++) {
                 MarketApiResponse.Response response = fetchMarketsPage(page);
-                totalSynced += processBatch(response.body().itemList());
+                totalSynced += self.processBatch(response.body().itemList());
             }
 
             log.info("[MarketSync] 동기화 완료: {} 건", totalSynced);
@@ -126,8 +129,16 @@ public class MarketSyncService {
             String resultCode = header.resultCode();
             String resultMsg = header.resultMsg();
 
-            // resultCode != "00" 이면 예외 throw (에러코드별 처리)
+            // resultCode 검증: "03" (데이터 없음)은 로그만, 기타는 예외
             if (!"00".equals(resultCode)) {
+                if ("03".equals(resultCode)) {
+                    log.debug("[MarketSync] 데이터 없음 (pageNo={}): {}", pageNo, resultMsg);
+                    // 빈 body 반환 (페이지네이션 종료)
+                    return new MarketApiResponse.Response(
+                        new MarketApiResponse.Header(resultCode, resultMsg),
+                        new MarketApiResponse.Body(List.of(), "0", String.valueOf(pageNo), "0")
+                    );
+                }
                 handleApiError(resultCode, resultMsg, pageNo);
             }
 
@@ -157,8 +168,9 @@ public class MarketSyncService {
 
         switch (resultCode) {
             case "03" -> {
-                log.debug("{} (데이터 없음)", errorMessage);
-                throw new IllegalStateException(errorMessage);
+                // "03"은 위에서 이미 처리되므로 여기 도달하지 않음
+                log.debug("{} (데이터 없음 — 이미 처리됨)", errorMessage);
+                return;
             }
             case "05", "22" -> {
                 log.warn("{} (일시적 오류 — 재시도 권장)", errorMessage);
@@ -176,14 +188,15 @@ public class MarketSyncService {
     }
 
     /**
-     * 배치의 시장 항목들을 upsert 처리.
+     * 배치의 시장 항목들을 upsert 처리 (프록시 경유 TX).
      * 각 배치는 별도 트랜잭션으로 격리 (per-batch TX).
+     * public + @Lazy self 호출로 Spring 프록시 어드바이스 적용.
      *
      * @param items API 응답 아이템 목록
      * @return 처리된 개수
      */
     @Transactional
-    private int processBatch(List<MarketApiItem> items) {
+    public int processBatch(List<MarketApiItem> items) {
         if (items == null || items.isEmpty()) {
             return 0;
         }

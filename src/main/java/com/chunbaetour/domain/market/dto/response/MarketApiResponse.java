@@ -39,7 +39,7 @@ public record MarketApiResponse(
 
         public int totalCountInt() {
             if (totalCount == null || totalCount.isBlank()) {
-                return 0;
+                return Integer.MAX_VALUE;
             }
             try {
                 return Integer.parseInt(totalCount);
@@ -49,16 +49,5 @@ public record MarketApiResponse(
             }
         }
 
-        public int pageNoInt() {
-            if (pageNo == null || pageNo.isBlank()) {
-                return 1;
-            }
-            try {
-                return Integer.parseInt(pageNo);
-            } catch (NumberFormatException e) {
-                log.error("[MarketSync] pageNo 파싱 실패: '{}'", pageNo);
-                return 1;
-            }
-        }
     }
 }

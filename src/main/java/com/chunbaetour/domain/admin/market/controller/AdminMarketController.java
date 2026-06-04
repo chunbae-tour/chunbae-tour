@@ -29,7 +29,7 @@ public class AdminMarketController {
 
     @Operation(summary = "전통시장 데이터 즉시 동기화 (관리자 수동 호출)")
     @PostMapping("/sync")
-    @ResponseStatus(HttpStatus.ACCEPTED)
+    @ResponseStatus(HttpStatus.OK)
     @LogAdminAction(actionType = AdminActionType.MARKET_SYNC, targetType = AdminTargetType.MARKET)
     public ApiResponse<SyncResponse> syncNow() {
         int synced = marketSyncService.syncAllMarkets();
