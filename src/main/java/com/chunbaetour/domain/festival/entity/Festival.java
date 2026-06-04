@@ -142,7 +142,7 @@ public class Festival extends BaseEntity {
         this.address = address;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.imageUrl = imageUrl;
+        if (imageUrl != null) this.imageUrl = imageUrl;
         // source, externalId, description, relatedUrl, status, category 유지
     }
 
