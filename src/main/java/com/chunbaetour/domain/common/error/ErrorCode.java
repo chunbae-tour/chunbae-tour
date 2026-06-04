@@ -63,7 +63,9 @@ public enum ErrorCode {
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
     MARKET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_002", "존재하지 않는 전통시장입니다."),
-    FESTIVAL_NOT_FOUND(HttpStatus.NOT_FOUND,                "PLACE_003", "존재하지 않는 축제입니다."),
+    FESTIVAL_NOT_FOUND(HttpStatus.NOT_FOUND,                "FESTIVAL_001", "존재하지 않는 축제입니다."),
+    FESTIVAL_DELETED(HttpStatus.FORBIDDEN,                  "FESTIVAL_002", "삭제된 축제입니다."),
+    FESTIVAL_FORBIDDEN(HttpStatus.FORBIDDEN,                "FESTIVAL_003", "축제 관리 권한이 없습니다."),
     INVALID_LOCATION(HttpStatus.BAD_REQUEST,                "PLACE_004", "위치 정보가 올바르지 않습니다."),
     SEARCH_KEYWORD_TOO_SHORT(HttpStatus.BAD_REQUEST,        "PLACE_005", "검색어는 최소 1자 이상 입력해주세요."),
     SEARCH_KEYWORD_TOO_LONG(HttpStatus.BAD_REQUEST,         "PLACE_006", "검색어는 최대 50자까지 입력 가능합니다."),
@@ -75,6 +77,8 @@ public enum ErrorCode {
     REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,            "PLACE_012", "이미 리뷰를 작성한 관광지입니다."),
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND,                "PLACE_013", "존재하지 않는 리뷰입니다."),
     REVIEW_FORBIDDEN(HttpStatus.FORBIDDEN,                "PLACE_014", "본인의 리뷰만 수정·삭제할 수 있습니다."),
+    // PLACE_015: 이미 soft delete(DELETED)된 관광지를 다시 삭제 시도 (운영자 멱등 가드, S07 리뷰 I)
+    PLACE_ALREADY_DELETED(HttpStatus.CONFLICT,            "PLACE_015", "이미 삭제된 관광지입니다."),
 
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
@@ -193,7 +197,9 @@ public enum ErrorCode {
     // CS_003: USER 본인 상담방 또는 ADMIN 전용 — 타인 접근 차단
     SUPPORT_ROOM_FORBIDDEN(HttpStatus.FORBIDDEN,            "CS_003", "해당 상담방에 접근할 권한이 없습니다."),
     // CS_004: WAITING 상태 상담방 이미 존재 — 중복 생성 차단
-    SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다.");
+    SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
+    // CS_005: 이미 배정된 상담방 — 중복 배정 차단
+    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다.");
 
     private final HttpStatus status;
     private final String code;

@@ -11,10 +11,10 @@ public record SearchFestivalResponse(
         String name,
         String description,
         String region,
-        @JsonProperty("address") String location,
+        String address,
         LocalDate startDate,
         LocalDate endDate,
-        @JsonProperty("imageUrl") String thumbnailUrl,
+        String imageUrl,
         FestivalStatus status,
         FestivalProgressStatus progressStatus
 ) {
@@ -24,10 +24,10 @@ public record SearchFestivalResponse(
                 festival.getName(),
                 festival.getDescription(),
                 festival.getRegion(),
-                festival.getLocation(),
+                festival.getAddress(),
                 festival.getStartDate(),
                 festival.getEndDate(),
-                festival.getThumbnailUrl(),
+                festival.getImageUrl(),
                 festival.getStatus(),
                 progressStatus
         );

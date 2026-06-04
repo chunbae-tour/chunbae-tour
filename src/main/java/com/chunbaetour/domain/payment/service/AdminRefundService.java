@@ -43,7 +43,6 @@ public class AdminRefundService {
      * PG 취소 실패 시 트랜잭션 전체 롤백 — Refund PENDING, PaymentOrder COMPLETED, 엽전 원상 복구.
      * 관리자는 재시도 가능.
      * <p>
-     * TODO [FUTURE]: PG 취소 요청 시 refundId 기반 멱등키 전달 — 네트워크 타임아웃 후 재시도 시 중복 취소 방지.
      * TODO [FUTURE]: 서버 장애(프로세스 종료) 후 PG 미취소 건 복구를 위해 Outbox 패턴 + 워커 재시도 고려.
      */
     @Transactional
@@ -52,8 +51,9 @@ public class AdminRefundService {
         Refund refund = refundRepository.findByIdWithLock(refundId)
             .orElseThrow(() -> new BusinessException(ErrorCode.REFUND_NOT_FOUND));
 
-        // 2. PENDING 여부 사전 체크 — 이미 처리된 환불이면 즉시 실패, 불필요한 PaymentOrder 락 획득 생략
-        if (refund.getStatus() != RefundStatus.PENDING) {
+        // 2. 처리 가능 상태 사전 체크 — PENDING(일반) 또는 REQUIRES_ADMIN(자동 재시도 소진) 모두 허용
+        if (refund.getStatus() != RefundStatus.PENDING
+                && refund.getStatus() != RefundStatus.REQUIRES_ADMIN) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
 
@@ -77,7 +77,8 @@ public class AdminRefundService {
         paymentGatewayClient.cancelPayment(
             order.getOrderUid(),
             refund.getAmount(),
-            refund.getReason() != null ? refund.getReason() : "관리자 환불 승인"
+            refund.getReason() != null ? refund.getReason() : "관리자 환불 승인",
+            "refund-" + refund.getId()
         );
         // 승인 완료된 환불 정보를 DTO로 변환해서 반환
         return RefundDetailResponse.from(refund);

@@ -129,6 +129,46 @@ class AdminSupportRoomControllerTest extends AbstractIntegrationTest {
         verifyNoInteractions(supportRoomService);
     }
 
+    // ===== POST /admin/support/rooms/{id}/assign =====
+
+    // ADMIN 인증 → 200 + IN_PROGRESS 방 반환
+    @Test
+    @DisplayName("상담방 배정 — ADMIN 200")
+    void assignAdmin_whenAdmin_returns200() throws Exception {
+        SupportRoomResponse assigned = new SupportRoomResponse(
+                10L, 1L, 1L, SupportRoomStatus.IN_PROGRESS, null, LocalDateTime.now(), null);
+        given(supportRoomService.assignAdmin(eq(10L), eq(1L))).willReturn(assigned);
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+
+        mockMvc.perform(post(BASE_URL + "/10/assign")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+    }
+
+    // USER 인증 → 403
+    @Test
+    @DisplayName("상담방 배정 — USER 403")
+    void assignAdmin_whenUser_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+        mockMvc.perform(post(BASE_URL + "/10/assign")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
+        verifyNoInteractions(supportRoomService);
+    }
+
+    // supportRoomId 0 → 400
+    @Test
+    @DisplayName("상담방 배정 — supportRoomId 0 → 400")
+    void assignAdmin_whenRoomIdZero_returns400() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+        mockMvc.perform(post(BASE_URL + "/0/assign")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(supportRoomService);
+    }
+
     // ===== POST /admin/support/rooms/{id}/close =====
 
     // ADMIN 인증 → 200 + 종료된 방 반환
