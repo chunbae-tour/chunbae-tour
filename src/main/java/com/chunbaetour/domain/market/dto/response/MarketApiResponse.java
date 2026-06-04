@@ -1,27 +1,64 @@
 package com.chunbaetour.domain.market.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-/**
- * 공공데이터포털 전통시장 API 응답 (최상위).
- * response 객체 하위의 body 부분을 파싱.
- */
-@Getter
-@NoArgsConstructor
-public class MarketApiResponse {
+@JsonIgnoreProperties(ignoreUnknown = true)
+public record MarketApiResponse(
+        @JsonProperty("response") Response response
+) {
 
-    @JsonProperty("pageNo")
-    public Integer pageNo;
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Response(
+            @JsonProperty("header") Header header,
+            @JsonProperty("body")   Body body
+    ) {}
 
-    @JsonProperty("numOfRows")
-    public Integer numOfRows;
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Header(
+            @JsonProperty("resultCode") String resultCode,
+            @JsonProperty("resultMsg")  String resultMsg
+    ) {}
 
-    @JsonProperty("totalCount")
-    public Integer totalCount;
+    // totalCount/numOfRows/pageNo 는 이 API에서 String으로 반환됨
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Body(
+            @JsonProperty("items")      List<MarketApiItem> items,
+            @JsonProperty("numOfRows")  String numOfRows,
+            @JsonProperty("pageNo")     String pageNo,
+            @JsonProperty("totalCount") String totalCount
+    ) {
+        private static final Logger log = LoggerFactory.getLogger(Body.class);
 
-    @JsonProperty("items")
-    public List<MarketApiItem> items;
+        public List<MarketApiItem> itemList() {
+            return items != null ? items : List.of();
+        }
+
+        public int totalCountInt() {
+            if (totalCount == null || totalCount.isBlank()) {
+                return 0;
+            }
+            try {
+                return Integer.parseInt(totalCount);
+            } catch (NumberFormatException e) {
+                log.error("[MarketSync] totalCount 파싱 실패 — 수집 중단: '{}'", totalCount);
+                throw new IllegalStateException("[MarketSync] totalCount 파싱 실패: " + totalCount, e);
+            }
+        }
+
+        public int pageNoInt() {
+            if (pageNo == null || pageNo.isBlank()) {
+                return 1;
+            }
+            try {
+                return Integer.parseInt(pageNo);
+            } catch (NumberFormatException e) {
+                log.error("[MarketSync] pageNo 파싱 실패: '{}'", pageNo);
+                return 1;
+            }
+        }
+    }
 }
