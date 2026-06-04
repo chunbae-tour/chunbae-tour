@@ -57,6 +57,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     Optional<Place> findByIdAndStatus(Long id, PlaceStatus status);
 
     /**
+     * 특정 상태가 아닌 Place 존재 여부 (KAN-217 Shop-Place 연결 검증용).
+     * DELETED를 제외하고 조회 — soft delete된 장소에 가게 연결 차단.
+     */
+    boolean existsByIdAndStatusNot(Long id, PlaceStatus status);
+
+    /**
      * 상태 기반 단건 관광지 조회 (비관적 쓰기 락 - 동시성 제어용)
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
