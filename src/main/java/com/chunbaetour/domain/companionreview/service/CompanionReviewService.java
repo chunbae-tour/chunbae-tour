@@ -29,7 +29,7 @@ public class CompanionReviewService {
     private final ChatRoomMemberRepository chatRoomMemberRepository;
 
     // 동행 리뷰 등록 — 참여자 검증, 자기 자신 방지, 중복 방지, companionScore 증분 갱신
-    // 등록 후 target 캐시 즉시 삭제 — 새 리뷰 반영된 점수 즉시 조회 가능
+    // 등록 후 target 캐시 삭제 — commit 전 동시 조회 시 TTL까지 stale 가능 (저영향)
     @CacheEvict(value = "companionScore", key = "#request.targetUserId()")
     @Transactional
     public CompanionReviewCreateResponse createReview(Long reviewerId, CompanionReviewCreateRequest request) {
