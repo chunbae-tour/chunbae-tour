@@ -64,7 +64,10 @@ public class TourApiClient {
                     .retrieve()
                     .body(TourApiFestivalResponse.class);
 
-            if (response == null || response.response() == null) {
+            if (response == null
+                    || response.response() == null
+                    || response.response().header() == null
+                    || response.response().body() == null) {
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
             }
             String resultCode = response.response().header().resultCode();

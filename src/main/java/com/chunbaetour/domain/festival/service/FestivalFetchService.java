@@ -19,6 +19,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -72,27 +76,28 @@ public class FestivalFetchService {
 
     private FestivalFetchResult doFetch() {
         if (self == null) {
-            log.error("FestivalFetchService self proxy not injected — fetch aborted");
-            return new FestivalFetchResult(0, 0, 0, 0);
+            throw new IllegalStateException("FestivalFetchService self proxy not injected");
         }
 
         List<TourApiFestivalItem> items = tourApiClient.fetchAll();
         int created = 0, updated = 0, skipped = 0;
 
-        for (TourApiFestivalItem item : items) {
-            if (!isValid(item)) {
-                skipped++;
-                continue;
+        try {
+            for (TourApiFestivalItem item : items) {
+                if (!isValid(item)) {
+                    skipped++;
+                    continue;
+                }
+                switch (self.upsertItem(item)) {
+                    case CREATED -> created++;
+                    case UPDATED -> updated++;
+                    case SKIPPED -> skipped++;
+                }
             }
-            switch (self.upsertItem(item)) {
-                case CREATED -> created++;
-                case UPDATED -> updated++;
-                case SKIPPED -> skipped++;
+        } finally {
+            if (created > 0 || updated > 0) {
+                cacheEvict.evictAll();
             }
-        }
-
-        if (created > 0 || updated > 0) {
-            cacheEvict.evictAll();
         }
 
         return new FestivalFetchResult(items.size(), created, updated, skipped);
@@ -100,7 +105,7 @@ public class FestivalFetchService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UpsertResult upsertItem(TourApiFestivalItem item) {
-        String externalId = item.insttCode() + "_" + item.fstvlNm();
+        String externalId = buildExternalId(item);
         try {
             Optional<Festival> existing = festivalRepository.findByExternalId(externalId);
             if (existing.isEmpty()) {
@@ -122,8 +127,12 @@ public class FestivalFetchService {
             );
             return UpsertResult.UPDATED;
         } catch (DataIntegrityViolationException e) {
-            log.error("Festival insert conflict (race condition): externalId={}", externalId, e);
-            return UpsertResult.SKIPPED;
+            if (isDuplicateExternalId(e)) {
+                log.warn("Festival insert conflict (duplicate externalId): externalId={}", externalId);
+                return UpsertResult.SKIPPED;
+            }
+            log.error("Festival upsert failed due to data integrity violation: externalId={}", externalId, e);
+            throw e;
         } catch (Exception e) {
             log.warn("Festival item skipped: externalId={}, reason={}", externalId, e.getMessage());
             return UpsertResult.SKIPPED;
@@ -172,5 +181,29 @@ public class FestivalFetchService {
         if (item.rdnmadr() != null && !item.rdnmadr().isBlank()) return item.rdnmadr();
         if (item.opar() != null && !item.opar().isBlank()) return item.opar();
         return "";
+    }
+
+    private boolean isDuplicateExternalId(DataIntegrityViolationException e) {
+        Throwable root = e.getRootCause();
+        if (root instanceof SQLException sqlEx) {
+            return sqlEx.getErrorCode() == 1062; // MySQL: Duplicate entry
+        }
+        String msg = e.getMessage();
+        return msg != null && msg.contains("Duplicate entry");
+    }
+
+    private String buildExternalId(TourApiFestivalItem item) {
+        String raw = item.insttCode() + "|" + item.fstvlNm() + "|" + item.fstvlStartDate();
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 }
