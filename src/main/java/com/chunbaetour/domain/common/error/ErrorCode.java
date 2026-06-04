@@ -157,6 +157,8 @@ public enum ErrorCode {
     SHOP_CERTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,      "SHOP_019", "존재하지 않는 인증 신청입니다."),
     SHOP_CERTIFICATION_INVALID_STATUS(HttpStatus.CONFLICT,  "SHOP_020", "현재 상태에서는 처리할 수 없는 인증 신청입니다."),
     SHOP_ALREADY_CERTIFIED(HttpStatus.CONFLICT,             "SHOP_021", "이미 인증된 가게입니다. 가게당 유효 인증은 1건만 허용됩니다."),
+    SHOP_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND,             "SHOP_022", "존재하지 않는 가게 공지입니다."),
+    SHOP_STATUS_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_023", "상인이 변경할 수 없는 상태입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
@@ -204,7 +206,12 @@ public enum ErrorCode {
     // CS_004: WAITING 상태 상담방 이미 존재 — 중복 생성 차단
     SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
     // CS_005: 이미 배정된 상담방 — 중복 배정 차단
-    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다.");
+    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다."),
+
+    // ===== COMPANION REVIEW (담당: 임하은) =====
+    COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),
+    COMPANION_REVIEW_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "CR_002", "자기 자신에게 리뷰를 작성할 수 없습니다."),
+    COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "해당 채팅방 참여자가 아니면 리뷰를 작성할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
