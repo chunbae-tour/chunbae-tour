@@ -108,6 +108,20 @@ ratelimit:
       path: /api/v1/payments/qr/*/status
       limit: 30
       window: PT1M
+    # 토큰 재발급: permitAll + 자동 전송 refresh 쿠키만으로 호출 가능한 경로라 무제한 노출되면
+    #   (1) 프론트 인터셉터의 401→reissue 재시도 루프 오작동, (2) 탈취 refresh 쿠키 brute 시도를 막지 못한다.
+    #   IP당 분당 20회 — 정상 SPA의 access TTL 만료 주기(분 단위 1회)에 비해 충분히 여유 있으면서 폭주는 차단.
+    - id: token-reissue
+      method: POST
+      path: /api/v1/auth/reissue
+      limit: 20
+      window: PT1M
+    # 로그아웃: 자동 전송 쿠키 기반 상태변경(블랙리스트/refresh 폐기) 경로라 반복 호출 폭주를 제한.
+    - id: logout
+      method: POST
+      path: /api/v1/auth/logout
+      limit: 20
+      window: PT1M
 
 portone:
   secret: ${PORTONE_SECRET:}
