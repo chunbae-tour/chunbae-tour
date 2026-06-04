@@ -46,11 +46,13 @@ public class ShopNoticeService {
 
     /**
      * 가게 공지 목록 조회 (커서 페이징, 최신순).
+     * 조회는 가게 상태 무관 허용 (SUSPENDED/CLOSED 상태에서도 상인이 공지 확인 가능해야 함).
+     * 등록·삭제는 ACTIVE만 허용 — 정책 비대칭 의도적.
      * cursor 없으면 첫 페이지. 소유권 검증 포함.
      */
     public CursorPageResponse<ShopNoticeResponse> getNotices(Long userId, Long shopId, String cursor, int size) {
-        // size 방어 — 컨트롤러 @Min(1) 뚫리거나 서비스 직접 호출 시 대비
-        if (size <= 0) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        // size 방어 — 컨트롤러 @Min(1)/@Max(100) 우회 및 서비스 직접 호출 대비
+        if (size <= 0 || size > 100) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
 
         // shopId + userId 조합으로 본인 가게 조회 (상태 무관)
         shopRepository.findByIdAndUserId(shopId, userId)

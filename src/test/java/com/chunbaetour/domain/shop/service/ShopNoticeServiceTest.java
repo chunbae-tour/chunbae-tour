@@ -147,6 +147,24 @@ class ShopNoticeServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
         }
+
+        @Test
+        @DisplayName("size = 0 — INVALID_INPUT_VALUE")
+        void getNotices_sizeZero_throws() {
+            assertThatThrownBy(() -> shopNoticeService.getNotices(USER_ID, SHOP_ID, null, 0))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        @Test
+        @DisplayName("size > 100 — INVALID_INPUT_VALUE")
+        void getNotices_sizeOverLimit_throws() {
+            assertThatThrownBy(() -> shopNoticeService.getNotices(USER_ID, SHOP_ID, null, 101))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+        }
     }
 
     // ── DELETE /merchants/me/shops/{shopId}/notices/{noticeId} ─────────────
