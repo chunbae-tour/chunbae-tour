@@ -115,8 +115,8 @@ public class IntegratedSearchService {
                         .region(f.getRegion())
                         .startDate(f.getStartDate())
                         .endDate(f.getEndDate())
-                        .address(f.getLocation())
-                        .imageUrl(f.getThumbnailUrl())
+                        .address(f.getAddress())
+                        .imageUrl(f.getImageUrl())
                         .content(f.getDescription())
                         .build();
                 allItems.add(new ItemWrapper(score, 40, "FESTIVAL", f.getId(), item));
