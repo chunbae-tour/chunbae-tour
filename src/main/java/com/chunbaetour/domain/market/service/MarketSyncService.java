@@ -26,18 +26,10 @@ import java.util.Optional;
 @Transactional
 public class MarketSyncService {
 
+    @Qualifier("publicDataRestClient")
     private final RestClient restClient;
     private final TraditionalMarketRepository marketRepository;
     private final PublicDataApiProperties apiProperties;
-
-    public MarketSyncService(
-            @Qualifier("publicDataRestClient") RestClient restClient,
-            TraditionalMarketRepository marketRepository,
-            PublicDataApiProperties apiProperties) {
-        this.restClient = restClient;
-        this.marketRepository = marketRepository;
-        this.apiProperties = apiProperties;
-    }
 
     /** 한 번에 수집할 최대 행 수 (API 제한: 최대 1000) */
     private static final int PAGE_SIZE = 1000;
