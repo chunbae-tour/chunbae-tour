@@ -146,8 +146,10 @@ class FlywayBaselineIntegrationTest {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE TABLE existing_legacy_table (id BIGINT PRIMARY KEY)");
         // V3(KAN-180)가 users를 ALTER하므로 baseline 대상 기존 schema에 users가 존재해야 한다.
+        // V202606041110(KAN-211)이 chat_rooms FK를 참조하므로 chat_rooms도 존재해야 한다.
         // 실제 운영 prod baseline 시점엔 users 등 전체 schema가 이미 존재 — 이를 최소 테이블로 시뮬레이션.
         jdbc.execute("CREATE TABLE users (id BIGINT PRIMARY KEY)");
+        jdbc.execute("CREATE TABLE chat_rooms (id BIGINT PRIMARY KEY)");
 
         // 운영 prod 설정 (application.yml 그대로): baseline-on-migrate=true + baseline-version=1
         Flyway flyway = Flyway.configure()
