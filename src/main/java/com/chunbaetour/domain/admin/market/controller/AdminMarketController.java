@@ -3,6 +3,7 @@ package com.chunbaetour.domain.admin.market.controller;
 import com.chunbaetour.domain.admin.audit.AdminActionType;
 import com.chunbaetour.domain.admin.audit.AdminTargetType;
 import com.chunbaetour.domain.admin.audit.LogAdminAction;
+import com.chunbaetour.domain.admin.market.dto.SyncResponse;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.market.service.MarketSyncService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +35,4 @@ public class AdminMarketController {
         int synced = marketSyncService.syncAllMarkets();
         return ApiResponse.success(new SyncResponse(synced, "전통시장 데이터 동기화 완료"));
     }
-
-    record SyncResponse(int synced, String message) {}
 }
