@@ -26,8 +26,9 @@ public class MarketSyncScheduler {
     @Scheduled(cron = "0 0 2 1 * *", zone = "Asia/Seoul")
     public void scheduledSync() {
         try {
-            int synced = marketSyncService.syncAllMarkets();
-            log.info("[MarketSync] 정기 동기화 완료: {} 건", synced);
+            var result = marketSyncService.syncAllMarkets();
+            log.info("[MarketSync] 정기 동기화 완료 — inserted={}, updated={}, skipped={}",
+                    result.insertedCount(), result.updatedCount(), result.skippedCount());
         } catch (BusinessException e) {
             if (e.getErrorCode() == ErrorCode.MARKET_SYNC_IN_PROGRESS) {
                 log.info("[MarketSync] 다른 인스턴스에서 수집 중 — 스킵");

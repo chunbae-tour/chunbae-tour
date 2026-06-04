@@ -32,7 +32,6 @@ public class AdminMarketController {
     @ResponseStatus(HttpStatus.OK)
     @LogAdminAction(actionType = AdminActionType.MARKET_SYNC, targetType = AdminTargetType.MARKET)
     public ApiResponse<SyncResponse> syncNow() {
-        int synced = marketSyncService.syncAllMarkets();
-        return ApiResponse.success(new SyncResponse(synced, "전통시장 데이터 동기화 완료"));
+        return ApiResponse.success(marketSyncService.syncAllMarkets());
     }
 }

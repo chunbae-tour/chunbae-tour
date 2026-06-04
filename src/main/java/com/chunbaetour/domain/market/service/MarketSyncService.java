@@ -1,30 +1,30 @@
 package com.chunbaetour.domain.market.service;
 
+import com.chunbaetour.domain.admin.market.dto.SyncResponse;
 import com.chunbaetour.domain.common.config.PublicDataApiProperties;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.core.LockConfiguration;
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.core.SimpleLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
-import net.javacrumbs.shedlock.core.LockConfiguration;
-import net.javacrumbs.shedlock.core.LockProvider;
-import net.javacrumbs.shedlock.core.SimpleLock;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
 
 /**
  * 전통시장 API 동기화 서비스.
@@ -59,25 +59,31 @@ public class MarketSyncService {
         this.lockProvider = lockProvider;
     }
 
-    /** 한 번에 수집할 최대 행 수 (API 제한: 최대 1000) */
     private static final int PAGE_SIZE = 1000;
+
+    record SyncResult(int inserted, int updated, int skipped) {
+        SyncResult add(SyncResult other) {
+            return new SyncResult(
+                inserted + other.inserted,
+                updated + other.updated,
+                skipped + other.skipped
+            );
+        }
+    }
 
     /**
      * 전체 전통시장 데이터 동기화 (공통 진입점).
      * 스케줄러·관리자 수동 모두 이 메서드 호출. LockProvider로 다중 인스턴스 중복 실행 차단.
-     * 페이징으로 전체 데이터 수집 후 아이템 단위 REQUIRES_NEW upsert.
-     *
-     * @return 동기화된 시장 개수 (락 획득 실패 시 0)
+     * 락 TTL: 최대 10분 (at-most-for), 최소 1분 (at-least-for).
      */
-    public int syncAllMarkets() {
-        // 분산 락 획득: 스케줄러·admin 공통 진입점 → 한 인스턴스만 실행
+    public SyncResponse syncAllMarkets() {
         LockConfiguration lockConfig = new LockConfiguration(
                 Instant.now(), "market_sync_all",
                 Duration.ofMinutes(10), Duration.ofMinutes(1));
         Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
 
         if (lock.isEmpty()) {
-            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중");
+            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중 (TTL 최대 10분)");
             throw new BusinessException(ErrorCode.MARKET_SYNC_IN_PROGRESS);
         }
 
@@ -88,32 +94,30 @@ public class MarketSyncService {
         }
     }
 
-    private int doSync() {
+    private SyncResponse doSync() {
         log.info("[MarketSync] 전통시장 데이터 동기화 시작");
-        int totalSynced = 0;
-        int currentPage = 1;
+        SyncResult total = new SyncResult(0, 0, 0);
 
-        // HTTP fetch는 TX 밖 (다중 순차 호출로 인한 커넥션 장시간 점유 방지)
         try {
-            // 첫 페이지 요청하여 totalCount 파악
-            MarketApiResponse.Response firstResponse = fetchMarketsPage(currentPage);
+            MarketApiResponse.Response firstResponse = fetchMarketsPage(1);
             MarketApiResponse.Body firstBody = firstResponse.body();
 
             int totalCount = firstBody.totalCountInt();
             int totalPages = (int) Math.ceil((double) totalCount / PAGE_SIZE);
-            log.info("[MarketSync] 총 {} 건, {} 페이지 수집 예정", totalCount, totalPages);
+            log.info("[MarketSync] API 응답: 총 {} 건, {} 페이지", totalCount, totalPages);
 
-            // 첫 페이지 처리 (아이템 단위 REQUIRES_NEW TX)
-            totalSynced += processBatch(firstBody.itemList());
+            total = total.add(processBatch(firstBody.itemList()));
+            log.info("[MarketSync] 페이지 1/{} 처리 완료", totalPages);
 
-            // 나머지 페이지 처리 (각 배치마다 독립 TX)
             for (int page = 2; page <= totalPages; page++) {
                 MarketApiResponse.Response response = fetchMarketsPage(page);
-                totalSynced += processBatch(response.body().itemList());
+                total = total.add(processBatch(response.body().itemList()));
+                log.info("[MarketSync] 페이지 {}/{} 처리 완료", page, totalPages);
             }
 
-            log.info("[MarketSync] 동기화 완료: {} 건", totalSynced);
-            return totalSynced;
+            log.info("[MarketSync] 동기화 완료 — inserted={}, updated={}, skipped={}",
+                    total.inserted(), total.updated(), total.skipped());
+            return new SyncResponse(total.inserted(), total.updated(), total.skipped(), "전통시장 데이터 동기화 완료");
         } catch (Exception e) {
             log.error("[MarketSync] 동기화 중 오류 발생", e);
             throw new RuntimeException("전통시장 데이터 동기화 실패", e);
@@ -217,52 +221,39 @@ public class MarketSyncService {
         }
     }
 
-    /**
-     * 배치의 시장 항목들을 순회하며 upsert.
-     * 각 아이템은 upsertItem()으로 독립 TX (REQUIRES_NEW) 격리 → 1건 위반이 그 1건만 롤백.
-     *
-     * @param items API 응답 아이템 목록
-     * @return 성공한 개수
-     */
-    public int processBatch(List<MarketApiItem> items) {
+    public SyncResult processBatch(List<MarketApiItem> items) {
         if (items == null || items.isEmpty()) {
-            return 0;
+            return new SyncResult(0, 0, 0);
         }
 
-        int count = 0;
+        int inserted = 0, updated = 0, skipped = 0;
         for (MarketApiItem item : items) {
-            if (self.upsertItem(item)) {
-                count++;
+            switch (self.upsertItem(item)) {
+                case INSERTED -> inserted++;
+                case UPDATED -> updated++;
+                case SKIPPED -> skipped++;
             }
         }
-        return count;
+        return new SyncResult(inserted, updated, skipped);
     }
 
-    /**
-     * 단일 아이템 upsert (아이템 단위 독립 TX).
-     * REQUIRES_NEW: 호출 TX와 무관하게 새 TX 시작 → 예외 시 해당 아이템만 롤백.
-     *
-     * @param item API 응답 아이템
-     * @return 성공 여부
-     */
+    enum UpsertResult { INSERTED, UPDATED, SKIPPED }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean upsertItem(MarketApiItem item) {
+    public UpsertResult upsertItem(MarketApiItem item) {
         try {
-            // 필수 필드 검증
             if (item.getMrktNm() == null || item.getMrktNm().isBlank() ||
                 item.getRdnmadr() == null || item.getRdnmadr().isBlank() ||
                 item.getLatitude() == null || item.getLongitude() == null) {
-                log.warn("[MarketSync] 필수 필드 누락: {}", item.getMrktNm());
-                return false;
+                log.warn("[MarketSync] 필수 필드 누락 — skip: name={}", item.getMrktNm());
+                return UpsertResult.SKIPPED;
             }
 
-            // upsert: name + address 복합 키
             Optional<TraditionalMarket> existing = marketRepository.findByNameAndAddress(
                 item.getMrktNm(), item.getRdnmadr()
             );
 
             if (existing.isPresent()) {
-                // 업데이트
                 TraditionalMarket market = existing.get();
                 market.update(
                     item.getMrktType(),
@@ -273,20 +264,17 @@ public class MarketSyncService {
                         : null
                 );
                 marketRepository.save(market);
-                log.debug("[MarketSync] 시장 정보 업데이트: {} ({})", item.getMrktNm(), item.getRdnmadr());
+                return UpsertResult.UPDATED;
             } else {
-                // 신규
-                TraditionalMarket newMarket = item.toEntity();
-                marketRepository.save(newMarket);
-                log.debug("[MarketSync] 시장 정보 신규 저장: {} ({})", item.getMrktNm(), item.getRdnmadr());
+                marketRepository.save(item.toEntity());
+                return UpsertResult.INSERTED;
             }
-            return true;
         } catch (DataIntegrityViolationException e) {
-            log.warn("[MarketSync] DB 제약 위반 (시장: {}): {}", item.getMrktNm(), e.getMessage());
-            return false;
+            log.warn("[MarketSync] DB 제약 위반 — skip: name={}, msg={}", item.getMrktNm(), e.getMessage());
+            return UpsertResult.SKIPPED;
         } catch (Exception e) {
-            log.error("[MarketSync] 시장 처리 오류: {}", item.getMrktNm(), e);
-            return false;
+            log.error("[MarketSync] 처리 오류 — skip: name={}", item.getMrktNm(), e);
+            return UpsertResult.SKIPPED;
         }
     }
 }
