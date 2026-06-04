@@ -191,28 +191,25 @@ class SupportRoomServiceTest {
 
     // ===== assignAdmin =====
 
-    // 정상 배정 → IN_PROGRESS + adminId 설정
+    // 정상 배정 → IN_PROGRESS + adminId 설정 확인
     @Test
-    void assignAdmin_success_returnsInProgressRoom() {
-        SupportRoom room = buildRoom(1L);
-        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+    void assignAdmin_success_returnsInProgressRoom_withAdminId() {
+        SupportRoom assigned = buildRoomWithAdminAndStatus(1L, 1L, 99L, SupportRoomStatus.IN_PROGRESS);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(1);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(assigned));
 
         SupportRoomResponse result = supportRoomService.assignAdmin(1L, 99L);
 
         assertThat(result.status()).isEqualTo(SupportRoomStatus.IN_PROGRESS);
+        assertThat(result.adminId()).isEqualTo(99L);
     }
 
-    // 이미 배정된 방(IN_PROGRESS) → CS_005
+    // 경합 — 0 rows affected + IN_PROGRESS 재조회 → CS_005
     @Test
-    void assignAdmin_whenAlreadyAssigned_throwsAlreadyAssigned() {
-        SupportRoom room = buildRoom(1L);
-        // status를 IN_PROGRESS로 설정
-        try {
-            var f = SupportRoom.class.getDeclaredField("status");
-            f.setAccessible(true);
-            f.set(room, SupportRoomStatus.IN_PROGRESS);
-        } catch (Exception e) { throw new RuntimeException(e); }
-        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+    void assignAdmin_whenConcurrentConflict_throwsAlreadyAssigned() {
+        SupportRoom inProgress = buildRoomWithAdminAndStatus(1L, 1L, 88L, SupportRoomStatus.IN_PROGRESS);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(inProgress));
 
         assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
                 .isInstanceOf(BusinessException.class)
@@ -220,16 +217,12 @@ class SupportRoomServiceTest {
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_ASSIGNED));
     }
 
-    // CLOSED 방 → CS_002
+    // CLOSED 방 — 0 rows affected + CLOSED 재조회 → CS_002
     @Test
     void assignAdmin_whenClosed_throwsAlreadyClosed() {
-        SupportRoom room = buildRoom(1L);
-        try {
-            var f = SupportRoom.class.getDeclaredField("status");
-            f.setAccessible(true);
-            f.set(room, SupportRoomStatus.CLOSED);
-        } catch (Exception e) { throw new RuntimeException(e); }
-        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        SupportRoom closed = buildRoomWithAdminAndStatus(1L, 1L, null, SupportRoomStatus.CLOSED);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(closed));
 
         assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
                 .isInstanceOf(BusinessException.class)
@@ -317,6 +310,26 @@ class SupportRoomServiceTest {
             var field = SupportRoom.class.getDeclaredField("id");
             field.setAccessible(true);
             field.set(room, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return room;
+    }
+
+    private SupportRoom buildRoomWithAdminAndStatus(Long id, Long userId, Long adminId, SupportRoomStatus status) {
+        SupportRoom room = SupportRoom.builder().userId(userId).build();
+        try {
+            var idField = SupportRoom.class.getDeclaredField("id");
+            idField.setAccessible(true);
+            idField.set(room, id);
+            var statusField = SupportRoom.class.getDeclaredField("status");
+            statusField.setAccessible(true);
+            statusField.set(room, status);
+            if (adminId != null) {
+                var adminIdField = SupportRoom.class.getDeclaredField("adminId");
+                adminIdField.setAccessible(true);
+                adminIdField.set(room, adminId);
+            }
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
