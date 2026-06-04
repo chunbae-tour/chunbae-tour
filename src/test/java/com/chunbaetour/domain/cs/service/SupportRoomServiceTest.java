@@ -191,7 +191,7 @@ class SupportRoomServiceTest {
     @Test
     void assignAdmin_success_returnsInProgressRoom_withAdminId() {
         SupportRoom assigned = buildRoomWithAdminAndStatus(1L, 1L, 99L, SupportRoomStatus.IN_PROGRESS);
-        given(supportRoomRepository.assignIfWaiting(1L, 99L)).willReturn(1);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(1);
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(assigned));
 
         SupportRoomResponse result = supportRoomService.assignAdmin(1L, 99L);
@@ -204,7 +204,7 @@ class SupportRoomServiceTest {
     @Test
     void assignAdmin_whenConcurrentConflict_throwsAlreadyAssigned() {
         SupportRoom inProgress = buildRoomWithAdminAndStatus(1L, 1L, 88L, SupportRoomStatus.IN_PROGRESS);
-        given(supportRoomRepository.assignIfWaiting(1L, 99L)).willReturn(0);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(inProgress));
 
         assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
@@ -217,7 +217,7 @@ class SupportRoomServiceTest {
     @Test
     void assignAdmin_whenClosed_throwsAlreadyClosed() {
         SupportRoom closed = buildRoomWithAdminAndStatus(1L, 1L, null, SupportRoomStatus.CLOSED);
-        given(supportRoomRepository.assignIfWaiting(1L, 99L)).willReturn(0);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(closed));
 
         assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))

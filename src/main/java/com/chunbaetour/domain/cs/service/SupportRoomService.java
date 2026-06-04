@@ -111,7 +111,8 @@ public class SupportRoomService {
     // 0 rows affected: 방 미존재·이미 배정·이미 종료 — 재조회로 정확한 에러 반환
     @Transactional
     public SupportRoomResponse assignAdmin(Long supportRoomId, Long adminId) {
-        int updated = supportRoomRepository.assignIfWaiting(supportRoomId, adminId);
+        int updated = supportRoomRepository.assignIfWaiting(supportRoomId, adminId,
+                SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING);
         if (updated == 0) {
             SupportRoom room = supportRoomRepository.findById(supportRoomId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));

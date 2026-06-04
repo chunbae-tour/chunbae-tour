@@ -25,6 +25,7 @@ public interface SupportRoomRepository extends JpaRepository<SupportRoom, Long> 
     // CS-8: ADMIN 배정 — WAITING 상태일 때만 원자적 UPDATE. 동시 배정 경합 방어
     // clearAutomatically = true: UPDATE 후 JPA 1차 캐시 무효화 → 이후 findById 시 최신 상태 반환
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE SupportRoom r SET r.adminId = :adminId, r.status = 'IN_PROGRESS' WHERE r.id = :supportRoomId AND r.status = 'WAITING'")
-    int assignIfWaiting(@Param("supportRoomId") Long supportRoomId, @Param("adminId") Long adminId);
+    @Query("UPDATE SupportRoom r SET r.adminId = :adminId, r.status = :nextStatus WHERE r.id = :supportRoomId AND r.status = :currentStatus")
+    int assignIfWaiting(@Param("supportRoomId") Long supportRoomId, @Param("adminId") Long adminId,
+            @Param("nextStatus") SupportRoomStatus nextStatus, @Param("currentStatus") SupportRoomStatus currentStatus);
 }
