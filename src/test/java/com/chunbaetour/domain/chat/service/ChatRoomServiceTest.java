@@ -150,7 +150,7 @@ class ChatRoomServiceTest {
         given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행자");
         given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
-        given(account.getCompanionScore()).willReturn(4.5f);
+        given(account.getCompanionScore()).willReturn(4.5);
         given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of(account));
 
         List<ChatRoomMemberResponse> result = chatRoomService.getMembers(USER_ID, ROOM_ID);
@@ -159,7 +159,7 @@ class ChatRoomServiceTest {
         assertThat(result.get(0).userId()).isEqualTo(USER_ID);
         assertThat(result.get(0).nickname()).isEqualTo("여행자");
         assertThat(result.get(0).profileImageUrl()).isEqualTo("https://cdn.example.com/img.jpg");
-        assertThat(result.get(0).companionScore()).isEqualTo(4.5f);
+        assertThat(result.get(0).companionScore()).isEqualTo(4.5);
         assertThat(result.get(0).memberState()).isEqualTo(ChatMemberState.OWNER_ACTIVE);
         assertThat(result.get(0).joinedAt()).isEqualTo(joinedAt);
     }
@@ -208,7 +208,7 @@ class ChatRoomServiceTest {
         given(account.getId()).willReturn(USER_ID);
         given(account.getNickname()).willReturn("여행자");
         given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
-        given(account.getCompanionScore()).willReturn(4.5f);
+        given(account.getCompanionScore()).willReturn(4.5);
         // member2의 Account 누락 — findAllById가 1건만 반환 (탈퇴 계정 시나리오)
         given(accountRepository.findAllById(any())).willReturn(List.of(account));
 

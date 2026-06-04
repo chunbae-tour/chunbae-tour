@@ -124,6 +124,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/payments/qr/*/confirm").hasRole("MERCHANT")
                         // 결제/환불은 USER 전용 — webhook permitAll 라인보다 뒤에 위치해야 순서 안전
                         .requestMatchers("/api/v1/payments/**").hasRole("USER")
+                        // 동행 점수 조회는 공개 — /users/** USER 룰보다 먼저 선언해야 permitAll 적용
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/*/companion-score").permitAll()
                         // S5: 페이지별 권한 매핑 — role mismatch 시 RestAccessDeniedHandler가 AUTH_007 응답
                         .requestMatchers("/api/v1/users/**").hasRole("USER")
                         // 상인 신청은 USER·MERCHANT 모두 허용 — 1상인 다중 가게 지원. /merchants/** 보다 먼저 선언해야 우선순위 적용됨
@@ -164,6 +166,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/faqs/**").hasRole("USER")
                         // 고객센터 상담은 USER·MERCHANT 공용 — ADMIN 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/support/**").hasAnyRole("USER", "MERCHANT")
+                        // 동행 리뷰 등록은 USER 전용
+                        .requestMatchers(HttpMethod.POST, "/api/v1/companion-reviews").hasRole("USER")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
