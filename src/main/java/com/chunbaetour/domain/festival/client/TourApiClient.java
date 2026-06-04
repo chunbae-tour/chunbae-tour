@@ -86,6 +86,9 @@ public class TourApiClient {
         }
     }
 
+    // serviceKey는 반드시 decoded(raw) 값이어야 한다.
+    // encoded key(%2B 등 포함)를 주입하면 .encode()가 %252B로 이중 인코딩하여 인증 실패가 발생한다.
+    // 공공데이터포털 마이페이지에서 복사한 키를 URL decode 후 환경변수(TOUR_API_SERVICE_KEY)에 저장할 것.
     private String buildUri(int pageNo) {
         return UriComponentsBuilder.fromUriString(baseUrl)
                 .queryParam("serviceKey", serviceKey)

@@ -38,9 +38,12 @@ public record TourApiFestivalResponse(
         }
 
         public int totalCountInt() {
+            if (totalCount == null || totalCount.isBlank()) {
+                return Integer.MAX_VALUE;
+            }
             try {
                 return Integer.parseInt(totalCount);
-            } catch (Exception e) {
+            } catch (NumberFormatException e) {
                 log.warn("totalCount 파싱 실패: '{}' — itemList 비어있을 때까지 페이징 진행", totalCount);
                 return Integer.MAX_VALUE;
             }

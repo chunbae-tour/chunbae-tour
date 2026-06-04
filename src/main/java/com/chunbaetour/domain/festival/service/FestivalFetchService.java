@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.festival.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.client.TourApiClient;
 import com.chunbaetour.domain.festival.client.TourApiFestivalItem;
 import com.chunbaetour.domain.festival.dto.response.FestivalFetchResult;
@@ -65,7 +67,7 @@ public class FestivalFetchService {
         Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
         if (lock.isEmpty()) {
             log.warn("festival_fetch 락 획득 실패 — 이미 수집 중인 인스턴스 존재");
-            return new FestivalFetchResult(0, 0, 0, 0);
+            throw new BusinessException(ErrorCode.FESTIVAL_FETCH_IN_PROGRESS);
         }
         try {
             return doFetch();
@@ -133,7 +135,7 @@ public class FestivalFetchService {
             }
             log.error("Festival upsert failed due to data integrity violation: externalId={}", externalId, e);
             throw e;
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             log.warn("Festival item skipped: externalId={}, reason={}", externalId, e.getMessage());
             return UpsertResult.SKIPPED;
         }
@@ -192,8 +194,14 @@ public class FestivalFetchService {
         return msg != null && msg.contains("Duplicate entry");
     }
 
+    private String normalizeKeyPart(String value) {
+        return value == null ? "" : value.trim();
+    }
+
     private String buildExternalId(TourApiFestivalItem item) {
-        String raw = item.insttCode() + "|" + item.fstvlNm() + "|" + item.fstvlStartDate();
+        String raw = normalizeKeyPart(item.insttCode()) + "|"
+                + normalizeKeyPart(item.fstvlNm()) + "|"
+                + normalizeKeyPart(item.fstvlStartDate());
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));

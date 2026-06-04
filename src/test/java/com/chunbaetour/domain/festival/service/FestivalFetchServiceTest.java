@@ -1,16 +1,22 @@
 package com.chunbaetour.domain.festival.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.festival.client.TourApiClient;
 import com.chunbaetour.domain.festival.client.TourApiFestivalItem;
 import com.chunbaetour.domain.festival.dto.response.FestivalFetchResult;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -51,7 +57,16 @@ class FestivalFetchServiceTest {
     }
 
     private String externalId(String insttCode) {
-        return insttCode + "_의령 리치리치 페스티벌";
+        String raw = insttCode + "|의령 리치리치 페스티벌|2026-10-02";
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test
@@ -166,13 +181,13 @@ class FestivalFetchServiceTest {
     }
 
     @Test
-    void 락_획득_실패시_빈_결과_반환() {
+    void 락_획득_실패시_409_예외() {
         given(lockProvider.lock(any())).willReturn(Optional.empty());
 
-        FestivalFetchResult result = fetchService.fetchNow();
-
-        assertThat(result.fetched()).isEqualTo(0);
-        assertThat(result.created()).isEqualTo(0);
+        assertThatThrownBy(() -> fetchService.fetchNow())
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.FESTIVAL_FETCH_IN_PROGRESS));
         verify(tourApiClient, never()).fetchAll();
     }
 
@@ -185,7 +200,7 @@ class FestivalFetchServiceTest {
 
         fetchService.fetchNow();
 
-        assertThat(captor.getValue().getExternalId()).isEqualTo("5390000_의령 리치리치 페스티벌");
+        assertThat(captor.getValue().getExternalId()).isEqualTo(externalId("5390000"));
     }
 
     @Test
