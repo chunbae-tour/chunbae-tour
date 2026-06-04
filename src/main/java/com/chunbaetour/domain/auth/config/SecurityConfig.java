@@ -164,6 +164,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/faqs/**").hasRole("USER")
                         // 고객센터 상담은 USER·MERCHANT 공용 — ADMIN 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/support/**").hasAnyRole("USER", "MERCHANT")
+                        // 동행 리뷰 등록은 USER 전용 — /users/** USER 룰보다 먼저 선언
+                        .requestMatchers(HttpMethod.POST, "/api/v1/companion-reviews").hasRole("USER")
+                        // 동행 점수 조회는 공개 — /users/** USER 룰보다 먼저 선언
+                        .requestMatchers(HttpMethod.GET, "/api/v1/users/*/companion-score").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

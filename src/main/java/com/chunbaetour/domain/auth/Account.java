@@ -268,6 +268,12 @@ public class Account {
      *         ({@code deletedAt != null} ⇔ {@code status == DELETED}) 보호.
      * @throws IllegalStateException 이미 {@code DELETED} 상태인 경우.
      */
+    // 동행 리뷰 등록 시 증분식 평균 갱신 — (currentScore * count + newScore) / (count + 1)
+    public void addCompanionReview(int score) {
+        this.companionScore = (this.companionScore * this.companionReviewCount + score) / (this.companionReviewCount + 1);
+        this.companionReviewCount++;
+    }
+
     public void softDelete(LocalDateTime now) {
         // 도메인 불변식 가드 — now가 null이면 status=DELETED인데 deletedAt=null인 partial 상태가
         // 만들어져 @SQLRestriction("deleted_at IS NULL")이 행을 살아있는 것으로 잘못 인식.

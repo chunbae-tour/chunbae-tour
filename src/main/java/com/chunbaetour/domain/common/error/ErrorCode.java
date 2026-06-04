@@ -197,7 +197,12 @@ public enum ErrorCode {
     // CS_004: WAITING 상태 상담방 이미 존재 — 중복 생성 차단
     SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
     // CS_005: 이미 배정된 상담방 — 중복 배정 차단
-    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다.");
+    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다."),
+
+    // ===== COMPANION REVIEW (담당: 임하은) =====
+    COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),
+    COMPANION_REVIEW_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "CR_002", "자기 자신에게 리뷰를 작성할 수 없습니다."),
+    COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "해당 채팅방 참여자만 리뷰를 작성할 수 있습니다.");
 
     private final HttpStatus status;
     private final String code;
