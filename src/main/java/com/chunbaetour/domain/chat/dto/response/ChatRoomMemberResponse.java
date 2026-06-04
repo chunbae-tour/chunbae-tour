@@ -12,7 +12,7 @@ public record ChatRoomMemberResponse(
         Long userId,
         String nickname,
         String profileImageUrl,
-        float companionScore,
+        double companionScore,
         ChatMemberState memberState,
         LocalDateTime joinedAt
 ) {

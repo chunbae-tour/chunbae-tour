@@ -19,6 +19,7 @@ import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewCreate
 import com.chunbaetour.domain.companionreview.dto.response.CompanionScoreResponse;
 import com.chunbaetour.domain.companionreview.entity.CompanionReview;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
+import com.chunbaetour.domain.companionreview.repository.ScoreCountProjection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class CompanionReviewServiceTest {
@@ -34,6 +36,7 @@ class CompanionReviewServiceTest {
     @Mock private CompanionReviewRepository companionReviewRepository;
     @Mock private AccountRepository accountRepository;
     @Mock private ChatRoomMemberRepository chatRoomMemberRepository;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     // ===== createReview =====
 
@@ -101,7 +104,7 @@ class CompanionReviewServiceTest {
     @Test
     void createReview_success_savesAndUpdatesScore() {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 4, "좋았어요");
-        Account target = buildAccount(2L, 0f, 0);
+        Account target = buildAccount(2L, 0.0, 0);
         CompanionReview saved = buildReview(1L, 1L, 2L, 10L, 4, "좋았어요");
 
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
@@ -110,7 +113,7 @@ class CompanionReviewServiceTest {
                 eq(10L), eq(2L), any())).willReturn(true);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
-        given(accountRepository.findById(2L)).willReturn(Optional.of(target));
+        given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
         given(companionReviewRepository.save(any(CompanionReview.class))).willReturn(saved);
 
         CompanionReviewCreateResponse response = companionReviewService.createReview(1L, request);
@@ -118,7 +121,7 @@ class CompanionReviewServiceTest {
         assertThat(response.score()).isEqualTo(4);
         assertThat(response.writerUserId()).isEqualTo(1L);
         assertThat(target.getCompanionReviewCount()).isEqualTo(1);
-        assertThat(target.getCompanionScore()).isEqualTo(4.0f);
+        assertThat(target.getCompanionScore()).isEqualTo(4.0);
     }
 
     // ===== getCompanionScore =====
@@ -137,20 +140,23 @@ class CompanionReviewServiceTest {
     // 정상 조회 — scoreDistribution 빈 점수는 0
     @Test
     void getCompanionScore_success_returnsDistributionWithZeros() {
-        Account account = buildAccount(1L, 4.5f, 2);
-        List<Object[]> raw = List.<Object[]>of(new Object[]{5, 2L});
+        Account account = buildAccount(1L, 4.5, 2);
+        ScoreCountProjection proj = new ScoreCountProjection() {
+            public Integer getScore() { return 5; }
+            public Long getCount() { return 2L; }
+        };
         given(accountRepository.findById(1L)).willReturn(Optional.of(account));
-        given(companionReviewRepository.countByScoreForTargetUser(1L)).willReturn(raw);
+        given(companionReviewRepository.countByScoreForTargetUser(1L)).willReturn(List.of(proj));
 
         CompanionScoreResponse response = companionReviewService.getCompanionScore(1L);
 
-        assertThat(response.averageScore()).isEqualTo(4.5f);
+        assertThat(response.averageScore()).isEqualTo(4.5);
         assertThat(response.reviewCount()).isEqualTo(2);
         assertThat(response.scoreDistribution().get("5")).isEqualTo(2L);
         assertThat(response.scoreDistribution().get("1")).isEqualTo(0L);
     }
 
-    private Account buildAccount(Long id, float score, int count) {
+    private Account buildAccount(Long id, double score, int count) {
         Account account = Account.builder()
                 .email("test@test.com").password("pw").nickname("nick")
                 .build();

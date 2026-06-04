@@ -49,7 +49,7 @@ public class Account {
     private String language;
 
     @Column(name = "companion_score", nullable = false)
-    private float companionScore;
+    private double companionScore;
 
     @Column(name = "companion_review_count", nullable = false)
     private int companionReviewCount;
@@ -270,7 +270,7 @@ public class Account {
      */
     // 동행 리뷰 등록 시 증분식 평균 갱신 — (currentScore * count + newScore) / (count + 1)
     public void addCompanionReview(int score) {
-        this.companionScore = (this.companionScore * this.companionReviewCount + score) / (this.companionReviewCount + 1);
+        this.companionScore = (this.companionScore * this.companionReviewCount + score) / (double) (this.companionReviewCount + 1);
         this.companionReviewCount++;
     }
 

@@ -12,6 +12,6 @@ public interface CompanionReviewRepository extends JpaRepository<CompanionReview
     boolean existsByReviewerIdAndTargetUserIdAndChatRoomId(Long reviewerId, Long targetUserId, Long chatRoomId);
 
     // scoreDistribution — score별 리뷰 건수 집계 (CR-3)
-    @Query("SELECT r.score, COUNT(r) FROM CompanionReview r WHERE r.targetUserId = :targetUserId GROUP BY r.score")
-    List<Object[]> countByScoreForTargetUser(@Param("targetUserId") Long targetUserId);
+    @Query("SELECT r.score as score, COUNT(r) as count FROM CompanionReview r WHERE r.targetUserId = :targetUserId GROUP BY r.score")
+    List<ScoreCountProjection> countByScoreForTargetUser(@Param("targetUserId") Long targetUserId);
 }

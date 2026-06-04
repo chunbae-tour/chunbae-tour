@@ -88,7 +88,7 @@ class CompanionReviewControllerTest extends AbstractIntegrationTest {
     @DisplayName("동행 점수 조회 미인증 → 200")
     void getCompanionScore_unauthenticated_returns200() throws Exception {
         CompanionScoreResponse response = new CompanionScoreResponse(
-                1L, "테스트유저", 4.5f, 2, Map.of("1", 0L, "2", 0L, "3", 0L, "4", 0L, "5", 2L));
+                1L, "테스트유저", 4.5, 2, Map.of("1", 0L, "2", 0L, "3", 0L, "4", 0L, "5", 2L));
         given(companionReviewService.getCompanionScore(1L)).willReturn(response);
 
         mockMvc.perform(get("/api/v1/users/1/companion-score"))

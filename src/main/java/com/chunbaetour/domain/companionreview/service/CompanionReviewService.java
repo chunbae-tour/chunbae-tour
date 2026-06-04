@@ -10,11 +10,13 @@ import com.chunbaetour.domain.companionreview.dto.request.CompanionReviewCreateR
 import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewCreateResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionScoreResponse;
 import com.chunbaetour.domain.companionreview.entity.CompanionReview;
+import com.chunbaetour.domain.companionreview.event.CompanionScoreCacheEvictEvent;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
+import com.chunbaetour.domain.companionreview.repository.ScoreCountProjection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,10 +29,10 @@ public class CompanionReviewService {
     private final CompanionReviewRepository companionReviewRepository;
     private final AccountRepository accountRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // 동행 리뷰 등록 — 참여자 검증, 자기 자신 방지, 중복 방지, companionScore 증분 갱신
-    // 등록 후 target 캐시 삭제 — commit 전 동시 조회 시 TTL까지 stale 가능 (저영향)
-    @CacheEvict(value = "companionScore", key = "#request.targetUserId()")
+    // PESSIMISTIC_WRITE 락으로 동시 점수 갱신 경합 방어
     @Transactional
     public CompanionReviewCreateResponse createReview(Long reviewerId, CompanionReviewCreateRequest request) {
         if (reviewerId.equals(request.targetUserId())) {
@@ -52,7 +54,8 @@ public class CompanionReviewService {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_ALREADY_EXISTS);
         }
 
-        Account target = accountRepository.findById(request.targetUserId())
+        // PESSIMISTIC_WRITE — 동시 리뷰 등록으로 인한 이중 점수 갱신 경합 방어
+        Account target = accountRepository.findByIdWithLock(request.targetUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         CompanionReview review;
@@ -71,6 +74,9 @@ public class CompanionReviewService {
 
         target.addCompanionReview(request.score());
 
+        // AFTER_COMMIT evict — commit 전 동시 조회의 stale 재캐싱 방지
+        applicationEventPublisher.publishEvent(new CompanionScoreCacheEvictEvent(request.targetUserId()));
+
         return CompanionReviewCreateResponse.from(review);
     }
 
@@ -79,7 +85,7 @@ public class CompanionReviewService {
     public CompanionScoreResponse getCompanionScore(Long userId) {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        List<Object[]> distribution = companionReviewRepository.countByScoreForTargetUser(userId);
+        List<ScoreCountProjection> distribution = companionReviewRepository.countByScoreForTargetUser(userId);
         return CompanionScoreResponse.of(account, distribution);
     }
 }
