@@ -87,6 +87,7 @@ public class AdminFestivalController {
 
     @Operation(summary = "정부 API 즉시 수집", description = "공공데이터포털 전국문화축제표준데이터(tn_pubr_public_cltur_fstvl_api)에서 축제 즉시 수집.")
     @PostMapping("/fetch")
+    @LogAdminAction(actionType = AdminActionType.FESTIVAL_FETCH, targetType = AdminTargetType.FESTIVAL)
     public ApiResponse<FestivalFetchResult> fetch() {
         return ApiResponse.success(festivalFetchService.fetchNow());
     }
