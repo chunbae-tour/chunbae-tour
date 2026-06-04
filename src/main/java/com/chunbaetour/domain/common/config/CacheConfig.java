@@ -35,8 +35,12 @@ public class CacheConfig {
                         RedisSerializationContext.SerializationPair.fromSerializer(jsonSerializer))
                 .disableCachingNullValues();
 
+        RedisCacheConfiguration companionScoreConfig = config
+                .entryTtl(Duration.ofMinutes(10));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
+                .withCacheConfiguration("companionScore", companionScoreConfig)
                 .build();
     }
 }
