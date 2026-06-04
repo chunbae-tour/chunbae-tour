@@ -75,9 +75,10 @@ class FestivalFetchServiceTest {
         FestivalFetchResult result = fetchService.fetchNow();
 
         assertThat(result.created()).isEqualTo(0);
-        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.skipped()).isEqualTo(0);
         assertThat(existing.getName()).isEqualTo("의령 리치리치 페스티벌");
         verify(festivalRepository, never()).save(any());
+        verify(cacheEvict).evictAll();
     }
 
     @Test

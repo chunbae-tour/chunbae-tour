@@ -69,7 +69,7 @@ public class Festival extends BaseEntity {
     @Column(nullable = false, length = 20)
     private FestivalCategory category;
 
-    @Column(name = "external_id", length = 50, unique = true)
+    @Column(name = "external_id", length = 100, unique = true)
     private String externalId;
 
     // ── 팩토리 메서드 ──────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -30,6 +31,8 @@ public class FestivalFetchService {
 
     @Autowired @Lazy private FestivalFetchService self;
 
+    enum UpsertResult { CREATED, UPDATED, SKIPPED }
+
     @Scheduled(cron = "${tour-api.sync-cron}")
     public void scheduledFetch() {
         FestivalFetchResult result = fetchNow();
@@ -38,22 +41,27 @@ public class FestivalFetchService {
     }
 
     public FestivalFetchResult fetchNow() {
+        if (self == null) {
+            log.error("FestivalFetchService self proxy not injected — fetch aborted");
+            return new FestivalFetchResult(0, 0, 0);
+        }
+
         List<TourApiFestivalItem> items = tourApiClient.fetchAll();
-        int created = 0, skipped = 0;
+        int created = 0, updated = 0, skipped = 0;
 
         for (TourApiFestivalItem item : items) {
             if (!isValid(item)) {
                 skipped++;
                 continue;
             }
-            if (self.upsertItem(item)) {
-                created++;
-            } else {
-                skipped++;
+            switch (self.upsertItem(item)) {
+                case CREATED -> created++;
+                case UPDATED -> updated++;
+                case SKIPPED -> skipped++;
             }
         }
 
-        if (created > 0) {
+        if (created > 0 || updated > 0) {
             cacheEvict.evictAll();
         }
 
@@ -61,18 +69,18 @@ public class FestivalFetchService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean upsertItem(TourApiFestivalItem item) {
+    public UpsertResult upsertItem(TourApiFestivalItem item) {
+        String externalId = item.insttCode() + "_" + item.fstvlNm();
         try {
-            String externalId = item.insttCode() + "_" + item.fstvlNm();
             Optional<Festival> existing = festivalRepository.findByExternalId(externalId);
             if (existing.isEmpty()) {
                 festivalRepository.save(toNewFestival(item, externalId));
-                return true;
+                return UpsertResult.CREATED;
             }
             Festival festival = existing.get();
             if (festival.getStatus() == FestivalStatus.DELETED) {
                 log.warn("Festival item skipped — DELETED status preserved: externalId={}", externalId);
-                return false;
+                return UpsertResult.SKIPPED;
             }
             festival.updateFromApi(
                     item.fstvlNm(),
@@ -82,11 +90,13 @@ public class FestivalFetchService {
                     LocalDate.parse(item.fstvlEndDate()),
                     null
             );
-            return false;
+            return UpsertResult.UPDATED;
+        } catch (DataIntegrityViolationException e) {
+            log.error("Festival insert conflict (race condition): externalId={}", externalId, e);
+            return UpsertResult.SKIPPED;
         } catch (Exception e) {
-            log.warn("Festival item skipped: insttCode={}, fstvlNm={}, reason={}",
-                    item.insttCode(), item.fstvlNm(), e.getMessage());
-            return false;
+            log.warn("Festival item skipped: externalId={}, reason={}", externalId, e.getMessage());
+            return UpsertResult.SKIPPED;
         }
     }
 
