@@ -83,6 +83,7 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
 
         // 외부 API 키 — placeholder 차단 + 비어있지 않음.
         validateExternalKey(env, "KAKAO_MAP_API_KEY", "kakao.map.api-key", violations);
+        validateExternalKey(env, "PUBLIC_DATA_MARKET_KEY", "public-data.market.key", violations);
         validateExternalKey(env, "PORTONE_SECRET", "portone.secret", violations);
         validateExternalKey(env, "PORTONE_STORE_ID", "portone.store-id", violations);
         validateExternalKey(env, "PORTONE_WEBHOOK_SECRET", "portone.webhook-secret", violations);
