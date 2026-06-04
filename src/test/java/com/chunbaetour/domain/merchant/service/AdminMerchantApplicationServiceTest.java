@@ -163,7 +163,7 @@ class AdminMerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("승인 실패: ShopWallet uk_shop_wallets_shop_id 중복 → SHOP_ALREADY_EXISTS")
+    @DisplayName("승인 실패: ShopWallet uk_shop_wallets_shop_id 중복 → SHOP_WALLET_ALREADY_EXISTS")
     void approve_shopWalletDuplicate_throwsShopAlreadyExists() {
         MerchantApplication app = pendingApplication();
         Account account = activeAccount();
@@ -178,7 +178,7 @@ class AdminMerchantApplicationServiceTest {
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.SHOP_ALREADY_EXISTS);
+                .isEqualTo(ErrorCode.SHOP_WALLET_ALREADY_EXISTS);
     }
 
     // ===== reject =====
