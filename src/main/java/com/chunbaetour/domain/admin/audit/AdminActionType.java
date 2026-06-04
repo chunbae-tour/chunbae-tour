@@ -43,5 +43,14 @@ public enum AdminActionType {
     PLACE_UPDATE,
 
     /** S07 관광지/전통시장 삭제 — Place.delete()(→DELETED soft delete). */
-    PLACE_DELETE;
+    PLACE_DELETE,
+
+    /** S09 배너 등록 — Banner 신규 생성(KAN-216). */
+    BANNER_CREATE,
+
+    /** S09 배너 수정 — partial update(null-skip). */
+    BANNER_UPDATE,
+
+    /** S09 배너 삭제 — Banner.delete()(→DELETED soft delete). */
+    BANNER_DELETE;
 }

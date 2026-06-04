@@ -80,6 +80,11 @@ public enum ErrorCode {
     // PLACE_015: 이미 soft delete(DELETED)된 관광지를 다시 삭제 시도 (운영자 멱등 가드, S07 리뷰 I)
     PLACE_ALREADY_DELETED(HttpStatus.CONFLICT,            "PLACE_015", "이미 삭제된 관광지입니다."),
 
+    // ===== BANNER (담당: 정민교, Admin Epic KAN-177 S09) =====
+    BANNER_NOT_FOUND(HttpStatus.NOT_FOUND,                 "BANNER_001", "존재하지 않는 배너입니다."),
+    // BANNER_002: 이미 soft delete(DELETED)된 배너를 다시 수정/삭제 시도 (운영자 멱등 가드, S07 정책 미러)
+    BANNER_ALREADY_DELETED(HttpStatus.CONFLICT,            "BANNER_002", "이미 삭제된 배너입니다."),
+
     // ===== PAY (담당: 신현민) =====
     INSUFFICIENT_BALANCE(HttpStatus.BAD_REQUEST,            "PAY_001", "엽전 잔액이 부족합니다."),
     CHARGE_AMOUNT_TOO_LOW(HttpStatus.BAD_REQUEST,           "PAY_002", "충전 금액은 5,000원 이상이어야 합니다."),

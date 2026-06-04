@@ -27,13 +27,15 @@
 | `PLACE_CREATE` | S07 | 관광지/전통시장 등록 (Place 신규 생성) | `PLACE` |
 | `PLACE_UPDATE` | S07 | 관광지/전통시장 수정 (partial update — null-skip) | `PLACE` |
 | `PLACE_DELETE` | S07 | 관광지/전통시장 삭제 (Place.delete() → DELETED soft delete) | `PLACE` |
+| `BANNER_CREATE` | S09 | 배너 등록 (Banner 신규 생성) | `BANNER` |
+| `BANNER_UPDATE` | S09 | 배너 수정 (partial update — null-skip) | `BANNER` |
+| `BANNER_DELETE` | S09 | 배너 삭제 (Banner.delete() → DELETED soft delete) | `BANNER` |
 
 후속 슬라이스 예상 추가 항목 (PRD INDEX.md 결정 2 참조):
 
 | actionType | 슬라이스 | targetType |
 |---|---|---|
 | `FESTIVAL_CREATE` / `UPDATE` / `DELETE` | S08 | `FESTIVAL` |
-| `BANNER_CREATE` / `UPDATE` / `DELETE` | S09 | `BANNER` |
 | `FAQ_CREATE` / `UPDATE` / `DELETE` | S11 | `FAQ` |
 | `SUPPORT_ASSIGN` | S12 | `SUPPORT_ROOM` |
 | `SUPPORT_CLOSE` | S12 | `SUPPORT_ROOM` |
