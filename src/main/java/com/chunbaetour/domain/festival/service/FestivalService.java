@@ -106,6 +106,9 @@ public class FestivalService {
 
     @Transactional
     public FestivalAdminMutateResponse create(FestivalCreateRequest request) {
+        if (request.status() == FestivalStatus.DELETED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         Festival festival = Festival.create(
                 request.name(), request.description(),
                 request.region(), request.address(),

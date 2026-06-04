@@ -13,6 +13,7 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.AccountSeedFactory;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
+import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalRepository;
@@ -21,6 +22,7 @@ import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.hamcrest.Matchers;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 관리자 축제 CRUD API 통합 테스트 (KAN-96).
@@ -54,9 +59,16 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired private AccountSeedFactory seedFactory;
     @Autowired private FestivalRepository festivalRepository;
     @Autowired private TokenIssuer tokenIssuer;
+    @Autowired private ObjectMapper objectMapper;
 
     @BeforeEach
     void ensureCleanState() {
+        festivalRepository.deleteAll();
+        accountRepository.deleteAll();
+    }
+
+    @AfterEach
+    void cleanup() {
         festivalRepository.deleteAll();
         accountRepository.deleteAll();
     }
@@ -86,10 +98,10 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST — ADMIN 토큰, 유효한 요청 → 201 + festivalId 반환")
+    @DisplayName("POST — ADMIN 토큰, 유효한 요청 → 201 + festivalId 반환 (실제 로그인 흐름)")
     void create_ADMIN_성공_201() throws Exception {
-        Account admin = createAdmin();
-        String adminToken = tokenIssuer.issueAccess(admin.getId(), admin.getRole(), admin.getEmail());
+        seedFactory.seedAdmin("admin-festival-create@test.com", PASSWORD, "관리자");
+        String adminToken = loginAndGetToken("/api/v1/admin/auth/login", "admin-festival-create@test.com");
 
         mockMvc.perform(post(BASE_URL)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
@@ -125,6 +137,31 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("COMMON_004")); // INVALID_INPUT_VALUE — 도메인 불변식 위반
+    }
+
+    @Test
+    @DisplayName("POST — status=DELETED로 생성 요청 → 400 (정책 위반)")
+    void create_DELETED_상태_생성_400() throws Exception {
+        Account admin = createAdmin();
+        String adminToken = tokenIssuer.issueAccess(admin.getId(), admin.getRole(), admin.getEmail());
+
+        String body = """
+                {
+                  "name": "삭제 상태 생성",
+                  "region": "서울",
+                  "address": "서울시",
+                  "startDate": "2026-07-01",
+                  "endDate": "2026-07-10",
+                  "status": "DELETED"
+                }
+                """;
+
+        mockMvc.perform(post(BASE_URL)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_004"));
     }
 
     // ── PUT ───────────────────────────────────────────────────────────────
@@ -281,5 +318,16 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
         return Festival.create(name, null, "서울", "서울시 강남구",
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10),
                 null, null, status);
+    }
+
+    private String loginAndGetToken(String endpoint, String email) throws Exception {
+        LoginRequest req = new LoginRequest(email, PASSWORD);
+        MvcResult result = mockMvc.perform(post(endpoint)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        return body.get("data").get("accessToken").asString();
     }
 }
