@@ -8,7 +8,7 @@ import java.time.LocalDate;
 
 /**
  * 관리자 축제 등록 요청 (KAN-95).
- * startDate ≤ endDate 검증은 FestivalService에서 수행.
+ * 필드 간 불변식(startDate ≤ endDate 등)은 Festival 도메인에서 검증.
  */
 public record FestivalCreateRequest(
         @NotBlank @Size(max = 255) String name,
