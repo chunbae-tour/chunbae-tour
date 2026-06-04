@@ -183,6 +183,23 @@ public class Shop extends BaseEntity {
     }
 
     /**
+     * 상인 직접 상태 전환 (KAN-213). ACTIVE ↔ CLOSED만 허용.
+     * SUSPENDED 요청 시 SHOP_STATUS_FORBIDDEN — 관리자 전용 상태.
+     * SUSPENDED 가게는 상인이 직접 변경 불가 — 관리자 처리 필요.
+     */
+    public void merchantChangeStatus(ShopStatus newStatus) {
+        // SUSPENDED 전환 요청 차단 — 관리자 전용
+        if (newStatus == ShopStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.SHOP_STATUS_FORBIDDEN);
+        }
+        // 현재 SUSPENDED 상태에서는 상인이 변경 불가
+        if (this.status == ShopStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+        this.status = newStatus;
+    }
+
+    /**
      * 상인이 수정 가능한 필드 업데이트 (STORY-10).
      * 위치(address/lat/lng)는 관리자 전용이므로 수정 불가.
      * null = 수정 안 함. "" 는 DTO @Size(min=1)로 진입 전 차단됨.
