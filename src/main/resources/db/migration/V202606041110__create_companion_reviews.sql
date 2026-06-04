@@ -12,4 +12,4 @@ CREATE TABLE `companion_reviews` (
   CONSTRAINT `fk_companion_reviews_reviewer`    FOREIGN KEY (`reviewer_id`)    REFERENCES `users` (`id`),
   CONSTRAINT `fk_companion_reviews_target_user` FOREIGN KEY (`target_user_id`) REFERENCES `users` (`id`),
   CONSTRAINT `fk_companion_reviews_chat_room`   FOREIGN KEY (`chat_room_id`)   REFERENCES `chat_rooms` (`id`)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
