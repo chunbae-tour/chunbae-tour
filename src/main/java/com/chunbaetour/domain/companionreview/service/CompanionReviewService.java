@@ -34,10 +34,13 @@ public class CompanionReviewService {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_SELF_NOT_ALLOWED);
         }
 
-        boolean isParticipant = chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
-                request.chatRoomId(), reviewerId,
-                List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE));
-        if (!isParticipant) {
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                request.chatRoomId(), reviewerId, activeStates)) {
+            throw new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER);
+        }
+        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                request.chatRoomId(), request.targetUserId(), activeStates)) {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER);
         }
 

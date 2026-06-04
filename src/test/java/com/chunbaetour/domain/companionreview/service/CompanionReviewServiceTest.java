@@ -63,12 +63,30 @@ class CompanionReviewServiceTest {
         verify(companionReviewRepository, never()).save(any());
     }
 
+    // target이 채팅방 비참여자 → CR_003
+    @Test
+    void createReview_targetNotMember_throwsNotMember() {
+        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(10L), eq(1L), any())).willReturn(true);
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(10L), eq(2L), any())).willReturn(false);
+
+        assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_REVIEW_NOT_MEMBER));
+        verify(companionReviewRepository, never()).save(any());
+    }
+
     // 중복 리뷰 → CR_001
     @Test
     void createReview_duplicate_throwsAlreadyExists() {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(10L), eq(1L), any())).willReturn(true);
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(10L), eq(2L), any())).willReturn(true);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(true);
 
@@ -88,6 +106,8 @@ class CompanionReviewServiceTest {
 
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(10L), eq(1L), any())).willReturn(true);
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(10L), eq(2L), any())).willReturn(true);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
         given(accountRepository.findById(2L)).willReturn(Optional.of(target));
