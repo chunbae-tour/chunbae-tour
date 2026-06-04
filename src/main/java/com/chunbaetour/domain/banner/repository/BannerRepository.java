@@ -37,4 +37,10 @@ public interface BannerRepository extends JpaRepository<Banner, Long> {
      * ACTIVE/HIDDEN만 집계한다.
      */
     long countByStatusNot(BannerStatus status);
+
+    /**
+     * 노출 중(ACTIVE) 배너 수 — S10 대시보드 의존. 사용자에게 실제 노출되는 배너 기준
+     * (HIDDEN/DELETED 제외)으로, 운영자 배너 노출 정책과 일치한다.
+     */
+    long countByStatus(BannerStatus status);
 }

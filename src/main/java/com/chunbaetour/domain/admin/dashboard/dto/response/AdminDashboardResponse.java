@@ -5,11 +5,14 @@ package com.chunbaetour.domain.admin.dashboard.dto.response;
  *
  * <p><b>점진 패턴</b>: 모든 필드는 nullable wrapper({@link Long})로 둔다. 후속 슬라이스(S06 가게,
  * S10 콘텐츠)가 필드를 추가해도 기존 클라이언트는 새 필드를 무시하므로 호환이 깨지지 않는다.
- * 2차(S06)에서 가게/인증/상인신청 카운트 3종을 append한다.
+ * 2차(S06)에서 가게/인증/상인신청 3종, 3차(S10)에서 관광지/배너 3종을 append한다.
  *
  * <p><b>캐시 호환</b>: 필드는 항상 뒤에 append하고 nullable로 둔다. 배포 직후 Redis에 남아있는
- * 구버전 JSON(3필드)을 역직렬화해도 추가 3필드는 null로 채워질 뿐 실패하지 않으며, TTL(1분) 경과 후
- * 6필드 JSON으로 자연 정합된다.
+ * 구버전 JSON(3·6필드)을 역직렬화해도 추가 필드는 null로 채워질 뿐 실패하지 않으며, TTL(1분) 경과 후
+ * 9필드 JSON으로 자연 정합된다.
+ *
+ * <p><b>축제 제외</b>: S10 콘텐츠 카운트에서 축제(Festival)는 빠진다 — FestivalService가 카운트 메서드를
+ * 노출하지 않는 cross-track이라 본 슬라이스 범위 밖(별도 follow-up).
  *
  * @param totalUsers                   전체 사용자 수 (탈퇴 제외)
  * @param newUsersToday                오늘(한국 영업일) 신규 가입 수
@@ -17,6 +20,9 @@ package com.chunbaetour.domain.admin.dashboard.dto.response;
  * @param totalShops                   전체 가게 수 (S06)
  * @param pendingCertifications        PENDING 인증 신청 수 (S06)
  * @param pendingMerchantApplications  PENDING 상인 신청 수 (S06)
+ * @param totalPlaces                  전체 관광지 수 — DELETED 제외 (S10)
+ * @param totalBanners                 전체 배너 수 — DELETED 제외 (S10)
+ * @param activeBanners                노출 중(ACTIVE) 배너 수 (S10)
  */
 public record AdminDashboardResponse(
         Long totalUsers,
@@ -24,5 +30,8 @@ public record AdminDashboardResponse(
         Long suspendedUsers,
         Long totalShops,
         Long pendingCertifications,
-        Long pendingMerchantApplications
+        Long pendingMerchantApplications,
+        Long totalPlaces,
+        Long totalBanners,
+        Long activeBanners
 ) {}

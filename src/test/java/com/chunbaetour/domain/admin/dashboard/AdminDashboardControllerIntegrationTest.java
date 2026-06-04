@@ -78,7 +78,11 @@ class AdminDashboardControllerIntegrationTest extends AbstractIntegrationTest {
                 // S06: 가게/인증/상인신청 카운트 3종 노출 (값은 시드 무관, 존재 + 음수 아님만 검증).
                 .andExpect(jsonPath("$.data.totalShops").value(greaterThanOrEqualTo(0)))
                 .andExpect(jsonPath("$.data.pendingCertifications").value(greaterThanOrEqualTo(0)))
-                .andExpect(jsonPath("$.data.pendingMerchantApplications").value(greaterThanOrEqualTo(0)));
+                .andExpect(jsonPath("$.data.pendingMerchantApplications").value(greaterThanOrEqualTo(0)))
+                // S10: 관광지/배너 카운트 3종 노출 (축제 제외 — cross-track).
+                .andExpect(jsonPath("$.data.totalPlaces").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.totalBanners").value(greaterThanOrEqualTo(0)))
+                .andExpect(jsonPath("$.data.activeBanners").value(greaterThanOrEqualTo(0)));
     }
 
     @Test
@@ -114,16 +118,36 @@ class AdminDashboardControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.totalUsers()).isEqualTo(42L);
         assertThat(response.newUsersToday()).isEqualTo(7L);
         assertThat(response.suspendedUsers()).isEqualTo(3L);
-        // append + nullable이라 구버전 JSON에 없는 S06 필드는 null (역직렬화 실패 X).
+        // append + nullable이라 구버전 JSON에 없는 S06·S10 필드는 null (역직렬화 실패 X).
         assertThat(response.totalShops()).isNull();
         assertThat(response.pendingCertifications()).isNull();
         assertThat(response.pendingMerchantApplications()).isNull();
+        assertThat(response.totalPlaces()).isNull();
+        assertThat(response.totalBanners()).isNull();
+        assertThat(response.activeBanners()).isNull();
     }
 
     @Test
-    @DisplayName("캐시 라운드트립: 6필드 직렬화→역직렬화 동일성 (프로덕션 빈)")
-    void cache_sixField_roundTrip() throws Exception {
-        AdminDashboardResponse original = new AdminDashboardResponse(42L, 7L, 3L, 11L, 5L, 2L);
+    @DisplayName("캐시 호환: 6필드(S06) JSON 역직렬화 → S10 3필드 null (실패 없음)")
+    void cache_sixFieldJson_deserializes_s10FieldsNull() throws Exception {
+        // S06→S10 배포 직후 Redis에 남은 6필드 캐시도 깨지지 않고 S10 필드만 null이어야 한다.
+        String sixFieldJson = "{\"totalUsers\":42,\"newUsersToday\":7,\"suspendedUsers\":3,"
+                + "\"totalShops\":11,\"pendingCertifications\":5,\"pendingMerchantApplications\":2}";
+
+        AdminDashboardResponse response = objectMapper.readValue(sixFieldJson, AdminDashboardResponse.class);
+
+        assertThat(response.totalShops()).isEqualTo(11L);
+        assertThat(response.pendingMerchantApplications()).isEqualTo(2L);
+        assertThat(response.totalPlaces()).isNull();
+        assertThat(response.totalBanners()).isNull();
+        assertThat(response.activeBanners()).isNull();
+    }
+
+    @Test
+    @DisplayName("캐시 라운드트립: 9필드 직렬화→역직렬화 동일성 (프로덕션 빈)")
+    void cache_nineField_roundTrip() throws Exception {
+        AdminDashboardResponse original =
+                new AdminDashboardResponse(42L, 7L, 3L, 11L, 5L, 2L, 20L, 8L, 4L);
 
         String json = objectMapper.writeValueAsString(original);
         AdminDashboardResponse restored = objectMapper.readValue(json, AdminDashboardResponse.class);

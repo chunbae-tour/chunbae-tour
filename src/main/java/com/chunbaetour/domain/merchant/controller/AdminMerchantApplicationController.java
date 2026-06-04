@@ -2,6 +2,7 @@ package com.chunbaetour.domain.merchant.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.merchant.dto.request.AdminApproveRequest;
 import com.chunbaetour.domain.merchant.dto.request.MerchantApplicationRejectRequest;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.service.AdminMerchantApplicationService;
@@ -64,11 +65,13 @@ public class AdminMerchantApplicationController {
         return ApiResponse.success(adminMerchantApplicationService.getApplication(applicationId));
     }
 
-    @Operation(summary = "상인 신청 승인")
+    @Operation(summary = "상인 신청 승인 (선택: placeId 전달 시 Shop-Place 연결)")
     @PatchMapping("/{applicationId}/approve")
     public ApiResponse<MerchantApplicationDetailResponse> approve(
-            @PathVariable @Positive Long applicationId) {
-        return ApiResponse.success(adminMerchantApplicationService.approve(applicationId));
+            @PathVariable @Positive Long applicationId,
+            @Valid @RequestBody(required = false) AdminApproveRequest request) {
+        Long placeId = (request == null) ? null : request.placeId();
+        return ApiResponse.success(adminMerchantApplicationService.approve(applicationId, placeId));
     }
 
     @Operation(summary = "상인 신청 거절")

@@ -98,13 +98,18 @@ public class Shop extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ShopStatus status;
 
+    // 소속 장소 — 선택 연결. null이면 장소 미연결 가게 (KAN-217)
+    @Column(name = "place_id")
+    private Long placeId;
+
     // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
     @Version
     private Long version;
 
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,
-            String address, BigDecimal lat, BigDecimal lng, String phone, String description) {
+            String address, BigDecimal lat, BigDecimal lng, String phone, String description,
+            Long placeId) {
         this.userId = userId;
         this.applicationId = applicationId;
         this.shopName = shopName;
@@ -114,11 +119,12 @@ public class Shop extends BaseEntity {
         this.lng = lng;
         this.phone = phone;
         this.description = description;
+        this.placeId = placeId;
         this.status = ShopStatus.ACTIVE;
     }
 
-    /** 관리자 상인 승인 시 MerchantApplication으로부터 가게 생성 (STORY-09). */
-    public static Shop fromApplication(MerchantApplication application) {
+    /** 관리자 상인 승인 시 MerchantApplication + placeId로 가게 생성 (STORY-09, KAN-217). */
+    public static Shop fromApplication(MerchantApplication application, Long placeId) {
         return Shop.builder()
                 .userId(application.getUserId())
                 .applicationId(application.getId())
@@ -129,6 +135,7 @@ public class Shop extends BaseEntity {
                 .lng(application.getLng())
                 .phone(application.getPhone())
                 .description(application.getDescription())
+                .placeId(placeId)
                 .build();
     }
 
@@ -165,6 +172,14 @@ public class Shop extends BaseEntity {
         if (description != null) this.description = description;
         if (phone != null) this.phone = phone;
         if (operatingHours != null) this.operatingHours = operatingHours;
+    }
+
+    /**
+     * 관리자 장소 연결 (KAN-217). placeId=null 허용 — 연결 해제.
+     * 검증(Place 존재 여부)은 서비스 레이어에서 처리.
+     */
+    public void linkPlace(Long placeId) {
+        this.placeId = placeId;
     }
 
     /**
