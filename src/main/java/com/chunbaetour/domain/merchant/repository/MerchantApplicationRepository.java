@@ -13,6 +13,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface MerchantApplicationRepository extends JpaRepository<MerchantApplication, Long> {
 
+    /** 상태별 신청 수 — S06 대시보드 PENDING 카운트 호출용 (Spring Data 파생 쿼리). */
+    long countByStatus(MerchantApplicationStatus status);
+
     /** 동일 유저의 중복 신청 방지 검사 (PENDING 또는 APPROVED 존재 여부) */
     boolean existsByUserIdAndStatusIn(Long userId, List<MerchantApplicationStatus> statuses);
 
