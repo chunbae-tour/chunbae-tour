@@ -40,10 +40,12 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>검증 시나리오
  * <ul>
- *   <li>목록(200, keyword/category 필터) / 등록(201) / 수정(200, partial — 미지정 필드 보존) / 삭제(204)</li>
+ *   <li>목록(200, keyword/category 필터, cursor 페이징) / 등록(201) / 수정(200, partial — 미지정 필드 보존) / 삭제(204)</li>
  *   <li>삭제 후 목록·사용자 검색에서 제외 (status=DELETED soft delete)</li>
  *   <li>등록/수정/삭제 → {@code admin_action_logs} 자동 기록. PATCH/DELETE는 targetId=placeId,
- *       POST는 path 변수 부재로 기록 생략(미지정 허용)</li>
+ *       POST는 {@code returnIdField="id"}로 응답 본문의 생성 id를 targetId에 기록(S01 aspect 확장)</li>
+ *   <li>이미 DELETED인 관광지 수정/삭제 → 409 PLACE_015(멱등 가드) + audit 미기록</li>
+ *   <li>입력 검증: 빈 PATCH·공백-only·필수 누락·imageUrls/tags 비-JSON-배열 → 400, 잘못된 cursor → 400(COMMON_008)</li>
  *   <li>미존재 placeId 수정/삭제 → 404 PLACE_001</li>
  *   <li>USER/MERCHANT 토큰 403(AUTH_007)</li>
  * </ul>

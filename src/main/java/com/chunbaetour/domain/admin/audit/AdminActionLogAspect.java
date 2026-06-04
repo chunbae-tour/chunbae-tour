@@ -165,6 +165,10 @@ public class AdminActionLogAspect {
      * bean getter 규칙({@code getId()})이 아니라 record accessor 이름과 정확히 일치해야 한다.
      *
      * <p>접근자 부재/타입 불일치/null 등 추출 실패는 {@code null}로 흡수 — record는 skip되고 본 요청에는 영향 없음.
+     *
+     * <p>{@code getDeclaredMethod} + {@code setAccessible(true)}를 쓰는 이유: record accessor는 public이지만
+     * DTO 클래스 자체가 package-private이면 {@code getMethod}로 얻은 핸들도 invoke 시 IllegalAccessException이
+     * 날 수 있다(선언 클래스 비공개). 향후 S08/S09 등에서 비공개 DTO를 써도 견고하도록 declared + accessible로 호출한다.
      */
     private Long extractTargetIdFromReturn(Object result, String fieldName) {
         Object body = (result instanceof ApiResponse<?> response) ? response.data() : result;
@@ -172,13 +176,15 @@ public class AdminActionLogAspect {
             return null;
         }
         try {
-            Method accessor = body.getClass().getMethod(fieldName);
+            Method accessor = body.getClass().getDeclaredMethod(fieldName);
+            accessor.setAccessible(true);
             return parseLongOrNull(accessor.invoke(body));
         } catch (Exception e) {
             log.warn(
-                    "AdminActionLog return id extraction failed — field={}, type={}",
+                    "AdminActionLog return id extraction failed — field={}, type={}, cause={}",
                     fieldName,
-                    body.getClass().getSimpleName());
+                    body.getClass().getSimpleName(),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
