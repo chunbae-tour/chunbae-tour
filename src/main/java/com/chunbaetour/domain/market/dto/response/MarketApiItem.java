@@ -16,35 +16,35 @@ public class MarketApiItem {
 
     /** 시장명 */
     @JsonProperty("mrktNm")
-    private String mrktNm;
+    public String mrktNm;
 
     /** 시장유형 (상설장, 4일장 등) */
     @JsonProperty("mrktType")
-    private String mrktType;
+    public String mrktType;
 
     /** 도로명주소 */
     @JsonProperty("rdnmadr")
-    private String rdnmadr;
+    public String rdnmadr;
 
     /** 위도 */
     @JsonProperty("latitude")
-    private String latitude;
+    public String latitude;
 
     /** 경도 */
     @JsonProperty("longitude")
-    private String longitude;
+    public String longitude;
 
     /** 전화번호 */
     @JsonProperty("phoneNumber")
-    private String phoneNumber;
+    public String phoneNumber;
 
     /** 홈페이지 주소 */
     @JsonProperty("homepageUrl")
-    private String homepageUrl;
+    public String homepageUrl;
 
     /** 개설년도 */
     @JsonProperty("estblYear")
-    private String estblYear;
+    public String estblYear;
 
     /**
      * API 응답을 TraditionalMarket 엔티티로 변환.

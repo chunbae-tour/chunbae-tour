@@ -14,14 +14,14 @@ import lombok.NoArgsConstructor;
 public class MarketApiResponse {
 
     @JsonProperty("pageNo")
-    private Integer pageNo;
+    public Integer pageNo;
 
     @JsonProperty("numOfRows")
-    private Integer numOfRows;
+    public Integer numOfRows;
 
     @JsonProperty("totalCount")
-    private Integer totalCount;
+    public Integer totalCount;
 
     @JsonProperty("items")
-    private List<MarketApiItem> items;
+    public List<MarketApiItem> items;
 }
