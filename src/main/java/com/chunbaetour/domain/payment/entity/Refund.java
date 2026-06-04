@@ -109,9 +109,14 @@ public class Refund extends BaseEntity {
         this.nextRetryAt = nextRetryAt;
     }
 
-    /** 최대 재시도 횟수 초과 — 자동 처리 불가, 관리자 직접 확인 필요 상태로 전환. */
+    /**
+     * 자동 처리 불가 — 관리자 직접 확인 필요 상태로 전환.
+     * FAILED(재시도 초과) 또는 PENDING(주문 부재 등 즉시 불가) 모두 허용.
+     * PENDING 진입 허용 이유: order==null 케이스에서 스케줄러가 PENDING 상태로 호출.
+     * 가드에서 제외 시 예외 → 롤백 → PENDING 유지 → 60초마다 무한루프 발생.
+     */
     public void requireAdmin() {
-        if (this.status != RefundStatus.FAILED) {
+        if (this.status != RefundStatus.FAILED && this.status != RefundStatus.PENDING) {
             throw new BusinessException(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
         }
         this.status = RefundStatus.REQUIRES_ADMIN;

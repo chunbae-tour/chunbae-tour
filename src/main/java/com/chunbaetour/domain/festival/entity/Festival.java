@@ -79,6 +79,9 @@ public class Festival extends BaseEntity {
             String address, LocalDate startDate, LocalDate endDate,
             String imageUrl, String relatedUrl, FestivalStatus status) {
         FestivalStatus resolvedStatus = status != null ? status : FestivalStatus.ACTIVE;
+        if (resolvedStatus == FestivalStatus.DELETED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         validateInvariant(name, region, address, startDate, endDate, resolvedStatus);
         Festival f = new Festival();
         f.name = name;
@@ -117,6 +120,9 @@ public class Festival extends BaseEntity {
     public void update(String name, String description, String region,
             String address, LocalDate startDate, LocalDate endDate,
             String imageUrl, String relatedUrl, FestivalStatus status) {
+        if (status == FestivalStatus.DELETED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         validateInvariant(name, region, address, startDate, endDate, status);
         this.name = name;
         this.description = description;
