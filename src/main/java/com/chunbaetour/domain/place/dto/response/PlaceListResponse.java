@@ -10,8 +10,14 @@ import java.util.List;
  * <p>커서 기반 페이지네이션 구조를 포함합니다.
  * - {@code items}: 현재 페이지의 관광지 목록.
  * - {@code hasNext}: 다음 페이지 존재 여부.
- * - {@code nextCursor}: 다음 페이지 조회 시 cursor 파라미터에 전달할 값.
- *   hasNext가 false이면 null을 반환합니다.
+ * - {@code nextCursorId}: 다음 페이지 커서 — 마지막 아이템의 ID.
+ * - {@code nextCursorRating}: 다음 페이지 커서 — 마지막 아이템의 평점.
+ *
+ * <p><b>[커서 설계 이유]</b><br>
+ * 정렬이 {@code rating DESC, id DESC}이므로 단순 {@code id < cursorId} 조건은
+ * 평점이 다른 데이터를 누락시키거나 중복 노출시키는 버그를 유발합니다.
+ * 올바른 커서 조건: {@code (rating < cursorRating) OR (rating = cursorRating AND id < cursorId)}
+ * 이를 위해 rating과 id를 모두 커서에 포함합니다.
  */
 public record PlaceListResponse(
 
@@ -22,10 +28,16 @@ public record PlaceListResponse(
         boolean hasNext,
 
         /**
-         * 다음 페이지 요청 시 사용할 커서 (마지막 아이템의 ID).
-         * hasNext == false 이면 null.
+         * 다음 페이지 커서 — 마지막 아이템의 ID.
+         * 다음 요청 시 {@code cursor} 파라미터에 전달. hasNext == false 이면 null.
          */
-        Long nextCursor
+        Long nextCursorId,
+
+        /**
+         * 다음 페이지 커서 — 마지막 아이템의 평점.
+         * 다음 요청 시 {@code cursorRating} 파라미터에 전달. hasNext == false 이면 null.
+         */
+        Float nextCursorRating
 ) {
 
     /**

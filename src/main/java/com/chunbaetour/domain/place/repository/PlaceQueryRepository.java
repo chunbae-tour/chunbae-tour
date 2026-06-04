@@ -1,9 +1,9 @@
 package com.chunbaetour.domain.place.repository;
 
-import com.chunbaetour.domain.place.QPlace;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceListResponse.PlaceListItem;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.BooleanExpression;
@@ -21,11 +21,15 @@ import static com.chunbaetour.domain.place.QPlace.place;
 @Repository
 @RequiredArgsConstructor
 public class PlaceQueryRepository {
-    
+
     private final JPAQueryFactory queryFactory;
 
-    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters, Long cursorId, Double cursorDistance, int size) {
-        
+    // ──────────────────────────────────────────────────────────────────────────
+    // 위치 기반 근처 관광지 (Nearby) 쿼리
+    // ──────────────────────────────────────────────────────────────────────────
+
+    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters,
+                                                       Long cursorId, Double cursorDistance, int size) {
         // MySQL ST_Distance_Sphere (returns meters). Arguments for POINT are (longitude, latitude)
         NumberTemplate<Double> distanceExpression = Expressions.numberTemplate(Double.class,
                 "ST_Distance_Sphere(POINT({0}, {1}), POINT({2}, {3}))",
@@ -47,19 +51,21 @@ public class PlaceQueryRepository {
                 .where(
                         distanceExpression.loe(radiusMeters),
                         cursorCondition(cursorId, cursorDistance, distanceExpression),
-                        place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
+                        place.status.eq(PlaceStatus.ACTIVE)
                 )
                 .orderBy(distanceExpression.asc(), place.id.asc())
                 .limit(size)
                 .fetch();
     }
 
-    private BooleanExpression cursorCondition(Long cursorId, Double cursorDistance, NumberTemplate<Double> distanceExpression) {
+    private BooleanExpression cursorCondition(Long cursorId, Double cursorDistance,
+                                               NumberTemplate<Double> distanceExpression) {
         if (cursorId == null || cursorDistance == null) {
             return null;
         }
         return distanceExpression.gt(cursorDistance)
-                .or(distanceExpression.between(cursorDistance - 0.001, cursorDistance + 0.001).and(place.id.gt(cursorId)));
+                .or(distanceExpression.between(cursorDistance - 0.001, cursorDistance + 0.001)
+                        .and(place.id.gt(cursorId)));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -75,12 +81,13 @@ public class PlaceQueryRepository {
      * <b>[15년차 아키텍트 코멘트 - Tech Debt]</b><br>
      * 현재 {@code place.name.contains(keyword)}는 내부적으로 {@code LIKE '%keyword%'} 쿼리를 발생시킨다.
      * 이는 선행 와일드카드로 인해 MySQL의 B-Tree 인덱스를 타지 못하고 Full Table Scan을 유발한다.
-     * 데이터가 적은 현재는 요구사항(LIKE %keyword%)을 충족하지만, 
-     * 향후 데이터 증가 시 커스텀 Dialect를 등록하여 {@code MATCH(name) AGAINST(:keyword IN BOOLEAN MODE)} 방식의 
+     * 데이터가 적은 현재는 요구사항(LIKE %keyword%)을 충족하지만,
+     * 향후 데이터 증가 시 커스텀 Dialect를 등록하여 {@code MATCH(name) AGAINST(:keyword IN BOOLEAN MODE)} 방식의
      * FULLTEXT 검색으로 리팩터링해야 한다.
      * </p>
      */
-    public List<SearchPlaceResponse> searchByKeyword(String keyword, PlaceCategory category, String region, Long cursorId, int size) {
+    public List<SearchPlaceResponse> searchByKeyword(String keyword, PlaceCategory category,
+                                                      String region, Long cursorId, int size) {
         return queryFactory
                 .select(Projections.constructor(SearchPlaceResponse.class,
                         place.id,
@@ -97,7 +104,7 @@ public class PlaceQueryRepository {
                         categoryEq(category),
                         regionContains(region),
                         cursorConditionForSearch(cursorId),
-                        place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
+                        place.status.eq(PlaceStatus.ACTIVE)
                 )
                 .orderBy(place.id.desc())
                 .limit(size + 1) // hasNext 판단을 위해 1개 더 조회
@@ -105,7 +112,7 @@ public class PlaceQueryRepository {
     }
 
     private BooleanExpression keywordContains(String keyword) {
-        return org.springframework.util.StringUtils.hasText(keyword) ? place.name.contains(keyword) : null;
+        return StringUtils.hasText(keyword) ? place.name.contains(keyword) : null;
     }
 
     private BooleanExpression categoryEq(PlaceCategory category) {
@@ -113,7 +120,7 @@ public class PlaceQueryRepository {
     }
 
     private BooleanExpression regionContains(String region) {
-        return org.springframework.util.StringUtils.hasText(region) ? place.address.contains(region) : null;
+        return StringUtils.hasText(region) ? place.address.contains(region) : null;
     }
 
     private BooleanExpression cursorConditionForSearch(Long cursorId) {
@@ -152,7 +159,7 @@ public class PlaceQueryRepository {
                         // LIKE 'safePrefix%' — 후행 와일드카드만 사용하므로 B-Tree 인덱스 Range Scan 가능
                         place.name.startsWith(safePrefix),
                         // 노출 중단/삭제된 관광지는 자동완성에서 제외
-                        place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE)
+                        place.status.eq(PlaceStatus.ACTIVE)
                 )
                 // 이름 오름차순: 자동완성은 사전순이 사용자 경험에 더 자연스러움
                 .orderBy(place.name.asc())
@@ -165,24 +172,26 @@ public class PlaceQueryRepository {
     // ──────────────────────────────────────────────────────────────────────────
 
     /**
-     * 관광지 목록 조회 (카테고리/지역 필터 + 커서 기반 페이지네이션).
+     * 관광지 목록 조회 (카테고리/지역 필터 + 복합 커서 기반 페이지네이션).
      *
      * <p>정렬 기준: 평점 내림차순({@code rating DESC}) → ID 내림차순({@code id DESC}).
      * 평점이 같은 데이터가 많을 수 있어 ID를 2차 정렬 키로 사용하여 커서 안정성을 보장합니다.
      *
-     * <p>커서 방식: ID 기반 ({@code id < cursorId}).
-     * 평점이 같은 경우에도 정렬 순서가 보장되도록 동일 평점 내에서 ID 내림차순을 사용하므로,
-     * 단순 {@code id < cursorId} 조건이 유효합니다.
+     * <p><b>[복합 커서 설계]</b><br>
+     * 단순 {@code id < cursorId} 조건은 평점이 다른 경계에서 데이터 누락/중복을 유발합니다.
+     * 올바른 조건: {@code (rating < cursorRating) OR (rating = cursorRating AND id < cursorId)}
      *
-     * <p>hasNext 판단을 위해 {@code size + 1}건을 조회하므로 호출부에서 마지막 요소를 제거해야 합니다.
+     * <p>hasNext 판단을 위해 {@code size + 1}건을 조회합니다. 호출부(Service)에서 마지막 요소를 제거합니다.
      *
-     * @param category   카테고리 필터 (null 허용 — null이면 전체 카테고리)
-     * @param region     지역 필터 (null 허용 — null이면 전체 지역, {@code address LIKE '%region%'} 방식)
-     * @param cursorId   이전 페이지 마지막 관광지의 ID (null이면 첫 페이지)
-     * @param size       한 페이지 최대 건수 (hasNext 판단을 위해 호출부에서 size + 1 전달)
-     * @return           PlaceListItem 목록
+     * @param category     카테고리 필터 (null → 전체)
+     * @param region       지역 필터 (null → 전체, LIKE '%region%' 방식)
+     * @param cursorId     이전 페이지 마지막 ID (null → 첫 페이지)
+     * @param cursorRating 이전 페이지 마지막 평점 (null → 첫 페이지)
+     * @param size         조회 건수 (hasNext 판단용으로 size+1 전달 권장)
+     * @return PlaceListItem 목록
      */
-    public List<PlaceListItem> findByFilter(PlaceCategory category, String region, Long cursorId, int size) {
+    public List<PlaceListItem> findByFilter(PlaceCategory category, String region,
+                                             Long cursorId, Float cursorRating, int size) {
         return queryFactory
                 .select(Projections.constructor(PlaceListItem.class,
                         place.id,
@@ -195,12 +204,12 @@ public class PlaceQueryRepository {
                 ))
                 .from(place)
                 .where(
-                        place.status.eq(com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE),
+                        place.status.eq(PlaceStatus.ACTIVE),
                         categoryFilter(category),
                         regionFilter(region),
-                        cursorConditionForList(cursorId)
+                        cursorConditionForList(cursorId, cursorRating)
                 )
-                // 1차: 평점 높은 순, 2차: ID 내림차순 (최신 등록 우선, 커서 안정성 보장)
+                // 1차: 평점 높은 순, 2차: ID 내림차순 (커서 안정성 보장)
                 .orderBy(place.rating.desc(), place.id.desc())
                 .limit(size)
                 .fetch();
@@ -211,16 +220,30 @@ public class PlaceQueryRepository {
         return category != null ? place.category.eq(category) : null;
     }
 
-    /** 지역 필터 — null 또는 공백이면 조건 생략. {@code address LIKE '%region%'} 방식이라 인덱스 미사용 주의. */
+    /** 지역 필터 — null 또는 공백이면 조건 생략. address LIKE '%region%' 방식이라 인덱스 미사용 주의. */
     private BooleanExpression regionFilter(String region) {
         return StringUtils.hasText(region) ? place.address.contains(region) : null;
     }
 
     /**
-     * 목록 조회용 커서 조건 — ID 내림차순 정렬에서 다음 페이지를 가져오기 위해 {@code id < cursorId}.
-     * cursorId가 null이면 첫 페이지 조회로 간주하여 조건 생략.
+     * 목록 조회용 복합 커서 조건.
+     *
+     * <p>정렬이 {@code rating DESC, id DESC}이므로 올바른 커서 조건:
+     * <pre>
+     *   (rating &lt; cursorRating)
+     *   OR (rating = cursorRating AND id &lt; cursorId)
+     * </pre>
+     * 단순 {@code id < cursorId}만 사용하면 평점이 다른 행이 누락되거나 중복될 수 있습니다.
+     *
+     * @param cursorId     이전 페이지 마지막 ID (null이면 첫 페이지)
+     * @param cursorRating 이전 페이지 마지막 평점 (null이면 첫 페이지)
      */
-    private BooleanExpression cursorConditionForList(Long cursorId) {
-        return cursorId != null ? place.id.lt(cursorId) : null;
+    private BooleanExpression cursorConditionForList(Long cursorId, Float cursorRating) {
+        if (cursorId == null || cursorRating == null) {
+            return null; // 첫 페이지 — 커서 조건 없음
+        }
+        // (rating < cursorRating) OR (rating = cursorRating AND id < cursorId)
+        return place.rating.lt(cursorRating)
+                .or(place.rating.eq(cursorRating).and(place.id.lt(cursorId)));
     }
 }

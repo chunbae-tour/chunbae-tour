@@ -286,18 +286,26 @@ public class PlaceService {
                 request.category(),
                 request.region(),
                 request.cursor(),
+                request.cursorRating(),   // 복합 커서: rating도 함께 전달
                 request.size() + 1
         );
 
         boolean hasNext = items.size() > request.size();
         if (hasNext) {
-            items = items.subList(0, request.size()); // 초과 조회한 마지막 요소 제거
+            // subList는 원본의 뷰(view)를 반환하므로 독립된 리스트로 복사하여 안전성 확보
+            items = new java.util.ArrayList<>(items.subList(0, request.size()));
         }
 
-        // 다음 페이지 커서: 현재 페이지 마지막 아이템의 ID
-        Long nextCursor = (hasNext && !items.isEmpty()) ? items.get(items.size() - 1).id() : null;
+        // 다음 페이지 복합 커서: 현재 페이지 마지막 아이템의 ID와 rating
+        Long nextCursorId = null;
+        Float nextCursorRating = null;
+        if (hasNext && !items.isEmpty()) {
+            PlaceListResponse.PlaceListItem last = items.get(items.size() - 1);
+            nextCursorId = last.id();
+            nextCursorRating = last.rating();
+        }
 
-        return new PlaceListResponse(items, hasNext, nextCursor);
+        return new PlaceListResponse(items, hasNext, nextCursorId, nextCursorRating);
     }
 }
 
