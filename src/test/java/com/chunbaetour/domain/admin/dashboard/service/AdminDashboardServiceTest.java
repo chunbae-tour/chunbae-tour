@@ -9,8 +9,10 @@ import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.times;
 
+import com.chunbaetour.domain.admin.banner.service.AdminBannerService;
 import com.chunbaetour.domain.admin.certification.service.AdminShopCertificationService;
 import com.chunbaetour.domain.admin.dashboard.dto.response.AdminDashboardResponse;
+import com.chunbaetour.domain.admin.place.service.AdminPlaceService;
 import com.chunbaetour.domain.admin.shop.service.AdminShopService;
 import com.chunbaetour.domain.admin.user.service.AdminUserService;
 import com.chunbaetour.domain.merchant.service.AdminMerchantApplicationService;
@@ -46,6 +48,12 @@ class AdminDashboardServiceTest {
     private AdminMerchantApplicationService adminMerchantApplicationService;
 
     @Mock
+    private AdminPlaceService adminPlaceService;
+
+    @Mock
+    private AdminBannerService adminBannerService;
+
+    @Mock
     private StringRedisTemplate redisTemplate;
 
     @Mock
@@ -60,15 +68,20 @@ class AdminDashboardServiceTest {
                 adminShopService,
                 adminShopCertificationService,
                 adminMerchantApplicationService,
+                adminPlaceService,
+                adminBannerService,
                 redisTemplate,
                 objectMapper);
     }
 
-    // S06 카운트 stub 고정값 — 사용자 카운트 인자와 겹치지 않는 독립 distinct 값.
-    // loadSummary 6개 인자 순서가 swap돼도 잡히도록(같은 값 재사용 시 swap을 못 잡음).
+    // S06/S10 카운트 stub 고정값 — 사용자 카운트 인자와도, 서로도 겹치지 않는 독립 distinct 값.
+    // loadSummary 9개 인자 순서가 swap돼도 잡히도록(같은 값 재사용 시 swap을 못 잡음).
     private static final long S06_TOTAL_SHOPS = 11L;
     private static final long S06_PENDING_CERTS = 5L;
     private static final long S06_PENDING_APPLICATIONS = 2L;
+    private static final long S10_TOTAL_PLACES = 20L;
+    private static final long S10_TOTAL_BANNERS = 8L;
+    private static final long S10_ACTIVE_BANNERS = 4L;
 
     private void stubCounts(long total, long today, long suspended) {
         given(adminUserService.getTotalUsers()).willReturn(total);
@@ -78,6 +91,10 @@ class AdminDashboardServiceTest {
         given(adminShopService.getTotalShops()).willReturn(S06_TOTAL_SHOPS);
         given(adminShopCertificationService.getPendingCertificationsCount()).willReturn(S06_PENDING_CERTS);
         given(adminMerchantApplicationService.getPendingApplicationsCount()).willReturn(S06_PENDING_APPLICATIONS);
+        // S10 관광지/배너 카운트 (축제 제외 — cross-track).
+        given(adminPlaceService.getTotalPlaces()).willReturn(S10_TOTAL_PLACES);
+        given(adminBannerService.getTotalBanners()).willReturn(S10_TOTAL_BANNERS);
+        given(adminBannerService.getActiveBannersCount()).willReturn(S10_ACTIVE_BANNERS);
     }
 
     @Test
@@ -89,13 +106,16 @@ class AdminDashboardServiceTest {
 
         AdminDashboardResponse response = service().getSummary();
 
-        // 6필드 전부 distinct 값으로 단정 — loadSummary 인자 순서/매핑이 어긋나면 잡힌다.
+        // 9필드 전부 distinct 값으로 단정 — loadSummary 인자 순서/매핑이 어긋나면 잡힌다.
         assertThat(response.totalUsers()).isEqualTo(42L);
         assertThat(response.newUsersToday()).isEqualTo(7L);
         assertThat(response.suspendedUsers()).isEqualTo(3L);
         assertThat(response.totalShops()).isEqualTo(S06_TOTAL_SHOPS);
         assertThat(response.pendingCertifications()).isEqualTo(S06_PENDING_CERTS);
         assertThat(response.pendingMerchantApplications()).isEqualTo(S06_PENDING_APPLICATIONS);
+        assertThat(response.totalPlaces()).isEqualTo(S10_TOTAL_PLACES);
+        assertThat(response.totalBanners()).isEqualTo(S10_TOTAL_BANNERS);
+        assertThat(response.activeBanners()).isEqualTo(S10_ACTIVE_BANNERS);
     }
 
     @Test
@@ -104,9 +124,11 @@ class AdminDashboardServiceTest {
         given(redisTemplate.opsForValue()).willReturn(valueOps);
         stubCounts(10L, 2L, 1L);
 
-        // 캐시에 저장될 값 = 1번째(miss) loadSummary 결과와 동일해야 함 — S06은 독립 stub값(11/5/2).
-        AdminDashboardResponse cachedValue =
-                new AdminDashboardResponse(10L, 2L, 1L, S06_TOTAL_SHOPS, S06_PENDING_CERTS, S06_PENDING_APPLICATIONS);
+        // 캐시에 저장될 값 = 1번째(miss) loadSummary 결과와 동일해야 함 — S06/S10 독립 stub값.
+        AdminDashboardResponse cachedValue = new AdminDashboardResponse(
+                10L, 2L, 1L,
+                S06_TOTAL_SHOPS, S06_PENDING_CERTS, S06_PENDING_APPLICATIONS,
+                S10_TOTAL_PLACES, S10_TOTAL_BANNERS, S10_ACTIVE_BANNERS);
         AtomicReference<String> store = new AtomicReference<>();
         given(valueOps.get(anyString())).willAnswer(inv -> store.get());
         willAnswer(inv -> {

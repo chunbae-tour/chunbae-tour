@@ -128,6 +128,14 @@ public class AdminBannerService {
         return bannerRepository.countByStatusNot(BannerStatus.DELETED);
     }
 
+    /**
+     * 노출 중(ACTIVE) 배너 수 — S10 대시보드 의존. 사용자에게 실제 노출되는 배너만 집계
+     * (HIDDEN/DELETED 제외) — S09 배너 노출 기준과 일치.
+     */
+    public long getActiveBannersCount() {
+        return bannerRepository.countByStatus(BannerStatus.ACTIVE);
+    }
+
     // ── 복합 cursor (priority, id) 인코딩 ─────────────────────────────────────
 
     /** keyset cursor 디코딩 결과 — priority와 id를 함께 담는다. */

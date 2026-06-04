@@ -2,6 +2,8 @@ package com.chunbaetour.domain.shop.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
@@ -36,6 +38,7 @@ public class ShopService {
     private final MenuRepository menuRepository;
     private final ShopWalletRepository shopWalletRepository;
     private final ObjectMapper objectMapper;
+    private final PlaceRepository placeRepository;
 
     /**
      * 내 가게 목록 조회.
@@ -160,12 +163,35 @@ public class ShopService {
     }
 
     /**
+     * 관리자 가게-장소 수동 연결 (KAN-217).
+     * placeId=null 허용 — 기존 연결 해제.
+     * placeId 전달 시 Place 존재 여부 검증.
+     * 상태 무관 연결/해제 허용 — SUSPENDED/CLOSED 가게도 관리자가 장소 정비 가능해야 함 (의도적).
+     */
+    @Transactional
+    public void updateShopPlace(Long shopId, Long placeId) {
+        // 가게 조회 — 없으면 SHOP_001
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // placeId 전달 시 DELETED 아닌 Place 존재 여부 검증 — soft delete 장소 연결 차단
+        if (placeId != null && !placeRepository.existsByIdAndStatusNot(placeId, PlaceStatus.DELETED)) {
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
+
+        // 장소 연결 (null이면 해제)
+        shop.linkPlace(placeId);
+    }
+
+    /**
      * 관리자 가게 상태 변경 (ACTIVE ↔ SUSPENDED).
      * CLOSED 상태 가게 변경 불가 — SHOP_INACTIVE.
      * CLOSED로 변경 불가 — INVALID_INPUT_VALUE (폐업은 별도 처리).
      */
     @Transactional
     public void updateShopStatus(Long shopId, ShopStatus newStatus) {
+        // null 방어 — switch NPE 방지
+        if (newStatus == null) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         if (newStatus == ShopStatus.CLOSED) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }

@@ -9,8 +9,9 @@ import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.merchant.dto.response.MerchantApplicationDetailResponse;
 import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
-import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
@@ -41,13 +42,17 @@ public class AdminMerchantApplicationService {
     private final AccountRepository accountRepository;
     private final ShopRepository shopRepository;
     private final ShopWalletRepository shopWalletRepository;
+    private final PlaceRepository placeRepository;
 
     /**
      * 상인 신청 목록 cursor 페이징 조회 (status 필터).
      * cursor 형식: id → Base64URL 인코딩 (CursorUtils 공통 유틸 사용).
-     * size 유효성(@Min(1)/@Max(100))은 컨트롤러에서 처리.
+     * size 유효성(@Min(1)/@Max(100))은 컨트롤러에서 처리. 서비스 레벨 이중 방어 포함.
      */
     public CursorPageResponse<MerchantApplicationDetailResponse> getApplications(String cursor, int size, MerchantApplicationStatus status) {
+        // size 방어 — 컨트롤러 @Min(1)/@Max(100) 우회 및 서비스 직접 호출 대비
+        if (size <= 0 || size > 100) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+
         // size+1개 조회 — 다음 페이지 존재 여부를 추가 쿼리 없이 판단하기 위한 sentinel 조회
         PageRequest pageable = PageRequest.of(0, size + 1);
         List<MerchantApplication> applications = (cursor == null)
@@ -89,15 +94,12 @@ public class AdminMerchantApplicationService {
     }
 
     /**
-     * 상인 신청 승인.
-     * 두 관리자가 동일 신청을 동시 승인할 경우, 두 트랜잭션 모두 PENDING을 읽고
-     * 상태 가드를 통과해 Shop이 중복 생성될 수 있다. findByIdWithLock(SELECT FOR UPDATE)으로
-     * 첫 번째 트랜잭션이 커밋될 때까지 두 번째 요청을 블로킹해 이를 방지한다.
-     * 단일 트랜잭션: application → account → shop 순으로 락 획득 후 처리.
-     * 이미 가게가 있으면 SHOP_ALREADY_EXISTS.
+     * 상인 신청 승인 (KAN-217: placeId 선택적 연결).
+     * placeId 전달 시 Place 존재 여부 검증 후 생성되는 Shop에 연결.
+     * placeId=null이면 장소 미연결 상태로 가게 생성.
      */
     @Transactional
-    public MerchantApplicationDetailResponse approve(Long applicationId) {
+    public MerchantApplicationDetailResponse approve(Long applicationId, Long placeId) {
         // 비관적 락(SELECT FOR UPDATE) — 동일 신청에 대한 동시 승인 요청을 직렬화
         MerchantApplication application = applicationRepository.findByIdWithLock(applicationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND));
@@ -106,12 +108,17 @@ public class AdminMerchantApplicationService {
         Account account = accountRepository.findByIdWithLock(application.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
+        // placeId 전달 시 DELETED 아닌 Place 사전 검증 — soft delete 장소 연결 차단, entity 오염 전 예외 처리
+        if (placeId != null && !placeRepository.existsByIdAndStatusNot(placeId, PlaceStatus.DELETED)) {
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
+
         // 선행 검증 통과 후 상태 전이 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
         application.approve();                // 신청 상태 PENDING → APPROVED
         account.promoteToMerchant();          // USER → MERCHANT 승격 (MERCHANT면 멱등 skip, ADMIN이면 예외)
         try {
             // Shop 생성 후 즉시 ShopWallet도 생성 — "Shop 존재 → ShopWallet 존재" 불변식 보장
-            Shop shop = shopRepository.save(Shop.fromApplication(application));
+            Shop shop = shopRepository.save(Shop.fromApplication(application, placeId));
             shopWalletRepository.save(ShopWallet.create(shop.getId()));
         } catch (DataIntegrityViolationException e) {
             String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();
@@ -124,6 +131,10 @@ public class AdminMerchantApplicationService {
             // getShopWallet() 호출 시 SHOP_WALLET_NOT_FOUND 발생 → 운영 전 backfill migration 필요 (별도 이슈 추적)
             if (msg != null && msg.contains("uk_shop_wallets_shop_id")) {
                 throw new BusinessException(ErrorCode.SHOP_WALLET_ALREADY_EXISTS);
+            }
+            // fk_shops_place: placeId 사전 검증(existsById) 후 Place가 삭제된 경합 케이스 — PLACE_NOT_FOUND로 분류
+            if (msg != null && msg.contains("fk_shops_place")) {
+                throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
             }
             log.error("Shop 저장 중 예상치 못한 DB 제약 위반 발생. applicationId={}", application.getId(), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
