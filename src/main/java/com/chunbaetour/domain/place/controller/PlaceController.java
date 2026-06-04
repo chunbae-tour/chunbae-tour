@@ -55,11 +55,12 @@ public class PlaceController {
      *
      * <p>사용 예시:
      * <pre>
-     *   GET /api/v1/places                            // 전체 목록 (첫 페이지)
-     *   GET /api/v1/places?category=TOURIST_SPOT      // 관광지만 필터링
-     *   GET /api/v1/places?region=서귀포               // 서귀포 지역만
-     *   GET /api/v1/places?cursor=50&size=10          // 커서 페이징 (다음 페이지)
+     *   GET /api/v1/places                                            // 전체 목록 (첫 페이지)
+     *   GET /api/v1/places?category=TOURIST_SPOT                     // 관광지만 필터링
+     *   GET /api/v1/places?region=서귀포                              // 서귀포 지역만
+     *   GET /api/v1/places?cursor=50&cursorRating=4.5&size=10        // 커서 페이징 (다음 페이지)
      * </pre>
+     * <p>⚠️ cursor와 cursorRating은 반드시 함께 전달해야 합니다 (이전 응답의 nextCursorId, nextCursorRating 사용).
      */
     @SecurityRequirements
     @Operation(summary = "관광지 목록 조회", description = "카테고리/지역 필터 + 커서 페이징 지원. 정렬: 평점 내림차순.")

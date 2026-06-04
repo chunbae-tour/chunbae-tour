@@ -46,7 +46,7 @@ server:
   forward-headers-strategy: NATIVE
 
 jwt:
-  secret: ${JWT_SECRET:default_secret_key_must_be_at_least_32_bytes_long}
+  secret: ${JWT_SECRET}
   access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:PT30M}
   refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:P7D}
 
@@ -110,9 +110,9 @@ ratelimit:
       window: PT1M
 
 portone:
-  secret: ${PORTONE_SECRET:dummy_portone_secret_key}
-  webhook-secret: ${PORTONE_WEBHOOK_SECRET:dummy_webhook_secret_key}
-  store-id: ${PORTONE_STORE_ID:dummy_store_id}
+  secret: ${PORTONE_SECRET}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
+  store-id: ${PORTONE_STORE_ID}
   base-url: https://api.portone.io
   channel:
     card: ${PORTONE_CHANNEL_CARD:}
