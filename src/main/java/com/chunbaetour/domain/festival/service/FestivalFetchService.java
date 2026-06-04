@@ -36,14 +36,14 @@ public class FestivalFetchService {
     @Scheduled(cron = "${tour-api.sync-cron}")
     public void scheduledFetch() {
         FestivalFetchResult result = fetchNow();
-        log.info("Festival scheduled fetch complete: fetched={}, created={}, skipped={}",
-                result.fetched(), result.created(), result.skipped());
+        log.info("Festival scheduled fetch complete: fetched={}, created={}, updated={}, skipped={}",
+                result.fetched(), result.created(), result.updated(), result.skipped());
     }
 
     public FestivalFetchResult fetchNow() {
         if (self == null) {
             log.error("FestivalFetchService self proxy not injected — fetch aborted");
-            return new FestivalFetchResult(0, 0, 0);
+            return new FestivalFetchResult(0, 0, 0, 0);
         }
 
         List<TourApiFestivalItem> items = tourApiClient.fetchAll();
@@ -65,7 +65,7 @@ public class FestivalFetchService {
             cacheEvict.evictAll();
         }
 
-        return new FestivalFetchResult(items.size(), created, skipped);
+        return new FestivalFetchResult(items.size(), created, updated, skipped);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

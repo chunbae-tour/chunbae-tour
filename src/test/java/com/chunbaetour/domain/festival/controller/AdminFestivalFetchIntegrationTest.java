@@ -49,7 +49,7 @@ class AdminFestivalFetchIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("ADMIN 토큰 → 200 + fetched/created/skipped 반환")
     void admin_fetch_returns_200() throws Exception {
         String adminToken = adminToken();
-        given(festivalFetchService.fetchNow()).willReturn(new FestivalFetchResult(5, 3, 2));
+        given(festivalFetchService.fetchNow()).willReturn(new FestivalFetchResult(5, 3, 1, 1));
 
         mockMvc.perform(post("/api/v1/admin/festivals/fetch")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
@@ -57,7 +57,8 @@ class AdminFestivalFetchIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.fetched").value(5))
                 .andExpect(jsonPath("$.data.created").value(3))
-                .andExpect(jsonPath("$.data.skipped").value(2));
+                .andExpect(jsonPath("$.data.updated").value(1))
+                .andExpect(jsonPath("$.data.skipped").value(1));
     }
 
     @Test
