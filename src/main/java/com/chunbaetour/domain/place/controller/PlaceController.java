@@ -77,8 +77,7 @@ public class PlaceController {
                 request.lat(),
                 request.lng(),
                 request.radius(),
-                request.cursor(),
-                request.cursorDistance(),
+                request.page(),
                 request.size()
         );
         return ApiResponse.success(response);

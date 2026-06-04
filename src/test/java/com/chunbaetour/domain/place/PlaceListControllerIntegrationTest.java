@@ -185,7 +185,7 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
     void getPlaceList_cursorWithoutRating_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/places").param("cursor", "10"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("COMMON_002"));
+                .andExpect(jsonPath("$.code").value("COMMON_011"));
     }
 
     @Test
@@ -193,7 +193,7 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
     void getPlaceList_ratingWithoutCursor_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/places").param("cursorRating", "4.5"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("COMMON_002"));
+                .andExpect(jsonPath("$.code").value("COMMON_011"));
     }
 
     // ── 7. size 범위 초과 시 400 ──────────────────────────────────────────────

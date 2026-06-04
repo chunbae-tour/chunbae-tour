@@ -22,24 +22,20 @@ public record NearbyPlaceRequest(
     @DecimalMin(value = "100.0", message = "반경은 100m 이상이어야 합니다.")
     @DecimalMax(value = "20000.0", message = "반경은 20000m 이하이어야 합니다.")
     Double radius,
-    
-    Long cursor,
-    Double cursorDistance,
+    @Min(value = 0, message = "page는 0 이상이어야 합니다.")
+    Integer page,
 
     @Min(value = 1, message = "size는 1 이상이어야 합니다.")
     @Max(value = 50, message = "size는 50 이하이어야 합니다.")
     Integer size
 ) {
     public NearbyPlaceRequest {
+        if (page == null) {
+            page = 0;
+        }
         if (size == null) {
             size = 10;
         }
-    }
-
-    @JsonIgnore
-    @AssertTrue(message = "cursor와 cursorDistance는 함께 전달되어야 합니다.")
-    public boolean isCursorPairValid() {
-        return (cursor == null) == (cursorDistance == null);
     }
 }
 

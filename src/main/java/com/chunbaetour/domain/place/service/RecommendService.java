@@ -152,8 +152,9 @@ public class RecommendService {
         // 시니어 아키텍트 리뷰 반영: DB 쿼리 내 ORDER BY RAND()는 치명적인 성능 저하 유발.
         // 넉넉하게 반경 내 최대 50건을 가져온 뒤 애플리케이션 단에서 셔플 후 슬라이스(Limit) 샘플링 처리
         int fetchSize = Math.max(50, limit);
+        String mbrPolygon = com.chunbaetour.domain.place.util.LocationUtils.calculateMbrPolygon(lat, lng, radius * 1000);
         List<Place> nearbyPlaces = new java.util.ArrayList<>(
-            placeRepository.findNearbyPlacesWithinRadius(lat, lng, radius, fetchSize)
+            placeRepository.findNearbyPlacesWithinRadius(lat, lng, radius, mbrPolygon, fetchSize)
         );
         
         Collections.shuffle(nearbyPlaces);
@@ -238,11 +239,18 @@ public class RecommendService {
         }
 
         // 3. DB 조회 (동일 카테고리, 가까운 순 5개)
+        // 풀 테이블 스캔 방지를 위해 20km 반경으로 하드코딩 필터 적용
+        String mbrPolygon = com.chunbaetour.domain.place.util.LocationUtils.calculateMbrPolygon(
+                basePlace.getLat().doubleValue(),
+                basePlace.getLng().doubleValue(),
+                20000.0
+        );
         List<Place> nearbyPlaces = placeRepository.findNearbyPlacesByCategory(
                 basePlace.getLat().doubleValue(),
                 basePlace.getLng().doubleValue(),
                 basePlace.getCategory().name(),
                 placeId,
+                mbrPolygon,
                 PLACE_BASED_RECOMMEND_LIMIT
         );
 

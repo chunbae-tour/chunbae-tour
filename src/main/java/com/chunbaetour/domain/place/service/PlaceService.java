@@ -39,15 +39,16 @@ public class PlaceService {
     private static final Duration PLACE_DETAIL_TTL         = Duration.ofMinutes(10);
 
     @Transactional(readOnly = true)
-    public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Long cursor, Double cursorDistance, int size) {
+    public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Integer page, int size) {
         // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
         String latRounded = String.format("%.3f", lat);
         String lngRounded = String.format("%.3f", lng);
         double radiusRounded = Math.round(radius);
-        String cacheKey = String.format("nearby:%s:%s:%.0f:%d", latRounded, lngRounded, radiusRounded, size);
+        int pageValue = page != null ? page : 0;
+        String cacheKey = String.format("nearby:%s:%s:%.0f:%d:%d", latRounded, lngRounded, radiusRounded, pageValue, size);
 
-        // 첫 페이지일 경우에만 캐시 조회 (0L도 첫 페이지로 간주)
-        boolean isFirstPage = (cursor == null || cursor == 0L);
+        // 첫 페이지일 경우에만 캐시 조회
+        boolean isFirstPage = (pageValue == 0);
         if (isFirstPage) {
             String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
             if (cachedData != null) {
@@ -62,7 +63,8 @@ public class PlaceService {
 
         // DB 쿼리 (Haversine) - 다음 페이지 존재 여부 확인을 위해 size + 1 요청
         log.info("Redis Cache Miss or Paging: Fetching from DB");
-        List<NearbyPlaceResponse> places = placeQueryRepository.findNearbyPlaces(lat, lng, radius, cursor, cursorDistance, size + 1);
+        int offset = pageValue * size;
+        List<NearbyPlaceResponse> places = placeQueryRepository.findNearbyPlaces(lat, lng, radius, offset, size + 1);
 
         boolean hasNext = false;
         if (places.size() > size) {
@@ -281,13 +283,13 @@ public class PlaceService {
      */
     @Transactional(readOnly = true)
     public PlaceListResponse findList(PlaceListRequest request) {
-        // hasNext 판단을 위해 size + 1개 조회
+        // Repository에서 limit(size+1)을 처리하므로, 여기서는 요청한 size만 넘깁니다.
         List<PlaceListResponse.PlaceListItem> items = placeQueryRepository.findByFilter(
                 request.category(),
                 request.region(),
                 request.cursor(),
                 request.cursorRating(),   // 복합 커서: rating도 함께 전달
-                request.size() + 1
+                request.size()
         );
 
         boolean hasNext = items.size() > request.size();

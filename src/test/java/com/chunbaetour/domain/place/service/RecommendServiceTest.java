@@ -183,7 +183,7 @@ class RecommendServiceTest {
         Place place1 = createTestPlace(1L, "Place 1", 37.501, 127.001);
         Place place2 = createTestPlace(2L, "Place 2", 37.502, 127.002);
 
-        when(placeRepository.findNearbyPlacesWithinRadius(anyDouble(), anyDouble(), anyDouble(), anyInt()))
+        when(placeRepository.findNearbyPlacesWithinRadius(anyDouble(), anyDouble(), anyDouble(), anyString(), anyInt()))
                 .thenReturn(new java.util.ArrayList<>(List.of(place1, place2)));
 
         // when
@@ -261,8 +261,8 @@ class RecommendServiceTest {
         when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
-            .thenReturn(List.of(nearbyPlace));
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(5)))
+                .thenReturn(List.of(nearbyPlace));
 
         String jsonResult = "[{}]";
         when(objectMapper.writeValueAsString(any())).thenReturn(jsonResult);
@@ -305,8 +305,8 @@ class RecommendServiceTest {
         when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
 
         Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
-        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), eq(5)))
-            .thenReturn(List.of(nearbyPlace));
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(5)))
+                .thenReturn(List.of(nearbyPlace));
 
         // when
         List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
@@ -316,10 +316,11 @@ class RecommendServiceTest {
         assertThat(result.get(0).placeId()).isEqualTo(2L);
         verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
         verify(placeRepository).findNearbyPlacesByCategory(
-                anyDouble(),
-                anyDouble(),
+                eq(37.5),
+                eq(127.0),
                 eq("TOURIST_SPOT"),
                 eq(placeId),
+                anyString(),
                 eq(5)
         );
     }
