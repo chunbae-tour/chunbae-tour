@@ -97,7 +97,7 @@ class AdminMerchantApplicationServiceTest {
         givenShopSavedWithId();
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
 
-        MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
+        MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID, null);
 
         assertThat(response.status()).isEqualTo(MerchantApplicationStatus.APPROVED);
         assertThat(account.getRole()).isEqualTo(com.chunbaetour.domain.auth.Role.MERCHANT);
@@ -110,7 +110,7 @@ class AdminMerchantApplicationServiceTest {
     void approve_notFound_throws() {
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
+        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND.getMessage());
 
@@ -134,7 +134,7 @@ class AdminMerchantApplicationServiceTest {
         givenShopSavedWithId();
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
 
-        MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID);
+        MerchantApplicationDetailResponse response = adminMerchantApplicationService.approve(APPLICATION_ID, null);
 
         assertThat(response.status()).isEqualTo(MerchantApplicationStatus.APPROVED);
         assertThat(merchantAccount.getRole()).isEqualTo(com.chunbaetour.domain.auth.Role.MERCHANT);
@@ -151,13 +151,13 @@ class AdminMerchantApplicationServiceTest {
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
         givenShopSavedWithId();
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
-        adminMerchantApplicationService.approve(APPLICATION_ID); // 첫 번째 승인
+        adminMerchantApplicationService.approve(APPLICATION_ID, null); // 첫 번째 승인
 
         // 첫 번째 승인 후 application=APPROVED, account=MERCHANT — 두 번째 요청은 role 선제 검증에서 차단
         given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
+        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID.getMessage());
     }
@@ -175,7 +175,7 @@ class AdminMerchantApplicationServiceTest {
         given(shopWalletRepository.save(any(ShopWallet.class)))
                 .willThrow(new DataIntegrityViolationException("constraint violation", cause));
 
-        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID))
+        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_ALREADY_EXISTS);
