@@ -39,7 +39,7 @@ public record UserMeResponse(
         String nickname,
         String profileImageUrl,
         String language,
-        float companionScore,
+        double companionScore,
         int companionReviewCount,
         Role role,
         AccountStatus status,
