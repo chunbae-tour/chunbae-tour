@@ -569,9 +569,12 @@ class ShopServiceTest {
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         String validJson = "[\"https://example.com/img.jpg\"]";
-        var mockNode = org.mockito.Mockito.mock(tools.jackson.databind.JsonNode.class);
+        var mockNode = mock(tools.jackson.databind.JsonNode.class);
+        var mockItem = mock(tools.jackson.databind.JsonNode.class);
         given(mockNode.isArray()).willReturn(true);
-        given(mockNode.iterator()).willReturn(java.util.Collections.<tools.jackson.databind.JsonNode>emptyList().iterator());
+        given(mockNode.iterator()).willReturn(java.util.List.of(mockItem).iterator());
+        given(mockItem.isTextual()).willReturn(true);
+        given(mockItem.asText()).willReturn("https://example.com/img.jpg");
         given(objectMapper.readTree(validJson)).willReturn(mockNode);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
