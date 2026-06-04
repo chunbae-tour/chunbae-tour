@@ -91,23 +91,6 @@ public class AdminMerchantApplicationService {
     }
 
     /**
-     * 상인 신청 승인.
-     * 두 관리자가 동일 신청을 동시 승인할 경우, 두 트랜잭션 모두 PENDING을 읽고
-     * 상태 가드를 통과해 Shop이 중복 생성될 수 있다. findByIdWithLock(SELECT FOR UPDATE)으로
-     * 첫 번째 트랜잭션이 커밋될 때까지 두 번째 요청을 블로킹해 이를 방지한다.
-     * 단일 트랜잭션: application → account → shop 순으로 락 획득 후 처리.
-     * 이미 가게가 있으면 SHOP_ALREADY_EXISTS.
-     */
-    /**
-     * 상인 신청 승인 (placeId 없는 기존 호환용).
-     * @deprecated approve(applicationId, placeId) 사용 권장
-     */
-    @Transactional
-    public MerchantApplicationDetailResponse approve(Long applicationId) {
-        return approve(applicationId, null);
-    }
-
-    /**
      * 상인 신청 승인 (KAN-217: placeId 선택적 연결).
      * placeId 전달 시 Place 존재 여부 검증 후 생성되는 Shop에 연결.
      * placeId=null이면 장소 미연결 상태로 가게 생성.
