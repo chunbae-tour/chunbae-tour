@@ -36,7 +36,7 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     /**
      * 특정 관광지 기반 주변 상점 조회 (Bounding Box + Haversine 최적화)
      * 파라미터: 1=lat, 2=lng, 3=radiusKm, 4=limit
-     * Bounding box 근사치: 위도 1도는 약 111km, 경도는 대략 111km * cos(lat) 
+     * Bounding box 근사치: 위도 1도는 약 111km, 경도는 대략 111km * cos(lat)
      * 1km = 약 0.009도
      */
     @Query(value = "SELECT *, " +
@@ -48,5 +48,5 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
                    "HAVING distance <= ?3 " +
                    "ORDER BY distance ASC " +
                    "LIMIT ?4", nativeQuery = true)
-    java.util.List<Shop> findNearbyShops(double lat, double lng, double radiusKm, int limit);
+    List<Shop> findNearbyShops(double lat, double lng, double radiusKm, int limit);
 }
