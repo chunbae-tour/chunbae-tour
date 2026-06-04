@@ -20,6 +20,8 @@ import com.chunbaetour.domain.festival.repository.FestivalRepository;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
@@ -31,6 +33,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
@@ -60,6 +64,7 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired private FestivalRepository festivalRepository;
     @Autowired private TokenIssuer tokenIssuer;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private StringRedisTemplate stringRedisTemplate;
 
     @BeforeEach
     void ensureCleanState() {
@@ -71,6 +76,14 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     void cleanup() {
         festivalRepository.deleteAll();
         accountRepository.deleteAll();
+        ScanOptions opts = ScanOptions.scanOptions().match("auth:refresh:*").count(100).build();
+        Set<String> keys = new HashSet<>();
+        try (var cursor = stringRedisTemplate.scan(opts)) {
+            cursor.forEachRemaining(keys::add);
+        }
+        if (!keys.isEmpty()) {
+            stringRedisTemplate.delete(keys);
+        }
     }
 
     // ── POST: 권한 검증 ────────────────────────────────────────────────────
@@ -315,9 +328,13 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     private Festival buildFestival(String name, FestivalStatus status) {
-        return Festival.create(name, null, "서울", "서울시 강남구",
+        Festival f = Festival.create(name, null, "서울", "서울시 강남구",
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10),
-                null, null, status);
+                null, null, status == FestivalStatus.DELETED ? FestivalStatus.ACTIVE : status);
+        if (status == FestivalStatus.DELETED) {
+            f.delete();
+        }
+        return f;
     }
 
     private String loginAndGetToken(String endpoint, String email) throws Exception {
