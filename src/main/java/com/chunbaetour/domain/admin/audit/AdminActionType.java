@@ -45,6 +45,15 @@ public enum AdminActionType {
     /** S07 관광지/전통시장 삭제 — Place.delete()(→DELETED soft delete). */
     PLACE_DELETE,
 
+    /** S08 축제 등록 — Festival 신규 생성(KAN-215, KAN-95 admin CRUD 감사 wiring). */
+    FESTIVAL_CREATE,
+
+    /** S08 축제 수정 — Festival.update() 전체 교체(PUT). */
+    FESTIVAL_UPDATE,
+
+    /** S08 축제 삭제 — Festival.delete()(→DELETED soft delete). */
+    FESTIVAL_DELETE,
+
     /** S09 배너 등록 — Banner 신규 생성(KAN-216). */
     BANNER_CREATE,
 
