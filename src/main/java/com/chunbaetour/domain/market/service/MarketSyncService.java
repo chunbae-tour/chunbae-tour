@@ -1,15 +1,16 @@
 package com.chunbaetour.domain.market.service;
 
+import com.chunbaetour.domain.market.config.PublicDataApiProperties;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.List;
@@ -25,14 +26,18 @@ import java.util.Optional;
 @Transactional
 public class MarketSyncService {
 
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
     private final TraditionalMarketRepository marketRepository;
+    private final PublicDataApiProperties apiProperties;
 
-    @Value("${public-data.market.url:https://api.data.go.kr/openapi/tn_pubr_public_trdit_mrkt_api}")
-    private String marketApiUrl;
-
-    @Value("${public-data.market.key:}")
-    private String marketApiKey;
+    public MarketSyncService(
+            @Qualifier("publicDataRestClient") RestClient restClient,
+            TraditionalMarketRepository marketRepository,
+            PublicDataApiProperties apiProperties) {
+        this.restClient = restClient;
+        this.marketRepository = marketRepository;
+        this.apiProperties = apiProperties;
+    }
 
     /** 한 번에 수집할 최대 행 수 (API 제한: 최대 1000) */
     private static final int PAGE_SIZE = 1000;
@@ -89,15 +94,18 @@ public class MarketSyncService {
      */
     private MarketApiResponse fetchMarketsPage(int pageNo) {
         try {
-            String url = UriComponentsBuilder.fromUriString(marketApiUrl)
-                    .queryParam("serviceKey", marketApiKey)
+            String url = UriComponentsBuilder.fromUriString(apiProperties.getMarket().getUrl())
+                    .queryParam("serviceKey", apiProperties.getMarket().getKey())
                     .queryParam("pageNo", pageNo)
                     .queryParam("numOfRows", PAGE_SIZE)
                     .queryParam("type", "json")
                     .toUriString();
 
             log.debug("[MarketSync] API 호출: pageNo={}", pageNo);
-            MarketApiResponse response = restTemplate.getForObject(url, MarketApiResponse.class);
+            MarketApiResponse response = restClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .body(MarketApiResponse.class);
             return response;
         } catch (Exception e) {
             log.error("[MarketSync] API 호출 실패 (pageNo={})", pageNo, e);
