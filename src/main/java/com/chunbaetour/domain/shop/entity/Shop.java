@@ -98,8 +98,8 @@ public class Shop extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ShopStatus status;
 
-    // 소속 장소 — 모든 가게는 반드시 하나의 Place에 속해야 함 (KAN-217 정책, NOT NULL)
-    @Column(name = "place_id", nullable = false)
+    // 소속 장소 — 앱 레벨(@NotNull + @Valid)에서 필수 강제, DB는 NULL 허용 (환경별 데이터 충돌 방지)
+    @Column(name = "place_id")
     private Long placeId;
 
     // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
