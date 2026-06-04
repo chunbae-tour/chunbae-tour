@@ -89,6 +89,21 @@ class AdminPlaceServiceTest {
     }
 
     @Test
+    @DisplayName("수정: 이미 DELETED → PLACE_ALREADY_DELETED(409) (M1, deletePlace와 동일 가드)")
+    void updatePlace_alreadyDeleted() {
+        Place place = activePlace();
+        place.delete();
+        given(placeRepository.findById(1L)).willReturn(Optional.of(place));
+        AdminPlaceUpdateRequest request = new AdminPlaceUpdateRequest(
+                "경복궁(수정)", null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service().updatePlace(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PLACE_ALREADY_DELETED);
+    }
+
+    @Test
     @DisplayName("삭제: Place.delete() → status DELETED 전이 (soft delete)")
     void deletePlace_softDelete() {
         Place place = activePlace();

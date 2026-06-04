@@ -80,13 +80,16 @@ public class AdminPlaceService {
     /**
      * 관광지 partial update — {@link Place#update(...)} null-skip 반영. 없으면 PLACE_NOT_FOUND(404).
      *
-     * <p>DELETED 상태 관광지도 조회 가능하지만 수정 대상은 운영자 판단에 맡긴다(추가 가드 없음 — soft delete된
-     * 관광지를 다시 수정하는 케이스는 본 슬라이스에서 별도 차단하지 않는다).
+     * <p>이미 soft delete(DELETED)된 관광지 수정은 {@link ErrorCode#PLACE_ALREADY_DELETED}(409)로 거부한다
+     * (S07 리뷰 R2 M1 — deletePlace 멱등 가드와 동일 정책). 삭제된 리소스를 수정으로 되살리는 듯한 혼란을 막는다.
      */
     @Transactional
     public AdminPlaceDetailResponse updatePlace(Long placeId, AdminPlaceUpdateRequest request) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+        if (place.getStatus() == PlaceStatus.DELETED) {
+            throw new BusinessException(ErrorCode.PLACE_ALREADY_DELETED);
+        }
         place.update(
                 request.name(),
                 request.description(),

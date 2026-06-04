@@ -38,8 +38,10 @@ public record AdminPlaceUpdateRequest(
         @Size(min = 1, max = 50, message = "입장료는 빈 값일 수 없습니다.")
         @Pattern(regexp = "(?s).*\\S.*", message = "입장료는 공백만 입력할 수 없습니다.") String admissionFee,
 
+        // tags는 JSON 배열 문자열(TEXT). 등록(CreateRequest)과 동일 기준 — JSON 배열 형태 검증
+        // ((?s)로 멀티라인 허용). 배열 형태 요구가 공백-only도 함께 차단하므로 별도 non-blank 패턴 불필요.
         @Size(min = 1, max = 65535, message = "태그는 빈 값일 수 없습니다.")
-        @Pattern(regexp = "(?s).*\\S.*", message = "태그는 공백만 입력할 수 없습니다.") String tags
+        @Pattern(regexp = "(?s)^\\[.*\\]$", message = "태그는 JSON 배열 형식이어야 합니다.") String tags
 ) {
 
     /**

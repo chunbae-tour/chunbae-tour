@@ -277,6 +277,37 @@ class AdminPlaceControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(adminActionLogRepository.findAll()).isEmpty();
     }
 
+    @Test
+    @DisplayName("PATCH 이미 DELETED → 409 PLACE_015 + audit 미기록 (M1, deletePlace와 동일 가드)")
+    void updatePlace_alreadyDeleted_returns_409() throws Exception {
+        String adminToken = adminToken();
+        Place place = savePlace("경복궁", PlaceCategory.TOURIST_SPOT, PlaceStatus.DELETED);
+
+        mockMvc.perform(patch("/api/v1/admin/places/" + place.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phone\":\"02-222-2222\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PLACE_015"));
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("PATCH tags 비-JSON-배열 → 400 (M2, 형식 검증)")
+    void updatePlace_invalid_tags_returns_400() throws Exception {
+        String adminToken = adminToken();
+        Place place = savePlace("경복궁", PlaceCategory.TOURIST_SPOT, PlaceStatus.ACTIVE);
+
+        mockMvc.perform(patch("/api/v1/admin/places/" + place.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tags\":\"not-a-json-array\"}"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(adminActionLogRepository.findAll()).isEmpty();
+    }
+
     // ── 삭제 ────────────────────────────────────────────────────────────────
 
     @Test
