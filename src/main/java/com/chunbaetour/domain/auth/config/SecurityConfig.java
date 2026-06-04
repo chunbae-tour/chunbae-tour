@@ -47,6 +47,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/payments/**} — USER 전용 (webhook POST는 permitAll 선 매칭)</li>
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
  *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
+ *   <li>{@code /api/v1/notifications/**} — USER·MERCHANT 공용 (MERCHANT도 고객센터 알림 수신 대상)</li>
  *   <li>{@code /api/v1/reports/**} — USER 전용 (신고 생성·내 신고 조회; admin 신고 API는 /admin/** 커버)</li>
  *   <li>{@code /api/v1/faqs/**} — USER 전용 (버튼형 FAQ 조회; admin 관리 API는 /admin/faqs/** 커버)</li>
  *   <li>{@code /api/v1/support/**} — USER·MERCHANT 공용 (고객센터 상담; admin 상담 API는 /admin/** 커버)</li>
@@ -134,7 +135,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/search/recent").hasRole("USER")
                         // 검색 조회 API는 와일드카드 대신 화이트리스트 방식으로 명시하여 권한 누수 방지
                         // 2-1 인기 검색어, 2-2 관광지 검색, 2-3 축제 검색, 2-4 자동완성
-                        .requestMatchers(HttpMethod.GET, "/api/v1/search/popular", "/api/v1/search/places", "/api/v1/search/festivals", "/api/v1/search/suggest").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/search", "/api/v1/search/popular", "/api/v1/search/places", "/api/v1/search/festivals", "/api/v1/search/suggest").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v2/search/festivals").permitAll()
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
@@ -147,12 +149,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
+                        // 축제·캘린더 조회 — 비인증 허용
+                        .requestMatchers(HttpMethod.GET, "/api/v1/festivals/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
                         // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/chat/**").hasRole("USER")
-                        // 알림은 USER 전용 — 채팅 알림 등 일반 사용자 기능
-                        .requestMatchers("/api/v1/notifications/**").hasRole("USER")
+                        // 알림은 USER·MERCHANT 공용 — MERCHANT도 고객센터 알림 수신 대상
+                        .requestMatchers("/api/v1/notifications/**").hasAnyRole("USER", "MERCHANT")
                         // 번역은 USER 전용 — 채팅 메시지 번역 기능
                         .requestMatchers("/api/v1/translations/**").hasRole("USER")
                         // 버튼형 FAQ 조회는 USER 전용 — admin 관리 API는 /admin/faqs/** 커버

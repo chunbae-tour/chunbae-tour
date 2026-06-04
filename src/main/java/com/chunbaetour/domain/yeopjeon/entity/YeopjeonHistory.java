@@ -42,6 +42,10 @@ public class YeopjeonHistory extends BaseEntity {
     @Column(name = "shop_id")
     private Long shopId;
 
+    // QR 결제 이력에서 원본 결제 요청 역추적용. PAYMENT/RECEIVED_PAYMENT(QR) 타입에서만 설정.
+    @Column(name = "pay_request_id", length = 36)
+    private String payRequestId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private YeopjeonHistoryType type;
@@ -57,11 +61,12 @@ public class YeopjeonHistory extends BaseEntity {
     private String description;
 
     @Builder
-    private YeopjeonHistory(Long userId, Long paymentOrderId, Long shopId, YeopjeonHistoryType type,
-                            Long amount, Long balanceSnapshot, String description) {
+    private YeopjeonHistory(Long userId, Long paymentOrderId, Long shopId, String payRequestId,
+                            YeopjeonHistoryType type, Long amount, Long balanceSnapshot, String description) {
         this.userId = userId;
         this.paymentOrderId = paymentOrderId;
         this.shopId = shopId;
+        this.payRequestId = payRequestId;
         this.type = type;
         this.amount = amount;
         this.balanceSnapshot = balanceSnapshot;
@@ -74,6 +79,22 @@ public class YeopjeonHistory extends BaseEntity {
             .userId(userId)
             .paymentOrderId(paymentOrderId)
             .shopId(shopId)
+            .type(type)
+            .amount(amount)
+            .balanceSnapshot(balanceSnapshot)
+            .description(description)
+            .build();
+    }
+
+    // QR 결제 이력 전용 팩토리 — payRequestId 추적 포함
+    // paymentOrderId는 의도적 null: QR 결제는 PaymentOrder를 거치지 않고 QrPayRequest로 처리됨
+    public static YeopjeonHistory createForQrPay(Long userId, Long shopId, String payRequestId,
+                                                  YeopjeonHistoryType type, Long amount, Long balanceSnapshot,
+                                                  String description) {
+        return YeopjeonHistory.builder()
+            .userId(userId)
+            .shopId(shopId)
+            .payRequestId(payRequestId)
             .type(type)
             .amount(amount)
             .balanceSnapshot(balanceSnapshot)

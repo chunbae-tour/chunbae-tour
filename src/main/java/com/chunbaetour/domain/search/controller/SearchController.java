@@ -5,12 +5,14 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.request.RecentSearchRequest;
 import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
-import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
+import com.chunbaetour.domain.search.dto.response.SearchFestivalV1Response;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.RecentSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
+import com.chunbaetour.domain.search.service.IntegratedSearchService;
+import com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -64,6 +66,21 @@ public class SearchController {
     private final SearchService searchService;
     private final SuggestService suggestService;
     private final RecentSearchService recentSearchService;
+    private final IntegratedSearchService integratedSearchService;
+
+    @SecurityRequirements
+    @Operation(summary = "통합 검색 (장소/가게/메뉴/축제)")
+    @GetMapping
+    public ApiResponse<CursorPageResponse<IntegratedSearchItem>> searchIntegrated(
+            @RequestParam(name = "q", required = false) String q,
+            @RequestParam(name = "type", defaultValue = "ALL") String type,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        CursorPageResponse<IntegratedSearchItem> response = 
+                integratedSearchService.searchIntegrated(q, type, cursor, size);
+        return ApiResponse.success(response);
+    }
 
     /**
      * 인기 검색어 TOP 10 조회.
@@ -126,11 +143,12 @@ public class SearchController {
     }
 
     /**
-     * 축제 검색.
+     * 축제 검색 v1.
      * <p>
      * SA: {@code GET /api/v1/search/festivals}<br>
      * 인증: 불필요(❌)<br>
-     * 설명: 날짜(시작/종료일)와 지역 필터를 지원하며, 유효한 검색어가 입력된 경우 인기 검색어 점수를 집계한다.
+     * 응답 키: {@code location}, {@code thumbnailUrl} (하위 호환 유지)<br>
+     * 신규 키({@code address}/{@code imageUrl})는 {@code /api/v2/search/festivals} 사용.
      * </p>
      *
      * @param q         검색어 (옵션)
@@ -142,9 +160,9 @@ public class SearchController {
      * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록
      */
     @SecurityRequirements
-    @Operation(summary = "축제 검색")
+    @Operation(summary = "축제 검색 v1 (location/thumbnailUrl)")
     @GetMapping("/festivals")
-    public ApiResponse<CursorPageResponse<SearchFestivalResponse>> searchFestivals(
+    public ApiResponse<CursorPageResponse<SearchFestivalV1Response>> searchFestivals(
             @RequestParam(name = "q", required = false) String q,
             @RequestParam(name = "startDate", required = false) LocalDate startDate,
             @RequestParam(name = "endDate", required = false) LocalDate endDate,
@@ -154,8 +172,7 @@ public class SearchController {
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(q, startDate, endDate, region, cursor, size, clientIp);
-        return ApiResponse.success(response);
+        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp));
     }
 
     /**

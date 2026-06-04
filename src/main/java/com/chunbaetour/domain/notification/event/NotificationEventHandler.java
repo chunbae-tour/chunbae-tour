@@ -4,6 +4,8 @@ import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
+import com.chunbaetour.domain.cs.event.SupportMessageSentEvent;
+import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
 import com.chunbaetour.domain.notification.entity.Notification;
 import com.chunbaetour.domain.notification.service.NotificationRedisPubSubService;
@@ -119,6 +121,58 @@ public class NotificationEventHandler {
             return;
         }
         doPush(notification);
+    }
+
+    // 상담 메시지 전송 — 수신 대상에게 SUPPORT_MESSAGE 알림
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handleSupportMessageSent(SupportMessageSentEvent event) {
+        Notification notification;
+        try {
+            notification = notificationService.createNotification(
+                    event.recipientUserId(),
+                    NotificationType.SUPPORT_MESSAGE,
+                    "고객센터 메시지 도착",
+                    "고객센터 상담 메시지가 도착했어요.",
+                    NotificationReferenceType.SUPPORT_ROOM,
+                    event.supportRoomId());
+        } catch (RuntimeException e) {
+            log.error("알림 저장 실패 — supportRoomId={}, recipientUserId={}",
+                    event.supportRoomId(), event.recipientUserId(), e);
+            return;
+        }
+        try {
+            pushNotification(notification);
+        } catch (RuntimeException e) {
+            log.warn("알림 Push 등록 실패 — 알림 저장 완료, Push 미발송. supportRoomId={}",
+                    event.supportRoomId(), e);
+        }
+    }
+
+    // 상담 종료 — 방 소유자에게 SUPPORT_ROOM_CLOSED 알림
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handleSupportRoomClosed(SupportRoomClosedEvent event) {
+        Notification notification;
+        try {
+            notification = notificationService.createNotification(
+                    event.userId(),
+                    NotificationType.SUPPORT_ROOM_CLOSED,
+                    "상담 종료",
+                    "고객센터 상담이 종료됐어요.",
+                    NotificationReferenceType.SUPPORT_ROOM,
+                    event.supportRoomId());
+        } catch (RuntimeException e) {
+            log.error("알림 저장 실패 — supportRoomId={}, userId={}",
+                    event.supportRoomId(), event.userId(), e);
+            return;
+        }
+        try {
+            pushNotification(notification);
+        } catch (RuntimeException e) {
+            log.warn("알림 Push 등록 실패 — 알림 저장 완료, Push 미발송. supportRoomId={}",
+                    event.supportRoomId(), e);
+        }
     }
 
     // 전송 실패가 알림 저장 롤백에 영향 없도록 별도 try-catch

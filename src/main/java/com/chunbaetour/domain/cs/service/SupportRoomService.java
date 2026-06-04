@@ -17,6 +17,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
+import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.time.Clock;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,7 @@ public class SupportRoomService {
     private final SupportRoomRepository supportRoomRepository;
     private final SupportMessageRepository supportMessageRepository;
     private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // 상담방 생성 (USER·MERCHANT) — 활성 방 중복 차단(앱 레벨 선체크 + DB unique 제약 이중 방어)
     @Transactional
@@ -107,12 +110,33 @@ public class SupportRoomService {
         return fetchMessages(supportRoomId, cursor, size);
     }
 
+    // ADMIN 상담방 배정 — WAITING 조건부 UPDATE로 동시 배정 경합 방어
+    // 0 rows affected: 방 미존재·이미 배정·이미 종료 — 재조회로 정확한 에러 반환
+    @Transactional
+    public SupportRoomResponse assignAdmin(Long supportRoomId, Long adminId) {
+        int updated = supportRoomRepository.assignIfWaiting(supportRoomId, adminId,
+                SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING);
+        if (updated == 0) {
+            SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+            if (room.getStatus() == SupportRoomStatus.CLOSED) {
+                throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
+            }
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_ASSIGNED);
+        }
+        SupportRoom room = supportRoomRepository.findById(supportRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+        return SupportRoomResponse.from(room);
+    }
+
     // ADMIN 상담 종료 — CLOSED 재종료 시 CS_002, 존재하지 않으면 CS_001
     @Transactional
     public SupportRoomResponse closeRoom(Long supportRoomId, SupportRoomCloseRequest request) {
         SupportRoom room = supportRoomRepository.findById(supportRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
         room.close(clock, request.summary());
+        // 종료 알림 — 방 소유자에게 SUPPORT_ROOM_CLOSED 알림
+        applicationEventPublisher.publishEvent(new SupportRoomClosedEvent(supportRoomId, room.getUserId()));
         return SupportRoomResponse.from(room);
     }
 

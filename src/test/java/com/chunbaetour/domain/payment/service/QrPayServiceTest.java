@@ -413,12 +413,10 @@ class QrPayServiceTest {
     @Test
     @DisplayName("QR 결제 요청 생성 — 동일 사용자·가게에 PENDING 존재(사전 체크) → DUPLICATE_QR_PAY_REQUEST")
     void createQrPayRequest_existingPendingRequest_throws() {
-        // given — existsBy 사전 체크에서 차단 (일반 중복 요청 경로)
+        // given — validateShop 직후 existsBy 체크에서 차단 (메뉴·지갑 조회 전 조기 종료)
         Shop shop = createActiveShop();
-        Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
 
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
         given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
                 eq(USER_ID), eq(SHOP_ID), eq(QrPayStatus.PENDING), any(LocalDateTime.class)))
                 .willReturn(true);
@@ -912,6 +910,55 @@ class QrPayServiceTest {
         assertThat(result).extracting("payRequestId")
                 .containsExactly("req-sooner", "req-later");
         assertThat(result.get(0).expiredAt()).isBefore(result.get(1).expiredAt());
+    }
+
+    // ── getQrPayStatus ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("QR 결제 상태 폴링 — 존재하지 않는 payRequestId → QR_PAY_REQUEST_NOT_FOUND")
+    void getQrPayStatus_notFound_throwsNotFound() {
+        given(qrPayRequestRepository.findByPayRequestId("not-exist")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> qrPayService.getQrPayStatus(USER_ID, "not-exist"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 결제 상태 폴링 — 타인의 payRequestId 조회 시 QR_PAY_REQUEST_NOT_FOUND (정보 노출 차단)")
+    void getQrPayStatus_otherUserRequest_throwsNotFound() {
+        QrPayRequest other = mock(QrPayRequest.class);
+        given(other.getUserId()).willReturn(999L); // 다른 사용자
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(other));
+
+        assertThatThrownBy(() -> qrPayService.getQrPayStatus(USER_ID, PAY_REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 결제 상태 폴링 — 정상 조회 시 status·menuItems 포함 응답 반환")
+    void getQrPayStatus_success_returnsStatusWithMenuItems() {
+        QrPayRequest req = mock(QrPayRequest.class);
+        given(req.getUserId()).willReturn(USER_ID);
+        given(req.getPayRequestId()).willReturn(PAY_REQUEST_ID);
+        given(req.getStatus()).willReturn(QrPayStatus.PENDING);
+        given(req.getAmount()).willReturn(AMOUNT);
+        given(req.getShopId()).willReturn(SHOP_ID);
+        given(req.getExpiredAt()).willReturn(NOT_EXPIRED);
+        given(req.getCompletedAt()).willReturn(null);
+        given(req.getMenuItems()).willReturn(
+                "[{\"menuId\":100,\"name\":\"떡볶이\",\"price\":5000,\"quantity\":1}]");
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+
+        var result = qrPayService.getQrPayStatus(USER_ID, PAY_REQUEST_ID);
+
+        assertThat(result.payRequestId()).isEqualTo(PAY_REQUEST_ID);
+        assertThat(result.status()).isEqualTo(QrPayStatus.PENDING);
+        assertThat(result.menuItems()).hasSize(1);
+        assertThat(result.menuItems().get(0).name()).isEqualTo("떡볶이");
     }
 
     @Test

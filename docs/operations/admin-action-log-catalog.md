@@ -35,6 +35,7 @@
 | `FESTIVAL_CREATE` / `UPDATE` / `DELETE` | S08 | `FESTIVAL` |
 | `BANNER_CREATE` / `UPDATE` / `DELETE` | S09 | `BANNER` |
 | `FAQ_CREATE` / `UPDATE` / `DELETE` | S11 | `FAQ` |
+| `SUPPORT_ASSIGN` | S12 | `SUPPORT_ROOM` |
 | `SUPPORT_CLOSE` | S12 | `SUPPORT_ROOM` |
 
 > 위 표는 예상치이며 실제 enum 항목 추가는 각 슬라이스 PR이 책임.

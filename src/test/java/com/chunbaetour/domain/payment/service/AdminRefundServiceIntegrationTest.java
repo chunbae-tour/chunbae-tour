@@ -102,7 +102,7 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
         PaymentOrder order = saveCompletedOrder();
         saveWalletWithBalance(AMOUNT);
         Refund refund = savePendingRefund(order.getId());
-        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any());
+        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
 
         RefundDetailResponse response = adminRefundService.approveRefund(refund.getId());
 
@@ -117,7 +117,7 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
         Wallet savedWallet = walletRepository.findByUserId(USER_ID).orElseThrow();
         assertThat(savedWallet.getBalance()).isZero();
 
-        verify(paymentGatewayClient).cancelPayment(any(), any(), any());
+        verify(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
     }
 
     @Test
@@ -127,7 +127,7 @@ class AdminRefundServiceIntegrationTest extends AbstractIntegrationTest {
         saveWalletWithBalance(AMOUNT);
         Refund refund = savePendingRefund(order.getId());
         willThrow(new RuntimeException("PG timeout"))
-                .given(paymentGatewayClient).cancelPayment(any(), any(), any());
+                .given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
 
         assertThatThrownBy(() -> adminRefundService.approveRefund(refund.getId()))
                 .isInstanceOf(RuntimeException.class)
