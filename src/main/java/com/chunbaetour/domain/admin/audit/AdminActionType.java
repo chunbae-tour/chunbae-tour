@@ -54,6 +54,9 @@ public enum AdminActionType {
     /** S08 축제 삭제 — Festival.delete()(→DELETED soft delete). */
     FESTIVAL_DELETE,
 
+    /** 공공데이터 축제 즉시 수집 — 관리자 수동 트리거(POST /admin/festivals/fetch). */
+    FESTIVAL_FETCH,
+
     /** S09 배너 등록 — Banner 신규 생성(KAN-216). */
     BANNER_CREATE,
 

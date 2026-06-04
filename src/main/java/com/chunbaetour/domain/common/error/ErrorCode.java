@@ -66,6 +66,7 @@ public enum ErrorCode {
     FESTIVAL_NOT_FOUND(HttpStatus.NOT_FOUND,                "FESTIVAL_001", "존재하지 않는 축제입니다."),
     FESTIVAL_DELETED(HttpStatus.FORBIDDEN,                  "FESTIVAL_002", "삭제된 축제입니다."),
     FESTIVAL_FORBIDDEN(HttpStatus.FORBIDDEN,                "FESTIVAL_003", "축제 관리 권한이 없습니다."),
+    FESTIVAL_FETCH_IN_PROGRESS(HttpStatus.CONFLICT,         "FESTIVAL_004", "이미 수집이 진행 중입니다. 잠시 후 다시 시도해주세요."),
     INVALID_LOCATION(HttpStatus.BAD_REQUEST,                "PLACE_004", "위치 정보가 올바르지 않습니다."),
     SEARCH_KEYWORD_TOO_SHORT(HttpStatus.BAD_REQUEST,        "PLACE_005", "검색어는 최소 1자 이상 입력해주세요."),
     SEARCH_KEYWORD_TOO_LONG(HttpStatus.BAD_REQUEST,         "PLACE_006", "검색어는 최대 50자까지 입력 가능합니다."),
