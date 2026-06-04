@@ -27,12 +27,14 @@
 | `PLACE_CREATE` | S07 | 관광지/전통시장 등록 (Place 신규 생성) | `PLACE` |
 | `PLACE_UPDATE` | S07 | 관광지/전통시장 수정 (partial update — null-skip) | `PLACE` |
 | `PLACE_DELETE` | S07 | 관광지/전통시장 삭제 (Place.delete() → DELETED soft delete) | `PLACE` |
+| `FESTIVAL_CREATE` | S08 | 축제 등록 (Festival 신규 생성, KAN-95 admin CRUD 감사 wiring) | `FESTIVAL` |
+| `FESTIVAL_UPDATE` | S08 | 축제 수정 (전체 필드 교체 PUT) | `FESTIVAL` |
+| `FESTIVAL_DELETE` | S08 | 축제 삭제 (Festival.delete() → DELETED soft delete) | `FESTIVAL` |
 
 후속 슬라이스 예상 추가 항목 (PRD INDEX.md 결정 2 참조):
 
 | actionType | 슬라이스 | targetType |
 |---|---|---|
-| `FESTIVAL_CREATE` / `UPDATE` / `DELETE` | S08 | `FESTIVAL` |
 | `BANNER_CREATE` / `UPDATE` / `DELETE` | S09 | `BANNER` |
 | `FAQ_CREATE` / `UPDATE` / `DELETE` | S11 | `FAQ` |
 | `SUPPORT_ASSIGN` | S12 | `SUPPORT_ROOM` |
