@@ -2,7 +2,8 @@ package com.chunbaetour.domain.market.repository;
 
 import com.chunbaetour.domain.market.entity.QTraditionalMarket;
 import com.chunbaetour.domain.market.dto.response.TraditionalMarketNearbyResponse;
-import com.querydsl.core.types.Projections;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
+import com.querydsl.core.Tuple;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberTemplate;
@@ -16,7 +17,7 @@ import static com.chunbaetour.domain.market.entity.QTraditionalMarket.traditiona
 
 /**
  * 전통시장 공간 쿼리 레포지토리.
- * ST_Distance_Sphere를 이용한 위치 기반 검색 (Place 패턴 준용).
+ * ST_Distance_Sphere를 이용한 위치 기반 검색.
  */
 @Repository
 @RequiredArgsConstructor
@@ -28,11 +29,11 @@ public class TraditionalMarketQueryRepository {
      * 지정 좌표 기준 반경 내 전통시장 조회.
      * 거리 오름차순 정렬 + 커서 기반 페이지네이션.
      *
-     * @param lat 위도 (요청 좌표)
-     * @param lng 경도 (요청 좌표)
-     * @param radiusMeters 반경 (미터)
-     * @param cursorId 커서 ID (이전 페이지 마지막 시장 ID)
-     * @param cursorDistance 커서 거리 (이전 페이지 마지막 시장과의 거리)
+     * @param lat 위도
+     * @param lng 경도
+     * @param radiusMeters 반경
+     * @param cursorId 커서 ID
+     * @param cursorDistance 커서 거리
      * @param size 페이지 크기
      * @return 거리 오름차순 시장 목록
      */
@@ -40,32 +41,38 @@ public class TraditionalMarketQueryRepository {
             double lat, double lng, double radiusMeters,
             Long cursorId, Double cursorDistance, int size) {
 
-        // MySQL ST_Distance_Sphere (반환: 미터 단위)
-        // POINT(longitude, latitude) 순서 유의
-        NumberTemplate<Double> distanceExpression = Expressions.numberTemplate(Double.class,
+        NumberTemplate<Double> distance = Expressions.numberTemplate(Double.class,
                 "ST_Distance_Sphere(POINT({0}, {1}), POINT({2}, {3}))",
                 traditionalMarket.lng, traditionalMarket.lat, lng, lat);
 
-        return queryFactory
-                .select(Projections.constructor(TraditionalMarketNearbyResponse.class,
-                        traditionalMarket.id,
-                        traditionalMarket.name,
-                        traditionalMarket.address,
-                        traditionalMarket.lat,
-                        traditionalMarket.lng,
-                        traditionalMarket.marketType,
-                        distanceExpression,
-                        Expressions.constant(null),  // imageUrl: null
-                        Expressions.constant("TRADITIONAL_MARKET")  // targetType
-                ))
+        List<Tuple> tuples = queryFactory
+                .select(traditionalMarket, distance)
                 .from(traditionalMarket)
                 .where(
-                        distanceExpression.loe(radiusMeters),
-                        cursorCondition(cursorId, cursorDistance, distanceExpression)
+                        distance.loe(radiusMeters),
+                        cursorCondition(cursorId, cursorDistance, distance)
                 )
-                .orderBy(distanceExpression.asc(), traditionalMarket.id.asc())
+                .orderBy(distance.asc(), traditionalMarket.id.asc())
                 .limit(size)
                 .fetch();
+
+        return tuples.stream()
+                .map(tuple -> {
+                    TraditionalMarket market = tuple.get(0, TraditionalMarket.class);
+                    Double dist = tuple.get(1, Double.class);
+                    return TraditionalMarketNearbyResponse.builder()
+                            .id(market.getId())
+                            .name(market.getName())
+                            .address(market.getAddress())
+                            .lat(market.getLat())
+                            .lng(market.getLng())
+                            .marketType(market.getMarketType())
+                            .distanceMeters(dist)
+                            .imageUrl(null)
+                            .targetType("TRADITIONAL_MARKET")
+                            .build();
+                })
+                .toList();
     }
 
     /**

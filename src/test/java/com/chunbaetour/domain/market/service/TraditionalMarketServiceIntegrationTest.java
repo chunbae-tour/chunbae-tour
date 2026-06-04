@@ -29,39 +29,40 @@ class TraditionalMarketServiceIntegrationTest extends AbstractIntegrationTest {
         marketRepository.deleteAll();
     }
 
-    @DisplayName("위치 기반 조회: 기준점(0,0) 반경 3km 내 시장 조회")
+    @DisplayName("위치 기반 조회: 반경 내 시장만 반환")
     @Test
     void findNearby_withinRadius() {
-        // given: 기준점(0,0)에서 반경 3km
+        // given: 기준점 (37.5500, 127.0000) 근처 시장 2개
         TraditionalMarket market1 = TraditionalMarket.builder()
-                .name("시장1")
+                .name("시장1_가까운곳")
                 .address("서울")
-                .lat(BigDecimal.valueOf(37.5700))  // 약 6.4km
-                .lng(BigDecimal.valueOf(127.0099))
+                .lat(BigDecimal.valueOf(37.55001))  // 기준점에서 거의 같음 (<100m)
+                .lng(BigDecimal.valueOf(127.00001))
                 .marketType("상설장")
                 .build();
 
         TraditionalMarket market2 = TraditionalMarket.builder()
-                .name("시장2")
-                .address("서울")
-                .lat(BigDecimal.valueOf(37.0300))  // 약 50km
-                .lng(BigDecimal.valueOf(127.0099))
+                .name("시장2_먼곳")
+                .address("경기")
+                .lat(BigDecimal.valueOf(37.0000))  // 50km 떨어짐
+                .lng(BigDecimal.valueOf(127.0000))
                 .marketType("상설장")
                 .build();
 
         marketRepository.saveAll(List.of(market1, market2));
 
-        // when: 기준점 (37.5500, 127.0000)에서 반경 1000m (1km)
+        // when: 기준점에서 반경 1km 조회
         CursorPageResponse<TraditionalMarketNearbyResponse> result = service.findNearby(
                 BigDecimal.valueOf(37.5500),
                 BigDecimal.valueOf(127.0000),
-                1000,
+                1000,  // 1km
                 null,
                 10
         );
 
-        // then: 가까운 시장 반환
-        assertThat(result.content()).isNotEmpty();
+        // then: 가까운 시장만 반환 (1개)
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).name()).isEqualTo("시장1_가까운곳");
     }
 
     @DisplayName("위치 기반 조회: 커서 페이지네이션")
