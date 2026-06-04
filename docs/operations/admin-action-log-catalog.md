@@ -24,12 +24,14 @@
 | `CERTIFICATION_APPROVE` | S05 | 인증 승인 (Shop.markCertified() cascade) | `SHOP_CERTIFICATION` |
 | `CERTIFICATION_REJECT` | S05 | 인증 거절 (사유 기록) | `SHOP_CERTIFICATION` |
 | `CERTIFICATION_CANCEL` | S05 | 인증 취소 (Shop.unmarkCertified() 회수) | `SHOP_CERTIFICATION` |
+| `PLACE_CREATE` | S07 | 관광지/전통시장 등록 (Place 신규 생성) | `PLACE` |
+| `PLACE_UPDATE` | S07 | 관광지/전통시장 수정 (partial update — null-skip) | `PLACE` |
+| `PLACE_DELETE` | S07 | 관광지/전통시장 삭제 (Place.delete() → DELETED soft delete) | `PLACE` |
 
 후속 슬라이스 예상 추가 항목 (PRD INDEX.md 결정 2 참조):
 
 | actionType | 슬라이스 | targetType |
 |---|---|---|
-| `PLACE_CREATE` / `UPDATE` / `DELETE` | S07 | `PLACE` |
 | `FESTIVAL_CREATE` / `UPDATE` / `DELETE` | S08 | `FESTIVAL` |
 | `BANNER_CREATE` / `UPDATE` / `DELETE` | S09 | `BANNER` |
 | `FAQ_CREATE` / `UPDATE` / `DELETE` | S11 | `FAQ` |
