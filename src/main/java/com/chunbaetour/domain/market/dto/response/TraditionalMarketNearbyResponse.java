@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.market.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.math.BigDecimal;
+import java.util.Optional;
 import lombok.Builder;
 
 /**
@@ -8,14 +10,16 @@ import lombok.Builder;
  * Place와 공통 필드로 프론트 통합 카드 렌더링 지원.
  */
 @Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record TraditionalMarketNearbyResponse(
         Long id,
         String name,
         String address,
         BigDecimal lat,
         BigDecimal lng,
-        String thumbnailUrl,
         String marketType,
+        Double distanceMeters,
+        String imageUrl,
         String targetType
 ) {
     public TraditionalMarketNearbyResponse {
