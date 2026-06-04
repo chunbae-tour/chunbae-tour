@@ -52,5 +52,14 @@ public enum AdminActionType {
     FESTIVAL_UPDATE,
 
     /** S08 축제 삭제 — Festival.delete()(→DELETED soft delete). */
-    FESTIVAL_DELETE;
+    FESTIVAL_DELETE,
+
+    /** S09 배너 등록 — Banner 신규 생성(KAN-216). */
+    BANNER_CREATE,
+
+    /** S09 배너 수정 — partial update(null-skip). */
+    BANNER_UPDATE,
+
+    /** S09 배너 삭제 — Banner.delete()(→DELETED soft delete). */
+    BANNER_DELETE;
 }

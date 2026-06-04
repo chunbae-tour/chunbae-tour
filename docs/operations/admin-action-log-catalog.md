@@ -30,12 +30,14 @@
 | `FESTIVAL_CREATE` | S08 | 축제 등록 (Festival 신규 생성, KAN-95 admin CRUD 감사 wiring) | `FESTIVAL` |
 | `FESTIVAL_UPDATE` | S08 | 축제 수정 (전체 필드 교체 PUT) | `FESTIVAL` |
 | `FESTIVAL_DELETE` | S08 | 축제 삭제 (Festival.delete() → DELETED soft delete) | `FESTIVAL` |
+| `BANNER_CREATE` | S09 | 배너 등록 (Banner 신규 생성) | `BANNER` |
+| `BANNER_UPDATE` | S09 | 배너 수정 (partial update — null-skip) | `BANNER` |
+| `BANNER_DELETE` | S09 | 배너 삭제 (Banner.delete() → DELETED soft delete) | `BANNER` |
 
 후속 슬라이스 예상 추가 항목 (PRD INDEX.md 결정 2 참조):
 
 | actionType | 슬라이스 | targetType |
 |---|---|---|
-| `BANNER_CREATE` / `UPDATE` / `DELETE` | S09 | `BANNER` |
 | `FAQ_CREATE` / `UPDATE` / `DELETE` | S11 | `FAQ` |
 | `SUPPORT_ASSIGN` | S12 | `SUPPORT_ROOM` |
 | `SUPPORT_CLOSE` | S12 | `SUPPORT_ROOM` |
