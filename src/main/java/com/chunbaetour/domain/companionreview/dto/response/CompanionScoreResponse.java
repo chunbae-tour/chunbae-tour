@@ -16,8 +16,13 @@ public record CompanionScoreResponse(
     public static CompanionScoreResponse of(Account account, List<ScoreCountProjection> distribution) {
         Map<String, Long> dist = new java.util.HashMap<>(
                 Map.of("1", 0L, "2", 0L, "3", 0L, "4", 0L, "5", 0L));
-        distribution.forEach(row ->
-                dist.put(String.valueOf(row.getScore()), row.getCount()));
+        distribution.forEach(row -> {
+            Integer score = row.getScore();
+            Long count = row.getCount();
+            if (score != null && score >= 1 && score <= 5) {
+                dist.put(String.valueOf(score), count == null ? 0L : count);
+            }
+        });
 
         return new CompanionScoreResponse(
                 account.getId(),
