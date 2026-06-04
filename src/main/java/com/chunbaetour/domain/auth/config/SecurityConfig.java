@@ -89,16 +89,21 @@ public class SecurityConfig {
                 // same-site(web.x / api.x) 배치 전제 — SPA(fetch/XHR)·STOMP(WebSocket) 연동을 깨지 않는 보수적 셋만 적용한다.
                 // (full Content-Security-Policy default-src 잠금은 Swagger UI/SockJS iframe 호환 검증이 필요해 후속 분리.)
                 .headers(headers -> headers
-                        // HSTS: 브라우저가 이후 요청을 무조건 HTTPS로 강제(SSL-strip 중간자 차단).
-                        //   - maxAge 1년 + includeSubDomains. preload는 도메인 정책 확정 후 별도 검토.
+                        // HSTS: 브라우저가 이후 요청을 무조건 HTTPS로 강제(SSL-strip 중간자 차단). maxAge 1년.
                         //   - 주의: Spring Security는 "요청이 secure로 판정될 때만" HSTS를 내보낸다. 로컬(HTTP)은 미전송이 정상이며,
-                        //     운영은 LB가 TLS 종단 후 X-Forwarded-Proto=https를 전달(server.forward-headers-strategy=NATIVE)해야 secure로 인식된다.
+                        //     운영은 LB가 TLS 종단 후 X-Forwarded-Proto=https를 전달(server.forward-headers-strategy=NATIVE, application.yml:46)해야
+                        //     secure로 인식돼 HSTS가 실제 전송된다(dead config 아님 — forward-headers 설정 확인됨).
+                        //   - includeSubDomains=false(보수적 1차): 운영 도메인이 apex(example.com)에서 응답되면 true가 모든 하위 도메인에
+                        //     HTTPS를 강제해, 아직 HTTP로만 뜬 하위 서비스가 있으면 접근이 막힌다(hyeonmin02/lim-haeun 리뷰). 운영 도메인 구조
+                        //     (api 서브도메인 단독 vs apex) 확정 후 true 승격 권장.
                         .httpStrictTransportSecurity(hsts -> hsts
-                                .includeSubDomains(true)
+                                .includeSubDomains(false)
                                 .maxAgeInSeconds(31_536_000))
                         // X-Frame-Options: DENY — 어떤 페이지도 본 응답을 iframe으로 임베드 불가(클릭재킹 차단).
-                        //   Spring Security 기본값과 동일하나 회귀 방지를 위해 명시 고정한다.
-                        //   참고: SockJS의 iframe 폴백 전송은 차단되지만, same-site 최신 브라우저는 WebSocket 전송을 사용하므로 영향 없음.
+                        //   ⚠️ Spring Security 6 기본값이 이미 DENY라 본 명시는 "회귀 방지 고정"일 뿐 행동 변화가 없다(현 develop도 DENY 전송 중).
+                        //   SockJS iframe 폴백 전송은 의도적으로 미지원한다 — 표준 WebSocket 전송 사용을 전제로 한다. WebSocket이 차단되는
+                        //   구형 브라우저/네트워크에서 SockJS가 iframe 폴백을 타야 하면 STOMP 연결이 실패할 수 있으므로 지원 브라우저 범위
+                        //   확정 시 재검토(현재는 기본값과 동일이라 본 PR이 새로 깨는 것은 없음).
                         .frameOptions(frame -> frame.deny())
                         // X-Content-Type-Options: nosniff — 브라우저의 MIME 타입 추측 차단(JSON을 스크립트로 오해석하는 공격 방지).
                         //   Spring Security 기본값과 동일하나 명시 고정.

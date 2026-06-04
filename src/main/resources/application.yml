@@ -111,17 +111,17 @@ ratelimit:
     # 토큰 재발급: permitAll + 자동 전송 refresh 쿠키만으로 호출 가능한 경로라 무제한 노출되면
     #   (1) 프론트 인터셉터의 401→reissue 재시도 루프 오작동, (2) 탈취 refresh 쿠키 brute 시도를 막지 못한다.
     #   IP당 분당 20회 — 정상 SPA의 access TTL 만료 주기(분 단위 1회)에 비해 충분히 여유 있으면서 폭주는 차단.
+    #   (IP 기반 한도라 같은 NAT 공유 사용자 다수가 한 bucket을 공유하는 trade-off는 기존 login 정책과 동일.
+    #    단 reissue는 "막혀도 재로그인으로 복구 가능"해 login과 동일 모델 수용. 20회 한도로 일반 공유망은 여유.)
     - id: token-reissue
       method: POST
       path: /api/v1/auth/reissue
       limit: 20
       window: PT1M
-    # 로그아웃: 자동 전송 쿠키 기반 상태변경(블랙리스트/refresh 폐기) 경로라 반복 호출 폭주를 제한.
-    - id: logout
-      method: POST
-      path: /api/v1/auth/logout
-      limit: 20
-      window: PT1M
+    # 로그아웃: rate-limit 미적용(의도). logout은 인증(Bearer) 필수 + 효과가 "자기 토큰 폐기"로 자기 자신에만
+    #   국한돼 남용 가치가 거의 없다. 반대로 IP 기반 한도를 걸면 같은 NAT/회사망/모바일망 공유 사용자 중 한 명의
+    #   반복 호출이 타 사용자의 정상 로그아웃을 막아 "실패시키면 더 불편한" 동작을 악화시킨다(hyeonmin02 리뷰).
+    #   → 정책 미추가. 추후 JWT 이후 사용자 식별 기반 rate-limit이 도입되면 그 위에서 재검토.
 
 portone:
   secret: ${PORTONE_SECRET:}
