@@ -150,6 +150,8 @@ public enum ErrorCode {
     SHOP_CERTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,      "SHOP_019", "존재하지 않는 인증 신청입니다."),
     SHOP_CERTIFICATION_INVALID_STATUS(HttpStatus.CONFLICT,  "SHOP_020", "현재 상태에서는 처리할 수 없는 인증 신청입니다."),
     SHOP_ALREADY_CERTIFIED(HttpStatus.CONFLICT,             "SHOP_021", "이미 인증된 가게입니다. 가게당 유효 인증은 1건만 허용됩니다."),
+    SHOP_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND,             "SHOP_022", "존재하지 않는 가게 공지입니다."),
+    SHOP_STATUS_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_023", "상인이 변경할 수 없는 상태입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

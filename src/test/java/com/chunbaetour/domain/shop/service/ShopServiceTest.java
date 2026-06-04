@@ -475,4 +475,65 @@ class ShopServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_WALLET_NOT_FOUND);
     }
+
+    // ── updateMyShopStatus (KAN-213) ───────────────────────────────────────
+
+    @Test
+    @DisplayName("상인 상태 전환 — ACTIVE → CLOSED 성공")
+    void updateMyShopStatus_activeToClosed_success() {
+        Shop shop = createShop(); // ACTIVE
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.CLOSED);
+
+        assertThat(shop.getStatus()).isEqualTo(ShopStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — CLOSED → ACTIVE 재개 성공")
+    void updateMyShopStatus_closedToActive_success() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.ACTIVE);
+
+        assertThat(shop.getStatus()).isEqualTo(ShopStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — SUSPENDED 요청 → SHOP_STATUS_FORBIDDEN")
+    void updateMyShopStatus_toSuspended_throws() {
+        Shop shop = createShop();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.SUSPENDED))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_STATUS_FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — 현재 SUSPENDED 가게 → SHOP_INACTIVE")
+    void updateMyShopStatus_fromSuspended_throws() {
+        Shop shop = createShop();
+        shop.hide(); // ACTIVE → SUSPENDED
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.ACTIVE))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — 가게 없음 → SHOP_NOT_FOUND")
+    void updateMyShopStatus_notFound_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.CLOSED))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
 }

@@ -142,6 +142,20 @@ public class ShopService {
     }
 
     /**
+     * 상인 직접 가게 상태 전환 (KAN-213). ACTIVE ↔ CLOSED만 허용.
+     * SUSPENDED 요청 시 SHOP_STATUS_FORBIDDEN. 현재 SUSPENDED 가게는 SHOP_INACTIVE.
+     */
+    @Transactional
+    public void updateMyShopStatus(Long userId, Long shopId, ShopStatus newStatus) {
+        // shopId + userId 조합으로 본인 가게 조회
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // 도메인 메서드에서 SUSPENDED 전환 차단 및 SUSPENDED 상태 가드 처리
+        shop.merchantChangeStatus(newStatus);
+    }
+
+    /**
      * 관리자 가게 상태 변경 (ACTIVE ↔ SUSPENDED).
      * CLOSED 상태 가게 변경 불가 — SHOP_INACTIVE.
      * CLOSED로 변경 불가 — INVALID_INPUT_VALUE (폐업은 별도 처리).
