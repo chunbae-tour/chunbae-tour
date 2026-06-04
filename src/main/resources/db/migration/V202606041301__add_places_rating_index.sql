@@ -19,7 +19,7 @@
 -- region LIKE '%...%' 는 선행 와일드카드로 B-Tree 인덱스 사용 불가 (Tech Debt: 향후 FULLTEXT 또는 별도 전략 필요)
 
 CREATE INDEX idx_places_active_rating_id
-    ON places (status, rating, id);
+    ON places (status, rating DESC, id DESC);
 
 CREATE INDEX idx_places_active_category_rating_id
-    ON places (status, category, rating, id);
+    ON places (status, category, rating DESC, id DESC);
