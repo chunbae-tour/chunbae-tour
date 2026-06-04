@@ -154,6 +154,11 @@ kakao:
     coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
     map-url: https://map.kakao.com/link/from
 
+tour-api:
+  service-key: ${TOUR_API_SERVICE_KEY:}
+  base-url: http://apis.data.go.kr/B551011/EngService2
+  sync-cron: "0 0 2 * * *"
+
 # 검색 도메인 설정
 search:
   ranking:

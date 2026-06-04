@@ -5,7 +5,9 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.festival.dto.request.FestivalCreateRequest;
 import com.chunbaetour.domain.festival.dto.request.FestivalUpdateRequest;
 import com.chunbaetour.domain.festival.dto.response.FestivalAdminMutateResponse;
+import com.chunbaetour.domain.festival.dto.response.FestivalFetchResult;
 import com.chunbaetour.domain.festival.dto.response.FestivalResponse;
+import com.chunbaetour.domain.festival.service.FestivalFetchService;
 import com.chunbaetour.domain.festival.service.FestivalService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminFestivalController {
 
     private final FestivalService festivalService;
+    private final FestivalFetchService festivalFetchService;
 
     @Operation(summary = "관리자 축제 목록 조회", description = "[ADMIN 전용] HIDDEN 포함 전체. cursor 페이징.")
     @GetMapping
@@ -67,5 +70,11 @@ public class AdminFestivalController {
     public ApiResponse<Void> delete(@Positive @PathVariable Long festivalId) {
         festivalService.delete(festivalId);
         return ApiResponse.success();
+    }
+
+    @Operation(summary = "정부 API 즉시 수집", description = "한국관광공사 영문 관광정보 API(EngService2)에서 축제 즉시 수집.")
+    @PostMapping("/fetch")
+    public ApiResponse<FestivalFetchResult> fetch() {
+        return ApiResponse.success(festivalFetchService.fetchNow());
     }
 }

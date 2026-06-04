@@ -90,6 +90,7 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
         validateExternalKey(env, "PORTONE_CHANNEL_KAKAO_PAY", "portone.channel.kakao-pay", violations);
         validateExternalKey(env, "PORTONE_CHANNEL_TOSS_PAY", "portone.channel.toss-pay", violations);
         validateExternalKey(env, "PORTONE_CHANNEL_FOREIGN_CARD", "portone.channel.foreign-card", violations);
+        validateExternalKey(env, "TOUR_API_SERVICE_KEY", "tour-api.service-key", violations);
 
         if (!violations.isEmpty()) {
             String summary = "SECRET_VALIDATION FAILED (prod 프로파일): "
