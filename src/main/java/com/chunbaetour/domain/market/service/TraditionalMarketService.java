@@ -22,18 +22,16 @@ public class TraditionalMarketService {
     private final TraditionalMarketQueryRepository queryRepository;
 
     /**
-     * 위치 기반 전통시장 조회 (커서 페이지네이션).
-     * cursor(id) + cursorDistance 쌍으로 keyset pagination.
-     * 관광지 nearby와 동일한 방식 — 프론트는 마지막 item의 id·distanceMeters를 다음 cursor로 사용.
+     * 위치 기반 전통시장 조회 (페이지 기반).
+     * 관광지 nearby와 동일하게 distance ASC, id ASC 정렬 + offset pagination.
      */
     public TraditionalMarketNearbyPageResponse findNearby(
-            BigDecimal lat, BigDecimal lng, int radius,
-            Long cursor, Double cursorDistance, int size) {
+            BigDecimal lat, BigDecimal lng, int radius, int page, int size) {
 
         // size + 1 조회 (hasNext 판정)
         List<TraditionalMarketNearbyResponse> results = queryRepository.findNearby(
                 lat.doubleValue(), lng.doubleValue(), radius,
-                cursor, cursorDistance, size + 1
+                (long) page * size, size + 1
         );
 
         boolean hasNext = results.size() > size;
@@ -41,6 +39,6 @@ public class TraditionalMarketService {
             results = results.subList(0, size);
         }
 
-        return new TraditionalMarketNearbyPageResponse(results, hasNext);
+        return new TraditionalMarketNearbyPageResponse(results, page, size, hasNext);
     }
 }
