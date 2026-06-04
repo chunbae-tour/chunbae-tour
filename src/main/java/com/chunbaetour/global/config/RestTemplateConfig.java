@@ -6,7 +6,8 @@ import org.springframework.web.client.RestTemplate;
 
 /**
  * RestTemplate 설정.
- * 외부 API 호출 시 사용 (공공데이터포털, 포트원 등).
+ * 공공데이터포털 등 외부 API 호출 시 사용.
+ * (포트원은 PortOneConfig에서 RestClient 독립 구성)
  */
 @Configuration
 public class RestTemplateConfig {
