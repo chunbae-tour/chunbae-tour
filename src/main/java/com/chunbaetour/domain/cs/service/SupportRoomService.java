@@ -17,6 +17,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
+import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.time.Clock;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,7 @@ public class SupportRoomService {
     private final SupportRoomRepository supportRoomRepository;
     private final SupportMessageRepository supportMessageRepository;
     private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // 상담방 생성 (USER·MERCHANT) — 활성 방 중복 차단(앱 레벨 선체크 + DB unique 제약 이중 방어)
     @Transactional
@@ -132,6 +135,8 @@ public class SupportRoomService {
         SupportRoom room = supportRoomRepository.findById(supportRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
         room.close(clock, request.summary());
+        // 종료 알림 — 방 소유자에게 SUPPORT_ROOM_CLOSED 알림
+        applicationEventPublisher.publishEvent(new SupportRoomClosedEvent(supportRoomId, room.getUserId()));
         return SupportRoomResponse.from(room);
     }
 

@@ -7,6 +7,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
+import com.chunbaetour.domain.cs.event.SupportMessageSentEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -16,6 +17,7 @@ import com.chunbaetour.domain.common.ratelimit.RateLimitPolicy;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -33,6 +35,7 @@ public class SupportMessageService {
     private final SupportMessageRepository supportMessageRepository;
     private final SupportRedisPubSubService supportRedisPubSubService;
     private final RateLimiter rateLimiter;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     // 메시지 전송 — rate limit 선검증, 방 상태·발신 권한 검증, 길이 검증, DB 저장, Redis 발행 (커밋 이후)
     @Transactional
@@ -88,6 +91,12 @@ public class SupportMessageService {
 
         SupportMessage saved = supportMessageRepository.save(message);
         SupportMessageResponse response = SupportMessageResponse.from(saved);
+
+        // 알림 이벤트 발행 — ADMIN 발신 시에만 방 소유자(USER·MERCHANT)에게 알림
+        // USER/MERCHANT 발신 → ADMIN은 알림 인프라 미구축으로 skip
+        if (isAdmin) {
+            applicationEventPublisher.publishEvent(new SupportMessageSentEvent(supportRoomId, room.getUserId()));
+        }
 
         // DB 커밋 이후 발행 — 커밋 실패·롤백 시 유령 메시지 브로드캐스트 방지
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
