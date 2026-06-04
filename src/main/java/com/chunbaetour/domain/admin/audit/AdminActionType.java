@@ -34,5 +34,14 @@ public enum AdminActionType {
     CERTIFICATION_REJECT,
 
     /** S05 인증 취소 (KAN-204) — Shop.unmarkCertified() 회수. */
-    CERTIFICATION_CANCEL;
+    CERTIFICATION_CANCEL,
+
+    /** S07 관광지/전통시장 등록 — Place 신규 생성. */
+    PLACE_CREATE,
+
+    /** S07 관광지/전통시장 수정 — partial update(null-skip). */
+    PLACE_UPDATE,
+
+    /** S07 관광지/전통시장 삭제 — Place.delete()(→DELETED soft delete). */
+    PLACE_DELETE;
 }

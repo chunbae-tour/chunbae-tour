@@ -27,6 +27,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
+import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.util.List;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +50,7 @@ class SupportRoomServiceTest {
     @Mock private SupportRoomRepository supportRoomRepository;
     @Mock private SupportMessageRepository supportMessageRepository;
     @Mock private AccountRepository accountRepository;
+    @Mock private ApplicationEventPublisher applicationEventPublisher;
 
     // ===== createRoom =====
 
@@ -120,10 +123,10 @@ class SupportRoomServiceTest {
 
     // ===== closeRoom =====
 
-    // 정상 종료 → CLOSED + closedAt 설정
+    // 정상 종료 → CLOSED + closedAt 설정 + 방 소유자에게 이벤트 발행
     @Test
-    void closeRoom_success_returnsClosedRoom() {
-        SupportRoom room = buildRoom(1L);
+    void closeRoom_success_returnsClosedRoom_andPublishesEvent() {
+        SupportRoom room = buildRoom(1L); // userId=1
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
         given(clock.instant()).willReturn(FIXED_CLOCK.instant());
         given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
@@ -133,6 +136,7 @@ class SupportRoomServiceTest {
         assertThat(result.status()).isEqualTo(SupportRoomStatus.CLOSED);
         assertThat(result.summary()).isEqualTo("해결 완료");
         assertThat(result.closedAt()).isNotNull();
+        verify(applicationEventPublisher).publishEvent(new SupportRoomClosedEvent(1L, 1L));
     }
 
     // 존재하지 않는 방 → CS_001
@@ -183,6 +187,47 @@ class SupportRoomServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
+    }
+
+    // ===== assignAdmin =====
+
+    // 정상 배정 → IN_PROGRESS + adminId 설정 확인
+    @Test
+    void assignAdmin_success_returnsInProgressRoom_withAdminId() {
+        SupportRoom assigned = buildRoomWithAdminAndStatus(1L, 1L, 99L, SupportRoomStatus.IN_PROGRESS);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(1);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(assigned));
+
+        SupportRoomResponse result = supportRoomService.assignAdmin(1L, 99L);
+
+        assertThat(result.status()).isEqualTo(SupportRoomStatus.IN_PROGRESS);
+        assertThat(result.adminId()).isEqualTo(99L);
+    }
+
+    // 경합 — 0 rows affected + IN_PROGRESS 재조회 → CS_005
+    @Test
+    void assignAdmin_whenConcurrentConflict_throwsAlreadyAssigned() {
+        SupportRoom inProgress = buildRoomWithAdminAndStatus(1L, 1L, 88L, SupportRoomStatus.IN_PROGRESS);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(inProgress));
+
+        assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_ASSIGNED));
+    }
+
+    // CLOSED 방 — 0 rows affected + CLOSED 재조회 → CS_002
+    @Test
+    void assignAdmin_whenClosed_throwsAlreadyClosed() {
+        SupportRoom closed = buildRoomWithAdminAndStatus(1L, 1L, null, SupportRoomStatus.CLOSED);
+        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(closed));
+
+        assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED));
     }
 
     // ===== getMessagesAsAdmin =====
@@ -265,6 +310,26 @@ class SupportRoomServiceTest {
             var field = SupportRoom.class.getDeclaredField("id");
             field.setAccessible(true);
             field.set(room, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return room;
+    }
+
+    private SupportRoom buildRoomWithAdminAndStatus(Long id, Long userId, Long adminId, SupportRoomStatus status) {
+        SupportRoom room = SupportRoom.builder().userId(userId).build();
+        try {
+            var idField = SupportRoom.class.getDeclaredField("id");
+            idField.setAccessible(true);
+            idField.set(room, id);
+            var statusField = SupportRoom.class.getDeclaredField("status");
+            statusField.setAccessible(true);
+            statusField.set(room, status);
+            if (adminId != null) {
+                var adminIdField = SupportRoom.class.getDeclaredField("adminId");
+                adminIdField.setAccessible(true);
+                adminIdField.set(room, adminId);
+            }
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

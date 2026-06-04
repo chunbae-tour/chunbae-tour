@@ -150,6 +150,16 @@ public class AdminMerchantApplicationService {
     }
 
     /**
+     * PENDING 상태 상인 신청 수 — S06 대시보드 카운트 패널 호출용.
+     *
+     * <p>조회 전용이므로 클래스 default {@code @Transactional(readOnly = true)}를 그대로 따른다.
+     * 대시보드 서비스는 조합만 담당하므로 카운트 쿼리는 본 도메인 서비스에 둔다.
+     */
+    public long getPendingApplicationsCount() {
+        return applicationRepository.countByStatus(MerchantApplicationStatus.PENDING);
+    }
+
+    /**
      * Base64URL 커서 문자열을 id(Long)로 복원.
      * CursorUtils.decode 실패 또는 id < 1이면 INVALID_CURSOR 예외.
      */

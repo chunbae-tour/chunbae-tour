@@ -3,6 +3,7 @@ package com.chunbaetour.domain.cs.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCloseRequest;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
@@ -51,6 +52,15 @@ public class AdminSupportRoomController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return ApiResponse.success(supportRoomService.getMessagesAsAdmin(supportRoomId, cursor, size));
+    }
+
+    // 상담방 배정 — 호출한 ADMIN이 담당자로 배정, WAITING→IN_PROGRESS 전이 (ADMIN 전용)
+    @Operation(summary = "상담방 배정 (ADMIN)")
+    @PostMapping("/{supportRoomId}/assign")
+    public ApiResponse<SupportRoomResponse> assignAdmin(
+            @AuthenticationPrincipal Long adminId,
+            @PathVariable @Positive Long supportRoomId) {
+        return ApiResponse.success(supportRoomService.assignAdmin(supportRoomId, adminId));
     }
 
     // 상담 종료 — CLOSED 재종료 시 CS_002 (ADMIN 전용)

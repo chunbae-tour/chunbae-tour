@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -127,10 +128,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
         responseWriter.write(response, ErrorCode.RATE_LIMITED, headers);
     }
 
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
     /**
      * 요청 method + URI를 yml 정책과 매칭.
      *
-     * <p>정확한 URI 매칭만 지원. 패턴 매칭 필요 시 AntPathMatcher 도입 (후속).
+     * <p>AntPathMatcher로 와일드카드 패턴 지원 (예: /api/v1/payments/qr/&#42;/status).
+     * 구체적 경로(concrete path)도 Ant 매칭에서 동일하게 동작하므로 기존 정책 호환.
      */
     private Optional<EndpointPolicy> matchPolicy(HttpServletRequest request) {
         String method = request.getMethod();
@@ -139,7 +143,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String uri = request.getRequestURI().substring(request.getContextPath().length());
         return properties.endpoints().stream()
                 .filter(policy -> policy.method().equalsIgnoreCase(method))
-                .filter(policy -> policy.path().equals(uri))
+                .filter(policy -> PATH_MATCHER.match(policy.path(), uri))
                 .findFirst();
     }
 
