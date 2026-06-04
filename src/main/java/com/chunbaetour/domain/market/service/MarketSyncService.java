@@ -3,10 +3,12 @@ package com.chunbaetour.domain.market.service;
 import com.chunbaetour.domain.common.config.PublicDataApiProperties;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
+import com.chunbaetour.domain.market.dto.response.PublicDataApiWrapper;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -47,6 +49,7 @@ public class MarketSyncService {
      *
      * @return 동기화된 시장 개수
      */
+    @Scheduled(cron = "0 0 2 1 * *", zone = "Asia/Seoul")
     public int syncAllMarkets() {
         log.info("[MarketSync] 전통시장 데이터 동기화 시작");
         int totalSynced = 0;
@@ -87,9 +90,10 @@ public class MarketSyncService {
 
     /**
      * API에서 지정된 페이지의 시장 데이터 조회.
+     * resultCode 검증: "00" 정상, 기타 에러코드 처리.
      *
      * @param pageNo 페이지 번호 (1부터 시작)
-     * @return API 응답 DTO
+     * @return API 응답 body (body만 추출) 또는 null
      */
     private MarketApiResponse fetchMarketsPage(int pageNo) {
         try {
@@ -101,14 +105,41 @@ public class MarketSyncService {
                     .toUriString();
 
             log.debug("[MarketSync] API 호출: pageNo={}", pageNo);
-            MarketApiResponse response = restClient.get()
+            PublicDataApiWrapper wrapper = restClient.get()
                     .uri(url)
                     .retrieve()
-                    .body(MarketApiResponse.class);
-            return response;
+                    .body(PublicDataApiWrapper.class);
+
+            // resultCode 검증
+            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getHeader() == null) {
+                log.error("[MarketSync] API 응답 구조 오류 (pageNo={})", pageNo);
+                return null;
+            }
+
+            String resultCode = wrapper.getResponse().getHeader().getResultCode();
+            String resultMsg = wrapper.getResponse().getHeader().getResultMsg();
+
+            if (!"00".equals(resultCode)) {
+                handleApiError(resultCode, resultMsg, pageNo);
+                return null;
+            }
+
+            return wrapper.getResponse().getBody();
         } catch (Exception e) {
             log.error("[MarketSync] API 호출 실패 (pageNo={})", pageNo, e);
             return null;
+        }
+    }
+
+    /**
+     * 공공데이터포털 에러코드별 처리.
+     */
+    private void handleApiError(String resultCode, String resultMsg, int pageNo) {
+        switch (resultCode) {
+            case "03" -> log.debug("[MarketSync] 데이터 없음 (pageNo={}): {}", pageNo, resultMsg);
+            case "05", "22" -> log.warn("[MarketSync] 일시적 오류 (pageNo={}), resultCode={}: {}", pageNo, resultCode, resultMsg);
+            case "20", "21", "30", "31", "32" -> log.error("[MarketSync] 설정 오류 (pageNo={}), resultCode={}: {}", pageNo, resultCode, resultMsg);
+            default -> log.error("[MarketSync] API 에러 (pageNo={}), resultCode={}: {}", pageNo, resultCode, resultMsg);
         }
     }
 
