@@ -475,4 +475,144 @@ class ShopServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_WALLET_NOT_FOUND);
     }
+
+    // ── updateMyShopStatus (KAN-213) ───────────────────────────────────────
+
+    @Test
+    @DisplayName("상인 상태 전환 — ACTIVE → CLOSED 성공")
+    void updateMyShopStatus_activeToClosed_success() {
+        Shop shop = createShop(); // ACTIVE
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.CLOSED);
+
+        assertThat(shop.getStatus()).isEqualTo(ShopStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — CLOSED → ACTIVE 재개 성공")
+    void updateMyShopStatus_closedToActive_success() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.ACTIVE);
+
+        assertThat(shop.getStatus()).isEqualTo(ShopStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — SUSPENDED 요청 → SHOP_STATUS_FORBIDDEN")
+    void updateMyShopStatus_toSuspended_throws() {
+        Shop shop = createShop();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.SUSPENDED))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_STATUS_FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — 현재 SUSPENDED 가게 → SHOP_INACTIVE")
+    void updateMyShopStatus_fromSuspended_throws() {
+        Shop shop = createShop();
+        shop.hide(); // ACTIVE → SUSPENDED
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.ACTIVE))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
+    @DisplayName("상인 상태 전환 — 가게 없음 → SHOP_NOT_FOUND")
+    void updateMyShopStatus_notFound_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.updateMyShopStatus(USER_ID, SHOP_ID, ShopStatus.CLOSED))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    // ── updateMyShop request null 방어 ────────────────────────────────────
+
+    @Test
+    @DisplayName("내 가게 수정 — request null → INVALID_REQUEST")
+    void updateMyShop_nullRequest_throws() {
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    // ── validateImageUrls ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("imageUrls null — 수정 안 함으로 통과 (objectMapper 호출 없음)")
+    void validateImageUrls_null_pass() {
+        // null이면 validateImageUrls에서 즉시 return — objectMapper 미호출
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, null);
+        shopService.updateMyShop(USER_ID, SHOP_ID, request);
+        // 예외 없이 완료 = 통과
+    }
+
+    @Test
+    @DisplayName("imageUrls 유효한 URL 배열 — 통과")
+    void validateImageUrls_validArray_pass() throws Exception {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String validJson = "[\"https://example.com/img.jpg\"]";
+        var mockNode = mock(tools.jackson.databind.JsonNode.class);
+        var mockItem = mock(tools.jackson.databind.JsonNode.class);
+        given(mockNode.isArray()).willReturn(true);
+        given(mockNode.iterator()).willReturn(java.util.List.of(mockItem).iterator());
+        given(mockItem.isTextual()).willReturn(true);
+        given(mockItem.asText()).willReturn("https://example.com/img.jpg");
+        given(objectMapper.readTree(validJson)).willReturn(mockNode);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, validJson);
+        shopService.updateMyShop(USER_ID, SHOP_ID, request);
+    }
+
+    @Test
+    @DisplayName("imageUrls JSON 객체 — INVALID_REQUEST")
+    void validateImageUrls_jsonObject_throws() throws Exception {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String objJson = "{\"url\":\"https://example.com\"}";
+        var mockNode = org.mockito.Mockito.mock(tools.jackson.databind.JsonNode.class);
+        given(mockNode.isArray()).willReturn(false);
+        given(objectMapper.readTree(objJson)).willReturn(mockNode);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, objJson);
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("imageUrls malformed JSON — INVALID_REQUEST")
+    void validateImageUrls_malformedJson_throws() throws Exception {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String bad = "not-json";
+        given(objectMapper.readTree(bad)).willThrow(new tools.jackson.core.JacksonException("parse error") {});
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, bad);
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
 }
