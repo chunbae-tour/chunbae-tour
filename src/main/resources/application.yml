@@ -168,6 +168,11 @@ kakao:
     coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
     map-url: https://map.kakao.com/link/from
 
+tour-api:
+  service-key: ${TOUR_API_SERVICE_KEY:}
+  base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
+  sync-cron: "0 0 2 * * *"
+
 # 검색 도메인 설정
 search:
   ranking:

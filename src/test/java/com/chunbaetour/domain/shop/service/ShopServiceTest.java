@@ -353,6 +353,15 @@ class ShopServiceTest {
     }
 
     @Test
+    @DisplayName("가게 상태 변경 — newStatus null → INVALID_INPUT_VALUE (switch NPE 방지)")
+    void updateShopStatus_null_throws() {
+        assertThatThrownBy(() -> shopService.updateShopStatus(SHOP_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
     @DisplayName("가게 상태 변경 — 가게 없음 → SHOP_NOT_FOUND")
     void updateShopStatus_notFound_throws() {
         given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());

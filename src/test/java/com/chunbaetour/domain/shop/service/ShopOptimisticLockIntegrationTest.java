@@ -105,6 +105,6 @@ class ShopOptimisticLockIntegrationTest extends AbstractIntegrationTest {
                         new BigDecimal("37.5665"), new BigDecimal("126.9780"),
                         null, null));
         ReflectionTestUtils.setField(app, "id", APPLICATION_ID);
-        return Shop.fromApplication(app);
+        return Shop.fromApplication(app, null);
     }
 }
