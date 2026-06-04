@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ public class FestivalFetchService {
     enum UpsertResult { CREATED, UPDATED, SKIPPED }
 
     @Scheduled(cron = "${tour-api.sync-cron}")
+    @SchedulerLock(name = "festival_fetch", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
     public void scheduledFetch() {
         FestivalFetchResult result = fetchNow();
         log.info("Festival scheduled fetch complete: fetched={}, created={}, updated={}, skipped={}",

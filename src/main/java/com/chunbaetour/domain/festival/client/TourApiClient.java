@@ -19,6 +19,7 @@ import java.util.List;
 public class TourApiClient {
 
     private static final int PAGE_SIZE = 100;
+    private static final int MAX_PAGES  = 100;
 
     private final RestClient restClient;
     private final String serviceKey;
@@ -38,6 +39,10 @@ public class TourApiClient {
         int pageNo = 1;
 
         while (true) {
+            if (pageNo > MAX_PAGES) {
+                log.error("TourAPI 최대 페이지 수({}) 초과 — 무한루프 방지로 중단", MAX_PAGES);
+                break;
+            }
             TourApiFestivalResponse response = fetchPage(pageNo);
             TourApiFestivalResponse.Body body = response.response().body();
 
