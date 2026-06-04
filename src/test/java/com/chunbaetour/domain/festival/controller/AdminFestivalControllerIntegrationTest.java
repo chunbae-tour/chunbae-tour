@@ -249,6 +249,32 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("FESTIVAL_002"));
     }
 
+    @Test
+    @DisplayName("PUT — status=DELETED 요청 → 400 (delete() 우회 차단)")
+    void update_status_DELETED_요청_400() throws Exception {
+        Festival saved = festivalRepository.save(buildFestival("수정 대상 축제", FestivalStatus.ACTIVE));
+        Account admin = createAdmin();
+        String adminToken = tokenIssuer.issueAccess(admin.getId(), admin.getRole(), admin.getEmail());
+
+        String body = """
+                {
+                  "name": "삭제 우회 시도",
+                  "region": "서울",
+                  "address": "서울시",
+                  "startDate": "2026-07-01",
+                  "endDate": "2026-07-10",
+                  "status": "DELETED"
+                }
+                """;
+
+        mockMvc.perform(put(BASE_URL + "/" + saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_004"));
+    }
+
     // ── DELETE ────────────────────────────────────────────────────────────
 
     @Test
