@@ -100,7 +100,7 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
         assertThat(items.get(2).get("name").asString()).isEqualTo("C관광지");
     }
 
-    // ── 4. 카테고리 필터 ─────────────────────────────────────────────────────
+    // ── 4. 카테고리 / 지역 필터 ────────────────────────────────────────────────
 
     @Test
     @DisplayName("category=TOURIST_SPOT 필터 → 해당 카테고리만 반환")
@@ -112,6 +112,18 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].category").value("TOURIST_SPOT"));
+    }
+
+    @Test
+    @DisplayName("region=서귀포 필터 → 주소에 서귀포가 포함된 항목만 반환")
+    void getPlaceList_regionFilter() throws Exception {
+        savePlace("성산일출봉", PlaceCategory.TOURIST_SPOT, PlaceStatus.ACTIVE, 4.8f, "제주특별자치도 서귀포시 성산읍");
+        savePlace("한라산", PlaceCategory.TOURIST_SPOT, PlaceStatus.ACTIVE, 4.9f, "제주특별자치도 제주시");
+
+        mockMvc.perform(get("/api/v1/places").param("region", "서귀포"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].name").value("성산일출봉"));
     }
 
     // ── 5. 복합 커서 페이징 — 중복/누락 없음 ─────────────────────────────────
@@ -172,14 +184,16 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("cursor만 단독 전달 (cursorRating 없음) → 400 Bad Request")
     void getPlaceList_cursorWithoutRating_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/places").param("cursor", "10"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
     @DisplayName("cursorRating만 단독 전달 (cursor 없음) → 400 Bad Request")
     void getPlaceList_ratingWithoutCursor_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/places").param("cursorRating", "4.5"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     // ── 7. size 범위 초과 시 400 ──────────────────────────────────────────────
@@ -188,14 +202,16 @@ class PlaceListControllerIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("size=51 (최대 50 초과) → 400 Bad Request")
     void getPlaceList_sizeTooLarge_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/places").param("size", "51"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
     @DisplayName("size=0 (최소 1 미만) → 400 Bad Request")
     void getPlaceList_sizeTooSmall_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/places").param("size", "0"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     // ── 헬퍼 ──────────────────────────────────────────────────────────────────
