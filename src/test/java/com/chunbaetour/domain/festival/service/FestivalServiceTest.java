@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.then;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -76,7 +76,7 @@ class FestivalServiceTest {
         assertThat(response.festivalId()).isEqualTo(1L);
         assertThat(response.name()).isEqualTo("테스트 축제");
         assertThat(response.status()).isEqualTo(FestivalStatus.ACTIVE);
-        verify(cacheEvict).evictAll();
+        then(cacheEvict).should().evictAll();
     }
 
     // ── update ────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ class FestivalServiceTest {
         FestivalAdminMutateResponse response = festivalService.update(id, request);
 
         assertThat(response.name()).isEqualTo("수정된 축제");
-        verify(cacheEvict).evictById(id);
+        then(cacheEvict).should().evictById(id);
     }
 
     @Test
@@ -142,7 +142,7 @@ class FestivalServiceTest {
         // JPA dirty-check 의존: @Transactional 내부에서 festival.delete()를 호출하므로
         // 트랜잭션 커밋 시 DB에 반영됨. 단위 테스트에서는 인메모리 상태로만 검증.
         assertThat(festival.getStatus()).isEqualTo(FestivalStatus.DELETED);
-        verify(cacheEvict).evictById(id);
+        then(cacheEvict).should().evictById(id);
     }
 
     @Test

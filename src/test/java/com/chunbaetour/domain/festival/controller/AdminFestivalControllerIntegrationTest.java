@@ -20,8 +20,6 @@ import com.chunbaetour.domain.festival.repository.FestivalRepository;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.UUID;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
@@ -33,7 +31,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -75,15 +72,10 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     @AfterEach
     void cleanup() {
         festivalRepository.deleteAll();
+        accountRepository.findAll().stream()
+                .map(Account::getId)
+                .forEach(id -> stringRedisTemplate.delete("auth:refresh:" + id));
         accountRepository.deleteAll();
-        ScanOptions opts = ScanOptions.scanOptions().match("auth:refresh:*").count(100).build();
-        Set<String> keys = new HashSet<>();
-        try (var cursor = stringRedisTemplate.scan(opts)) {
-            cursor.forEachRemaining(keys::add);
-        }
-        if (!keys.isEmpty()) {
-            stringRedisTemplate.delete(keys);
-        }
     }
 
     // ── POST: 권한 검증 ────────────────────────────────────────────────────
