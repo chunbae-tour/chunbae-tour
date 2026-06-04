@@ -263,7 +263,7 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     // ===== /api/v1/notifications/** Security 회귀 가드 =====
-    // notifications는 USER 전용 개인 데이터 — 비로그인/타 역할 차단 검증 (GET + PATCH 엔드포인트 커버)
+    // notifications는 USER·MERCHANT 공용 — MERCHANT도 고객센터 알림 수신 대상 (KAN-200). ADMIN·비로그인 차단 검증
 
     @Test
     @org.junit.jupiter.api.DisplayName("인증 없이 GET /api/v1/notifications 호출 시 401 AUTH_006")
@@ -274,15 +274,14 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/notifications 호출 시 403 AUTH_007")
-    void merchantToken_callingNotifications_returns_403() throws Exception {
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/notifications 호출 시 200 — 고객센터 알림 수신 대상")
+    void merchantToken_callingNotifications_returns_200() throws Exception {
         seedFactory.seedMerchant("merchant-noti@example.com", PASSWORD, "상인닉-알림");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti@example.com").accessToken();
 
         mockMvc.perform(get("/api/v1/notifications")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_007"));
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -294,15 +293,15 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 PATCH /api/v1/notifications/{id}/read 호출 시 403 AUTH_007")
-    void merchantToken_callingNotificationsRead_returns_403() throws Exception {
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 PATCH /api/v1/notifications/{id}/read 호출 시 404 — 보안 통과 후 알림 미존재")
+    void merchantToken_callingNotificationsRead_returns_404() throws Exception {
         seedFactory.seedMerchant("merchant-noti2@example.com", PASSWORD, "상인닉-알림2");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti2@example.com").accessToken();
 
-        mockMvc.perform(patch("/api/v1/notifications/1/read")
+        mockMvc.perform(patch("/api/v1/notifications/999999/read")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_007"));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOTIFICATION_001"));
     }
 
     @Test
@@ -314,15 +313,15 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 DELETE /api/v1/notifications/{id} 호출 시 403 AUTH_007")
-    void merchantToken_callingNotificationsDelete_returns_403() throws Exception {
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 DELETE /api/v1/notifications/{id} 호출 시 404 — 보안 통과 후 알림 미존재")
+    void merchantToken_callingNotificationsDelete_returns_404() throws Exception {
         seedFactory.seedMerchant("merchant-noti-del@example.com", PASSWORD, "상인닉-알림삭제");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-noti-del@example.com").accessToken();
 
-        mockMvc.perform(delete("/api/v1/notifications/1")
+        mockMvc.perform(delete("/api/v1/notifications/999999")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("AUTH_007"));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOTIFICATION_001"));
     }
 
     // ===== /api/v1/recommend/** Security 회귀 가드 =====

@@ -197,7 +197,9 @@ public enum ErrorCode {
     // CS_003: USER 본인 상담방 또는 ADMIN 전용 — 타인 접근 차단
     SUPPORT_ROOM_FORBIDDEN(HttpStatus.FORBIDDEN,            "CS_003", "해당 상담방에 접근할 권한이 없습니다."),
     // CS_004: WAITING 상태 상담방 이미 존재 — 중복 생성 차단
-    SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다.");
+    SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
+    // CS_005: 이미 배정된 상담방 — 중복 배정 차단
+    SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다.");
 
     private final HttpStatus status;
     private final String code;
