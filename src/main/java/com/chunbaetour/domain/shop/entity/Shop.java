@@ -98,6 +98,10 @@ public class Shop extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ShopStatus status;
 
+    // 소속 장소 — 통합검색 시 Place 기준으로 가게/메뉴 조회에 사용. nullable (연결 없는 가게 허용)
+    @Column(name = "place_id")
+    private Long placeId;
+
     // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
     @Version
     private Long version;
@@ -165,6 +169,14 @@ public class Shop extends BaseEntity {
         if (description != null) this.description = description;
         if (phone != null) this.phone = phone;
         if (operatingHours != null) this.operatingHours = operatingHours;
+    }
+
+    /**
+     * 관리자 장소 연결 (KAN-217). placeId=null 허용 — 연결 해제.
+     * 검증(Place 존재 여부)은 서비스 레이어에서 처리.
+     */
+    public void linkPlace(Long placeId) {
+        this.placeId = placeId;
     }
 
     /**

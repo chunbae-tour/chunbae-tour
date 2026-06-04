@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 public record ShopResponse(
         Long id,
         Long userId,
+        Long placeId,
         String shopName,
         String category,
         String address,
@@ -27,6 +28,7 @@ public record ShopResponse(
         return new ShopResponse(
                 shop.getId(),
                 shop.getUserId(),
+                shop.getPlaceId(),
                 shop.getShopName(),
                 shop.getCategory(),
                 shop.getAddress(),

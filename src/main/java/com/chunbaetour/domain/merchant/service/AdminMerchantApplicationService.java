@@ -11,6 +11,7 @@ import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
@@ -41,6 +42,7 @@ public class AdminMerchantApplicationService {
     private final AccountRepository accountRepository;
     private final ShopRepository shopRepository;
     private final ShopWalletRepository shopWalletRepository;
+    private final PlaceRepository placeRepository;
 
     /**
      * 상인 신청 목록 cursor 페이징 조회 (status 필터).
@@ -96,8 +98,22 @@ public class AdminMerchantApplicationService {
      * 단일 트랜잭션: application → account → shop 순으로 락 획득 후 처리.
      * 이미 가게가 있으면 SHOP_ALREADY_EXISTS.
      */
+    /**
+     * 상인 신청 승인 (placeId 없는 기존 호환용).
+     * @deprecated approve(applicationId, placeId) 사용 권장
+     */
     @Transactional
     public MerchantApplicationDetailResponse approve(Long applicationId) {
+        return approve(applicationId, null);
+    }
+
+    /**
+     * 상인 신청 승인 (KAN-217: placeId 선택적 연결).
+     * placeId 전달 시 Place 존재 여부 검증 후 생성되는 Shop에 연결.
+     * placeId=null이면 장소 미연결 상태로 가게 생성.
+     */
+    @Transactional
+    public MerchantApplicationDetailResponse approve(Long applicationId, Long placeId) {
         // 비관적 락(SELECT FOR UPDATE) — 동일 신청에 대한 동시 승인 요청을 직렬화
         MerchantApplication application = applicationRepository.findByIdWithLock(applicationId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MERCHANT_APPLICATION_NOT_FOUND));
@@ -106,12 +122,19 @@ public class AdminMerchantApplicationService {
         Account account = accountRepository.findByIdWithLock(application.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
+        // placeId 전달 시 Place 존재 여부 사전 검증 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
+        if (placeId != null && !placeRepository.existsById(placeId)) {
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
+
         // 선행 검증 통과 후 상태 전이 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
         application.approve();                // 신청 상태 PENDING → APPROVED
         account.promoteToMerchant();          // USER → MERCHANT 승격 (MERCHANT면 멱등 skip, ADMIN이면 예외)
         try {
             // Shop 생성 후 즉시 ShopWallet도 생성 — "Shop 존재 → ShopWallet 존재" 불변식 보장
             Shop shop = shopRepository.save(Shop.fromApplication(application));
+            // placeId 연결 — null이면 장소 미연결 상태 유지
+            if (placeId != null) shop.linkPlace(placeId);
             shopWalletRepository.save(ShopWallet.create(shop.getId()));
         } catch (DataIntegrityViolationException e) {
             String msg = e.getRootCause() != null ? e.getRootCause().getMessage() : e.getMessage();

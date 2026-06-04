@@ -2,6 +2,7 @@ package com.chunbaetour.domain.shop.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
@@ -36,6 +37,7 @@ public class ShopService {
     private final MenuRepository menuRepository;
     private final ShopWalletRepository shopWalletRepository;
     private final ObjectMapper objectMapper;
+    private final PlaceRepository placeRepository;
 
     /**
      * 내 가게 목록 조회.
@@ -157,6 +159,26 @@ public class ShopService {
 
         // 도메인 메서드에서 SUSPENDED 전환 차단 및 SUSPENDED 상태 가드 처리
         shop.merchantChangeStatus(newStatus);
+    }
+
+    /**
+     * 관리자 가게-장소 수동 연결 (KAN-217).
+     * placeId=null 허용 — 기존 연결 해제.
+     * placeId 전달 시 Place 존재 여부 검증.
+     */
+    @Transactional
+    public void updateShopPlace(Long shopId, Long placeId) {
+        // 가게 조회 — 없으면 SHOP_001
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // placeId 전달 시 Place 존재 여부 검증
+        if (placeId != null && !placeRepository.existsById(placeId)) {
+            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        }
+
+        // 장소 연결 (null이면 해제)
+        shop.linkPlace(placeId);
     }
 
     /**
