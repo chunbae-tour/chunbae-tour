@@ -21,13 +21,18 @@ import com.chunbaetour.domain.festival.repository.FestivalRepository;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,12 +59,37 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired private AccountSeedFactory seedFactory;
     @Autowired private AdminActionLogRepository adminActionLogRepository;
     @Autowired private FestivalRepository festivalRepository;
+    @Autowired private StringRedisTemplate redis;
+
+    // 앞뒤 양쪽 정리 — 다른 테스트가 남긴 잔여 상태로 인한 오염 방지(#323 패턴).
+    @BeforeEach
+    void setUp() {
+        cleanState();
+    }
 
     @AfterEach
     void cleanup() {
+        cleanState();
+    }
+
+    private void cleanState() {
         adminActionLogRepository.deleteAll();
         festivalRepository.deleteAll();
         accountRepository.deleteAll();
+        // 로그인이 Redis에 refresh 토큰을 남기므로 SCAN으로 정리(JVM 공유 컨테이너 — 클래스 간 키 누수 방지).
+        deleteByPrefix("auth:refresh:*");
+        deleteByPrefix("auth:blacklist:*");
+    }
+
+    private void deleteByPrefix(String pattern) {
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+        Set<String> keys = new HashSet<>();
+        try (var cursor = redis.scan(options)) {
+            cursor.forEachRemaining(keys::add);
+        }
+        if (!keys.isEmpty()) {
+            redis.delete(keys);
+        }
     }
 
     @Test
@@ -167,10 +197,15 @@ class AdminFestivalControllerIntegrationTest extends AbstractIntegrationTest {
     // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
     private Festival saveFestival(String name, FestivalStatus status) {
-        return festivalRepository.save(Festival.create(
+        // 항상 ACTIVE로 생성 후 전이 — #323에서 Festival.create()가 ACTIVE만 허용하도록 바뀌어도 안전.
+        Festival f = Festival.create(
                 name, "설명", "강원 춘천", "공지천 일원",
                 LocalDate.of(2026, 5, 23), LocalDate.of(2026, 5, 29),
-                null, null, status));
+                null, null, FestivalStatus.ACTIVE);
+        if (status == FestivalStatus.DELETED) {
+            f.delete();
+        }
+        return festivalRepository.save(f);
     }
 
     private String adminToken() throws Exception {
