@@ -98,7 +98,7 @@ public class Shop extends BaseEntity {
     @Column(nullable = false, length = 20)
     private ShopStatus status;
 
-    // 소속 장소 — 앱 레벨(@NotNull + @Valid)에서 필수 강제, DB는 NULL 허용 (환경별 데이터 충돌 방지)
+    // 소속 장소 — 선택 연결. null이면 장소 미연결 가게 (KAN-217)
     @Column(name = "place_id")
     private Long placeId;
 

@@ -3,6 +3,7 @@ package com.chunbaetour.domain.shop.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
@@ -173,8 +174,8 @@ public class ShopService {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // placeId 전달 시 Place 존재 여부 검증
-        if (placeId != null && !placeRepository.existsById(placeId)) {
+        // placeId 전달 시 DELETED 아닌 Place 존재 여부 검증 — soft delete 장소 연결 차단
+        if (placeId != null && !placeRepository.existsByIdAndStatusNot(placeId, PlaceStatus.DELETED)) {
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
 

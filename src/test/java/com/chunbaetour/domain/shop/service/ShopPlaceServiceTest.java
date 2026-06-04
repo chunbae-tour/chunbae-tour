@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
@@ -57,7 +58,7 @@ class ShopPlaceServiceTest {
         void linkPlace_success() {
             Shop shop = createShop();
             given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-            given(placeRepository.existsById(PLACE_ID)).willReturn(true);
+            given(placeRepository.existsByIdAndStatusNot(PLACE_ID, PlaceStatus.DELETED)).willReturn(true);
 
             shopService.updateShopPlace(SHOP_ID, PLACE_ID);
 
@@ -81,7 +82,21 @@ class ShopPlaceServiceTest {
         void linkPlace_placeNotFound() {
             Shop shop = createShop();
             given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-            given(placeRepository.existsById(PLACE_ID)).willReturn(false);
+            given(placeRepository.existsByIdAndStatusNot(PLACE_ID, PlaceStatus.DELETED)).willReturn(false);
+
+            assertThatThrownBy(() -> shopService.updateShopPlace(SHOP_ID, PLACE_ID))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PLACE_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("DELETED 상태 Place — PLACE_NOT_FOUND (soft delete 장소 연결 차단)")
+        void linkPlace_deletedPlace() {
+            Shop shop = createShop();
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+            // existsByIdAndStatusNot(DELETED)는 DELETED 장소를 false로 반환
+            given(placeRepository.existsByIdAndStatusNot(PLACE_ID, PlaceStatus.DELETED)).willReturn(false);
 
             assertThatThrownBy(() -> shopService.updateShopPlace(SHOP_ID, PLACE_ID))
                     .isInstanceOf(BusinessException.class)

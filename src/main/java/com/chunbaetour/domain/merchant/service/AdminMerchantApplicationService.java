@@ -11,6 +11,7 @@ import com.chunbaetour.domain.merchant.entity.MerchantApplication;
 import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
@@ -107,8 +108,8 @@ public class AdminMerchantApplicationService {
         Account account = accountRepository.findByIdWithLock(application.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        // placeId 전달 시 Place 존재 여부 사전 검증 — entity 오염 없이 예외 발생 가능한 검증을 모두 앞에서 처리
-        if (placeId != null && !placeRepository.existsById(placeId)) {
+        // placeId 전달 시 DELETED 아닌 Place 사전 검증 — soft delete 장소 연결 차단, entity 오염 전 예외 처리
+        if (placeId != null && !placeRepository.existsByIdAndStatusNot(placeId, PlaceStatus.DELETED)) {
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
 
