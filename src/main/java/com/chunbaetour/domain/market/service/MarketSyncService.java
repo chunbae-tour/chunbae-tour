@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -52,10 +51,10 @@ public class MarketSyncService {
     /**
      * 전체 전통시장 데이터 동기화.
      * 페이징으로 전체 데이터를 수집하고 upsert 처리.
+     * MarketSyncScheduler 또는 AdminMarketController에서 호출.
      *
      * @return 동기화된 시장 개수
      */
-    @Scheduled(cron = "0 0 2 1 * *", zone = "Asia/Seoul")
     public int syncAllMarkets() {
         log.info("[MarketSync] 전통시장 데이터 동기화 시작");
         int totalSynced = 0;
