@@ -49,6 +49,9 @@ public class ShopNoticeService {
      * cursor 없으면 첫 페이지. 소유권 검증 포함.
      */
     public CursorPageResponse<ShopNoticeResponse> getNotices(Long userId, Long shopId, String cursor, int size) {
+        // size 방어 — 컨트롤러 @Min(1) 뚫리거나 서비스 직접 호출 시 대비
+        if (size <= 0) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+
         // shopId + userId 조합으로 본인 가게 조회 (상태 무관)
         shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));

@@ -44,13 +44,15 @@ class ShopNoticeServiceTest {
     private static final Long NOTICE_ID = 100L;
 
     private Shop createActiveShop() {
-        return Shop.builder()
+        Shop shop = Shop.builder()
                 .userId(USER_ID)
                 .applicationId(1L)
                 .shopName("춘배 가게")
                 .category("FOOD")
                 .address("서울시 종로구")
                 .build();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        return shop;
     }
 
     private Shop createSuspendedShop() {
