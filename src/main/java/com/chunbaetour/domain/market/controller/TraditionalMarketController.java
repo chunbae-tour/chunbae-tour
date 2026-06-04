@@ -1,10 +1,10 @@
 package com.chunbaetour.domain.market.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
-import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.market.dto.response.TraditionalMarketNearbyResponse;
+import com.chunbaetour.domain.market.dto.response.TraditionalMarketNearbyPageResponse;
 import com.chunbaetour.domain.market.service.TraditionalMarketService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.DecimalMax;
@@ -35,15 +35,18 @@ public class TraditionalMarketController {
     @SecurityRequirements
     @Operation(summary = "전통시장 주변 조회 (위치 기반)")
     @GetMapping("/nearby")
-    public ApiResponse<CursorPageResponse<TraditionalMarketNearbyResponse>> nearby(
+    public ApiResponse<TraditionalMarketNearbyPageResponse> nearby(
             @RequestParam(name = "lat") @DecimalMin("-90") @DecimalMax("90") BigDecimal lat,
             @RequestParam(name = "lng") @DecimalMin("-180") @DecimalMax("180") BigDecimal lng,
             @RequestParam(name = "radius", defaultValue = "3000") @Min(100) @Max(50000) int radius,
-            @RequestParam(name = "cursor", required = false) String cursor,
+            @Parameter(description = "다음 페이지 조회를 위한 커서 (마지막 시장의 ID)")
+            @RequestParam(name = "cursor", required = false) Long cursor,
+            @Parameter(description = "다음 페이지 조회를 위한 커서 (마지막 시장의 거리)")
+            @RequestParam(name = "cursorDistance", required = false) Double cursorDistance,
             @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        CursorPageResponse<TraditionalMarketNearbyResponse> response =
-                traditionalMarketService.findNearby(lat, lng, radius, cursor, size);
+        TraditionalMarketNearbyPageResponse response =
+                traditionalMarketService.findNearby(lat, lng, radius, cursor, cursorDistance, size);
         return ApiResponse.success(response);
     }
 }
