@@ -53,7 +53,7 @@ class TraditionalMarketQueryRepositoryIntegrationTest extends AbstractIntegratio
         List<TraditionalMarketNearbyResponse> results = queryRepository.findNearby(
                 37.5700, 127.0100,
                 1000,  // 반경 1km
-                null, null, 10
+                0L, 10
         );
 
         // then: 근처 시장만 반환
