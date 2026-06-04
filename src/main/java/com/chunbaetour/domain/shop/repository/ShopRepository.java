@@ -39,7 +39,7 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
      * Bounding box 근사치: 위도 1도는 약 111km, 경도는 대략 111km * cos(lat) 
      * 1km = 약 0.009도
      */
-    @org.springframework.data.jpa.repository.Query(value = "SELECT *, " +
+    @Query(value = "SELECT *, " +
                    "(6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(s.lat)) * cos(radians(s.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(s.lat)))))) AS distance " +
                    "FROM shops s " +
                    "WHERE s.status = 'ACTIVE' AND s.lat IS NOT NULL AND s.lng IS NOT NULL " +
