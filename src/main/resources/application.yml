@@ -173,6 +173,11 @@ tour-api:
   base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
   sync-cron: "0 0 2 * * *"
 
+public-data:
+  market:
+    url: ${PUBLIC_DATA_MARKET_URL:https://api.data.go.kr/openapi/tn_pubr_public_trdit_mrkt_api}
+    key: ${PUBLIC_DATA_MARKET_KEY:}
+
 # 검색 도메인 설정
 search:
   ranking:

@@ -140,5 +140,9 @@ public abstract class AbstractIntegrationTest {
         registry.add("portone.channel.toss-pay", () -> "test-channel-toss-pay");
         registry.add("portone.channel.foreign-card", () -> "test-channel-foreign-card");
         registry.add("portone.webhook-secret", () -> "test-only-webhook-secret");
+
+        // 공공데이터포털: 테스트는 외부 API 호출 안 함 (mock/stub 처리)
+        registry.add("public-data.market.url", () -> "https://api.data.go.kr/openapi/tn_pubr_public_trdit_mrkt_api");
+        registry.add("public-data.market.key", () -> "test-only-public-data-key");
     }
 }
