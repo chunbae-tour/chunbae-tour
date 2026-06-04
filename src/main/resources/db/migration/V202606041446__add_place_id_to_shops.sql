@@ -1,6 +1,6 @@
 -- Shop-Place 연결 구조 추가 (KAN-217)
--- place_id: 소속 장소. DB는 NULL 허용, 앱 레벨(@NotNull + @Valid)에서 필수 강제.
--- NOT NULL 미적용: 환경별 기존 데이터 충돌 방지.
+-- place_id: 소속 장소. 선택값 — null이면 장소 미연결 가게 허용.
+-- FK는 V202606041500에서 ON DELETE SET NULL 옵션과 함께 추가.
 
 ALTER TABLE shops ADD COLUMN place_id BIGINT NULL;
 

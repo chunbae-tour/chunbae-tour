@@ -129,6 +129,10 @@ public class AdminMerchantApplicationService {
             if (msg != null && msg.contains("uk_shop_wallets_shop_id")) {
                 throw new BusinessException(ErrorCode.SHOP_WALLET_ALREADY_EXISTS);
             }
+            // fk_shops_place: placeId 사전 검증(existsById) 후 Place가 삭제된 경합 케이스 — PLACE_NOT_FOUND로 분류
+            if (msg != null && msg.contains("fk_shops_place")) {
+                throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+            }
             log.error("Shop 저장 중 예상치 못한 DB 제약 위반 발생. applicationId={}", application.getId(), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }

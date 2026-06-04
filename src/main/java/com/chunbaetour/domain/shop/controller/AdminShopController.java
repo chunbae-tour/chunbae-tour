@@ -1,5 +1,8 @@
 package com.chunbaetour.domain.shop.controller;
 
+import com.chunbaetour.domain.admin.audit.AdminActionType;
+import com.chunbaetour.domain.admin.audit.AdminTargetType;
+import com.chunbaetour.domain.admin.audit.LogAdminAction;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.request.AdminShopPlaceRequest;
 import com.chunbaetour.domain.shop.dto.request.AdminShopStatusRequest;
@@ -35,6 +38,8 @@ public class AdminShopController {
      */
     @Operation(summary = "가게 상태 변경")
     @PatchMapping("/{shopId}/status")
+    @LogAdminAction(actionType = AdminActionType.SHOP_UPDATE,
+            targetType = AdminTargetType.SHOP, targetIdVar = "shopId")
     public ApiResponse<Void> updateShopStatus(
             @PathVariable @Positive Long shopId,
             @Valid @RequestBody AdminShopStatusRequest request) {
@@ -48,9 +53,11 @@ public class AdminShopController {
      */
     @Operation(summary = "가게 장소 연결 (placeId=null이면 해제)")
     @PatchMapping("/{shopId}/place")
+    @LogAdminAction(actionType = AdminActionType.SHOP_UPDATE,
+            targetType = AdminTargetType.SHOP, targetIdVar = "shopId")
     public ApiResponse<Void> updateShopPlace(
             @PathVariable @Positive Long shopId,
-            @RequestBody AdminShopPlaceRequest request) {
+            @Valid @RequestBody AdminShopPlaceRequest request) {
         shopService.updateShopPlace(shopId, request.placeId());
         return ApiResponse.success(null);
     }
