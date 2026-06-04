@@ -3,6 +3,8 @@ package com.chunbaetour.domain.festival.entity;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.festival.type.FestivalCategory;
+import com.chunbaetour.domain.festival.type.FestivalSource;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -59,6 +61,17 @@ public class Festival extends BaseEntity {
     @Column(nullable = false, length = 10)
     private FestivalStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private FestivalSource source;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private FestivalCategory category;
+
+    @Column(name = "external_id", length = 100, unique = true)
+    private String externalId;
+
     // ── 팩토리 메서드 ──────────────────────────────────────────────────────
 
     public static Festival create(String name, String description, String region,
@@ -79,6 +92,25 @@ public class Festival extends BaseEntity {
         f.imageUrl = imageUrl;
         f.relatedUrl = relatedUrl;
         f.status = resolvedStatus;
+        f.source = FestivalSource.MANUAL;
+        f.category = FestivalCategory.FESTIVAL;
+        return f;
+    }
+
+    public static Festival createFromApi(String externalId, String name, String region,
+            String address, LocalDate startDate, LocalDate endDate, String imageUrl) {
+        validateInvariant(name, region, address, startDate, endDate, FestivalStatus.ACTIVE);
+        Festival f = new Festival();
+        f.externalId = externalId;
+        f.name = name;
+        f.region = region;
+        f.address = address;
+        f.startDate = startDate;
+        f.endDate = endDate;
+        f.imageUrl = imageUrl;
+        f.status = FestivalStatus.ACTIVE;
+        f.source = FestivalSource.API_FETCH;
+        f.category = FestivalCategory.FESTIVAL;
         return f;
     }
 
@@ -100,6 +132,18 @@ public class Festival extends BaseEntity {
         this.imageUrl = imageUrl;
         this.relatedUrl = relatedUrl;
         this.status = status;
+    }
+
+    public void updateFromApi(String name, String region, String address,
+            LocalDate startDate, LocalDate endDate, String imageUrl) {
+        validateInvariant(name, region, address, startDate, endDate, this.status);
+        this.name = name;
+        this.region = region;
+        this.address = address;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        if (imageUrl != null) this.imageUrl = imageUrl;
+        // source, externalId, description, relatedUrl, status, category 유지
     }
 
     private static void validateInvariant(String name, String region, String address,

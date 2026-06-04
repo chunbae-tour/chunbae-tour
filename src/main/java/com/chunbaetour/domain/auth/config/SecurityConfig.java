@@ -17,6 +17,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -54,8 +55,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>그 외 — 인증 필요</li>
  * </ul>
  *
- * <p>CSRF disable 근거: REST API + JWT/HttpOnly Cookie 조합이라 폼 제출이 없어 CSRF 토큰 흐름 불필요.
- * Cookie 흐름의 CSRF 방어는 SameSite=Lax + Origin 검증(CORS allowedOrigins)으로 처리한다.
+ * <p>CSRF disable 근거: 일반 API는 STATELESS + Bearer(Authorization 헤더) 인증이라 브라우저가 cross-site 요청에
+ * 자격증명을 자동 첨부하지 않으므로 CSRF 표면이 없다. 자동 전송되는 쿠키에 의존하는 흐름은 refresh Cookie 기반
+ * {@code POST /api/v1/auth/reissue} 하나뿐이며, 그 방어는 쿠키 {@code SameSite} 속성으로 처리한다(현재 기본 Lax →
+ * cross-site 자동 POST에 쿠키 미첨부). ⚠️ CORS allowedOrigins는 "응답 읽기"만 차단할 뿐 요청 전송 자체는 막지
+ * 못하므로 CSRF 방어 수단이 아니다. {@code SameSite=None}으로 전환(cross-site 배포)할 경우 reissue에 별도
+ * anti-CSRF(커스텀 헤더 강제 또는 Origin/Referer 검증)를 선행 도입해야 한다. (의사결정: docs/operations/samesite-policy.md)
  *
  * <p>Stateless session: JWT 기반이라 서버 세션 미사용.
  */
@@ -79,6 +84,39 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // 보안 응답 헤더 표준 (프론트엔드 same-site 연동 하드닝).
+                // 목적: 클릭재킹/MIME 스니핑/HTTP 다운그레이드/Referer 누출을 응답 헤더로 방어한다.
+                // same-site(web.x / api.x) 배치 전제 — SPA(fetch/XHR)·STOMP(WebSocket) 연동을 깨지 않는 보수적 셋만 적용한다.
+                // (full Content-Security-Policy default-src 잠금은 Swagger UI/SockJS iframe 호환 검증이 필요해 후속 분리.)
+                .headers(headers -> headers
+                        // HSTS: 브라우저가 이후 요청을 무조건 HTTPS로 강제(SSL-strip 중간자 차단). maxAge 1년.
+                        //   - 주의: Spring Security는 "요청이 secure로 판정될 때만" HSTS를 내보낸다. 로컬(HTTP)은 미전송이 정상이며,
+                        //     운영은 LB가 TLS 종단 후 X-Forwarded-Proto=https를 전달(server.forward-headers-strategy=NATIVE, application.yml:46)해야
+                        //     secure로 인식돼 HSTS가 실제 전송된다(dead config 아님 — forward-headers 설정 확인됨).
+                        //   - includeSubDomains=false(보수적 1차): 운영 도메인이 apex(example.com)에서 응답되면 true가 모든 하위 도메인에
+                        //     HTTPS를 강제해, 아직 HTTP로만 뜬 하위 서비스가 있으면 접근이 막힌다(hyeonmin02/lim-haeun 리뷰). 운영 도메인 구조
+                        //     (api 서브도메인 단독 vs apex) 확정 후 true 승격 권장.
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(false)
+                                .maxAgeInSeconds(31_536_000))
+                        // X-Frame-Options: DENY — 어떤 페이지도 본 응답을 iframe으로 임베드 불가(클릭재킹 차단).
+                        //   ⚠️ Spring Security 6 기본값이 이미 DENY라 본 명시는 "회귀 방지 고정"일 뿐 행동 변화가 없다(현 develop도 DENY 전송 중).
+                        //   SockJS iframe 폴백 전송은 의도적으로 미지원한다 — 표준 WebSocket 전송 사용을 전제로 한다. WebSocket이 차단되는
+                        //   구형 브라우저/네트워크에서 SockJS가 iframe 폴백을 타야 하면 STOMP 연결이 실패할 수 있으므로 지원 브라우저 범위
+                        //   확정 시 재검토(현재는 기본값과 동일이라 본 PR이 새로 깨는 것은 없음).
+                        .frameOptions(frame -> frame.deny())
+                        // X-Content-Type-Options: nosniff — 브라우저의 MIME 타입 추측 차단(JSON을 스크립트로 오해석하는 공격 방지).
+                        //   Spring Security 기본값과 동일하나 명시 고정.
+                        .contentTypeOptions(Customizer.withDefaults())
+                        // Referrer-Policy: 교차 출처로 나갈 때 Referer를 origin까지만 노출(경로/쿼리 누출 방지).
+                        //   토큰은 Authorization 헤더로 전달돼 URL 노출 경로가 구조적으로 낮지만 방어적으로 적용한다.
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        // CSP(최소): frame-ancestors 'none' — X-Frame-Options를 무시하는 최신 브라우저까지 커버하는 클릭재킹 2차 방어.
+                        //   리소스 출처(default-src/script-src 등)는 잠그지 않아 Swagger UI/SockJS 정적 리소스 로딩에 영향이 없다.
+                        //   full default-src 잠금은 Swagger 호환(프로파일 분기) 검증 후 후속 적용.
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("frame-ancestors 'none'")))
                 .authorizeHttpRequests(auth -> auth
                         // Swagger UI / OpenAPI 스펙 — 개발 환경 문서 접근
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
