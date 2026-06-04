@@ -7,6 +7,7 @@ CREATE TABLE `companion_reviews` (
   `chat_room_id`   bigint       NOT NULL,
   `score`          int          NOT NULL,
   `content`        text,
+  CONSTRAINT `chk_companion_review_score` CHECK (`score` BETWEEN 1 AND 5),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_companion_review` (`reviewer_id`, `target_user_id`, `chat_room_id`),
   CONSTRAINT `fk_companion_reviews_reviewer`    FOREIGN KEY (`reviewer_id`)    REFERENCES `users` (`id`),
