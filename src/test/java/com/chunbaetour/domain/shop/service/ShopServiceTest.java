@@ -536,4 +536,80 @@ class ShopServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
     }
+
+    // ── updateMyShop request null 방어 ────────────────────────────────────
+
+    @Test
+    @DisplayName("내 가게 수정 — request null → INVALID_REQUEST")
+    void updateMyShop_nullRequest_throws() {
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    // ── validateImageUrls ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("imageUrls null — 수정 안 함으로 통과 (objectMapper 호출 없음)")
+    void validateImageUrls_null_pass() {
+        // null이면 validateImageUrls에서 즉시 return — objectMapper 미호출
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, null);
+        shopService.updateMyShop(USER_ID, SHOP_ID, request);
+        // 예외 없이 완료 = 통과
+    }
+
+    @Test
+    @DisplayName("imageUrls 유효한 URL 배열 — 통과")
+    void validateImageUrls_validArray_pass() throws Exception {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String validJson = "[\"https://example.com/img.jpg\"]";
+        var mockNode = org.mockito.Mockito.mock(tools.jackson.databind.JsonNode.class);
+        given(mockNode.isArray()).willReturn(true);
+        given(mockNode.iterator()).willReturn(java.util.Collections.<tools.jackson.databind.JsonNode>emptyList().iterator());
+        given(objectMapper.readTree(validJson)).willReturn(mockNode);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, validJson);
+        shopService.updateMyShop(USER_ID, SHOP_ID, request);
+    }
+
+    @Test
+    @DisplayName("imageUrls JSON 객체 — INVALID_REQUEST")
+    void validateImageUrls_jsonObject_throws() throws Exception {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String objJson = "{\"url\":\"https://example.com\"}";
+        var mockNode = org.mockito.Mockito.mock(tools.jackson.databind.JsonNode.class);
+        given(mockNode.isArray()).willReturn(false);
+        given(objectMapper.readTree(objJson)).willReturn(mockNode);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, objJson);
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("imageUrls malformed JSON — INVALID_REQUEST")
+    void validateImageUrls_malformedJson_throws() throws Exception {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String bad = "not-json";
+        given(objectMapper.readTree(bad)).willThrow(new tools.jackson.core.JacksonException("parse error") {});
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopUpdateRequest request = new ShopUpdateRequest(null, null, null, null, null, null, bad);
+        assertThatThrownBy(() -> shopService.updateMyShop(USER_ID, SHOP_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
 }
