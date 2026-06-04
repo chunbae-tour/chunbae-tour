@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.market.service;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,15 +21,21 @@ public class MarketSyncScheduler {
 
     /**
      * 월 1회 자동 동기화 (매월 1일 밤 2시).
-     * 실제 동기화는 marketSyncService.syncAllMarkets() 호출 → @SchedulerLock 적용.
+     * 실제 동기화는 marketSyncService.syncAllMarkets() 호출 → LockProvider 적용.
      */
     @Scheduled(cron = "0 0 2 1 * *", zone = "Asia/Seoul")
     public void scheduledSync() {
         try {
             int synced = marketSyncService.syncAllMarkets();
             log.info("[MarketSync] 정기 동기화 완료: {} 건", synced);
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.MARKET_SYNC_IN_PROGRESS) {
+                log.info("[MarketSync] 다른 인스턴스에서 수집 중 — 스킵");
+            } else {
+                log.error("[MarketSync] 정기 동기화 실패", e);
+            }
         } catch (Exception e) {
-            log.error("[MarketSync] 정기 동기화 실패", e);
+            log.error("[MarketSync] 정기 동기화 중 예상치 못한 오류", e);
         }
     }
 }

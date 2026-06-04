@@ -63,6 +63,7 @@ public enum ErrorCode {
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
     MARKET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_002", "존재하지 않는 전통시장입니다."),
+    MARKET_SYNC_IN_PROGRESS(HttpStatus.CONFLICT,            "PLACE_003", "전통시장 데이터 수집이 진행 중입니다. 잠시 후 다시 시도해주세요."),
     FESTIVAL_NOT_FOUND(HttpStatus.NOT_FOUND,                "FESTIVAL_001", "존재하지 않는 축제입니다."),
     FESTIVAL_DELETED(HttpStatus.FORBIDDEN,                  "FESTIVAL_002", "삭제된 축제입니다."),
     FESTIVAL_FORBIDDEN(HttpStatus.FORBIDDEN,                "FESTIVAL_003", "축제 관리 권한이 없습니다."),

@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
@@ -76,7 +78,7 @@ public class MarketSyncService {
 
         if (lock.isEmpty()) {
             log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중");
-            return 0;
+            throw new BusinessException(ErrorCode.MARKET_SYNC_IN_PROGRESS);
         }
 
         try {
