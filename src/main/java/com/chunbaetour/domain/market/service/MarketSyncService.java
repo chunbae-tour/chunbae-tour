@@ -1,11 +1,10 @@
 package com.chunbaetour.domain.market.service;
 
-import com.chunbaetour.domain.market.config.PublicDataApiProperties;
+import com.chunbaetour.domain.common.config.PublicDataApiProperties;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -21,15 +20,23 @@ import java.util.Optional;
  * 공공데이터포털에서 전통시장 데이터를 수집하여 DB에 저장/업데이트.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional
 public class MarketSyncService {
 
-    @Qualifier("publicDataRestClient")
     private final RestClient restClient;
     private final TraditionalMarketRepository marketRepository;
     private final PublicDataApiProperties apiProperties;
+
+    public MarketSyncService(
+        @Qualifier("publicDataRestClient") RestClient restClient,
+        TraditionalMarketRepository marketRepository,
+        PublicDataApiProperties apiProperties
+    ) {
+        this.restClient = restClient;
+        this.marketRepository = marketRepository;
+        this.apiProperties = apiProperties;
+    }
 
     /** 한 번에 수집할 최대 행 수 (API 제한: 최대 1000) */
     private static final int PAGE_SIZE = 1000;
