@@ -32,9 +32,8 @@ public class CompanionReviewController {
     @Operation(summary = "동행 리뷰 등록")
     @PostMapping("/api/v1/companion-reviews")
     public ResponseEntity<ApiResponse<CompanionReviewCreateResponse>> createReview(
-            @AuthenticationPrincipal(expression = "name") String reviewerIdStr,
+            @AuthenticationPrincipal Long reviewerId,
             @Valid @RequestBody CompanionReviewCreateRequest request) {
-        Long reviewerId = Long.parseLong(reviewerIdStr);
         CompanionReviewCreateResponse response = companionReviewService.createReview(reviewerId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
