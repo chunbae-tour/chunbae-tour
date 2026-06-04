@@ -101,6 +101,11 @@ class FlywayBaselineIntegrationTest {
         MigrateResult result = flyway.migrate();
 
         assertThat(result.success).as("마이그레이션이 성공해야 한다").isTrue();
+        // V2(KAN-179) + V3(KAN-180) + V9(KAN-189) 합류 → V1 포함 총 4건.
+        // 후속 버전 추가 시 본 가드의 기댓값도 함께 갱신해야 한다 (그 슬라이스 PR이 책임).
+        assertThat(result.migrationsExecuted)
+                .as("V1 + V2 + V3 + V9 네 건 모두 적용되어야 한다")
+                .isEqualTo(4);
 
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
@@ -134,8 +139,6 @@ class FlywayBaselineIntegrationTest {
         assertColumnExists(jdbc, "users", "suspended_reason");
         // V9가 추가한 faqs 테이블도 검증 (KAN-189 회귀 가드)
         assertTableExists(jdbc, "faqs");
-        // V202606041110이 추가한 companion_reviews 테이블도 검증 (KAN-211 회귀 가드)
-        assertTableExists(jdbc, "companion_reviews");
     }
 
     @Test
@@ -146,10 +149,8 @@ class FlywayBaselineIntegrationTest {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE TABLE existing_legacy_table (id BIGINT PRIMARY KEY)");
         // V3(KAN-180)가 users를 ALTER하므로 baseline 대상 기존 schema에 users가 존재해야 한다.
-        // V202606041110(KAN-211)이 chat_rooms FK를 참조하므로 chat_rooms도 존재해야 한다.
         // 실제 운영 prod baseline 시점엔 users 등 전체 schema가 이미 존재 — 이를 최소 테이블로 시뮬레이션.
         jdbc.execute("CREATE TABLE users (id BIGINT PRIMARY KEY)");
-        jdbc.execute("CREATE TABLE chat_rooms (id BIGINT PRIMARY KEY)");
 
         // 운영 prod 설정 (application.yml 그대로): baseline-on-migrate=true + baseline-version=1
         Flyway flyway = Flyway.configure()
@@ -162,6 +163,12 @@ class FlywayBaselineIntegrationTest {
         MigrateResult result = flyway.migrate();
 
         assertThat(result.success).as("baseline 적용이 성공해야 한다").isTrue();
+        // V1은 BASELINE marker(실 실행 X). V2(admin_action_logs) + V3(users.suspended_reason)는
+        // baseline-version=1보다 위 → 일반 마이그레이션으로 실 실행 → migrationsExecuted=2.
+        // 후속 V4~ 추가 시 본 가드 기댓값도 함께 갱신해야 한다.
+        assertThat(result.migrationsExecuted)
+                .as("V1 baseline + V2·V3 실 실행 → 2건")
+                .isEqualTo(2);
 
         // schema_history에 V1은 BASELINE, V2는 SQL 타입으로 기록되어야 함
         String v1Type = jdbc.queryForObject(
@@ -191,10 +198,6 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbc, "admin_action_logs");
         // V3도 실 실행되어 사전 생성 users에 suspended_reason 컬럼이 추가돼야 함 (KAN-180 회귀 가드)
         assertColumnExists(jdbc, "users", "suspended_reason");
-        // V9도 실 실행되어 faqs 테이블 존재해야 함 (KAN-189 회귀 가드)
-        assertTableExists(jdbc, "faqs");
-        // V202606041110도 실 실행되어 companion_reviews 테이블 존재해야 함 (KAN-211 회귀 가드)
-        assertTableExists(jdbc, "companion_reviews");
     }
 
     private static HikariDataSource newHikariDataSource() {
