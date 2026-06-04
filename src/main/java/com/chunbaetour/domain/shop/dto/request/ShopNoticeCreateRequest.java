@@ -5,6 +5,6 @@ import jakarta.validation.constraints.Size;
 
 public record ShopNoticeCreateRequest(
         @NotBlank @Size(max = 100) String title,
-        @NotBlank String content
+        @NotBlank @Size(max = 1000) String content
 ) {
 }

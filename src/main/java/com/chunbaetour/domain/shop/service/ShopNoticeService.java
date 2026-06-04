@@ -35,6 +35,9 @@ public class ShopNoticeService {
      */
     @Transactional
     public ShopNoticeResponse createNotice(Long userId, Long shopId, ShopNoticeCreateRequest request) {
+        // 서비스 직접 호출 대비 null 방어
+        if (request == null) throw new BusinessException(ErrorCode.INVALID_REQUEST);
+
         // shopId + userId 조합으로 본인 ACTIVE 가게 조회
         Shop shop = getActiveShop(userId, shopId);
 
