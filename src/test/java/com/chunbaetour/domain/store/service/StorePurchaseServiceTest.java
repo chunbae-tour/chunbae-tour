@@ -85,6 +85,8 @@ class StorePurchaseServiceTest {
         // Clock 고정 — 2024-01-15 UTC
         lenient().when(clock.instant()).thenReturn(Instant.parse("2024-01-15T00:00:00Z"));
         lenient().when(clock.getZone()).thenReturn(ZoneOffset.UTC);
+        // 기본값: 과거 구매 없음 — 개별 테스트에서 override 가능
+        lenient().when(storeOrderRepository.sumQuantityByUserIdAndProductId(USER_ID, PRODUCT_ID)).thenReturn(0);
     }
 
     private Product createProduct(int stock, ProductStatus status) {
@@ -175,6 +177,26 @@ class StorePurchaseServiceTest {
         Product product = createProduct(10, ProductStatus.ON_SALE);
         given(product.getMaxPerPerson()).willReturn(1);
         given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+
+        // when & then
+        assertThatThrownBy(() -> storePurchaseService.purchase(
+                USER_ID, new StorePurchaseRequest(PRODUCT_ID, QUANTITY)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PURCHASE_QUANTITY_EXCEEDED);
+
+        then(valueOps).should().increment(STOCK_KEY, (long) QUANTITY);
+    }
+
+    @Test
+    @DisplayName("누적 구매량 합산 초과 — 단건은 한도 이내여도 PURCHASE_QUANTITY_EXCEEDED 반환")
+    void purchase_fail_cumulativeLimitExceeded() {
+        // given: maxPerPerson=3, 이미 2개 구매, 이번 요청 2개 → 합산 4 > 3
+        given(valueOps.decrement(STOCK_KEY, (long) QUANTITY)).willReturn(6L);
+        Product product = createProduct(10, ProductStatus.ON_SALE);
+        given(product.getMaxPerPerson()).willReturn(3);
+        given(productRepository.findByIdWithLock(PRODUCT_ID)).willReturn(Optional.of(product));
+        given(storeOrderRepository.sumQuantityByUserIdAndProductId(USER_ID, PRODUCT_ID)).willReturn(2);
 
         // when & then
         assertThatThrownBy(() -> storePurchaseService.purchase(
