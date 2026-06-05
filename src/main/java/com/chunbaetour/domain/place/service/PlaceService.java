@@ -4,7 +4,6 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +45,7 @@ public class PlaceService {
     private final KakaoLocalApiClient kakaoLocalApiClient;
 
     private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
+    private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
 
     @Transactional(readOnly = true)
     public NearbyPlacePageResponse findNearby(double lat, double lng, double radius,
@@ -350,6 +350,11 @@ public class PlaceService {
         KakaoCategoryResponse kakaoResponse = kakaoLocalApiClient.searchByCategory(
                 new Coord(place.getLat(), place.getLng()), category.getCode(), normalizedRadius);
 
+        if (kakaoResponse == null || kakaoResponse.documents() == null) {
+            log.error("Kakao 카테고리 API 비정상 응답: documents is null");
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+
         boolean hasNext = false;
         if (kakaoResponse.meta() != null) {
             hasNext = !kakaoResponse.meta().isEnd();
@@ -379,7 +384,7 @@ public class PlaceService {
         
         try {
             String responseJson = objectMapper.writeValueAsString(response);
-            stringRedisTemplate.opsForValue().set(cacheKey, responseJson, java.time.Duration.ofMinutes(30));
+            stringRedisTemplate.opsForValue().set(cacheKey, responseJson, NEARBY_CATEGORY_TTL);
         } catch (Exception e) {
             log.warn("Redis 캐시 저장 실패: {}", cacheKey, e);
         }

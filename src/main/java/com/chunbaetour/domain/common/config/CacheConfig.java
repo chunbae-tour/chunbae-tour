@@ -38,13 +38,9 @@ public class CacheConfig {
         RedisCacheConfiguration companionScoreConfig = config
                 .entryTtl(Duration.ofMinutes(10));
 
-        RedisCacheConfiguration nearbyCategoryConfig = config
-                .entryTtl(Duration.ofMinutes(30));
-
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
                 .withCacheConfiguration("companionScore", companionScoreConfig)
-                .withCacheConfiguration("nearby-category", nearbyCategoryConfig)
                 .build();
     }
 }
