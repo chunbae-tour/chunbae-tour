@@ -10,7 +10,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
-import org.springframework.data.redis.listener.adapter.MessageListenerAdapter;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -54,12 +53,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             SupportRedisPubSubService supportRedisPubSubService) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
-        container.addMessageListener(
-                new MessageListenerAdapter(chatRedisPubSubService, "handleMessage"),
-                new PatternTopic("chat:*"));
-        container.addMessageListener(
-                new MessageListenerAdapter(supportRedisPubSubService, "handleMessage"),
-                new PatternTopic("support:*"));
+        // MessageListener 구현체 직접 등록 — MessageListenerAdapter 경유 시 channel에 패턴이 전달되는 버그 수정
+        container.addMessageListener(chatRedisPubSubService, new PatternTopic("chat:*"));
+        container.addMessageListener(supportRedisPubSubService, new PatternTopic("support:*"));
         return container;
     }
 
@@ -70,9 +66,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             NotificationRedisPubSubService notificationRedisPubSubService) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
-        MessageListenerAdapter adapter =
-                new MessageListenerAdapter(notificationRedisPubSubService, "handleMessage");
-        container.addMessageListener(adapter, new PatternTopic("notification:*"));
+        container.addMessageListener(notificationRedisPubSubService, new PatternTopic("notification:*"));
         return container;
     }
 }

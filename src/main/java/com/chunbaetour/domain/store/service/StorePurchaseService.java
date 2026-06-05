@@ -129,8 +129,9 @@ public class StorePurchaseService {
             if (product.getStatus() == ProductStatus.HIDDEN) {
                 throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
             }
-            // 1인당 최대 구매 수량 검증 — 상품마다 다른 이벤트 정책 적용
-            if (quantity > product.getMaxPerPerson()) {
+            // 1인당 최대 구매 수량 검증 — 과거 누적 구매량 포함 (단건 요청만 검사하면 반복 구매로 우회 가능)
+            int alreadyPurchased = storeOrderRepository.sumQuantityByUserIdAndProductId(userId, productId);
+            if (alreadyPurchased + quantity > product.getMaxPerPerson()) {
                 throw new BusinessException(ErrorCode.PURCHASE_QUANTITY_EXCEEDED);
             }
             // SOLD_OUT 상품 명시적 차단 — Redis·DB 재고 드리프트 방어
