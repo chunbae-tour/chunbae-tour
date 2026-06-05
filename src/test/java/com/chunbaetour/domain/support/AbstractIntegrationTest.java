@@ -151,5 +151,8 @@ public abstract class AbstractIntegrationTest {
         // 공공데이터포털: 테스트는 외부 API 호출 안 함 (mock/stub 처리)
         registry.add("public-data.market.url", () -> "https://api.data.go.kr/openapi/tn_pubr_public_trdit_mrkt_api");
         registry.add("public-data.market.key", () -> "test-only-public-data-key");
+
+        // 계좌번호 AES-128 암호화 키 — 테스트 전용 더미 (UTF-8 정확히 16바이트)
+        registry.add("app.encryption.account-key", () -> "test-account-key");
     }
 }
