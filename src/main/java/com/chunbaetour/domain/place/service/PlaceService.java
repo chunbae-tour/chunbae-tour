@@ -11,8 +11,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
+import com.chunbaetour.domain.place.dto.Coord;
+import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
+import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
@@ -20,6 +24,7 @@ import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.NearbyCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 
 import lombok.RequiredArgsConstructor;
@@ -34,11 +39,14 @@ public class PlaceService {
 
     private final PlaceRepository placeRepository;
     private final PlaceQueryRepository placeQueryRepository;
+    private final PlaceQueryService placeQueryService;
     private final PlaceLikeService placeLikeService;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final KakaoLocalApiClient kakaoLocalApiClient;
 
     private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
+    private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
 
     @Transactional(readOnly = true)
     public NearbyPlacePageResponse findNearby(double lat, double lng, double radius,
@@ -317,5 +325,83 @@ public class PlaceService {
 
         return new PlaceListResponse(items, hasNext, nextCursorId, nextCursorRating);
     }
-}
 
+    /**
+     * KAN-232: 관광지 주변 장소(맛집, 카페, 숙박) 카테고리 검색 연동
+     * 카카오 로컬 API 활용
+     * 응답은 Redis에 30분간 캐싱됨 (CacheConfig: nearby-category 설정)
+     */
+    public NearbyCategoryPlacesResponse findNearbyCategoryPlaces(Long placeId, NearbyCategory category, int radius) {
+        // PlaceQueryService의 @Transactional을 타게 되어 DB 조회 후 즉시 트랜잭션이 종료됨 (Redis/Kakao I/O는 트랜잭션 밖에서 실행)
+        Place place = placeQueryService.findActivePlaceById(placeId);
+        
+        int normalizedRadius = normalizeRadius(radius);
+        String cacheKey = "nearby-category::" + placeId + ":" + category.name() + ":" + normalizedRadius;
+        
+        try {
+            String cachedJson = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cachedJson != null) {
+                return objectMapper.readValue(cachedJson, NearbyCategoryPlacesResponse.class);
+            }
+        } catch (Exception e) {
+            log.warn("Redis 캐시 조회 실패, API 직접 호출로 fallback: {}", cacheKey, e);
+        }
+        
+        
+        KakaoCategoryResponse kakaoResponse = kakaoLocalApiClient.searchByCategory(
+                new Coord(place.getLat(), place.getLng()), category.getCode(), normalizedRadius);
+
+        if (kakaoResponse == null || kakaoResponse.documents() == null) {
+            log.error("Kakao 카테고리 API 비정상 응답: documents is null");
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+
+        boolean hasNext = false;
+        if (kakaoResponse.meta() != null) {
+            hasNext = !kakaoResponse.meta().isEnd();
+        }
+
+        List<NearbyCategoryPlacesResponse.NearbyCategoryItem> items = kakaoResponse.documents().stream()
+                .map(doc -> {
+                    try {
+                        return new NearbyCategoryPlacesResponse.NearbyCategoryItem(
+                                doc.id(),
+                                doc.placeName(),
+                                doc.categoryName(),
+                                doc.phone(),
+                                doc.addressName(),
+                                doc.roadAddressName(),
+                                Double.parseDouble(doc.y()), // y is lat
+                                Double.parseDouble(doc.x()), // x is lng
+                                doc.placeUrl(),
+                                doc.distance() != null && !doc.distance().isBlank() ? Integer.parseInt(doc.distance()) : 0
+                        );
+                    } catch (NumberFormatException e) {
+                        log.warn("Kakao 카테고리 응답 개별 파싱 실패 (스킵 처리): id={}, x={}, y={}", doc.id(), doc.x(), doc.y(), e);
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        NearbyCategoryPlacesResponse response = new NearbyCategoryPlacesResponse(items, hasNext);
+        
+        try {
+            String responseJson = objectMapper.writeValueAsString(response);
+            stringRedisTemplate.opsForValue().set(cacheKey, responseJson, NEARBY_CATEGORY_TTL);
+        } catch (Exception e) {
+            log.warn("Redis 캐시 저장 실패: {}", cacheKey, e);
+        }
+        
+        return response;
+    }
+
+    private int normalizeRadius(int radius) {
+        if (radius <= 500) return 500;
+        if (radius <= 1000) return 1000;
+        if (radius <= 3000) return 3000;
+        if (radius <= 5000) return 5000;
+        if (radius <= 10000) return 10000;
+        return 20000;
+    }
+}

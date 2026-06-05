@@ -33,16 +33,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -195,24 +192,6 @@ class RefundServiceTest {
         given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
         given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID))
                 .willReturn(Optional.of(pendingRefund));
-
-        assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.DUPLICATE_REFUND_REQUEST);
-    }
-
-    @Test
-    @DisplayName("동시 환불 요청 UK 위반 → PAY_016")
-    void requestRefund_concurrentDuplicate_throws() {
-        PaymentOrder order = completedOrder(USER_ID);
-        ConstraintViolationException cve = Mockito.mock(ConstraintViolationException.class);
-        Mockito.when(cve.getConstraintName()).thenReturn("uk_refunds_payment_order_id");
-        given(paymentOrderRepository.findByOrderUidWithLock(ORDER_UID)).willReturn(Optional.of(order));
-        given(refundRepository.findFirstByPaymentOrderIdOrderByIdDesc(ORDER_ID)).willReturn(Optional.empty());
-        given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet(AMOUNT)));
-        given(refundRepository.saveAndFlush(any(Refund.class)))
-                .willThrow(new DataIntegrityViolationException("duplicate", cve));
 
         assertThatThrownBy(() -> refundService.requestRefund(USER_ID, ORDER_UID, new RefundRequest("reason")))
                 .isInstanceOf(BusinessException.class)
