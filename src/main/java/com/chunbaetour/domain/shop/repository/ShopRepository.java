@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,7 +21,7 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     List<Shop> findByPlaceIdIn(Collection<Long> placeIds);
 
     /** Place soft delete 시 연관 shop.place_id를 null로 일괄 처리 — ON DELETE SET NULL이 DB에서 발화하지 않으므로 서비스 레이어에서 직접 처리 (KAN-361). */
-    @org.springframework.data.jpa.repository.Modifying
+    @Modifying
     @Query("UPDATE Shop s SET s.placeId = null WHERE s.placeId = :placeId")
     void clearPlaceReference(@Param("placeId") Long placeId);
 
