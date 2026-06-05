@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
+import com.chunbaetour.domain.place.type.NearbyCategory;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
@@ -151,6 +153,18 @@ public class PlaceController {
             @PathVariable Long placeId) {
         return ApiResponse.success(recommendService.getPlaceBasedRecommendations(placeId));
     }
+
+    @SecurityRequirements
+    @Operation(summary = "관광지 주변 장소(맛집/카페/숙박) 카테고리 검색", description = "카카오 카테고리 API 연동. 반경 내 장소를 반환합니다.")
+    @GetMapping("/{placeId}/nearby-places")
+    public ApiResponse<NearbyCategoryPlacesResponse> getNearbyCategoryPlaces(
+            @PathVariable Long placeId,
+            @RequestParam NearbyCategory category,
+            @RequestParam(defaultValue = "500") @Min(1) @Max(20000) int radius
+    ) {
+        return ApiResponse.success(placeService.findNearbyCategoryPlaces(placeId, category, radius));
+    }
+
     /**
      * 4-3. 특정 관광지 기반 주변 상점 조회
      * GET /api/v1/places/{placeId}/nearby-shops

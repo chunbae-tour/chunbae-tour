@@ -17,6 +17,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.BatchSize;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -40,6 +41,8 @@ public class FreePost extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    // 페이지 최대 크기 변경 시 함께 조정 필요
+    @BatchSize(size = 100)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "free_post_images", joinColumns = @JoinColumn(name = "post_id"))
     @OrderColumn(name = "sort_order")

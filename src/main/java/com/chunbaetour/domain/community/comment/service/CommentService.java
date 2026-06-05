@@ -92,6 +92,7 @@ public class CommentService {
 
     // 특정 루트 댓글의 대댓글 전체 조회 (더보기)
     public List<CommentGetListResponse> findReplies(Long postId, PostType postType, Long commentId) {
+        postQueryService.validateExists(postId, postType);
         Comment parent = findComment(commentId);
         validateCommentScope(parent, postId, postType);
         if (parent.getParentCommentId() != null) {

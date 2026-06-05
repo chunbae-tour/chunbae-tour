@@ -18,6 +18,10 @@ public interface FreePostRepository extends JpaRepository<FreePost, Long> {
     @Query("SELECT p FROM FreePost p WHERE p.id = :id")
     Optional<FreePost> findByIdForUpdate(@Param("id") Long id);
 
+    /** 단건 상세 조회용 — imageUrls JOIN FETCH로 N+1 방지. */
+    @Query("SELECT p FROM FreePost p LEFT JOIN FETCH p.imageUrls WHERE p.id = :id")
+    Optional<FreePost> findByIdWithImages(@Param("id") Long id);
+
     @Query("""
             SELECT p FROM FreePost p
             WHERE p.status = :status

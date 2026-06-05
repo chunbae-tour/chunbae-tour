@@ -189,6 +189,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
+                        // 스토어 구매·주문내역은 USER 전용. ADMIN/MERCHANT는 store 이용 시 USER로 가입해야 함.
+                        // (미지정 시 anyRequest().authenticated()로 떨어져 모든 역할 구매 가능하던 authz 누수 차단)
+                        // 루트(/api/v1/store/orders)와 하위경로(/**)를 둘 다 명시 — Ant matcher가 버전별로 루트 포함이
+                        // 달라질 여지를 차단(StoreOrderController는 루트 @PostMapping). 회귀는 MultiRoleAuthIntegrationTest가 고정.
+                        .requestMatchers("/api/v1/store/orders", "/api/v1/store/orders/**").hasRole("USER")
                         // 축제·캘린더 조회 — 비인증 허용
                         .requestMatchers(HttpMethod.GET, "/api/v1/festivals/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()

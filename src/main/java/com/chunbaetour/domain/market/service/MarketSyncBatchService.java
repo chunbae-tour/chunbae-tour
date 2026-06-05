@@ -59,15 +59,17 @@ public class MarketSyncBatchService {
                     item.getHomepageUrl(),
                     MarketApiItem.parseYearOrNull(item.getEstblYear())
                 );
-                marketRepository.save(market);
+                // saveAndFlush: REQUIRES_NEW 트랜잭션 내 flush 시점 명확화 → 제약 위반을 즉시 catch
+                marketRepository.saveAndFlush(market);
                 return UpsertResult.UPDATED;
             } else {
-                marketRepository.save(item.toEntity());
+                marketRepository.saveAndFlush(item.toEntity());
                 return UpsertResult.INSERTED;
             }
         } catch (DataIntegrityViolationException e) {
+            // REQUIRES_NEW 트랜잭션은 이미 rollback-only — SKIPPED 반환 불가, re-throw로 호출부 catch에 위임
             log.warn("[MarketSync] DB 제약 위반 — skip: name={}, msg={}", item.getMrktNm(), e.getMessage());
-            return UpsertResult.SKIPPED;
+            throw e;
         } catch (IllegalArgumentException e) {
             // 좌표/필드 파싱 실패: 데이터 품질 문제 — warn 레벨로 구분 추적
             log.warn("[MarketSync] 데이터 품질 오류 — skip: name={}, reason={}", item.getMrktNm(), e.getMessage());
