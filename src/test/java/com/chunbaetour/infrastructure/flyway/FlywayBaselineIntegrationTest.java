@@ -46,6 +46,12 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 class FlywayBaselineIntegrationTest {
 
+    private static final String PATCHED_MIGRATION_LOCATION;
+
+    static {
+        PATCHED_MIGRATION_LOCATION = FlywayMigrationPatcher.setupTempMigrations();
+    }
+
     /** 본 테스트 전용 MySQL 컨테이너. AbstractIntegrationTest의 Singleton 컨테이너와 분리. */
     @Container
     private static final MySQLContainer<?> MYSQL =
@@ -94,7 +100,7 @@ class FlywayBaselineIntegrationTest {
         //   → V1(version=1) > baseline-version(=0) → V1을 일반 마이그레이션으로 실행
         Flyway flyway = Flyway.configure()
                 .dataSource(dataSource)
-                .locations("classpath:db/migration")
+                .locations(PATCHED_MIGRATION_LOCATION)
                 .baselineOnMigrate(false)
                 .baselineVersion("0")
                 .validateOnMigrate(true)
@@ -156,7 +162,7 @@ class FlywayBaselineIntegrationTest {
         // 운영 prod 설정 (application.yml 그대로): baseline-on-migrate=true + baseline-version=1
         Flyway flyway = Flyway.configure()
                 .dataSource(dataSource)
-                .locations("classpath:db/migration")
+                .locations(PATCHED_MIGRATION_LOCATION)
                 .baselineOnMigrate(true)
                 .baselineVersion("1")
                 .validateOnMigrate(true)

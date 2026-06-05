@@ -55,8 +55,7 @@ class FlywayEntitySchemaValidationIntegrationTest {
 
     @org.springframework.test.context.DynamicPropertySource
     static void configureProperties(org.springframework.test.context.DynamicPropertyRegistry registry) {
-        // 원본 migration(SQL)을 그대로 검증합니다.
-        // 더 이상 ALGORITHM=INSTANT 등의 문자열 치환 로직을 사용하지 않습니다.
+        String patchedLocation = FlywayMigrationPatcher.setupTempMigrations();
 
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);
@@ -66,6 +65,7 @@ class FlywayEntitySchemaValidationIntegrationTest {
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
         registry.add("spring.data.redis.password", () -> "");
         registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("spring.flyway.locations", () -> patchedLocation);
         registry.add("spring.flyway.out-of-order", () -> "true");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
         // 필수 더미 속성들
