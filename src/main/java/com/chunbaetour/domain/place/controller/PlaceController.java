@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
-import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
+import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
 import com.chunbaetour.domain.place.type.NearbyCategory;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
@@ -157,7 +157,7 @@ public class PlaceController {
     @SecurityRequirements
     @Operation(summary = "관광지 주변 장소(맛집/카페/숙박) 카테고리 검색", description = "카카오 카테고리 API 연동. 반경 내 장소를 반환합니다.")
     @GetMapping("/{placeId}/nearby-places")
-    public ApiResponse<KakaoCategoryResponse> getNearbyCategoryPlaces(
+    public ApiResponse<NearbyCategoryPlacesResponse> getNearbyCategoryPlaces(
             @PathVariable Long placeId,
             @RequestParam NearbyCategory category,
             @RequestParam(defaultValue = "500") @Min(1) @Max(20000) int radius

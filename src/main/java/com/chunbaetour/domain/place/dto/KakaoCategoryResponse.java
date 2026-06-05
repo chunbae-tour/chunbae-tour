@@ -3,7 +3,13 @@ package com.chunbaetour.domain.place.dto;
 import java.util.List;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public record KakaoCategoryResponse(List<Document> documents) {
+public record KakaoCategoryResponse(List<Document> documents, Meta meta) {
+    public record Meta(
+            @JsonProperty("total_count") int totalCount,
+            @JsonProperty("pageable_count") int pageableCount,
+            @JsonProperty("is_end") boolean isEnd
+    ) {}
+
     public record Document(
             String id,
             @JsonProperty("place_name") String placeName,

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.Locale;
 
@@ -62,9 +63,9 @@ public class KakaoLocalApiClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
                 // 보안: 위/경도 및 응답 Body(개인정보/키) 로깅 제거, 상태 코드만 기록
-                log.error("Kakao API Client Error (4xx): status={}", e.getStatusCode());
+                log.warn("Kakao API Client Error (4xx): status={}", e.getStatusCode());
             } else {
-                log.warn("Kakao coord2address API Server Error (5xx): status={}", e.getStatusCode(), e);
+                log.error("Kakao coord2address API Server Error (5xx): status={}", e.getStatusCode(), e);
             }
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE); // PLACE_007 명세 준수
         } catch (RestClientException e) {
@@ -76,11 +77,14 @@ public class KakaoLocalApiClient {
 
     public KakaoCategoryResponse searchByCategory(Coord coord, String categoryGroupCode, int radius) {
         try {
-            String url = String.format(
-                    Locale.ROOT,
-                    "%s?category_group_code=%s&x=%.8f&y=%.8f&radius=%d",
-                    categorySearchUrl, categoryGroupCode, coord.lng().doubleValue(), coord.lat().doubleValue(), radius
-            );
+            String url = UriComponentsBuilder.fromUriString(categorySearchUrl)
+                    .queryParam("category_group_code", categoryGroupCode)
+                    .queryParam("x", String.format(Locale.ROOT, "%.8f", coord.lng().doubleValue()))
+                    .queryParam("y", String.format(Locale.ROOT, "%.8f", coord.lat().doubleValue()))
+                    .queryParam("radius", radius)
+                    .queryParam("sort", "distance")
+                    .build()
+                    .toUriString();
 
             return kakaoRestClient.get()
                     .uri(url)
@@ -90,9 +94,9 @@ public class KakaoLocalApiClient {
 
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
-                log.error("Kakao Category API Error (4xx): status={}", e.getStatusCode());
+                log.warn("Kakao Category API Error (4xx): status={}", e.getStatusCode());
             } else {
-                log.warn("Kakao Category API Server Error (5xx): status={}", e.getStatusCode(), e);
+                log.error("Kakao Category API Server Error (5xx): status={}", e.getStatusCode(), e);
             }
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {

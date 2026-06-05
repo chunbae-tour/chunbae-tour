@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 public enum NearbyCategory {
     RESTAURANT("FD6"), // 음식점
     CAFE("CE7"),       // 카페
-    LODGMENT("AD5");   // 숙박
+    ACCOMMODATION("AD5"); // 숙박
 
     private final String code;
 }
