@@ -34,7 +34,8 @@ public class MarketSyncBatchService {
         try {
             if (item.getMrktNm() == null || item.getMrktNm().isBlank() ||
                 item.getRdnmadr() == null || item.getRdnmadr().isBlank() ||
-                item.getLatitude() == null || item.getLongitude() == null) {
+                item.getLatitude() == null || item.getLatitude().isBlank() ||
+                item.getLongitude() == null || item.getLongitude().isBlank()) {
                 log.warn("[MarketSync] 필수 필드 누락 — skip: name={}", item.getMrktNm());
                 return UpsertResult.SKIPPED;
             }
