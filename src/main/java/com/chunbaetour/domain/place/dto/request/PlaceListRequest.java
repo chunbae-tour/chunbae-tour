@@ -1,10 +1,13 @@
 package com.chunbaetour.domain.place.dto.request;
 
-import com.chunbaetour.domain.place.type.PlaceCategory;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+
+import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
  * 관광지 목록 조회 요청 DTO (PHASE 8-2)
@@ -43,8 +46,8 @@ public record PlaceListRequest(
          * 커서 평점 — 이전 응답의 nextCursorRating 값 (선택).
          * cursor와 반드시 쌍으로 전달해야 합니다.
          */
-        @jakarta.validation.constraints.DecimalMin(value = "0.0", message = "평점은 0.0 이상이어야 합니다.")
-        @jakarta.validation.constraints.DecimalMax(value = "5.0", message = "평점은 5.0 이하이어야 합니다.")
+        @DecimalMin(value = "0.0", message = "평점은 0.0 이상이어야 합니다.")
+        @DecimalMax(value = "5.0", message = "평점은 5.0 이하이어야 합니다.")
         Float cursorRating,
 
         @Min(value = 1, message = "size는 1 이상이어야 합니다.")

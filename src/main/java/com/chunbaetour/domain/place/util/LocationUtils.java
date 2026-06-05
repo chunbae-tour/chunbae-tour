@@ -1,5 +1,12 @@
 package com.chunbaetour.domain.place.util;
 
+import java.math.BigDecimal;
+import java.util.Locale;
+
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
+
 public class LocationUtils {
 
     /**
@@ -14,7 +21,7 @@ public class LocationUtils {
         double lngDegree = radiusMeters / (111000.0 * cosLat);
 
         // DB 마이그레이션과 일치하도록 POINT(lng lat) 순서 사용, WKT 파싱 오류 방지를 위해 Locale.US 명시
-        return String.format(java.util.Locale.US, "POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+        return String.format(Locale.US, "POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
                 lng - lngDegree, lat - latDegree,
                 lng + lngDegree, lat - latDegree,
                 lng + lngDegree, lat + latDegree,
@@ -24,10 +31,10 @@ public class LocationUtils {
     /**
      * 위도/경도를 SRID 4326의 JTS Point 객체로 변환합니다.
      */
-    public static org.locationtech.jts.geom.Point createPoint(java.math.BigDecimal lat, java.math.BigDecimal lng) {
+    public static Point createPoint(BigDecimal lat, BigDecimal lng) {
         if (lat == null || lng == null) return null;
-        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
-        org.locationtech.jts.geom.Point point = gf.createPoint(new org.locationtech.jts.geom.Coordinate(lng.doubleValue(), lat.doubleValue()));
+        GeometryFactory gf = new GeometryFactory();
+        Point point = gf.createPoint(new Coordinate(lng.doubleValue(), lat.doubleValue()));
         point.setSRID(4326);
         return point;
     }
