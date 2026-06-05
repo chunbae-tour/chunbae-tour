@@ -100,7 +100,7 @@ public class FestivalFetchService {
                 }
                 String externalId = buildExternalId(item);
                 try {
-                    switch (self.upsertItem(item)) {
+                    switch (self.upsertItem(item, externalId)) {
                         case CREATED -> created++;
                         case UPDATED -> updated++;
                         case SKIPPED -> skipped++;
@@ -121,8 +121,7 @@ public class FestivalFetchService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public UpsertResult upsertItem(TourApiFestivalItem item) {
-        String externalId = buildExternalId(item);
+    public UpsertResult upsertItem(TourApiFestivalItem item, String externalId) {
         try {
             Optional<Festival> existing = festivalRepository.findByExternalId(externalId);
             if (existing.isEmpty()) {
