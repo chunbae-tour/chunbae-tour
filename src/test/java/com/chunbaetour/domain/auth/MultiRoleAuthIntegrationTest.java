@@ -334,6 +334,73 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    // ===== /api/v1/companion-reviews, /api/v1/users/{id}/companion-score Security 회귀 가드 =====
+    // companion-reviews: USER 전용 — 비인증·MERCHANT·ADMIN 차단 (KAN-214, 고도화 KAN-241)
+    // companion-score: permitAll — 비인증·USER 모두 허용
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("비인증으로 POST /api/v1/companion-reviews 호출 시 401 AUTH_006")
+    void anonymous_callingCompanionReviews_returns_401() throws Exception {
+        // companion-reviews는 USER 전용 — 비인증 접근 차단 검증
+        mockMvc.perform(post("/api/v1/companion-reviews")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_006"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/companion-reviews 호출 시 403 AUTH_007")
+    void merchantToken_callingCompanionReviews_returns_403() throws Exception {
+        // companion-reviews는 USER 전용 — MERCHANT 차단 검증
+        seedFactory.seedMerchant("merchant-cr@example.com", PASSWORD, "상인닉-리뷰");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-cr@example.com").accessToken();
+
+        mockMvc.perform(post("/api/v1/companion-reviews")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("ADMIN 토큰으로 POST /api/v1/companion-reviews 호출 시 403 AUTH_007")
+    void adminToken_callingCompanionReviews_returns_403() throws Exception {
+        // companion-reviews는 USER 전용 — ADMIN 차단 검증
+        seedFactory.seedAdmin("admin-cr@example.com", PASSWORD, "관리자닉-리뷰");
+        String accessToken = login("/api/v1/admin/auth/login", "admin-cr@example.com").accessToken();
+
+        mockMvc.perform(post("/api/v1/companion-reviews")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("비인증으로 GET /api/v1/users/{id}/companion-score 호출 시 404 — 보안 통과 후 사용자 미존재")
+    void anonymous_callingCompanionScore_returns_404() throws Exception {
+        // companion-score는 permitAll — 비인증 접근 시 보안 통과 후 사용자 미존재로 404 반환
+        mockMvc.perform(get("/api/v1/users/999999/companion-score"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("AUTH_015"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("USER 토큰으로 GET /api/v1/users/{id}/companion-score 호출 시 404 — 보안 통과 후 사용자 미존재")
+    void userToken_callingCompanionScore_returns_404() throws Exception {
+        // companion-score는 permitAll — USER 토큰으로 접근 시 보안 통과 후 사용자 미존재로 404 반환
+        signupUser("user-score@example.com", "유저닉-점수");
+        String accessToken = login("/api/v1/users/auth/login", "user-score@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/users/999999/companion-score")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("AUTH_015"));
+    }
+
     // ===== 헬퍼 =====
 
     /**
