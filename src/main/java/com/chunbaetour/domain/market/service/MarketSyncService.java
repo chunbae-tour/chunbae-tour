@@ -77,7 +77,7 @@ public class MarketSyncService {
         Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
 
         if (lock.isEmpty()) {
-            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중 (TTL 최대 30분)");
+            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중 (lockAtMostFor 30분)");
             throw new BusinessException(ErrorCode.MARKET_SYNC_IN_PROGRESS);
         }
 

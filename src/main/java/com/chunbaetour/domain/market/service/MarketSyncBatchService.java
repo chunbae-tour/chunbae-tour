@@ -45,9 +45,14 @@ public class MarketSyncBatchService {
 
             if (existing.isPresent()) {
                 TraditionalMarket market = existing.get();
+                // toEntity()와 동일한 blank 가드 — malformed 좌표 문자열 방어
+                BigDecimal latValue = item.getLatitude() != null && !item.getLatitude().isBlank()
+                    ? new BigDecimal(item.getLatitude()) : null;
+                BigDecimal lngValue = item.getLongitude() != null && !item.getLongitude().isBlank()
+                    ? new BigDecimal(item.getLongitude()) : null;
                 market.update(
-                    new BigDecimal(item.getLatitude()),
-                    new BigDecimal(item.getLongitude()),
+                    latValue,
+                    lngValue,
                     item.getMrktType(),
                     item.getPhoneNumber(),
                     item.getHomepageUrl(),
