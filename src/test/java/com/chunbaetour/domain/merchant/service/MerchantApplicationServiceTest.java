@@ -36,9 +36,9 @@ class MerchantApplicationServiceTest {
 
     private static final Long USER_ID = 1L;
 
-    // NTS 정식 알고리즘 기준 유효한 번호: 101-81-34618 (체크섬=8)
-    private static final String VALID_BIZ_NUMBER = "101-81-34618";
-    private static final String VALID_BIZ_NORMALIZED = "1018134618";
+    // NTS 정식 알고리즘 기준 유효한 번호: 124-81-00998 (삼성전자 공개 사업자번호, 체크섬=8)
+    private static final String VALID_BIZ_NUMBER = "124-81-00998";
+    private static final String VALID_BIZ_NORMALIZED = "1248100998";
 
     // 사용자 중복 신청 체크: PENDING만 (APPROVED는 다중 가게 허용)
     private static final List<MerchantApplicationStatus> USER_PENDING_STATUSES =
@@ -98,8 +98,8 @@ class MerchantApplicationServiceTest {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, USER_PENDING_STATUSES))
                 .willReturn(false);
 
-        // 101-81-34619: 마지막 자리 9 (올바른 체크섬은 8)
-        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", "101-81-34619")))
+        // 124-81-00997: 마지막 자리 7 (올바른 체크섬은 8)
+        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", "124-81-00997")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_BUSINESS_NUMBER);

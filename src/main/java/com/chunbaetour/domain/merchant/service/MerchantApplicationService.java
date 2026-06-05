@@ -107,9 +107,10 @@ public class MerchantApplicationService {
         if (digits.length() != 10) return false;
         int[] weights = {1, 3, 7, 1, 3, 7, 1, 3, 5};
         int sum = 0;
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 9; i++) {
             sum += (digits.charAt(i) - '0') * weights[i];
         }
+        // d[8]*5의 십의 자리(캐리)만 추가 합산
         sum += ((digits.charAt(8) - '0') * 5) / 10;
         int checkDigit = (10 - (sum % 10)) % 10;
         return checkDigit == (digits.charAt(9) - '0');
