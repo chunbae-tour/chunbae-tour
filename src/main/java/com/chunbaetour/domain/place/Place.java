@@ -14,6 +14,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.locationtech.jts.geom.Point;
+import java.math.BigDecimal;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -112,7 +113,7 @@ public class Place {
 
     @Builder
     private Place(String name, PlaceCategory category, String description,
-                  String address, Point location, java.math.BigDecimal lat, java.math.BigDecimal lng,
+                  String address, Point location, BigDecimal lat, BigDecimal lng,
                   String thumbnailUrl, String imageUrls, String operatingHours,
                   String closedDays, String phone, String admissionFee, String tags) {
         if (name == null || name.isBlank()) {
@@ -192,12 +193,12 @@ public class Place {
     }
 
     // ── 하위 호환성 헬퍼 ────────────────────────────────────────────────
-    public java.math.BigDecimal getLat() {
-        return location != null ? java.math.BigDecimal.valueOf(location.getY()) : null;
+    public BigDecimal getLat() {
+        return location != null ? BigDecimal.valueOf(location.getY()) : null;
     }
 
-    public java.math.BigDecimal getLng() {
-        return location != null ? java.math.BigDecimal.valueOf(location.getX()) : null;
+    public BigDecimal getLng() {
+        return location != null ? BigDecimal.valueOf(location.getX()) : null;
     }
 
     /** UI 표시용 float 평점 반환 (예: 45 -> 4.5f) */

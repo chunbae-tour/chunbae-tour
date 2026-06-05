@@ -55,28 +55,8 @@ class FlywayEntitySchemaValidationIntegrationTest {
 
     @org.springframework.test.context.DynamicPropertySource
     static void configureProperties(org.springframework.test.context.DynamicPropertyRegistry registry) {
-        // MySQL 8 환경 빈 DB 테스트 시 ALGORITHM=INSTANT 문법 오류 및 DROP INDEX IF EXISTS 미지원 오류 우회를 위해 빌드된 파일의 구문을 임시 치환.
-        // 원본 파일(src)은 건드리지 않으므로 운영 배포 시 체크섬에는 영향을 주지 않습니다.
-        try {
-            java.nio.file.Path dirPath = java.nio.file.Paths.get("build/resources/main/db/migration");
-            if (java.nio.file.Files.exists(dirPath)) {
-                try (java.util.stream.Stream<java.nio.file.Path> paths = java.nio.file.Files.walk(dirPath)) {
-                    paths.filter(java.nio.file.Files::isRegularFile)
-                         .filter(p -> p.toString().endsWith(".sql"))
-                         .forEach(p -> {
-                             try {
-                                 // 이제 운영에 배포될 원본 SQL을 수정 없이 그대로 사용하여 테스트합니다.
-                                 // (필요 시 파일 읽기 검증 등 추가 가능)
-                             } catch (Exception e) {
-                                 e.printStackTrace();
-                                 throw new RuntimeException("Failed to read migration file: " + p, e);
-                             }
-                         });
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        // 원본 migration(SQL)을 그대로 검증합니다.
+        // 더 이상 ALGORITHM=INSTANT 등의 문자열 치환 로직을 사용하지 않습니다.
 
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);

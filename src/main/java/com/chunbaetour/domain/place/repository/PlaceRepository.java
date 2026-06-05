@@ -43,7 +43,8 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
 
     /**
      * 4-2. 특정 관광지 기반 추천 (동일 카테고리 + 근거리 TOP N)
-     * 파라미터: 1=lat, 2=lng, 3=category(String), 4=excludePlaceId, 5=mbrPolygon, 6=limit
+     * 파라미터: 1=lat, 2=lng, 3=category(String), 4=excludePlaceId,
+     * 5=mbrPolygon, 6=radiusMeters, 7=limit
      * TODO: 데이터 증가 시 성능 저하(풀스캔) 우려 해소를 위해 MBR 1차 필터링 적용 완료
      */
     @Query(value = "SELECT * FROM places p " +
