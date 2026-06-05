@@ -47,7 +47,7 @@ public class FreePostService {
     }
 
     public CursorPageResponse<FreePostGetListResponse> findAll(String cursor, int size) {
-        Long cursorId = decodeCursor(cursor);
+        Long cursorId = CursorUtils.decodeSafe(cursor);
         List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = posts.size() > size;
@@ -100,12 +100,4 @@ public class FreePostService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
-    private Long decodeCursor(String cursor) {
-        if (cursor == null) return null;
-        try {
-            return CursorUtils.decode(cursor);
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
-        }
-    }
 }
