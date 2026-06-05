@@ -143,6 +143,45 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void publicGet_with_valid_token_sets_authentication() throws Exception {
+        // M1: 공개 GET이라도 유효 토큰이면 principal을 채워 개인화(GET /places/{id}의 isLiked 등)가 동작해야 한다.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(42L, Role.USER, "u@e.c", "tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-token")).willReturn(claims);
+        given(accessTokenBlacklist.contains("tid")).willReturn(false);
+
+        filter.doFilter(request, response, filterChain);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getPrincipal()).isEqualTo(42L);
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+    }
+
+    @Test
+    void publicGet_with_expired_token_passes_through_anonymously_without_401() throws Exception {
+        // M1: 공개 GET + 만료 토큰 → 401 금지, 익명으로 통과(공개 콘텐츠 조회 가능), principal 미설정.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer expired");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        willThrow(new ExpiredJwtException(null, null, "expired"))
+                .given(tokenIssuer).verifyAccess("expired");
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
     void doFilter_with_logout_path_does_NOT_skip_validation() throws Exception {
         // S4: /api/v1/auth/logout은 인증 필요. PUBLIC 매칭에서 명시적으로 제외되어 doFilterInternal 진입.
         MockHttpServletRequest request = new MockHttpServletRequest();

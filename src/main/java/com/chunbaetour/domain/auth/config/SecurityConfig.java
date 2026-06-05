@@ -189,6 +189,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
+                        // 스토어 구매·주문내역은 USER 전용. ADMIN/MERCHANT는 store 이용 시 USER로 가입해야 함.
+                        // (미지정 시 anyRequest().authenticated()로 떨어져 모든 역할 구매 가능하던 authz 누수 차단)
+                        .requestMatchers("/api/v1/store/orders/**").hasRole("USER")
                         // 축제·캘린더 조회 — 비인증 허용
                         .requestMatchers(HttpMethod.GET, "/api/v1/festivals/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()

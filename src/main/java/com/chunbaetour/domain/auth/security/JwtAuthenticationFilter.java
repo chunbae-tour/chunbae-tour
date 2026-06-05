@@ -78,9 +78,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     /**
      * GET 메서드 한정 공개 경로 패턴.
      *
-     * <p>{@link com.chunbaetour.domain.auth.config.SecurityConfig}에서 특정 HTTP 메서드만 permitAll인 경로.
-     * 경로만으로 skip하면 다른 메서드 요청 시 유효 토큰도 SecurityContext에 채워지지 않아 인증 실패.
-     * GET /api/v1/shops/* — QR 스캔 후 결제창 진입 시 가게명·메뉴 fetch 용도. 만료 토큰 보유 유저도 차단되지 않아야 함.
+     * <p>{@link com.chunbaetour.domain.auth.config.SecurityConfig}에서 GET만 permitAll인 경로.
+     * 이 경로는 'optional auth'로 처리한다({@link #isOptionalAuthPath}): 유효 토큰이면 principal을 채워
+     * 개인화(예: GET /places/{id}의 isLiked)를 제공하고, 토큰이 없거나 만료/변조/블랙리스트면 401 없이
+     * 익명으로 통과시킨다. (예: GET /api/v1/shops/* — 만료 토큰 보유 유저도 차단되지 않아야 함.)
      */
     private static final List<String> PUBLIC_GET_PATH_PATTERNS = List.of(
             "/api/v1/shops/*",
@@ -142,10 +143,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (LOGOUT_PATH.equals(path)) {
             return false;
         }
-        if ("GET".equals(request.getMethod())
-                && PUBLIC_GET_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
-            return true;
-        }
+        // 공개 GET 경로는 더 이상 필터를 통째로 스킵하지 않는다(이전: skip → 유효 토큰을 들고 와도 principal이
+        // 채워지지 않아 GET /places/{id} 등 개인화(isLiked)가 영구 미동작하던 버그). doFilterInternal에서
+        // 'optional auth'로 처리한다 — 유효 토큰이면 principal을 채우고, 토큰이 없거나 만료/변조/블랙리스트면
+        // 401 없이 익명으로 통과시킨다. isOptionalAuthPath() 참조.
         if ("POST".equals(request.getMethod())
                 && PUBLIC_POST_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path))) {
             return true;
@@ -164,6 +165,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 공개 GET(optional auth): 토큰이 있으면 검증해 principal을 채우되, 만료/변조/블랙리스트/Redis장애 시
+        // 401·500 대신 익명으로 통과시킨다(공개 콘텐츠는 누구나 조회 가능해야 함). 보호 경로는 기존대로 거부.
+        boolean optionalAuth = isOptionalAuthPath(request);
+
         // KAN-104: 메트릭 시작. outcome 분기별로 할당하고 finally에서 단일 stop()으로 기록.
         // 직접 stop을 분기마다 호출하는 패턴은 예상 밖 RuntimeException에서 Timer.Sample 누수 위험이 있어 회피.
         // 기본값 "unexpected"는 미커버 예외 발생 시 운영 알람 트리거용 sentinel.
@@ -177,6 +182,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } catch (ExpiredJwtException e) {
                 outcome = "expired";
                 meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_002").increment();
+                // 공개 GET: 만료 토큰은 익명으로 통과(401 금지). 만료는 정상 흐름이라 감사 로그도 남기지 않는다.
+                if (optionalAuth) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 // KAN-105: 정상적 만료도 감사 로그 — brute force와 구분 + reissue 흐름 확인 가능
                 auditLogger.emitFailure(SecurityAuditEventType.TOKEN_EXPIRED, null,
                         ErrorCode.ACCESS_TOKEN_EXPIRED.getCode(), Map.of());
@@ -186,9 +196,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } catch (JwtException | IllegalArgumentException e) {
                 outcome = "tampered";
                 meterRegistry.counter(METRIC_VERIFY_FAILURE, "code", "AUTH_003").increment();
-                // KAN-105: 변조 시도 — 즉시 감사 로그. SIEM 알람 룰 트리거 대상
+                // KAN-105: 변조 시도 — 즉시 감사 로그. SIEM 알람 룰 트리거 대상 (공개 GET이어도 변조는 보안 신호라 기록)
                 auditLogger.emitFailure(SecurityAuditEventType.TOKEN_TAMPERED, null,
                         ErrorCode.ACCESS_TOKEN_INVALID.getCode(), Map.of());
+                // 공개 GET: 변조 토큰도 익명으로 통과(401 금지) — 단 위 감사 로그는 남긴다.
+                if (optionalAuth) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 // 서명 오류/Malformed/잘못된 claim → 변조 가능성 (사유 노출 최소화)
                 responseWriter.write(response, ErrorCode.ACCESS_TOKEN_INVALID);
                 return;
@@ -200,6 +215,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } catch (DataAccessException e) {
                 outcome = "redis_failure";
                 log.warn("Failed to check access token blacklist. tokenId={}", claims.tokenId(), e);
+                // 공개 GET: 블랙리스트 확인 불가(Redis 장애) 시 500 대신 익명으로 통과(공개 콘텐츠 가용성 우선).
+                if (optionalAuth) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 responseWriter.write(response, ErrorCode.INTERNAL_SERVER_ERROR);
                 return;
             }
@@ -211,6 +231,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // KAN-105: 블랙리스트 재사용 = 탈취 의심 신호. actorId는 claims에서 추출 가능
                 auditLogger.emitFailure(SecurityAuditEventType.TOKEN_BLACKLISTED, claims.userId(),
                         ErrorCode.BLACKLISTED_TOKEN.getCode(), Map.of());
+                // 공개 GET: 로그아웃(블랙리스트)된 토큰도 익명으로 통과 — 단 위 감사 로그는 남긴다.
+                if (optionalAuth) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 responseWriter.write(response, ErrorCode.BLACKLISTED_TOKEN);
                 return;
             }
@@ -240,5 +265,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         String token = header.substring(BEARER_PREFIX.length()).trim();
         return token.isEmpty() ? null : token;
+    }
+
+    /**
+     * 공개 GET(optional auth) 경로 여부.
+     *
+     * <p>true면 doFilterInternal이 토큰을 검증하되, 유효 토큰만 SecurityContext에 principal을 채우고
+     * 토큰이 없거나 만료/변조/블랙리스트/Redis장애인 경우 401·500 없이 익명으로 체인을 통과시킨다.
+     * {@link #PUBLIC_GET_PATH_PATTERNS}와 동일 경로 집합을 사용한다(이 경로들은 SecurityConfig에서 GET permitAll).
+     */
+    private boolean isOptionalAuthPath(HttpServletRequest request) {
+        if (!"GET".equals(request.getMethod())) {
+            return false;
+        }
+        String path = request.getServletPath();
+        return PUBLIC_GET_PATH_PATTERNS.stream().anyMatch(pattern -> PATH_MATCHER.match(pattern, path));
     }
 }
