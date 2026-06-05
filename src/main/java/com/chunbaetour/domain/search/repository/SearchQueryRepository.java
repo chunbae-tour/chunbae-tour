@@ -8,10 +8,12 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberExpression;
+import com.querydsl.core.types.dsl.NumberPath;
 import com.querydsl.core.types.dsl.StringPath;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
@@ -37,60 +39,41 @@ public class SearchQueryRepository {
     // 단기적으로는 각 name 컬럼에 Full-Text Index(MATCH ... AGAINST)를 생성하거나, 중장기적으로 Elasticsearch 등 전문 검색 엔진 도입이 필요합니다.
 
     public List<Place> searchPlaces(String keyword) {
-        return queryFactory
-                .selectFrom(place)
-                .where(
-                        placeNameContains(keyword),
-                        place.status.eq(PlaceStatus.ACTIVE)
-                )
-                .orderBy(exactMatchScore(place.name, keyword).desc(), place.id.desc())
+        return queryFactory.selectFrom(place)
+                .where(placeNameContains(keyword), place.status.eq(PlaceStatus.ACTIVE))
+                .orderBy(buildOrderBy(place.name, place.id, keyword))
                 .limit(200)
                 .fetch();
     }
 
     public List<Shop> searchShops(String keyword) {
-        return queryFactory
-                .selectFrom(shop)
-                .where(
-                        shopNameContains(keyword),
-                        shop.status.eq(ShopStatus.ACTIVE)
-                )
-                .orderBy(exactMatchScore(shop.shopName, keyword).desc(), shop.id.desc())
+        return queryFactory.selectFrom(shop)
+                .where(shopNameContains(keyword), shop.status.eq(ShopStatus.ACTIVE))
+                .orderBy(buildOrderBy(shop.shopName, shop.id, keyword))
                 .limit(200)
                 .fetch();
     }
 
     public List<Menu> searchMenus(String keyword) {
-        return queryFactory
-                .selectFrom(menu)
-                .where(
-                        menuNameContains(keyword),
-                        menu.isAvailable.isTrue()
-                )
-                .orderBy(exactMatchScore(menu.name, keyword).desc(), menu.id.desc())
+        return queryFactory.selectFrom(menu)
+                .where(menuNameContains(keyword), menu.isAvailable.isTrue())
+                .orderBy(buildOrderBy(menu.name, menu.id, keyword))
                 .limit(200)
                 .fetch();
     }
 
     public List<Festival> searchFestivals(String keyword) {
-        return queryFactory
-                .selectFrom(festival)
-                .where(
-                        festivalNameContains(keyword),
-                        festival.status.eq(FestivalStatus.ACTIVE)
-                )
-                .orderBy(exactMatchScore(festival.name, keyword).desc(), festival.id.desc())
+        return queryFactory.selectFrom(festival)
+                .where(festivalNameContains(keyword), festival.status.eq(FestivalStatus.ACTIVE))
+                .orderBy(buildOrderBy(festival.name, festival.id, keyword))
                 .limit(200)
                 .fetch();
     }
 
     public List<TraditionalMarket> searchTraditionalMarkets(String keyword) {
-        return queryFactory
-                .selectFrom(traditionalMarket)
-                .where(
-                        marketNameContains(keyword)
-                )
-                .orderBy(exactMatchScore(traditionalMarket.name, keyword).desc(), traditionalMarket.id.desc())
+        return queryFactory.selectFrom(traditionalMarket)
+                .where(marketNameContains(keyword))
+                .orderBy(buildOrderBy(traditionalMarket.name, traditionalMarket.id, keyword))
                 .limit(200)
                 .fetch();
     }
@@ -113,6 +96,18 @@ public class SearchQueryRepository {
 
     private BooleanExpression marketNameContains(String keyword) {
         return keyword != null && !keyword.isBlank() ? traditionalMarket.name.containsIgnoreCase(keyword) : Expressions.FALSE;
+    }
+
+    /**
+     * blank 키워드 시 exactMatchScore = Expressions.asNumber(0) → ORDER BY 0 → MySQL ordinal 오류 방지.
+     * blank면 id.desc() 단순 정렬, 유효 키워드면 정확도순 + id순.
+     */
+    @SuppressWarnings("unchecked")
+    private OrderSpecifier<?>[] buildOrderBy(StringPath namePath, NumberPath<Long> idPath, String keyword) {
+        if (keyword != null && !keyword.isBlank()) {
+            return new OrderSpecifier[]{exactMatchScore(namePath, keyword).desc(), idPath.desc()};
+        }
+        return new OrderSpecifier[]{idPath.desc()};
     }
 
     private NumberExpression<Integer> exactMatchScore(StringPath path, String keyword) {
