@@ -44,7 +44,8 @@ class SecretValidatorTest {
                 .withProperty("PORTONE_CHANNEL_KAKAO_PAY", "DUMMY_PORTONE_CHANNEL_KAKAO_000000")
                 .withProperty("PORTONE_CHANNEL_TOSS_PAY", "DUMMY_PORTONE_CHANNEL_TOSS_000000")
                 .withProperty("PORTONE_CHANNEL_FOREIGN_CARD", "DUMMY_PORTONE_CHANNEL_FOREIGN_000000")
-                .withProperty("TOUR_API_SERVICE_KEY", "DUMMY_TOUR_API_KEY_0000000000000000");
+                .withProperty("TOUR_API_SERVICE_KEY", "DUMMY_TOUR_API_KEY_0000000000000000")
+                .withProperty("PUBLIC_DATA_MARKET_KEY", "DUMMY_PUBLIC_DATA_MARKET_KEY_0000");
     }
 
     private MockEnvironment prodEnv() {
