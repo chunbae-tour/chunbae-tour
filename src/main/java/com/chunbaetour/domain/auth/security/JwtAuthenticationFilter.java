@@ -82,6 +82,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * 이 경로는 'optional auth'로 처리한다({@link #isOptionalAuthPath}): 유효 토큰이면 principal을 채워
      * 개인화(예: GET /places/{id}의 isLiked)를 제공하고, 토큰이 없거나 만료/변조/블랙리스트면 401 없이
      * 익명으로 통과시킨다. (예: GET /api/v1/shops/* — 만료 토큰 보유 유저도 차단되지 않아야 함.)
+     *
+     * <p><b>⚠️ SecurityConfig의 GET permitAll 목록과 반드시 동기화할 것.</b> 공개 GET API를 추가할 때
+     * SecurityConfig만 고치고 이 목록을 빠뜨리면 "조회는 되는데 개인화는 안 됨"(principal 미설정) 회귀가 생긴다.
      */
     private static final List<String> PUBLIC_GET_PATH_PATTERNS = List.of(
             "/api/v1/shops/*",
