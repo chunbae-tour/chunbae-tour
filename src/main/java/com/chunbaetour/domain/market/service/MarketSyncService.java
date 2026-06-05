@@ -2,6 +2,7 @@ package com.chunbaetour.domain.market.service;
 
 import com.chunbaetour.domain.admin.market.dto.SyncResponse;
 import com.chunbaetour.domain.common.config.PublicDataApiProperties;
+import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
@@ -226,16 +227,21 @@ public class MarketSyncService {
 
         int inserted = 0, updated = 0, skipped = 0;
         for (MarketApiItem item : items) {
+            if (item == null) {
+                skipped++;
+                continue;
+            }
             try {
                 switch (batchService.upsertItem(item)) {
                     case INSERTED -> inserted++;
                     case UPDATED -> updated++;
                     case SKIPPED -> skipped++;
                 }
-            } catch (Exception e) {
-                log.warn("[MarketSync] 아이템 건너뜀 — name={}, error={}", item.getMrktNm(), e.getMessage());
+            } catch (DataIntegrityViolationException e) {
+                // upsertItem에서 이미 warn 로그 기록 — per-item skip 집계만
                 skipped++;
             }
+            // DataAccessException(DB 장애) 및 기타 예외는 전파 → 배치 전체 중단
         }
         return new SyncResult(inserted, updated, skipped);
     }

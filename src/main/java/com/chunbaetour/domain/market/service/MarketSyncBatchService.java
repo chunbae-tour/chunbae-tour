@@ -59,10 +59,11 @@ public class MarketSyncBatchService {
                     item.getHomepageUrl(),
                     MarketApiItem.parseYearOrNull(item.getEstblYear())
                 );
-                marketRepository.save(market);
+                // saveAndFlush: REQUIRES_NEW 트랜잭션 내 flush 시점 명확화 → 제약 위반을 즉시 catch
+                marketRepository.saveAndFlush(market);
                 return UpsertResult.UPDATED;
             } else {
-                marketRepository.save(item.toEntity());
+                marketRepository.saveAndFlush(item.toEntity());
                 return UpsertResult.INSERTED;
             }
         } catch (DataIntegrityViolationException e) {
