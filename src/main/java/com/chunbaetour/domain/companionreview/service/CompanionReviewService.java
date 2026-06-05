@@ -74,7 +74,7 @@ public class CompanionReviewService {
 
         target.addCompanionReview(request.score());
 
-        // AFTER_COMMIT evict — commit 전 동시 조회의 stale 재캐싱 방지
+        // AFTER_COMMIT evict — commit 전 stale 재캐싱 최소화 (극히 드문 race는 TTL 만료 시 자가 교정)
         applicationEventPublisher.publishEvent(new CompanionScoreCacheEvictEvent(request.targetUserId()));
 
         return CompanionReviewCreateResponse.from(review);
