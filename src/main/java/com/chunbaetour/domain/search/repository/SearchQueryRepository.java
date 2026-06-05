@@ -37,62 +37,54 @@ public class SearchQueryRepository {
     // 단기적으로는 각 name 컬럼에 Full-Text Index(MATCH ... AGAINST)를 생성하거나, 중장기적으로 Elasticsearch 등 전문 검색 엔진 도입이 필요합니다.
 
     public List<Place> searchPlaces(String keyword) {
-        return queryFactory
-                .selectFrom(place)
-                .where(
-                        placeNameContains(keyword),
-                        place.status.eq(PlaceStatus.ACTIVE)
-                )
-                .orderBy(exactMatchScore(place.name, keyword).desc(), place.id.desc())
-                .limit(200)
-                .fetch();
+        // blank 키워드 시 exactMatchScore = Expressions.asNumber(0) → ORDER BY 0 → MySQL ordinal 오류 방지
+        var q = queryFactory.selectFrom(place)
+                .where(placeNameContains(keyword), place.status.eq(PlaceStatus.ACTIVE))
+                .limit(200);
+        q = keyword != null && !keyword.isBlank()
+                ? q.orderBy(exactMatchScore(place.name, keyword).desc(), place.id.desc())
+                : q.orderBy(place.id.desc());
+        return q.fetch();
     }
 
     public List<Shop> searchShops(String keyword) {
-        return queryFactory
-                .selectFrom(shop)
-                .where(
-                        shopNameContains(keyword),
-                        shop.status.eq(ShopStatus.ACTIVE)
-                )
-                .orderBy(exactMatchScore(shop.shopName, keyword).desc(), shop.id.desc())
-                .limit(200)
-                .fetch();
+        var q = queryFactory.selectFrom(shop)
+                .where(shopNameContains(keyword), shop.status.eq(ShopStatus.ACTIVE))
+                .limit(200);
+        q = keyword != null && !keyword.isBlank()
+                ? q.orderBy(exactMatchScore(shop.shopName, keyword).desc(), shop.id.desc())
+                : q.orderBy(shop.id.desc());
+        return q.fetch();
     }
 
     public List<Menu> searchMenus(String keyword) {
-        return queryFactory
-                .selectFrom(menu)
-                .where(
-                        menuNameContains(keyword),
-                        menu.isAvailable.isTrue()
-                )
-                .orderBy(exactMatchScore(menu.name, keyword).desc(), menu.id.desc())
-                .limit(200)
-                .fetch();
+        var q = queryFactory.selectFrom(menu)
+                .where(menuNameContains(keyword), menu.isAvailable.isTrue())
+                .limit(200);
+        q = keyword != null && !keyword.isBlank()
+                ? q.orderBy(exactMatchScore(menu.name, keyword).desc(), menu.id.desc())
+                : q.orderBy(menu.id.desc());
+        return q.fetch();
     }
 
     public List<Festival> searchFestivals(String keyword) {
-        return queryFactory
-                .selectFrom(festival)
-                .where(
-                        festivalNameContains(keyword),
-                        festival.status.eq(FestivalStatus.ACTIVE)
-                )
-                .orderBy(exactMatchScore(festival.name, keyword).desc(), festival.id.desc())
-                .limit(200)
-                .fetch();
+        var q = queryFactory.selectFrom(festival)
+                .where(festivalNameContains(keyword), festival.status.eq(FestivalStatus.ACTIVE))
+                .limit(200);
+        q = keyword != null && !keyword.isBlank()
+                ? q.orderBy(exactMatchScore(festival.name, keyword).desc(), festival.id.desc())
+                : q.orderBy(festival.id.desc());
+        return q.fetch();
     }
 
     public List<TraditionalMarket> searchTraditionalMarkets(String keyword) {
-        return queryFactory
-                .selectFrom(traditionalMarket)
-                .where(
-                        marketNameContains(keyword)
-                )
-                .orderBy(exactMatchScore(traditionalMarket.name, keyword).desc(), traditionalMarket.id.desc())
-                .limit(200)
-                .fetch();
+        var q = queryFactory.selectFrom(traditionalMarket)
+                .where(marketNameContains(keyword))
+                .limit(200);
+        q = keyword != null && !keyword.isBlank()
+                ? q.orderBy(exactMatchScore(traditionalMarket.name, keyword).desc(), traditionalMarket.id.desc())
+                : q.orderBy(traditionalMarket.id.desc());
+        return q.fetch();
     }
 
     private BooleanExpression placeNameContains(String keyword) {
