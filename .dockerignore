@@ -1,0 +1,33 @@
+# 빌드 컨텍스트 최소화 — Dockerfile builder가 필요로 하는 것만 남기고 전부 제외.
+# (gradlew, gradle/, settings.gradle, build.gradle, src/ 는 제외하지 않음)
+
+.git
+.gitignore
+.gradle
+build
+**/build
+out
+bin
+
+# IDE / 로컬
+.idea
+*.iml
+.vscode
+.DS_Store
+
+# 로컬 개발/문서/계획 (이미지에 불필요)
+tmp
+docs
+logs
+*.md
+!HELP.md
+scripts
+
+# 비밀/환경 — 절대 이미지에 들어가면 안 됨
+.env
+.env.*
+*.pem
+*.key
+
+# Claude/에이전트 작업 디렉토리
+.claude
