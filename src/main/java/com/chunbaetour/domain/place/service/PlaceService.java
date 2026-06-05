@@ -39,6 +39,7 @@ public class PlaceService {
 
     private final PlaceRepository placeRepository;
     private final PlaceQueryRepository placeQueryRepository;
+    private final PlaceQueryService placeQueryService;
     private final PlaceLikeService placeLikeService;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -330,15 +331,9 @@ public class PlaceService {
      * 카카오 로컬 API 활용
      * 응답은 Redis에 30분간 캐싱됨 (CacheConfig: nearby-category 설정)
      */
-    // 트랜잭션은 DB 조회만 분리 (AOP 우회로 인한 한계가 있으나, JpaRepository 기본 트랜잭션으로 충분함을 인지함)
-    @Transactional(readOnly = true)
-    protected Place findActivePlaceById(Long placeId) {
-        return placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
-    }
-
     public NearbyCategoryPlacesResponse findNearbyCategoryPlaces(Long placeId, NearbyCategory category, int radius) {
-        Place place = findActivePlaceById(placeId);
+        // PlaceQueryService의 @Transactional을 타게 되어 DB 조회 후 즉시 트랜잭션이 종료됨 (Redis/Kakao I/O는 트랜잭션 밖에서 실행)
+        Place place = placeQueryService.findActivePlaceById(placeId);
         
         int normalizedRadius = normalizeRadius(radius);
         String cacheKey = "nearby-category::" + placeId + ":" + category.name() + ":" + normalizedRadius;
