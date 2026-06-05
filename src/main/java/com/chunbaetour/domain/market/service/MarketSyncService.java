@@ -8,6 +8,7 @@ import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -74,12 +75,13 @@ public class MarketSyncService {
     /**
      * 전체 전통시장 데이터 동기화 (공통 진입점).
      * 스케줄러·관리자 수동 모두 이 메서드 호출. LockProvider로 다중 인스턴스 중복 실행 차단.
-     * 락 TTL: 최대 10분 (at-most-for), 최소 1분 (at-least-for).
+     * 락 TTL: 최대 30분 (at-most-for) — 공공API 지연 + 페이지 반복 + REQUIRES_NEW 트랜잭션 누적 대응.
+     * 최소 1분 (at-least-for).
      */
     public SyncResponse syncAllMarkets() {
         LockConfiguration lockConfig = new LockConfiguration(
                 Instant.now(), "market_sync_all",
-                Duration.ofMinutes(10), Duration.ofMinutes(1));
+                Duration.ofMinutes(30), Duration.ofMinutes(1));
         Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
 
         if (lock.isEmpty()) {
@@ -103,6 +105,10 @@ public class MarketSyncService {
             MarketApiResponse.Body firstBody = firstResponse.body();
 
             int totalCount = firstBody.totalCountInt();
+            if (totalCount == 0) {
+                log.info("[MarketSync] 동기화 대상 없음 (totalCount=0)");
+                return new SyncResponse(0, 0, 0, "동기화 대상 없음");
+            }
             int totalPages = (int) Math.ceil((double) totalCount / PAGE_SIZE);
             log.info("[MarketSync] API 응답: 총 {} 건, {} 페이지", totalCount, totalPages);
 
@@ -221,7 +227,7 @@ public class MarketSyncService {
         }
     }
 
-    public SyncResult processBatch(List<MarketApiItem> items) {
+    SyncResult processBatch(List<MarketApiItem> items) {
         if (items == null || items.isEmpty()) {
             return new SyncResult(0, 0, 0);
         }
@@ -255,13 +261,15 @@ public class MarketSyncService {
 
             if (existing.isPresent()) {
                 TraditionalMarket market = existing.get();
+                BigDecimal latValue = new BigDecimal(item.getLatitude());
+                BigDecimal lngValue = new BigDecimal(item.getLongitude());
                 market.update(
+                    latValue,
+                    lngValue,
                     item.getMrktType(),
                     item.getPhoneNumber(),
                     item.getHomepageUrl(),
-                    item.getEstblYear() != null && !item.getEstblYear().isBlank()
-                        ? Integer.parseInt(item.getEstblYear())
-                        : null
+                    MarketApiItem.parseYearOrNull(item.getEstblYear())
                 );
                 marketRepository.save(market);
                 return UpsertResult.UPDATED;
@@ -272,8 +280,12 @@ public class MarketSyncService {
         } catch (DataIntegrityViolationException e) {
             log.warn("[MarketSync] DB 제약 위반 — skip: name={}, msg={}", item.getMrktNm(), e.getMessage());
             return UpsertResult.SKIPPED;
+        } catch (IllegalArgumentException e) {
+            // 좌표/필드 파싱 실패: 데이터 품질 문제 — warn 레벨로 구분 추적
+            log.warn("[MarketSync] 데이터 품질 오류 — skip: name={}, reason={}", item.getMrktNm(), e.getMessage());
+            return UpsertResult.SKIPPED;
         } catch (Exception e) {
-            log.error("[MarketSync] 처리 오류 — skip: name={}", item.getMrktNm(), e);
+            log.error("[MarketSync] 예상치 못한 오류 — skip: name={}", item.getMrktNm(), e);
             return UpsertResult.SKIPPED;
         }
     }

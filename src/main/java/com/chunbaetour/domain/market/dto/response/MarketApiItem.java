@@ -49,7 +49,7 @@ public class MarketApiItem {
     /**
      * API 응답을 TraditionalMarket 엔티티로 변환.
      * latitude, longitude는 String → BigDecimal 변환.
-     * estblYear는 String → Integer 변환.
+     * estblYear는 String → Integer 변환 (파싱 불가 시 null — 연도 이상값으로 시장 전체 skip 방지).
      */
     public TraditionalMarket toEntity() {
         BigDecimal latValue = latitude != null && !latitude.isBlank()
@@ -57,9 +57,6 @@ public class MarketApiItem {
             : null;
         BigDecimal lngValue = longitude != null && !longitude.isBlank()
             ? new BigDecimal(longitude)
-            : null;
-        Integer yearValue = estblYear != null && !estblYear.isBlank()
-            ? Integer.parseInt(estblYear)
             : null;
 
         return TraditionalMarket.builder()
@@ -70,7 +67,17 @@ public class MarketApiItem {
                 .marketType(mrktType)
                 .phoneNumber(phoneNumber)
                 .homepageUrl(homepageUrl)
-                .establishYear(yearValue)
+                .establishYear(parseYearOrNull(estblYear))
                 .build();
+    }
+
+    /** "미상", "2020년" 같은 비정형 값은 null 반환. */
+    public static Integer parseYearOrNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

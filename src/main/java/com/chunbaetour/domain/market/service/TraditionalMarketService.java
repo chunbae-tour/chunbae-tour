@@ -11,8 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 전통시장 조회 서비스.
- * 위치 기반 조회: keyset pagination (cursor=id, cursorDistance=distance).
- * 관광지 nearby(NearbyPlaceRequest)와 동일한 cursor 방식으로 통일.
+ * 위치 기반 조회: page 기반 offset pagination.
+ * 관광지 nearby와 동일하게 distance ASC, id ASC 정렬.
  */
 @Service
 @RequiredArgsConstructor

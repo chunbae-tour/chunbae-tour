@@ -45,8 +45,8 @@ public class TraditionalMarket extends BaseEntity {
     @Column(nullable = false, precision = 10, scale = 7)
     private BigDecimal lat;
 
-    /** 경도 — DECIMAL(10,7) */
-    @Column(nullable = false, precision = 10, scale = 7)
+    /** 경도 — DECIMAL(11,7): 정수부 4자리 (180.0000000 수용) */
+    @Column(nullable = false, precision = 11, scale = 7)
     private BigDecimal lng;
 
     /** 시장유형 (예: "상설장", "상설장+3일장", "4일장") */
@@ -92,9 +92,11 @@ public class TraditionalMarket extends BaseEntity {
         this.establishYear = establishYear;
     }
 
-    /** 시장 정보 업데이트 (관리자 용) */
-    public void update(String marketType, String phoneNumber, String homepageUrl,
-                       Integer establishYear) {
+    /** 시장 정보 업데이트 (동기화/관리자 공용). 좌표 보정 포함. */
+    public void update(BigDecimal lat, BigDecimal lng, String marketType,
+                       String phoneNumber, String homepageUrl, Integer establishYear) {
+        if (lat != null) this.lat = lat;
+        if (lng != null) this.lng = lng;
         if (marketType != null) this.marketType = marketType;
         if (phoneNumber != null) this.phoneNumber = phoneNumber;
         if (homepageUrl != null) this.homepageUrl = homepageUrl;

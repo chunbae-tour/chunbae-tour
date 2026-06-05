@@ -206,6 +206,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/support/**").hasAnyRole("USER", "MERCHANT")
                         // 동행 리뷰 등록은 USER 전용
                         .requestMatchers(HttpMethod.POST, "/api/v1/companion-reviews").hasRole("USER")
+                        // 전통시장 조회 — 비인증 공개 API (KAN-220)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/traditional-markets/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex

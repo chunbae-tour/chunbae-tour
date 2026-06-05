@@ -40,7 +40,9 @@ public class TraditionalMarketQueryRepository {
             double lat, double lng, double radiusMeters, long offset, int limit) {
 
         double latDelta = (radiusMeters / 1000.0) / 111.0;
-        double lngDelta = latDelta / Math.cos(Math.toRadians(lat));
+        // cos(±90°) ≈ 0 방어 — Infinity 방지
+        double cosLat = Math.max(0.00001, Math.abs(Math.cos(Math.toRadians(lat))));
+        double lngDelta = latDelta / cosLat;
 
         NumberTemplate<Double> distance = Expressions.numberTemplate(Double.class,
                 "ST_Distance_Sphere(POINT({0}, {1}), POINT({2}, {3}))",

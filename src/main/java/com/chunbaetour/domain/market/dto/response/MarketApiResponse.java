@@ -39,7 +39,7 @@ public record MarketApiResponse(
 
         public int totalCountInt() {
             if (totalCount == null || totalCount.isBlank()) {
-                return Integer.MAX_VALUE;
+                throw new IllegalStateException("[MarketSync] totalCount 누락 — 수집 중단");
             }
             try {
                 return Integer.parseInt(totalCount);
