@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 
 import java.sql.SQLException;
 
@@ -572,8 +574,10 @@ class ReportServiceTest {
         given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(deletedPost));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
-        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
-                .doesNotThrowAnyException();
+        reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
+
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        then(deletedPost).should(never()).hide();
     }
 
     @Test
@@ -590,8 +594,10 @@ class ReportServiceTest {
         given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(deletedPost));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
-        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
-                .doesNotThrowAnyException();
+        reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
+
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        then(deletedPost).should(never()).hide();
     }
 
     @Test
@@ -607,8 +613,10 @@ class ReportServiceTest {
         given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.of(deletedComment));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
-        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
-                .doesNotThrowAnyException();
+        reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
+
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        then(deletedComment).should().delete();
     }
 
     @Test
@@ -625,7 +633,9 @@ class ReportServiceTest {
         given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(deletedUser));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.SUSPEND, null);
-        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
-                .doesNotThrowAnyException();
+        reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
+
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        then(deletedUser).should(never()).suspend();
     }
 }
