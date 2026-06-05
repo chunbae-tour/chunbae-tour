@@ -1,8 +1,6 @@
 package com.chunbaetour.domain.cs.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,7 +9,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -64,18 +61,5 @@ public class SupportRoom extends BaseEntity {
         }
         this.adminId = adminId;
         this.status = SupportRoomStatus.IN_PROGRESS;
-    }
-
-    // 상담 종료 — closedAt은 호출자가 Clock으로 주입, summary 선택
-    public void close(Clock clock, String summary) {
-        if (this.status == SupportRoomStatus.CLOSED) {
-            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
-        }
-        if (clock == null) {
-            throw new IllegalArgumentException("clock must not be null");
-        }
-        this.status = SupportRoomStatus.CLOSED;
-        this.closedAt = LocalDateTime.now(clock);
-        this.summary = summary;
     }
 }

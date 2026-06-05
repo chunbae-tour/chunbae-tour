@@ -61,6 +61,11 @@ public class AdminActionLogAspect {
             if (targetId == null && !logAdminAction.returnIdField().isBlank()) {
                 targetId = extractTargetIdFromReturn(result, logAdminAction.returnIdField());
             }
+            // path/return 추출 실패 시 fixedTargetId 사용 — bulk 액션(MARKET_SYNC 등) 전용
+            // Long.MIN_VALUE는 "미지정" 센티넬이므로 그 외 값만 채택
+            if (targetId == null && logAdminAction.fixedTargetId() != Long.MIN_VALUE) {
+                targetId = logAdminAction.fixedTargetId();
+            }
             if (adminUserId == null || targetId == null) {
                 // 추출 실패 = 인증/URL 패턴 비표준. 로그 기록을 강제로 시도해 잘못된 데이터를 남기는 것보다
                 // 흡수 + 운영자 후속 확인이 안전 (record 호출 자체를 생략).

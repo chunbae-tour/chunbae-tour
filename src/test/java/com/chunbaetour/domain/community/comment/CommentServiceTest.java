@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 
 import com.chunbaetour.domain.auth.Account;
@@ -237,6 +238,28 @@ class CommentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMMENT_NOT_FOUND));
+    }
+
+    @Test
+    void 숨김_게시글_대댓글_조회_차단() {
+        willThrow(new BusinessException(ErrorCode.POST_NOT_FOUND))
+                .given(postQueryService).validateExists(1L, PostType.FREE);
+
+        assertThatThrownBy(() -> commentService.findReplies(1L, PostType.FREE, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.POST_NOT_FOUND));
+    }
+
+    @Test
+    void 삭제된_게시글_대댓글_조회_차단() {
+        willThrow(new BusinessException(ErrorCode.POST_NOT_FOUND))
+                .given(postQueryService).validateExists(2L, PostType.COMPANION);
+
+        assertThatThrownBy(() -> commentService.findReplies(2L, PostType.COMPANION, 1L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.POST_NOT_FOUND));
     }
 
     // ── 댓글 수정 ─────────────────────────────────────────────────────────

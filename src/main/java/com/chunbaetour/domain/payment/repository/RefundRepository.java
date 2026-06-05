@@ -14,14 +14,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface RefundRepository extends JpaRepository<Refund, Long> {
 
-    /** 동일 주문에 대해 중복 환불 요청 방지 검사 */
-    boolean existsByPaymentOrderIdAndStatus(Long paymentOrderId, RefundStatus status);
-
     Optional<Refund> findFirstByPaymentOrderIdOrderByIdDesc(Long paymentOrderId);
-
-    // TODO [DB 마이그레이션]: payment_order_id 전체 unique 제약 제거 후 서비스 레이어 검사로 대체 중.
-    //                        이상적인 해결책은 status = 'PENDING' 조건의 partial unique index.
-    //                        MySQL 8.4는 partial index 미지원 → 별도 컬럼/함수 인덱스로 구현하거나 현행 유지.
 
     /** 환불 승인/거절 시 비관적 락 조회 (동시 처리 방지) */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
