@@ -8,8 +8,10 @@ spring:
   # 진행 중인 요청은 최대 timeout-per-shutdown-phase까지 마저 처리한 뒤 종료한다.
   # blue/green 무중단 배포에서 구 컨테이너를 내릴 때 결제/환불/PortOne 웹훅 같은 처리 중 요청이
   # 강제 중단되지 않도록 하는 전제. (server.shutdown=graceful와 함께 동작)
-  # ⚠️ 배포 스크립트는 docker stop -t 25(= 본 20s보다 큰 stop timeout), Dockerfile ENTRYPOINT는 exec-form으로
-  #    SIGTERM이 PID1(JVM)에 전달되게 해야 실제 graceful이 작동한다(S1/S5에서 보장).
+  # ⚠️ 본 설정만으로 "무중단"이 완성되지 않는다 — 현재(S0)는 graceful 종료 '설정만' 적용된 상태다.
+  #    실제 무중단은 ① Dockerfile exec-form ENTRYPOINT(SIGTERM→PID1 JVM 직접 전달)
+  #    ② 배포 스크립트 docker stop -t 25(= 본 20s보다 큰 stop timeout)
+  #    ③ LB target drain/health check 전환이 함께 적용돼야 보장된다(S1/S5에서 완성).
   lifecycle:
     timeout-per-shutdown-phase: 20s
 
