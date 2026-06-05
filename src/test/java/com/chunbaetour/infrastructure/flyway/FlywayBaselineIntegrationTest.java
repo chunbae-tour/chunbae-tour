@@ -47,25 +47,7 @@ import org.testcontainers.utility.DockerImageName;
 class FlywayBaselineIntegrationTest {
 
     static {
-        // MySQL 8.4 테스트 컨테이너 환경에서 ALGORITHM=INSTANT 구문 오류 우회
-        try {
-            java.nio.file.Path dirPath = java.nio.file.Paths.get("build/resources/main/db/migration");
-            if (java.nio.file.Files.exists(dirPath)) {
-                try (java.util.stream.Stream<java.nio.file.Path> paths = java.nio.file.Files.walk(dirPath)) {
-                    paths.filter(java.nio.file.Files::isRegularFile)
-                         .filter(p -> p.toString().endsWith(".sql"))
-                         .forEach(p -> {
-                             try {
-                                 String content = java.nio.file.Files.readString(p);
-                                 if (content.contains("ALGORITHM = INSTANT")) {
-                                     content = content.replaceAll(",\\s*ALGORITHM\\s*=\\s*INSTANT", "");
-                                     java.nio.file.Files.writeString(p, content);
-                                 }
-                             } catch (Exception e) {}
-                         });
-                }
-            }
-        } catch (Exception e) {}
+        FlywayMigrationPatcher.removeAlgorithmInstant();
     }
 
     /** 본 테스트 전용 MySQL 컨테이너. AbstractIntegrationTest의 Singleton 컨테이너와 분리. */
