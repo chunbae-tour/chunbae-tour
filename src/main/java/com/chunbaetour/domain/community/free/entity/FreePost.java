@@ -15,12 +15,12 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import org.hibernate.annotations.BatchSize;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
 @Entity
 @Table(name = "free_posts")
@@ -41,6 +41,7 @@ public class FreePost extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    // size=100: 컨트롤러 @Max(100)과 맞춤 — 페이지 크기 변경 시 함께 조정 필요
     @BatchSize(size = 100)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "free_post_images", joinColumns = @JoinColumn(name = "post_id"))

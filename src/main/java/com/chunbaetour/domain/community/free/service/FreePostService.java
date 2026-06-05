@@ -39,7 +39,9 @@ public class FreePostService {
     }
 
     public FreePostGetOneResponse findById(Long postId) {
-        FreePost post = findActivePost(postId);
+        FreePost post = postRepository.findByIdWithImages(postId)
+                .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
         Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
         return FreePostGetOneResponse.of(post, author);
     }
