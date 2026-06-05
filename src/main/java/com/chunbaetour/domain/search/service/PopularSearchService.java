@@ -32,7 +32,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * 인기 검색어 서비스.
  * <p>
  * Redis ZSet({@code search:ranking})을 1차 데이터 저장소로 사용한다.
- * 검색이 발생할 때마다 {@link #incrementSearchCount(String)}를 호출해 score를 증가시키고,
+ * 검색이 발생할 때마다 {@link incrementSearchCount(String)}를 호출해 score를 증가시키고,
  * 이 서비스에서는 상위 N개를 조회하여 이전 순위({@code search:ranking:prev})와 비교해 응답을 반환한다.
  * </p>
  *
@@ -52,7 +52,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * <p>
  * <b>다중 인스턴스 대응 (분산 락)</b>: 여러 인스턴스에서 스케줄러가 동시 실행되면
  * 하나가 RENAME한 직후 다른 하나가 키 없음을 보고 DELETE를 수행해 스냅샷이 유실될 수 있다.
- * 이를 방지하기 위해 Redisson 분산 락({@code RLock})을 스케줄러 진입 시점에 적용하여 
+ * 이를 방지하기 위해 Redisson 분산 락({@code RLock})을 스케줄러 진입 시점에 적용하여
  * 단일 인스턴스만 초기화를 수행하도록 보장한다.
  * </p>
  */
@@ -71,8 +71,7 @@ public class PopularSearchService {
     // Redis Key 상수
     // ──────────────────────────────────────────────────────────────────────────
 
-    /** 스케줄러 분산 락 만료 시간 */
-    private static final long RESET_LOCK_LEASE_SECONDS = 10L;
+    /** 스케줄러 분산 락 만료 시간 (Watchdog 도입으로 상수 제거) */
 
     // ──────────────────────────────────────────────────────────────────────────
     // Public API
@@ -121,7 +120,7 @@ public class PopularSearchService {
             String deduplicationKey = "search:log:" + hashedIp + ":" + normalized;
 
             Boolean isFirstSearch = stringRedisTemplate.opsForValue().setIfAbsent(deduplicationKey, "1", 10, TimeUnit.MINUTES);
-            
+
             if (Boolean.TRUE.equals(isFirstSearch)) {
                 // ZINCRBY search:ranking 1 {keyword} — 원자적 연산, thread-safe
                 stringRedisTemplate.opsForZSet().incrementScore(SearchRedisKeys.POPULAR_RANKING_KEY, normalized, 1);
@@ -201,7 +200,7 @@ public class PopularSearchService {
             // 호출자가 반환된 리스트를 수정할 수 없도록 불변 래퍼로 감싸 반환한다.
             // 서비스 레이어는 항상 불변 컬렉션을 반환하는 것이 방어적 설계의 기본이다.
             return Collections.unmodifiableList(result);
-            
+
         } catch (Exception e) {
             log.error("[PopularSearch] 인기 검색어 조회 실패", e);
             // 조회 실패 시 500 에러를 뱉기보다는 빈 리스트를 반환하여 사용자 경험을 보호한다.
@@ -291,10 +290,10 @@ public class PopularSearchService {
         long startTime = System.currentTimeMillis();
 
         try {
-            // 0초 대기(즉시 실패), 자동 만료는 상수로 분리.
-            // 0초 대기는 다른 인스턴스가 이미 진행 중이면 바로 포기함을 의미한다.
-            isLocked = lock.tryLock(0, RESET_LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
-            
+            // 0초 대기(즉시 실패). leaseTime을 지정하지 않으면 Redisson Watchdog이 동작하여
+            // 락을 쥔 스레드가 살아있는 한 30초 단위로 자동 연장하므로 중간에 풀릴 위험이 없습니다.
+            isLocked = lock.tryLock(0, TimeUnit.SECONDS);
+
             if (!isLocked) {
                 log.info("[PopularSearch] 이미 다른 인스턴스에서 랭킹 초기화를 진행 중입니다. 스케줄러를 건너뜁니다.");
                 return;
@@ -303,7 +302,7 @@ public class PopularSearchService {
             try {
                 // 실제 초기화 로직 수행
                 doResetDailyRanking();
-                
+
                 long elapsedMs = System.currentTimeMillis() - startTime;
                 log.info("[PopularSearch] 일간 랭킹 초기화 완료. 소요시간={}ms", elapsedMs);
             } catch (Exception e) {
@@ -316,7 +315,7 @@ public class PopularSearchService {
             log.error("[PopularSearch] 랭킹 초기화 분산 락 획득 중 인터럽트 발생", e);
             Thread.currentThread().interrupt();
         } finally {
-            if (isLocked) {
+            if (isLocked && lock.isHeldByCurrentThread()) {
                 try {
                     lock.unlock();
                 } catch (Exception e) {
@@ -331,7 +330,7 @@ public class PopularSearchService {
      */
     private void doResetDailyRanking() {
         // search:ranking 키 존재 여부 확인
-        // [주의] 다중 인스턴스 동시 실행 시, A가 rename한 뒤 B가 hasKey=false로 판단하여 delete해버리는 
+        // [주의] 다중 인스턴스 동시 실행 시, A가 rename한 뒤 B가 hasKey=false로 판단하여 delete해버리는
         // 심각한 데이터 유실(스냅샷 증발) 문제가 발생할 수 있다. 분산 락이 이를 방지한다.
         Boolean rankingExists = stringRedisTemplate.hasKey(SearchRedisKeys.POPULAR_RANKING_KEY);
 
