@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -35,6 +36,9 @@ import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.service.ReportService;
+import com.chunbaetour.domain.auth.AccountStatus;
+import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.shop.service.ShopService;
 import java.time.LocalDate;
 import java.util.List;
@@ -71,6 +75,7 @@ class ReportServiceTest {
     private static final Long COMMENT_ID      = 30L;
     private static final Long USER_TARGET_ID  = 40L;
     private static final Long MERCHANT_ID     = 50L;
+    private static final Long ADMIN_ID       = 200L;
 
     private FreePost       activeFreePost;
     private CompanionPost  activeCompanionPost;
@@ -549,5 +554,78 @@ class ReportServiceTest {
         assertThatThrownBy(() -> reportService.getReport(REPORT_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.REPORT_NOT_FOUND);
+    }
+
+    // ── resolveReport: 이미 삭제된 대상 500 회귀 ──────────────────────────────
+
+    @Test
+    @DisplayName("POST_FREE 이미 DELETED — DELETE resolve 시 500 없이 완료")
+    void resolveReport_POST_FREE_이미삭제됨_500없음() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+
+        FreePost deletedPost = mock(FreePost.class);
+        given(deletedPost.getStatus()).willReturn(FreePostStatus.DELETED);
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(deletedPost));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
+        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("POST_COMPANION 이미 DELETED — DELETE resolve 시 500 없이 완료")
+    void resolveReport_POST_COMPANION_이미삭제됨_500없음() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION, COMP_POST_ID,
+                ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+
+        CompanionPost deletedPost = mock(CompanionPost.class);
+        given(deletedPost.getStatus()).willReturn(CompanionPostStatus.DELETED);
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(deletedPost));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
+        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("COMMENT 이미 DELETED — DELETE resolve 시 멱등, 500 없이 완료")
+    void resolveReport_COMMENT_이미삭제됨_DELETE_멱등() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.COMMENT, COMMENT_ID,
+                ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+
+        Comment deletedComment = mock(Comment.class);
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.of(deletedComment));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
+        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("USER 탈퇴(DELETED) — SUSPEND resolve 시 skip, 500 없이 완료")
+    void resolveReport_USER_탈퇴계정_SUSPEND_500없음() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
+                ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+
+        Account deletedUser = mock(Account.class);
+        given(deletedUser.getStatus()).willReturn(AccountStatus.DELETED);
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(deletedUser));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.SUSPEND, null);
+        assertThatCode(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .doesNotThrowAnyException();
     }
 }
