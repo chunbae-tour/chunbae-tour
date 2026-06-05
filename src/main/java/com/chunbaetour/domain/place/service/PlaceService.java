@@ -63,40 +63,13 @@ public class PlaceService {
         }
 
         log.info("Redis Cache Miss or Paging: Fetching from DB");
-        // 1. MBR 필터링을 통해 반경 내 모든 후보군 조회 (limit 없이 가져옴)
-        List<NearbyPlaceResponse> allNearby = placeQueryRepository.findNearbyPlaces(lat, lng, radius);
 
-        // 2. Java 단에서 정렬 (거리 오름차순, ID 오름차순)
-        allNearby.sort((p1, p2) -> {
-            int cmp = Double.compare(p1.distanceMeters(), p2.distanceMeters());
-            if (cmp != 0) return cmp;
-            return p1.placeId().compareTo(p2.placeId());
-        });
-
-        // 3. 커서가 주어진 경우 해당 위치 찾기
-        int startIndex = 0;
-        if (cursor != null && cursorDistance != null) {
-            boolean cursorFound = false;
-            for (int i = 0; i < allNearby.size(); i++) {
-                NearbyPlaceResponse p = allNearby.get(i);
-                // 거리나 ID가 커서와 정확히 일치하거나 그보다 큰 항목을 다음 시작점으로 (부동소수점 오차 허용)
-                if (p.distanceMeters() > cursorDistance || 
-                   (Math.abs(p.distanceMeters() - cursorDistance) < 0.001 && p.placeId() > cursor)) {
-                    startIndex = i;
-                    cursorFound = true;
-                    break;
-                }
-            }
-            if (!cursorFound) {
-                log.warn("Cursor not found: cursor={}, distance={}. Returning empty result.", cursor, cursorDistance);
-                return new NearbyPlacePageResponse(Collections.emptyList(), false);
-            }
-        }
-
-        // 4. 서브리스트로 페이징 적용 (요청한 size + 1 개수만큼 추출 시도하여 hasNext 확인)
         int safeSize = (size != null) ? size : 10;
-        int endIndex = Math.min(startIndex + safeSize + 1, allNearby.size());
-        List<NearbyPlaceResponse> pagedPlaces = new java.util.ArrayList<>(allNearby.subList(startIndex, endIndex));
+
+        // DB 단에서 공간 조회, 커서 페이징 로직 및 LIMIT(safeSize + 1)을 모두 수행
+        List<NearbyPlaceResponse> pagedPlaces = placeQueryRepository.findNearbyPlaces(
+                lat, lng, radius, cursor, cursorDistance, safeSize
+        );
 
         boolean hasNext = false;
 

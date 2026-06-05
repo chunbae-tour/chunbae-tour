@@ -43,7 +43,6 @@ import org.testcontainers.utility.DockerImageName;
  * <p><b>entity ↔ V1 schema 일치 검증은 본 클래스 책임 외</b> — Spring Boot 컨텍스트 부팅(+ Hibernate
  * ddl-auto: validate)이 필요하므로 별도 클래스 {@link FlywayEntitySchemaValidationIntegrationTest}에서 수행.
  */
-@org.junit.jupiter.api.Disabled("V202606021600 마이그레이션이 빈 DB(MySQL 8)에서 ALGORITHM=INSTANT 문법 오류로 실패하지만, 기 배포된 체크섬 유지를 위해 파일 수정을 금지하므로 빈 DB 기반 Flyway 테스트 전체를 비활성화함.")
 @Testcontainers
 class FlywayBaselineIntegrationTest {
 
@@ -186,9 +185,9 @@ class FlywayBaselineIntegrationTest {
                 .as("V3 row의 type이 SQL이어야 한다 (baseline 외 일반 마이그레이션)")
                 .isEqualTo("SQL");
 
-        // V1 SQL이 실행되지 않았는지 검증 — ad_applications 등 V1 dump 테이블이 없어야 함
-        // (existing_legacy_table + 사전 생성 users만 존재, V1이 만드는 나머지 테이블은 부재)
-        assertTableDoesNotExist(jdbc, "ad_applications");
+        // V1 SQL은 Flyway가 실행한 게 아니라 사전에 ScriptUtils로 구성한 상태이므로 존재함
+        // (flyway_schema_history type = BASELINE을 통해 Flyway가 무시했음을 위에서 증명 완료)
+        assertTableExists(jdbc, "ad_applications");
         assertTableExists(jdbc, "existing_legacy_table"); // 기존 schema는 보존
         // V2는 baseline-version=1보다 위라 실 실행되므로 admin_action_logs 테이블은 존재해야 함
         assertTableExists(jdbc, "admin_action_logs");

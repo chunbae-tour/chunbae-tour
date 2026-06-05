@@ -65,26 +65,11 @@ class FlywayEntitySchemaValidationIntegrationTest {
                          .filter(p -> p.toString().endsWith(".sql"))
                          .forEach(p -> {
                              try {
-                                 String content = java.nio.file.Files.readString(p);
-                                 boolean modified = false;
-                                 if (content.contains("ALGORITHM = INSTANT")) {
-                                     content = content.replace("ALGORITHM = INSTANT", "ALGORITHM = DEFAULT");
-                                     modified = true;
-                                 }
-                                 if (content.contains("ALGORITHM = INPLACE")) {
-                                     content = content.replace("ALGORITHM = INPLACE", "ALGORITHM = DEFAULT");
-                                     modified = true;
-                                 }
-                                 if (content.contains("DROP INDEX IF EXISTS")) {
-                                     content = content.replace("DROP INDEX IF EXISTS", "DROP INDEX");
-                                     modified = true;
-                                 }
-                                 if (modified) {
-                                     java.nio.file.Files.writeString(p, content);
-                                 }
+                                 // 이제 운영에 배포될 원본 SQL을 수정 없이 그대로 사용하여 테스트합니다.
+                                 // (필요 시 파일 읽기 검증 등 추가 가능)
                              } catch (Exception e) {
                                  e.printStackTrace();
-                                 throw new RuntimeException("Failed to modify migration file: " + p, e);
+                                 throw new RuntimeException("Failed to read migration file: " + p, e);
                              }
                          });
                 }

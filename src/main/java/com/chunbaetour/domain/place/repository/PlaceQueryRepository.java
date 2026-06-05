@@ -28,21 +28,12 @@ public class PlaceQueryRepository {
     // 위치 기반 근처 관광지 (Nearby) 쿼리
     // ──────────────────────────────────────────────────────────────────────────
 
-    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters) {
-        // MBR 박스 계산 (1도 당 약 111km 가정, 반경에 따른 대략적인 사각형)
-        double latDegree = radiusMeters / 111000.0;
-        double lngDegree = radiusMeters / (111000.0 * Math.cos(Math.toRadians(lat)));
-        
-        String mbrPolygon = String.format("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
-                lng - lngDegree, lat - latDegree,
-                lng + lngDegree, lat - latDegree,
-                lng + lngDegree, lat + latDegree,
-                lng - lngDegree, lat + latDegree,
-                lng - lngDegree, lat - latDegree);
+    public List<NearbyPlaceResponse> findNearbyPlaces(double lat, double lng, double radiusMeters, Long cursorId, Double cursorDistance, int size) {
+        String mbrPolygon = com.chunbaetour.domain.place.util.LocationUtils.calculateMbrPolygon(lat, lng, radiusMeters);
 
         NumberTemplate<Double> distanceExpression = Expressions.numberTemplate(Double.class,
                 "ST_Distance_Sphere({0}, ST_GeomFromText({1}, 4326, 'axis-order=long-lat'))",
-                place.location, String.format("POINT(%f %f)", lng, lat));
+                place.location, String.format(java.util.Locale.US, "POINT(%f %f)", lng, lat));
 
         return queryFactory
                 .select(Projections.constructor(NearbyPlaceResponse.class,
@@ -60,10 +51,21 @@ public class PlaceQueryRepository {
                 .where(
                         Expressions.booleanTemplate("MBRContains(ST_GeomFromText({0}, 4326, 'axis-order=long-lat'), {1})", mbrPolygon, place.location),
                         distanceExpression.loe(radiusMeters),
-                        place.status.eq(PlaceStatus.ACTIVE)
+                        place.status.eq(PlaceStatus.ACTIVE),
+                        cursorConditionForNearby(cursorId, cursorDistance, distanceExpression)
                 )
                 .orderBy(distanceExpression.asc(), place.id.asc())
+                .limit(size + 1)
                 .fetch();
+    }
+
+    private BooleanExpression cursorConditionForNearby(Long cursorId, Double cursorDistance, NumberTemplate<Double> distanceExpression) {
+        if (cursorId == null || cursorDistance == null) {
+            return null;
+        }
+        // 부동 소수점 오차를 고려해 eq 대신 between 사용
+        return distanceExpression.gt(cursorDistance)
+                .or(distanceExpression.between(cursorDistance - 0.001, cursorDistance + 0.001).and(place.id.gt(cursorId)));
     }
 
 

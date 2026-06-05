@@ -43,6 +43,8 @@ public record PlaceListRequest(
          * 커서 평점 — 이전 응답의 nextCursorRating 값 (선택).
          * cursor와 반드시 쌍으로 전달해야 합니다.
          */
+        @jakarta.validation.constraints.DecimalMin(value = "0.0", message = "평점은 0.0 이상이어야 합니다.")
+        @jakarta.validation.constraints.DecimalMax(value = "5.0", message = "평점은 5.0 이하이어야 합니다.")
         Float cursorRating,
 
         @Min(value = 1, message = "size는 1 이상이어야 합니다.")

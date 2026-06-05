@@ -129,9 +129,7 @@ public class Place {
         if (finalLocation != null) {
             finalLocation.setSRID(4326);
         } else if (lat != null && lng != null) {
-            org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
-            finalLocation = gf.createPoint(new org.locationtech.jts.geom.Coordinate(lng.doubleValue(), lat.doubleValue()));
-            finalLocation.setSRID(4326);
+            finalLocation = com.chunbaetour.domain.place.util.LocationUtils.createPoint(lat, lng);
         }
         
         if (finalLocation == null) {

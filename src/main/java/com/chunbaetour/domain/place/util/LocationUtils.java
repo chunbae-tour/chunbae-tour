@@ -21,4 +21,14 @@ public class LocationUtils {
                 lng - lngDegree, lat + latDegree,
                 lng - lngDegree, lat - latDegree);
     }
+    /**
+     * 위도/경도를 SRID 4326의 JTS Point 객체로 변환합니다.
+     */
+    public static org.locationtech.jts.geom.Point createPoint(java.math.BigDecimal lat, java.math.BigDecimal lng) {
+        if (lat == null || lng == null) return null;
+        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
+        org.locationtech.jts.geom.Point point = gf.createPoint(new org.locationtech.jts.geom.Coordinate(lng.doubleValue(), lat.doubleValue()));
+        point.setSRID(4326);
+        return point;
+    }
 }
