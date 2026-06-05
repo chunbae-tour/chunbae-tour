@@ -95,11 +95,25 @@ public class TraditionalMarket extends BaseEntity {
     /** 시장 정보 업데이트 (동기화/관리자 공용). 좌표 보정 포함. */
     public void update(BigDecimal lat, BigDecimal lng, String marketType,
                        String phoneNumber, String homepageUrl, Integer establishYear) {
-        if (lat != null) this.lat = lat;
-        if (lng != null) this.lng = lng;
+        if (lat != null) this.lat = validateLat(lat);
+        if (lng != null) this.lng = validateLng(lng);
         if (marketType != null) this.marketType = marketType;
         if (phoneNumber != null) this.phoneNumber = phoneNumber;
         if (homepageUrl != null) this.homepageUrl = homepageUrl;
         if (establishYear != null) this.establishYear = establishYear;
+    }
+
+    private static BigDecimal validateLat(BigDecimal lat) {
+        if (lat.compareTo(new BigDecimal("-90")) < 0 || lat.compareTo(new BigDecimal("90")) > 0) {
+            throw new IllegalArgumentException("위도는 -90에서 90 사이여야 합니다.");
+        }
+        return lat;
+    }
+
+    private static BigDecimal validateLng(BigDecimal lng) {
+        if (lng.compareTo(new BigDecimal("-180")) < 0 || lng.compareTo(new BigDecimal("180")) > 0) {
+            throw new IllegalArgumentException("경도는 -180에서 180 사이여야 합니다.");
+        }
+        return lng;
     }
 }

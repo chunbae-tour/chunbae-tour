@@ -42,7 +42,7 @@ public record MarketApiResponse(
                 throw new IllegalStateException("[MarketSync] totalCount 누락 — 수집 중단");
             }
             try {
-                return Integer.parseInt(totalCount);
+                return Integer.parseInt(totalCount.trim());
             } catch (NumberFormatException e) {
                 log.error("[MarketSync] totalCount 파싱 실패 — 수집 중단: '{}'", totalCount);
                 throw new IllegalStateException("[MarketSync] totalCount 파싱 실패: " + totalCount, e);

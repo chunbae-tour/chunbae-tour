@@ -71,9 +71,13 @@ public class MarketSyncBatchService {
             // 좌표/필드 파싱 실패: 데이터 품질 문제 — warn 레벨로 구분 추적
             log.warn("[MarketSync] 데이터 품질 오류 — skip: name={}, reason={}", item.getMrktNm(), e.getMessage());
             return UpsertResult.SKIPPED;
+        } catch (org.springframework.dao.DataAccessException e) {
+            // DB/인프라 장애 — 은닉하지 않고 전파 (배치 전체 중단)
+            log.error("[MarketSync] DB 접근 오류 — 동기화 중단: name={}", item.getMrktNm(), e);
+            throw e;
         } catch (Exception e) {
-            log.error("[MarketSync] 예상치 못한 오류 — skip: name={}", item.getMrktNm(), e);
-            return UpsertResult.SKIPPED;
+            log.error("[MarketSync] 예상치 못한 오류 — 동기화 중단: name={}", item.getMrktNm(), e);
+            throw new IllegalStateException("전통시장 업서트 중 알 수 없는 오류", e);
         }
     }
 }
