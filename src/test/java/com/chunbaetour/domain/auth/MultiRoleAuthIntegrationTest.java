@@ -427,6 +427,48 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    // ── L5: 스토어 구매(/api/v1/store/orders)는 USER 전용 회귀 가드 ───────────────────────
+    @Test
+    void user_token_calling_store_orders_passes_authorization() throws Exception {
+        // USER는 인가 통과(보안 403 아님). 빈 바디라 @Valid에서 400 — '보안을 지났다'는 증거.
+        signupUser("storeuser@example.com", "스토어유저");
+        String accessToken = login("/api/v1/users/auth/login", "storeuser@example.com").accessToken();
+
+        mockMvc.perform(post("/api/v1/store/orders")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void admin_token_calling_store_orders_returns_AUTH_007() throws Exception {
+        // ADMIN은 store 구매 불가 — USER 전용. 보안 레이어에서 403 AUTH_007.
+        seedFactory.seedAdmin("storeadmin@example.com", PASSWORD, "스토어관리자");
+        String accessToken = login("/api/v1/admin/auth/login", "storeadmin@example.com").accessToken();
+
+        mockMvc.perform(post("/api/v1/store/orders")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    void merchant_token_calling_store_orders_returns_AUTH_007() throws Exception {
+        // MERCHANT도 store 구매 불가 — USER 전용.
+        seedFactory.seedMerchant("storemerchant@example.com", PASSWORD, "스토어상인");
+        String accessToken = login("/api/v1/merchants/auth/login", "storemerchant@example.com").accessToken();
+
+        mockMvc.perform(post("/api/v1/store/orders")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
     private void signupUser(String email, String nickname) throws Exception {
         SignupRequest request = new SignupRequest(email, PASSWORD, nickname);
         mockMvc.perform(post("/api/v1/users/auth/signup")

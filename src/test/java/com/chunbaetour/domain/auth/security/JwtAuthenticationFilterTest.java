@@ -2,6 +2,7 @@ package com.chunbaetour.domain.auth.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -11,6 +12,7 @@ import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.AccessClaims;
 import com.chunbaetour.domain.auth.jwt.AccessTokenBlacklist;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
 import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -140,6 +142,45 @@ class JwtAuthenticationFilterTest {
                 .isEqualTo(0L);
         assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
                 .isEqualTo(0L);
+    }
+
+    @Test
+    void publicGet_with_valid_token_sets_authentication() throws Exception {
+        // M1: 공개 GET이라도 유효 토큰이면 principal을 채워 개인화(GET /places/{id}의 isLiked 등)가 동작해야 한다.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(42L, Role.USER, "u@e.c", "tid", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-token")).willReturn(claims);
+        given(accessTokenBlacklist.contains("tid")).willReturn(false);
+
+        filter.doFilter(request, response, filterChain);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getPrincipal()).isEqualTo(42L);
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+    }
+
+    @Test
+    void publicGet_with_expired_token_passes_through_anonymously_without_401() throws Exception {
+        // M1: 공개 GET + 만료 토큰 → 401 금지, 익명으로 통과(공개 콘텐츠 조회 가능), principal 미설정.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer expired");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        willThrow(new ExpiredJwtException(null, null, "expired"))
+                .given(tokenIssuer).verifyAccess("expired");
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
@@ -279,5 +320,63 @@ class JwtAuthenticationFilterTest {
                 .isEqualTo(0L);
         assertThat(meterRegistry.timer("auth.jwt.verify.duration", "outcome", "unexpected").count())
                 .isEqualTo(0L);
+    }
+
+    @Test
+    void publicGet_with_tampered_token_passes_through_anonymously_and_audits() throws Exception {
+        // M1: 공개 GET + 변조 토큰 → 401 없이 익명 통과, 단 TOKEN_TAMPERED 감사 로그는 남긴다(보안 신호).
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer tampered");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        willThrow(new MalformedJwtException("bad")).given(tokenIssuer).verifyAccess("tampered");
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        verify(auditLogger).emitFailure(eq(SecurityAuditEventType.TOKEN_TAMPERED), any(), any(), any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void publicGet_with_blacklisted_token_passes_through_anonymously_and_audits() throws Exception {
+        // M1: 공개 GET + 블랙리스트(로그아웃) 토큰 → 401 없이 익명 통과, 단 TOKEN_BLACKLISTED 감사 로그는 남긴다.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer blacklisted");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(7L, Role.USER, "u@e.c", "tid-bl", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("blacklisted")).willReturn(claims);
+        given(accessTokenBlacklist.contains("tid-bl")).willReturn(true);
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        verify(auditLogger).emitFailure(eq(SecurityAuditEventType.TOKEN_BLACKLISTED), any(), any(), any());
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void publicGet_with_redis_failure_passes_through_anonymously_without_500() throws Exception {
+        // M1: 공개 GET + 블랙리스트 조회 Redis 장애 → 500 없이 익명 통과(공개 콘텐츠 가용성 우선).
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setMethod("GET");
+        request.setServletPath("/api/v1/places/123");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer valid-but-redis-down");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessClaims claims = new AccessClaims(8L, Role.USER, "u@e.c", "tid-redis", FUTURE_EXP);
+        given(tokenIssuer.verifyAccess("valid-but-redis-down")).willReturn(claims);
+        willThrow(new DataAccessResourceFailureException("redis down"))
+                .given(accessTokenBlacklist).contains("tid-redis");
+
+        filter.doFilter(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        verify(responseWriter, never()).write(any(HttpServletResponse.class), any(ErrorCode.class));
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 }
