@@ -81,15 +81,15 @@ public class AdminProductService {
         );
         evictCacheAfterCommit(productId);
 
-        // HIDDEN으로 전환 시 stock 키 삭제 — 숨김 상품 키 잔존 방지
-        if (request.status() == ProductStatus.HIDDEN) {
-            deleteStockKeyAfterCommit(productId);
-        }
-        // 재고 변경 시 또는 ON_SALE 재활성화 시 stock 키 갱신.
-        // HIDDEN/SOLD_OUT → ON_SALE(stock=null) 재활성화 경로에서 키가 없으면 L4(hasKey==false) 재현 방지.
+        // HIDDEN 전환과 재고 갱신은 배타적 — HIDDEN+stock 동시 요청 시 삭제만 실행해 숨김 상품에 키 잔존 방지.
         // Note: afterCommit SET이 동시 구매 DECR보다 늦게 실행될 경우 Redis 재고가 실제보다 많아질 수 있음.
         // 구매 2단계에서 DB 비관적 락으로 최종 검증하므로 오버셀링 위험 없음(Best-Effort 정책).
-        if (request.stock() != null || request.status() == ProductStatus.ON_SALE) {
+        if (request.status() == ProductStatus.HIDDEN) {
+            // HIDDEN 전환 시 stock 키 삭제 — 이후 구매 경로 진입 차단
+            deleteStockKeyAfterCommit(productId);
+        } else if (request.stock() != null || request.status() == ProductStatus.ON_SALE) {
+            // 재고 변경 또는 ON_SALE 재활성화 시 stock 키 갱신
+            // HIDDEN/SOLD_OUT → ON_SALE(stock=null) 재활성화 경로에서 키 없으면 구매 1단계(Redis DECR) 차단 방지
             setStockKeyAfterCommit(productId, product.getStock());
         }
         List<String> imageUrls = request.imageUrls() != null
@@ -114,21 +114,24 @@ public class AdminProductService {
     }
 
     /**
-     * 트랜잭션 커밋 후 캐시 무효화 등록.
-     * 커밋 전 삭제 시 커밋~삭제 사이 조회가 stale 값을 재적재하는 문제 방지.
-     * 트랜잭션 컨텍스트 없으면 즉시 무효화(테스트 등 비트랜잭션 호출 대응).
+     * 트랜잭션 커밋 후 action 실행 등록.
+     * 트랜잭션 컨텍스트 없으면 즉시 실행(테스트 등 비트랜잭션 호출 대응).
      */
-    private void evictCacheAfterCommit(Long productId) {
+    private void registerAfterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    evictCache(productId);
+                    action.run();
                 }
             });
         } else {
-            evictCache(productId);
+            action.run();
         }
+    }
+
+    private void evictCacheAfterCommit(Long productId) {
+        registerAfterCommit(() -> evictCache(productId));
     }
 
     private void evictCache(Long productId) {
@@ -140,16 +143,7 @@ public class AdminProductService {
     }
 
     private void setStockKeyAfterCommit(Long productId, int stock) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    setStockKey(productId, stock);
-                }
-            });
-        } else {
-            setStockKey(productId, stock);
-        }
+        registerAfterCommit(() -> setStockKey(productId, stock));
     }
 
     private void setStockKey(Long productId, int stock) {
@@ -161,16 +155,7 @@ public class AdminProductService {
     }
 
     private void deleteStockKeyAfterCommit(Long productId) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    deleteStockKey(productId);
-                }
-            });
-        } else {
-            deleteStockKey(productId);
-        }
+        registerAfterCommit(() -> deleteStockKey(productId));
     }
 
     private void deleteStockKey(Long productId) {

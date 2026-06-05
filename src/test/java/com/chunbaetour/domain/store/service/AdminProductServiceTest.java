@@ -204,4 +204,45 @@ class AdminProductServiceTest {
 
         then(valueOps).should().set("stock:1", "20");
     }
+
+    @Test
+    @DisplayName("상품 수정 — status=HIDDEN 전환 시 Redis 재고 키 삭제, 세팅 없음")
+    void updateProduct_hidden_deletesStockKeyOnly() {
+        Product product = createProduct(1L, 10, ProductStatus.ON_SALE);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, null, null, null, null, null, ProductStatus.HIDDEN);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+
+        adminProductService.updateProduct(1L, req);
+
+        then(redisTemplate).should().delete("stock:1");
+        then(valueOps).should(never()).set(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("상품 수정 — status=ON_SALE 재활성화(stock=null) 시 기존 재고로 Redis 키 세팅")
+    void updateProduct_onSaleReactivation_setsStockKeyFromExistingStock() {
+        Product product = createProduct(1L, 15, ProductStatus.HIDDEN);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, null, null, null, null, null, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+
+        adminProductService.updateProduct(1L, req);
+
+        then(valueOps).should().set("stock:1", "15");
+    }
+
+    @Test
+    @DisplayName("상품 수정 — status=HIDDEN + stock 동시 요청 시 삭제만 실행, 키 재생성 없음")
+    void updateProduct_hiddenWithStock_onlyDeletesStockKey() {
+        Product product = createProduct(1L, 10, ProductStatus.ON_SALE);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, 20, null, null, null, null, ProductStatus.HIDDEN);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+
+        adminProductService.updateProduct(1L, req);
+
+        then(redisTemplate).should().delete("stock:1");
+        then(valueOps).should(never()).set(anyString(), anyString());
+    }
 }
