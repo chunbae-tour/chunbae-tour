@@ -33,6 +33,7 @@
 | `BANNER_CREATE` | S09 | 배너 등록 (Banner 신규 생성) | `BANNER` |
 | `BANNER_UPDATE` | S09 | 배너 수정 (partial update — null-skip) | `BANNER` |
 | `BANNER_DELETE` | S09 | 배너 삭제 (Banner.delete() → DELETED soft delete) | `BANNER` |
+| `MARKET_SYNC` | KAN-220 | 전통시장 즉시 동기화 (공공데이터 upsert — 관리자 수동 트리거) | `MARKET` |
 
 후속 슬라이스 예상 추가 항목 (PRD INDEX.md 결정 2 참조):
 
@@ -65,6 +66,7 @@
 | `BANNER` | 추천 배너 | CRUD |
 | `FAQ` | FAQ | CRUD |
 | `SUPPORT_ROOM` | 고객센터 상담방 | close |
+| `MARKET` | 전통시장 | 공공데이터 sync |
 
 ---
 

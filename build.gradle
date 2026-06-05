@@ -37,8 +37,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'org.apache.httpcomponents.client5:httpclient5'
 
-	// JPA
+	// JPA & Hibernate Spatial
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.hibernate.orm:hibernate-spatial'
 
 	// QueryDSL — OpenFeign 유지보수 fork 사용
 	// - com.querydsl는 5.1.0에서 유지보수 중단, CVE-2024-49203 미패치

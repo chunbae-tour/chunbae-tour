@@ -45,7 +45,7 @@ class TraditionalMarketControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("nearby — lat 누락 시 400 COMMON_002")
+    @DisplayName("nearby — lat 누락 시 400")
     void nearby_missingLat_returns400() throws Exception {
         mockMvc.perform(get(NEARBY_ENDPOINT)
                         .param("lng", "126.9780"))

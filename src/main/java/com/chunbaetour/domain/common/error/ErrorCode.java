@@ -20,6 +20,7 @@ public enum ErrorCode {
     CONCURRENT_UPDATE(HttpStatus.CONFLICT,                   "COMMON_009", "동시 수정 충돌이 발생했습니다. 다시 시도해주세요."),
     // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
+    INVALID_CURSOR_PAIR(HttpStatus.BAD_REQUEST,              "COMMON_011", "커서 페이징 쌍(cursor, cursorRating 등)이 올바르게 전달되지 않았습니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
@@ -150,7 +151,6 @@ public enum ErrorCode {
     DUPLICATE_AD_APPLICATION(HttpStatus.CONFLICT,           "SHOP_014", "이미 처리 대기 중인 광고 신청이 있습니다."),
     AD_APPLICATION_INVALID_STATUS(HttpStatus.CONFLICT,      "SHOP_015", "현재 상태에서는 처리할 수 없는 광고 신청입니다."),
     SHOP_WALLET_ALREADY_EXISTS(HttpStatus.CONFLICT,          "SHOP_016", "이미 등록된 가게 수익 지갑이 있습니다."),
-    SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_016", "업로드할 파일이 비어 있습니다."),
     SHOP_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,       "SHOP_017", "파일 크기가 최대 허용 용량(5MB)을 초과합니다."),
     SHOP_IMAGE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,     "SHOP_018", "지원하지 않는 이미지 형식입니다. (허용: JPEG, PNG, WebP)"),
     // SHOP_019~021: 상인 인증 admin (KAN-204, Admin Epic KAN-177 S05)
@@ -161,6 +161,7 @@ public enum ErrorCode {
     SHOP_ALREADY_CERTIFIED(HttpStatus.CONFLICT,             "SHOP_021", "이미 인증된 가게입니다. 가게당 유효 인증은 1건만 허용됩니다."),
     SHOP_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND,             "SHOP_022", "존재하지 않는 가게 공지입니다."),
     SHOP_STATUS_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_023", "상인이 변경할 수 없는 상태입니다."),
+    SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_024", "업로드할 파일이 비어 있습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

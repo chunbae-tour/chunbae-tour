@@ -9,8 +9,8 @@ CREATE TABLE traditional_markets (
     phone_number VARCHAR(20),
     homepage_url VARCHAR(500),
     establish_year INT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    created_at datetime(6) NOT NULL,
+    updated_at datetime(6) NOT NULL
 );
 
 -- 시장명으로 조회하는 쿼리 최적화

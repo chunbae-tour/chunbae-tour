@@ -30,7 +30,7 @@ public record RecommendPlaceResponse(
                 .thumbnailUrl(place.getThumbnailUrl())
                 .latitude(place.getLat())
                 .longitude(place.getLng())
-                .rating(place.getRating())
+                .rating(place.getDisplayRating())
                 .reviewCount(place.getReviewCount())
                 .build();
     }
@@ -43,7 +43,7 @@ public record RecommendPlaceResponse(
                 .thumbnailUrl(place.getThumbnailUrl())
                 .latitude(place.getLat())
                 .longitude(place.getLng())
-                .rating(place.getRating())
+                .rating(place.getDisplayRating())
                 .reviewCount(place.getReviewCount())
                 .distanceMeters(distanceMeters)
                 .build();

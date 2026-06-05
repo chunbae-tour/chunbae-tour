@@ -1,6 +1,7 @@
 package com.chunbaetour.infrastructure.flyway;
 
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,26 +39,50 @@ import org.springframework.test.context.DynamicPropertySource;
  * 부팅 성공 = 검증 통과, 부팅 실패 = 검증 실패.
  */
 @SpringBootTest
-class FlywayEntitySchemaValidationIntegrationTest extends AbstractIntegrationTest {
+@org.testcontainers.junit.jupiter.Testcontainers
+class FlywayEntitySchemaValidationIntegrationTest {
 
-    /**
-     * 부모 {@link AbstractIntegrationTest}가 등록한
-     * {@code spring.flyway.enabled=false} / {@code spring.jpa.hibernate.ddl-auto=create-drop}을
-     * 본 테스트용으로 override.
-     *
-     * <p>Spring Test의 {@code @DynamicPropertySource}는 부모/자식 모두 적용되며 자식이 나중에
-     * 등록한 값이 우선된다. 따라서 본 클래스 전용 컨텍스트만 Flyway 활성 + validate로 부팅된다.
-     */
-    @DynamicPropertySource
-    static void overrideForFlywayValidate(DynamicPropertyRegistry registry) {
+    @org.testcontainers.junit.jupiter.Container
+    private static final org.testcontainers.containers.MySQLContainer<?> MYSQL =
+            new org.testcontainers.containers.MySQLContainer<>(org.testcontainers.utility.DockerImageName.parse("mysql:8.4"));
+
+    private static final org.testcontainers.containers.GenericContainer<?> REDIS;
+    static {
+        REDIS = new org.testcontainers.containers.GenericContainer<>(org.testcontainers.utility.DockerImageName.parse("redis:7-alpine"))
+                .withExposedPorts(6379);
+        REDIS.start();
+    }
+
+    @org.springframework.test.context.DynamicPropertySource
+    static void configureProperties(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        // 원본 migration(SQL)을 그대로 검증합니다.
+        // 더 이상 ALGORITHM=INSTANT 등의 문자열 치환 로직을 사용하지 않습니다.
+
+        registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
+        registry.add("spring.datasource.username", MYSQL::getUsername);
+        registry.add("spring.datasource.password", MYSQL::getPassword);
+        registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
+        registry.add("spring.data.redis.host", REDIS::getHost);
+        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+        registry.add("spring.data.redis.password", () -> "");
         registry.add("spring.flyway.enabled", () -> "true");
+        registry.add("spring.flyway.out-of-order", () -> "true");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+        // 필수 더미 속성들
+        registry.add("jwt.secret", () -> "test-only-secret-32-bytes-min-xxxxxx");
+        registry.add("portone.secret", () -> "dummy");
+        registry.add("portone.webhook-secret", () -> "dummy");
+        registry.add("portone.store-id", () -> "dummy");
+        registry.add("kakao.map.api-key", () -> "dummy");
+        registry.add("portone.channel.card", () -> "dummy");
+        registry.add("portone.channel.kakao-pay", () -> "dummy");
+        registry.add("portone.channel.toss-pay", () -> "dummy");
+        registry.add("portone.channel.foreign-card", () -> "dummy");
     }
 
     @Test
     @DisplayName("V1__baseline.sql 적용 후 모든 entity가 Hibernate validate를 통과 (컨텍스트 부팅 자체가 검증)")
     void contextLoads_meansV1SchemaMatchesEntities() {
         // 컨텍스트 부팅이 완료되었다는 것 자체가 검증 — Flyway V1 실행 + Hibernate validate 통과.
-        // 본 메서드 도달 = 운영 prod 첫 배포 시 ddl-auto: validate 단계 통과 보장.
     }
 }

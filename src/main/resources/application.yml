@@ -4,6 +4,17 @@ spring:
   profiles:
     active: local
 
+  # Graceful shutdown (배포 S0, KAN-226): 종료 신호(SIGTERM) 수신 시 새 요청은 거부하되
+  # 진행 중인 요청은 최대 timeout-per-shutdown-phase까지 마저 처리한 뒤 종료한다.
+  # blue/green 무중단 배포에서 구 컨테이너를 내릴 때 결제/환불/PortOne 웹훅 같은 처리 중 요청이
+  # 강제 중단되지 않도록 하는 전제. (server.shutdown=graceful와 함께 동작)
+  # ⚠️ 본 설정만으로 "무중단"이 완성되지 않는다 — 현재(S0)는 graceful 종료 '설정만' 적용된 상태다.
+  #    실제 무중단은 ① Dockerfile exec-form ENTRYPOINT(SIGTERM→PID1 JVM 직접 전달)
+  #    ② 배포 스크립트 docker stop -t 25(= 본 20s보다 큰 stop timeout)
+  #    ③ LB target drain/health check 전환이 함께 적용돼야 보장된다(S1/S5에서 완성).
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}
@@ -44,6 +55,9 @@ spring:
 server:
   port: 8080
   forward-headers-strategy: NATIVE
+  # Graceful shutdown 활성화 (배포 S0, KAN-226). 기본값 immediate(즉시 강제 종료)에서 graceful로 전환.
+  # SIGTERM 시 톰캣이 새 connection 수락을 멈추고, 진행 중 요청을 spring.lifecycle.timeout-per-shutdown-phase까지 대기.
+  shutdown: graceful
 
 jwt:
   secret: ${JWT_SECRET}
@@ -124,9 +138,9 @@ ratelimit:
     #   → 정책 미추가. 추후 JWT 이후 사용자 식별 기반 rate-limit이 도입되면 그 위에서 재검토.
 
 portone:
-  secret: ${PORTONE_SECRET:}
-  webhook-secret: ${PORTONE_WEBHOOK_SECRET:}
-  store-id: ${PORTONE_STORE_ID:}
+  secret: ${PORTONE_SECRET}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
+  store-id: ${PORTONE_STORE_ID}
   base-url: https://api.portone.io
   channel:
     card: ${PORTONE_CHANNEL_CARD:}

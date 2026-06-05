@@ -115,10 +115,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         meterRegistry.counter(METRIC_DECISION, "endpoint", endpoint.id(), "decision", "denied").increment();
         log.warn("Rate limit exceeded. endpoint={}, ip={}", endpoint.id(), IpMaskUtil.mask(clientIp));
         // KAN-105: rate limit 거부도 감사 로그 — endpoint별 공격 패턴 추적. actorId 없음(인증 전).
-        // clientIp는 extractClientIp에서 lowercase 정규화된 값 — warn 로그와 audit 메타 양쪽 동일 케이스 유지 (HM #4).
+        // SecurityAuditEvent.metadata는 민감 값 금지 계약(SecurityAuditEvent Javadoc) — clientIp도 IpMaskUtil.mask로
+        // 마스킹해 적재한다. 이벤트 자동 필드 ipMasked(getRemoteAddr 마스킹)·warn 로그(라인 116)와 동일한 마스킹 정책 유지.
+        // raw IP는 audit.security 채널(별도 JSON appender, 1년 보존·SIEM 수집) 어디에도 남기지 않는다.
         auditLogger.emitFailure(SecurityAuditEventType.RATE_LIMIT_DENIED, null,
                 ErrorCode.RATE_LIMITED.getCode(),
-                java.util.Map.of("endpoint", endpoint.id(), "clientIp", clientIp));
+                java.util.Map.of("endpoint", endpoint.id(), "clientIp", IpMaskUtil.mask(clientIp)));
         Map<String, String> headers = new LinkedHashMap<>();
         // Redis TTL race 등으로 retryAfter가 0초가 될 수 있어도 HTTP Retry-After 헤더는 최소 1초로 응답.
         // 0초 응답 시 클라이언트가 즉시 재시도해 무한 루프 위험.

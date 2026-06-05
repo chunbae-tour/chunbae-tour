@@ -6,24 +6,18 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.dto.response.MarketApiResponse;
-import com.chunbaetour.domain.market.entity.TraditionalMarket;
-import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
-import java.math.BigDecimal;
+import com.chunbaetour.domain.market.service.MarketSyncBatchService.UpsertResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -33,7 +27,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  *
  * <p>설계:
  * - HTTP fetch는 트랜잭션 밖 (네트워크 지연 방지)
- * - 배치 persist는 별도 트랜잭션 (per-batch 격리)
+ * - 배치 persist는 MarketSyncBatchService (REQUIRES_NEW 트랜잭션, 아이템 단위 격리)
  * - resultCode 검증: "00" 정상, 기타는 예외 throw
  * - upsert 키: name + address 복합 (동명 이장 대응)
  */
@@ -42,22 +36,20 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class MarketSyncService {
 
     private final RestClient restClient;
-    private final TraditionalMarketRepository marketRepository;
     private final PublicDataApiProperties apiProperties;
     private final LockProvider lockProvider;
-
-    @Autowired @Lazy private MarketSyncService self;
+    private final MarketSyncBatchService batchService;
 
     public MarketSyncService(
         @Qualifier("publicDataRestClient") RestClient restClient,
-        TraditionalMarketRepository marketRepository,
         PublicDataApiProperties apiProperties,
-        LockProvider lockProvider
+        LockProvider lockProvider,
+        MarketSyncBatchService batchService
     ) {
         this.restClient = restClient;
-        this.marketRepository = marketRepository;
         this.apiProperties = apiProperties;
         this.lockProvider = lockProvider;
+        this.batchService = batchService;
     }
 
     private static final int PAGE_SIZE = 1000;
@@ -85,7 +77,7 @@ public class MarketSyncService {
         Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
 
         if (lock.isEmpty()) {
-            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중 (TTL 최대 10분)");
+            log.warn("[MarketSync] 락 획득 실패 — 다른 인스턴스에서 이미 수집 중 (lockAtMostFor 30분)");
             throw new BusinessException(ErrorCode.MARKET_SYNC_IN_PROGRESS);
         }
 
@@ -234,59 +226,12 @@ public class MarketSyncService {
 
         int inserted = 0, updated = 0, skipped = 0;
         for (MarketApiItem item : items) {
-            switch (self.upsertItem(item)) {
+            switch (batchService.upsertItem(item)) {
                 case INSERTED -> inserted++;
                 case UPDATED -> updated++;
                 case SKIPPED -> skipped++;
             }
         }
         return new SyncResult(inserted, updated, skipped);
-    }
-
-    enum UpsertResult { INSERTED, UPDATED, SKIPPED }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public UpsertResult upsertItem(MarketApiItem item) {
-        try {
-            if (item.getMrktNm() == null || item.getMrktNm().isBlank() ||
-                item.getRdnmadr() == null || item.getRdnmadr().isBlank() ||
-                item.getLatitude() == null || item.getLongitude() == null) {
-                log.warn("[MarketSync] 필수 필드 누락 — skip: name={}", item.getMrktNm());
-                return UpsertResult.SKIPPED;
-            }
-
-            Optional<TraditionalMarket> existing = marketRepository.findByNameAndAddress(
-                item.getMrktNm(), item.getRdnmadr()
-            );
-
-            if (existing.isPresent()) {
-                TraditionalMarket market = existing.get();
-                BigDecimal latValue = new BigDecimal(item.getLatitude());
-                BigDecimal lngValue = new BigDecimal(item.getLongitude());
-                market.update(
-                    latValue,
-                    lngValue,
-                    item.getMrktType(),
-                    item.getPhoneNumber(),
-                    item.getHomepageUrl(),
-                    MarketApiItem.parseYearOrNull(item.getEstblYear())
-                );
-                marketRepository.save(market);
-                return UpsertResult.UPDATED;
-            } else {
-                marketRepository.save(item.toEntity());
-                return UpsertResult.INSERTED;
-            }
-        } catch (DataIntegrityViolationException e) {
-            log.warn("[MarketSync] DB 제약 위반 — skip: name={}, msg={}", item.getMrktNm(), e.getMessage());
-            return UpsertResult.SKIPPED;
-        } catch (IllegalArgumentException e) {
-            // 좌표/필드 파싱 실패: 데이터 품질 문제 — warn 레벨로 구분 추적
-            log.warn("[MarketSync] 데이터 품질 오류 — skip: name={}, reason={}", item.getMrktNm(), e.getMessage());
-            return UpsertResult.SKIPPED;
-        } catch (Exception e) {
-            log.error("[MarketSync] 예상치 못한 오류 — skip: name={}", item.getMrktNm(), e);
-            return UpsertResult.SKIPPED;
-        }
     }
 }
