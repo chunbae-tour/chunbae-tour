@@ -28,3 +28,18 @@ spring:
 google:
   translation:
     api-key: ${GOOGLE_TRANSLATION_API_KEY:}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 로컬 개발 전용 시크릿 placeholder
+# 운영(application.yml)에서는 환경변수 누락 시 fail-fast 구조 유지를 위해 fallback 없음.
+# 로컬 실행 시 .env 파일에 실제 값이 있으면 .env 값이 우선 적용됨.
+# ──────────────────────────────────────────────────────────────────────────────
+jwt:
+  # 로컬 전용 더미 키 (32바이트 이상 필수). 절대 운영 키 사용 금지.
+  secret: ${JWT_SECRET:local_dev_secret_key_must_be_at_least_32_bytes}
+
+portone:
+  # 로컬 전용 더미 값 — 결제 기능은 .env에 실제 테스트 키를 넣어야 동작함
+  secret: ${PORTONE_SECRET:dummy_portone_secret_key}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET:dummy_webhook_secret_key}
+  store-id: ${PORTONE_STORE_ID:dummy_store_id}

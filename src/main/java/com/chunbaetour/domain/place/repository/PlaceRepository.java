@@ -1,17 +1,19 @@
 package com.chunbaetour.domain.place.repository;
 
-import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.type.PlaceCategory;
-import com.chunbaetour.domain.place.type.PlaceStatus;
+import java.util.List;
+import java.util.Optional;
+
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-import java.util.Optional;
-import jakarta.persistence.LockModeType;
-import org.springframework.data.jpa.repository.Lock;
+import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 
 public interface PlaceRepository extends JpaRepository<Place, Long> {
 
@@ -35,21 +37,25 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      */
     @Query(value = "SELECT * FROM places p " +
                    "WHERE p.status = 'ACTIVE' " +
-                   "AND (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) <= ?3 " +
-                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) ASC " +
-                   "LIMIT ?4", nativeQuery = true)
-    List<Place> findNearbyPlacesWithinRadius(double lat, double lng, double radiusKm, int limit);
+                   "AND MBRContains(ST_GeomFromText(?4, 4326, 'axis-order=long-lat'), p.location) " +
+                   "AND ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) <= (?3 * 1000) " +
+                   "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) ASC " +
+                   "LIMIT ?5", nativeQuery = true)
+    List<Place> findNearbyPlacesWithinRadius(double lat, double lng, double radiusKm, String mbrPolygon, int limit);
 
     /**
      * 4-2. 특정 관광지 기반 추천 (동일 카테고리 + 근거리 TOP N)
-     * 파라미터: 1=lat, 2=lng, 3=category(String), 4=excludePlaceId, 5=limit
-     * TODO: 데이터 증가 시 성능 저하(풀스캔) 우려. lat, lng에 대한 BETWEEN(bounding-box) 조건 추가 검토 필요
+     * 파라미터: 1=lat, 2=lng, 3=category(String), 4=excludePlaceId,
+     * 5=mbrPolygon, 6=radiusMeters, 7=limit
+     * TODO: 데이터 증가 시 성능 저하(풀스캔) 우려 해소를 위해 MBR 1차 필터링 적용 완료
      */
     @Query(value = "SELECT * FROM places p " +
-                   "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
-                   "ORDER BY (6371 * acos(least(1, greatest(-1, cos(radians(?1)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians(?2)) + sin(radians(?1)) * sin(radians(p.lat)))))) ASC " +
-                   "LIMIT ?5", nativeQuery = true)
-    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, int limit);
+            "WHERE p.status = 'ACTIVE' AND p.category = ?3 AND p.id != ?4 " +
+            "AND MBRContains(ST_GeomFromText(?5, 4326, 'axis-order=long-lat'), p.location) " +
+            "AND ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) <= ?6 " +
+            "ORDER BY ST_Distance_Sphere(ST_GeomFromText(CONCAT('POINT(', ?2, ' ', ?1, ')'), 4326, 'axis-order=long-lat'), p.location) ASC " +
+            "LIMIT ?7", nativeQuery = true)
+    List<Place> findNearbyPlacesByCategory(double lat, double lng, String category, Long excludePlaceId, String mbrPolygon, double radiusMeters, int limit);
 
     /**
      * 상태 기반 단건 관광지 조회

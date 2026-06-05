@@ -146,7 +146,12 @@ public class PlaceReviewService {
      * JPQL 집계 쿼리로 SUM(rating), COUNT를 한 번에 가져와 Place 도메인 메서드 호출.
      */
     private void recalculatePlaceRating(Place place) {
-        Object[] result = placeReviewRepository.sumRatingAndCount(place.getId());
+        List<Object[]> results = placeReviewRepository.sumRatingAndCount(place.getId());
+        if (results.isEmpty()) {
+            place.recalculateRating(0.0, 0);
+            return;
+        }
+        Object[] result = results.get(0);
         double totalScore = result[0] != null ? ((Number) result[0]).doubleValue() : 0.0;
         int reviewCount   = result[1] != null ? ((Number) result[1]).intValue()    : 0;
         place.recalculateRating(totalScore, reviewCount);

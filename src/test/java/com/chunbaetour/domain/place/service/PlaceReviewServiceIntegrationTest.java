@@ -242,7 +242,7 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
 
         Place updatedPlace = placeRepository.findById(testPlace.getId()).orElseThrow();
         assertThat(updatedPlace.getReviewCount()).isEqualTo(userCount);
-        assertThat(updatedPlace.getRating()).isEqualTo(5.0); // 10명이 모두 5점을 주었으므로 평균은 5.0
+        assertThat(updatedPlace.getRating()).isEqualTo(50); // 10명이 모두 5점을 주었으므로 평균은 5.0 (정수 50으로 저장)
         assertThat(placeReviewRepository.count()).isEqualTo(userCount);
     }
 }

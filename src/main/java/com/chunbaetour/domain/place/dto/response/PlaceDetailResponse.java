@@ -51,7 +51,7 @@ public record PlaceDetailResponse(
                 place.getClosedDays(),
                 place.getAdmissionFee(),
                 place.getPhone(),
-                place.getRating(),
+                place.getDisplayRating(),
                 place.getReviewCount(),
                 place.getLikeCount(),
                 isLiked

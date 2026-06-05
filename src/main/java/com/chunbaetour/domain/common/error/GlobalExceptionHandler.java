@@ -120,6 +120,7 @@ public class GlobalExceptionHandler {
                         if ("Size".equals(code)) yield ErrorCode.SEARCH_KEYWORD_TOO_LONG;
                         yield ErrorCode.INVALID_REQUEST;
                     }
+                    case "cursorPairValid" -> ErrorCode.INVALID_CURSOR_PAIR; // 추가: PlaceListRequest의 커서 페이징 쌍 검증 실패
                     default -> ErrorCode.INVALID_REQUEST;
                 })
                 .orElse(ErrorCode.INVALID_REQUEST);

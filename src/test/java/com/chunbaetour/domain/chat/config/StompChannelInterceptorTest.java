@@ -170,6 +170,7 @@ class StompChannelInterceptorTest {
         SupportRoom room = SupportRoom.builder().userId(userId).build();
         ReflectionTestUtils.setField(room, "id", id);
         ReflectionTestUtils.setField(room, "adminId", adminId);
+        ReflectionTestUtils.setField(room, "status", com.chunbaetour.domain.cs.entity.SupportRoomStatus.IN_PROGRESS);
         return room;
     }
 }

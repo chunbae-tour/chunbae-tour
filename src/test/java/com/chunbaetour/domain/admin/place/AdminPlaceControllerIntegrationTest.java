@@ -408,13 +408,16 @@ class AdminPlaceControllerIntegrationTest extends AbstractIntegrationTest {
     // ── 헬퍼 ──────────────────────────────────────────────────────────────
 
     private Place savePlace(String name, PlaceCategory category, PlaceStatus status) {
+        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
+        org.locationtech.jts.geom.Point location = gf.createPoint(new org.locationtech.jts.geom.Coordinate(126.9780, 37.5665));
+        location.setSRID(4326);
+
         Place place = Place.builder()
                 .name(name)
                 .category(category)
-                .description("설명")
+                .description("테스트 설명")
                 .address("서울 종로구")
-                .lat(new BigDecimal("37.5796"))
-                .lng(new BigDecimal("126.9770"))
+                .location(location)
                 .operatingHours("09:00-18:00")
                 .build();
         if (status == PlaceStatus.HIDDEN) {
