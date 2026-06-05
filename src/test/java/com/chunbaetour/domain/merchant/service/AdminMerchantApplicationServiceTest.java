@@ -75,6 +75,16 @@ class AdminMerchantApplicationServiceTest {
         return account;
     }
 
+    private Account merchantAccount() {
+        Account account = (Account) ReflectionTestUtils.invokeMethod(
+                Account.class, "createForSeed",
+                "merchant@example.com", "hashed", "상인닉네임",
+                com.chunbaetour.domain.auth.Role.MERCHANT,
+                com.chunbaetour.domain.auth.AccountStatus.ACTIVE);
+        ReflectionTestUtils.setField(account, "id", USER_ID);
+        return account;
+    }
+
     /** shopRepository.save stub — 저장된 Shop에 id=100L 세팅 후 반환 */
     private void givenShopSavedWithId() {
         given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
@@ -160,6 +170,24 @@ class AdminMerchantApplicationServiceTest {
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID.getMessage());
+    }
+
+    @Test
+    @DisplayName("승인 성공: 이미 MERCHANT인 계정의 새 신청서 승인 — 다중 가게 허용 (KAN-361)")
+    void approve_merchantAccount_secondShop_success() {
+        MerchantApplication app = pendingApplication();
+        Account account = merchantAccount(); // 이미 MERCHANT 역할 — promoteToMerchant 멱등 처리
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        givenShopSavedWithId();
+        given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
+
+        MerchantApplicationDetailResponse response =
+                adminMerchantApplicationService.approve(APPLICATION_ID, null);
+
+        assertThat(response).isNotNull();
+        verify(shopRepository).save(any(Shop.class));
+        verify(shopWalletRepository).save(any(ShopWallet.class));
     }
 
     @Test
