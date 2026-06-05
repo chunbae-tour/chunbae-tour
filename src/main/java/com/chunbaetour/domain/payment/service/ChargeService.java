@@ -13,6 +13,7 @@ import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
+import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,15 +54,20 @@ public class ChargeService {
         }
         String channelKey = resolveChannelKey(request.paymentMethod());
 
-        // [1.7] 기존 PENDING 주문 재활용 — 네트워크 실패 후 재시도 시 동일 ChargeResponse 반환
-        // 정상 멱등성 동작: 같은 키로 응답을 못 받은 경우 기존 주문 정보로 동일한 응답 재생성
-        Optional<PaymentOrder> existingOrder = paymentOrderRepository.findPendingByIdempotencyKey(idempotencyKey);
+        // [1.7] 멱등성 키로 기존 주문 확인
+        // - PENDING: 네트워크 실패 후 재시도 → 동일 응답 재생성 (정상 멱등성 동작)
+        // - PENDING 외: 완료/실패된 주문에 동일 키 재사용 → DB UNIQUE 위반 대신 PAY_007 반환
+        Optional<PaymentOrder> existingOrder = paymentOrderRepository.findByIdempotencyKey(idempotencyKey);
         if (existingOrder.isPresent()) {
             PaymentOrder order = existingOrder.get();
-            // 기존 주문의 결제수단으로 채널키 재해석 — request.paymentMethod()와 다를 수 있으므로 일관성 보장
-            return ChargeResponse.from(order.getOrderUid(), order.getAmount(),
-                    order.getPaymentMethod(), storeId,
-                    resolveChannelKey(order.getPaymentMethod()));
+            if (order.getStatus() == PaymentOrderStatus.PENDING) {
+                // 기존 주문의 결제수단으로 채널키 재해석 — request.paymentMethod()와 다를 수 있으므로 일관성 보장
+                return ChargeResponse.from(order.getOrderUid(), order.getAmount(),
+                        order.getPaymentMethod(), storeId,
+                        resolveChannelKey(order.getPaymentMethod()));
+            }
+            // Redis TTL(24h) 만료 후 동일 키 재사용 시 DB UNIQUE 위반 → 500 방지
+            throw new PaymentException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
         }
 
         // [2] 멱등성 키 점유 — 중복 요청 차단 (Redis 24시간 TTL)
