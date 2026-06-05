@@ -48,7 +48,14 @@ public class AccountNumberEncryptConverter implements AttributeConverter<String,
 
     @PostConstruct
     public void init() {
-        this.cachedKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException("app.encryption.account-key가 비어 있습니다.");
+        }
+        byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length != 16) {
+            throw new IllegalStateException("app.encryption.account-key는 UTF-8 기준 정확히 16바이트여야 합니다.");
+        }
+        this.cachedKeySpec = new SecretKeySpec(keyBytes, "AES");
     }
 
     /** 평문 계좌번호 → AES-GCM 암호화 후 "v2:<base64(iv+ciphertext+tag)>" 반환 */

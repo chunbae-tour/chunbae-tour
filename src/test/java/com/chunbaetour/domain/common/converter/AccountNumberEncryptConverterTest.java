@@ -70,6 +70,28 @@ class AccountNumberEncryptConverterTest {
     }
 
     @Test
+    @DisplayName("init() — 빈 키 설정 시 IllegalStateException 발생")
+    void init_blankKey_throwsIllegalStateException() {
+        AccountNumberEncryptConverter c = new AccountNumberEncryptConverter();
+        ReflectionTestUtils.setField(c, "secretKey", "");
+
+        assertThatThrownBy(c::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("비어 있습니다");
+    }
+
+    @Test
+    @DisplayName("init() — 16바이트 미달 키 설정 시 IllegalStateException 발생")
+    void init_shortKey_throwsIllegalStateException() {
+        AccountNumberEncryptConverter c = new AccountNumberEncryptConverter();
+        ReflectionTestUtils.setField(c, "secretKey", "short");
+
+        assertThatThrownBy(c::init)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("16바이트");
+    }
+
+    @Test
     @DisplayName("잘못된 키로 복호화 시 IllegalStateException 발생")
     void wrongKey_decryptThrowsIllegalStateException() {
         String encrypted = converter.convertToDatabaseColumn("1234567890");
