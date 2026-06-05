@@ -39,13 +39,13 @@ public class FreePostService {
     }
 
     public FreePostGetOneResponse findById(Long postId) {
-        FreePost post = findActivePost(postId);
+        FreePost post = findActivePostWithImages(postId);
         Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
         return FreePostGetOneResponse.of(post, author);
     }
 
     public CursorPageResponse<FreePostGetListResponse> findAll(String cursor, int size) {
-        Long cursorId = decodeCursor(cursor);
+        Long cursorId = CursorUtils.decodeSafe(cursor);
         List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = posts.size() > size;
@@ -68,7 +68,7 @@ public class FreePostService {
 
     @Transactional
     public FreePostGetOneResponse update(Long accountId, Long postId, FreePostUpdateRequest request) {
-        FreePost post = findActivePost(postId);
+        FreePost post = findActivePostWithImages(postId);
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
@@ -91,17 +91,15 @@ public class FreePostService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
     }
 
+    private FreePost findActivePostWithImages(Long postId) {
+        return postRepository.findByIdWithImages(postId)
+                .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
+    }
+
     private Account findAccount(Long accountId) {
         return accountRepository.findById(accountId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
     }
 
-    private Long decodeCursor(String cursor) {
-        if (cursor == null) return null;
-        try {
-            return CursorUtils.decode(cursor);
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.INVALID_CURSOR);
-        }
-    }
 }
