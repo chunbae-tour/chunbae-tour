@@ -226,10 +226,15 @@ public class MarketSyncService {
 
         int inserted = 0, updated = 0, skipped = 0;
         for (MarketApiItem item : items) {
-            switch (batchService.upsertItem(item)) {
-                case INSERTED -> inserted++;
-                case UPDATED -> updated++;
-                case SKIPPED -> skipped++;
+            try {
+                switch (batchService.upsertItem(item)) {
+                    case INSERTED -> inserted++;
+                    case UPDATED -> updated++;
+                    case SKIPPED -> skipped++;
+                }
+            } catch (Exception e) {
+                log.warn("[MarketSync] 아이템 건너뜀 — name={}, error={}", item.getMrktNm(), e.getMessage());
+                skipped++;
             }
         }
         return new SyncResult(inserted, updated, skipped);
