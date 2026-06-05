@@ -102,6 +102,10 @@ public class Shop extends BaseEntity {
     @Column(name = "place_id")
     private Long placeId;
 
+    // 소속 전통시장 — 선택 연결. null이면 시장 미연결 가게 (KAN-220)
+    @Column(name = "traditional_market_id")
+    private Long traditionalMarketId;
+
     // 낙관적 락 — 동시 PATCH 요청 시 last-write-wins 방지, 충돌 시 CONCURRENT_UPDATE(409)
     @Version
     private Long version;
@@ -109,7 +113,7 @@ public class Shop extends BaseEntity {
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,
             String address, BigDecimal lat, BigDecimal lng, String phone, String description,
-            Long placeId) {
+            Long placeId, Long traditionalMarketId) {
         this.userId = userId;
         this.applicationId = applicationId;
         this.shopName = shopName;
@@ -120,6 +124,7 @@ public class Shop extends BaseEntity {
         this.phone = phone;
         this.description = description;
         this.placeId = placeId;
+        this.traditionalMarketId = traditionalMarketId;
         this.status = ShopStatus.ACTIVE;
     }
 

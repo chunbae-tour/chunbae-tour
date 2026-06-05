@@ -68,7 +68,14 @@ public abstract class AbstractIntegrationTest {
     private static final GenericContainer<?> REDIS;
 
     static {
-        MYSQL = new MySQLContainer<>(DockerImageName.parse("mysql:8.4"));
+        // 싱글톤 MySQL 컨테이너를 모든 통합 테스트가 공유한다. 클래스별 Spring 컨텍스트가 각자 HikariCP 풀을
+        // 열고, Spring TestContext 캐시가 컨텍스트를 닫지 않고 유지하므로 누적 커넥션 합이 MySQL 기본
+        // max_connections(151)를 초과할 수 있다. 그러면 'Too many connections' → entityManagerFactory 생성
+        // 실패 → 그 시점에 처음 로드되던(무관한) 테스트 클래스의 ApplicationContext가 비결정적으로 깨진다(flaky).
+        // 컨테이너 한도를 넉넉히 올려 누적을 흡수한다 — 풀 크기는 건드리지 않으므로 동시성 테스트
+        // (예: JoinRequestConcurrencyTest의 5-thread 동시 트랜잭션)의 동시 커넥션 확보에 영향이 없다.
+        MYSQL = new MySQLContainer<>(DockerImageName.parse("mysql:8.4"))
+                .withCommand("--max-connections=500");
         MYSQL.start();
 
         REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
@@ -140,5 +147,9 @@ public abstract class AbstractIntegrationTest {
         registry.add("portone.channel.toss-pay", () -> "test-channel-toss-pay");
         registry.add("portone.channel.foreign-card", () -> "test-channel-foreign-card");
         registry.add("portone.webhook-secret", () -> "test-only-webhook-secret");
+
+        // 공공데이터포털: 테스트는 외부 API 호출 안 함 (mock/stub 처리)
+        registry.add("public-data.market.url", () -> "https://api.data.go.kr/openapi/tn_pubr_public_trdit_mrkt_api");
+        registry.add("public-data.market.key", () -> "test-only-public-data-key");
     }
 }
