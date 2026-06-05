@@ -77,9 +77,9 @@ public class ShopWallet extends BaseEntity {
         if (amount <= 0) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-        // 정상 운영에서 발생 불가한 금액 — 데이터 이상 또는 비정상 입력
+        // 정상 운영에서 발생 불가한 잔액 오버플로우 — 데이터 정합성 이상, 서버 측 오류로 분류
         if (Long.MAX_VALUE - this.balance < amount) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
         this.balance += amount;
     }

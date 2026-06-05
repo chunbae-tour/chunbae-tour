@@ -2,6 +2,7 @@ package com.chunbaetour.domain.common.secret;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -279,8 +280,10 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
             violations.add("ACCOUNT_ENCRYPTION_KEY: 비어있음 (prod는 AES-128 암호화 키 필수)");
             return;
         }
-        if (key.length() != AES_128_KEY_LENGTH) {
-            violations.add("ACCOUNT_ENCRYPTION_KEY: 정확히 16자 필요 (AES-128) — 현재 " + key.length() + "자");
+        int keyByteLength = key.getBytes(StandardCharsets.UTF_8).length;
+        if (keyByteLength != AES_128_KEY_LENGTH) {
+            violations.add("ACCOUNT_ENCRYPTION_KEY: UTF-8 기준 정확히 16바이트 필요 (AES-128) — 현재 "
+                    + keyByteLength + "바이트");
         }
         if (DEV_DEFAULT_ACCOUNT_KEY.equals(key)) {
             violations.add("ACCOUNT_ENCRYPTION_KEY: 로컬 개발 기본값 차단 — prod 전용 키로 교체 필요");

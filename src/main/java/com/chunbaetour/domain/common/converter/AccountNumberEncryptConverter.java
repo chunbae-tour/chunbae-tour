@@ -3,61 +3,86 @@ package com.chunbaetour.domain.common.converter;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 정산 계좌번호 AES-128 암호화 컨버터.
+ * 정산 계좌번호 AES-128-GCM 암호화 컨버터.
  *
  * <p>DB 덤프·내부 직접 조회로 계좌번호가 노출되는 것을 방지한다.
- * 저장 시 암호문(Base64), 조회 시 자동 복호화 — 서비스 코드 변경 없음.
+ * 저장 시 "v2:<base64(iv+ciphertext+tag)>", 조회 시 자동 복호화 — 서비스 코드 변경 없음.
  *
- * <p>키 관리: {@code ACCOUNT_ENCRYPTION_KEY} 환경변수로 주입. 반드시 16자(AES-128).
+ * <p>포맷: {@code v2:<base64>} — IV(12바이트) + 암호문 + GCM 태그(16바이트)를 합쳐 Base64 인코딩.
+ * ECB 대비 무작위 IV로 동일 평문도 매번 다른 암호문 저장, 태그로 무결성 보장.
+ *
+ * <p>레거시 호환: {@code v2:} prefix 없는 값은 평문으로 간주하고 그대로 반환 (점진 전환).
+ * 다음 updateAccount() 호출 시 GCM 암호화되어 재저장됨.
+ *
+ * <p>키 관리: {@code ACCOUNT_ENCRYPTION_KEY} 환경변수로 주입. UTF-8 기준 반드시 16바이트(AES-128).
  * 운영 배포 시 환경변수로 교체 필수 — 기본값은 로컬 개발 전용.
- *
- * <p>기존 평문 데이터가 있는 경우 복호화 실패 → 별도 마이그레이션 스크립트 필요.
  */
 @Converter
 @Component
 public class AccountNumberEncryptConverter implements AttributeConverter<String, String> {
 
-    private static final String ALGORITHM = "AES/ECB/PKCS5Padding";
+    private static final String ALGORITHM = "AES/GCM/NoPadding";
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int GCM_TAG_BITS = 128;
+    // v2: prefix — 포맷 버전 식별자. 레거시 평문(prefix 없음)과 구분.
+    private static final String CIPHER_PREFIX = "v2:";
 
     @Value("${app.encryption.account-key}")
     private String secretKey;
 
-    /** 평문 계좌번호 → AES 암호화 후 Base64 인코딩 */
+    /** 평문 계좌번호 → AES-GCM 암호화 후 "v2:<base64(iv+ciphertext+tag)>" 반환 */
     @Override
     public String convertToDatabaseColumn(String plainText) {
         if (plainText == null) {
             return null;
         }
         try {
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            new SecureRandom().nextBytes(iv);
             SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
             Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec);
-            return Base64.getEncoder().encodeToString(
-                    cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8)));
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            byte[] encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
+            byte[] combined = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, combined, 0, iv.length);
+            System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
+            return CIPHER_PREFIX + Base64.getEncoder().encodeToString(combined);
         } catch (Exception e) {
             throw new IllegalStateException("계좌번호 암호화 실패", e);
         }
     }
 
-    /** Base64 암호문 → AES 복호화 후 평문 반환 */
+    /**
+     * DB 값 → 평문 계좌번호 반환.
+     * "v2:" prefix 있음 → GCM 복호화. prefix 없음 → 레거시 평문 그대로 반환.
+     */
     @Override
-    public String convertToEntityAttribute(String cipherText) {
-        if (cipherText == null) {
+    public String convertToEntityAttribute(String stored) {
+        if (stored == null) {
             return null;
         }
+        if (!stored.startsWith(CIPHER_PREFIX)) {
+            // 레거시 평문 — updateAccount() 다음 호출 시 암호화되어 재저장됨
+            return stored;
+        }
         try {
+            byte[] combined = Base64.getDecoder().decode(stored.substring(CIPHER_PREFIX.length()));
+            byte[] iv = Arrays.copyOfRange(combined, 0, GCM_IV_LENGTH);
+            byte[] encrypted = Arrays.copyOfRange(combined, GCM_IV_LENGTH, combined.length);
             SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
             Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, keySpec);
-            return new String(
-                    cipher.doFinal(Base64.getDecoder().decode(cipherText)), StandardCharsets.UTF_8);
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new IllegalStateException("계좌번호 복호화 실패", e);
         }

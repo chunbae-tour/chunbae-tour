@@ -366,7 +366,7 @@ class SecretValidatorTest {
             assertThatThrownBy(() -> validator.validate(env))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
-                    .hasMessageContaining("16자");
+                    .hasMessageContaining("16바이트");
         }
 
         @Test
@@ -375,7 +375,7 @@ class SecretValidatorTest {
             assertThatThrownBy(() -> validator.validate(env))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
-                    .hasMessageContaining("16자");
+                    .hasMessageContaining("16바이트");
         }
 
         @Test
