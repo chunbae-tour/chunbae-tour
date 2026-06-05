@@ -24,9 +24,11 @@ import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import com.chunbaetour.domain.payment.type.PaymentMethod;
+import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -157,6 +159,43 @@ class ChargeServiceTest {
                 .isInstanceOf(RuntimeException.class);
 
         verify(idempotencyService).unmark("key");
+    }
+
+    @Test
+    @DisplayName("COMPLETED 주문의 멱등성 키 재사용 → PAY_007 (Redis TTL 만료 후 DB UNIQUE 위반 500 방지)")
+    void charge_completedOrderSameIdempotencyKey_throwsPAY_007() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
+        // Redis TTL 만료 후 동일 키로 재요청 — COMPLETED 주문이 DB에 존재
+        PaymentOrder completedOrder = PaymentOrder.create(
+                "order-uid", 1L, 10_000L, "used-key", PaymentMethod.CARD, "pg-order");
+        ReflectionTestUtils.setField(completedOrder, "status", PaymentOrderStatus.COMPLETED);
+        given(paymentOrderRepository.findByIdempotencyKey("used-key")).willReturn(Optional.of(completedOrder));
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "used-key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
+
+        verify(idempotencyService, never()).checkAndMark(anyString());
+        verify(paymentOrderRepository, never()).save(any(PaymentOrder.class));
+    }
+
+    @Test
+    @DisplayName("PENDING 주문 멱등성 키 — 기존 주문 재활용 (재시도 응답)")
+    void charge_pendingOrderSameIdempotencyKey_returnsExistingOrder() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card",
+                "kakao-pay", "channel-kakao", "toss-pay", "channel-toss", "foreign-card", "channel-foreign"));
+        PaymentOrder pendingOrder = PaymentOrder.create(
+                "existing-uid", 1L, 10_000L, "retry-key", PaymentMethod.CARD, "pg-order");
+        given(paymentOrderRepository.findByIdempotencyKey("retry-key")).willReturn(Optional.of(pendingOrder));
+
+        ChargeResponse response = chargeService.charge(1L, "retry-key", new ChargeRequest(10_000L, PaymentMethod.CARD));
+
+        assertThat(response.orderUid()).isEqualTo("existing-uid");
+        verify(idempotencyService, never()).checkAndMark(anyString());
+        verify(paymentOrderRepository, never()).save(any(PaymentOrder.class));
     }
 
     @Test
