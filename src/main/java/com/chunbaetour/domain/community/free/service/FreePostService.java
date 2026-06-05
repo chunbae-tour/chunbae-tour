@@ -39,9 +39,7 @@ public class FreePostService {
     }
 
     public FreePostGetOneResponse findById(Long postId) {
-        FreePost post = postRepository.findByIdWithImages(postId)
-                .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
+        FreePost post = findActivePostWithImages(postId);
         Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
         return FreePostGetOneResponse.of(post, author);
     }
@@ -70,9 +68,7 @@ public class FreePostService {
 
     @Transactional
     public FreePostGetOneResponse update(Long accountId, Long postId, FreePostUpdateRequest request) {
-        FreePost post = postRepository.findByIdWithImages(postId)
-                .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
+        FreePost post = findActivePostWithImages(postId);
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
@@ -91,6 +87,12 @@ public class FreePostService {
 
     private FreePost findActivePost(Long postId) {
         return postRepository.findById(postId)
+                .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
+    }
+
+    private FreePost findActivePostWithImages(Long postId) {
+        return postRepository.findByIdWithImages(postId)
                 .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
     }

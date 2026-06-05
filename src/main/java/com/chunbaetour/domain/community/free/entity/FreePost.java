@@ -41,7 +41,7 @@ public class FreePost extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    // size=100: 컨트롤러 @Max(100)과 맞춤 — 페이지 크기 변경 시 함께 조정 필요
+    // 페이지 최대 크기 변경 시 함께 조정 필요
     @BatchSize(size = 100)
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(name = "free_post_images", joinColumns = @JoinColumn(name = "post_id"))
