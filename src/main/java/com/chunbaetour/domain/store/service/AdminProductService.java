@@ -27,6 +27,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class AdminProductService {
 
     private static final String CACHE_KEY_PREFIX = "product:";
+    private static final String STOCK_KEY_PREFIX = "stock:";
 
     private final ProductRepository productRepository;
     private final StringRedisTemplate redisTemplate;
@@ -44,6 +45,8 @@ public class AdminProductService {
                 request.price(), request.originalPrice(), request.stock(),
                 imageUrlsJson, request.merchantName(), request.validityDays(), request.maxPerPerson()
         ));
+        // 상품 등록 시 Redis 재고 키 초기화 — 구매 1단계(Redis DECR) 선점 활성화
+        setStockKeyAfterCommit(product.getId(), product.getStock());
         List<String> imageUrls = request.imageUrls() != null ? request.imageUrls() : List.of();
         return productMapper.toDetail(product, imageUrls);
     }
@@ -76,6 +79,10 @@ public class AdminProductService {
                 request.maxPerPerson(), request.status()
         );
         evictCacheAfterCommit(productId);
+        // 재고 변경 시 Redis 재고 키도 갱신 — 구매 1단계 Redis DECR 정합성 유지
+        if (request.stock() != null) {
+            setStockKeyAfterCommit(productId, product.getStock());
+        }
         List<String> imageUrls = request.imageUrls() != null
                 ? request.imageUrls()
                 : productMapper.parseImageUrls(product.getImageUrls());
@@ -92,6 +99,8 @@ public class AdminProductService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         product.softDelete();
         evictCacheAfterCommit(productId);
+        // HIDDEN 처리 시 Redis 재고 키 삭제 — 이후 구매 경로 진입 차단
+        deleteStockKeyAfterCommit(productId);
         return productMapper.toDetail(product);
     }
 
@@ -118,6 +127,48 @@ public class AdminProductService {
             redisTemplate.delete(CACHE_KEY_PREFIX + productId);
         } catch (Exception e) {
             log.warn("[관리자 상품] 캐시 무효화 실패 (productId: {})", productId, e);
+        }
+    }
+
+    private void setStockKeyAfterCommit(Long productId, int stock) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    setStockKey(productId, stock);
+                }
+            });
+        } else {
+            setStockKey(productId, stock);
+        }
+    }
+
+    private void setStockKey(Long productId, int stock) {
+        try {
+            redisTemplate.opsForValue().set(STOCK_KEY_PREFIX + productId, String.valueOf(stock));
+        } catch (Exception e) {
+            log.warn("[관리자 상품] Redis 재고 키 세팅 실패 (productId: {})", productId, e);
+        }
+    }
+
+    private void deleteStockKeyAfterCommit(Long productId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deleteStockKey(productId);
+                }
+            });
+        } else {
+            deleteStockKey(productId);
+        }
+    }
+
+    private void deleteStockKey(Long productId) {
+        try {
+            redisTemplate.delete(STOCK_KEY_PREFIX + productId);
+        } catch (Exception e) {
+            log.warn("[관리자 상품] Redis 재고 키 삭제 실패 (productId: {})", productId, e);
         }
     }
 }

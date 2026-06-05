@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
@@ -35,6 +37,8 @@ class AdminProductServiceTest {
     private ProductRepository productRepository;
     @Mock
     private StringRedisTemplate redisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOps;
 
     private AdminProductService adminProductService;
 
@@ -42,6 +46,8 @@ class AdminProductServiceTest {
     void setUp() {
         ProductMapper productMapper = new ProductMapper(new ObjectMapper());
         adminProductService = new AdminProductService(productRepository, redisTemplate, productMapper);
+        // 비트랜잭션 컨텍스트에서 즉시 실행되는 Redis 경로 stub — 미사용 시 lenient 처리
+        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
     private Product createProduct(Long id, int stock, ProductStatus status) {
@@ -159,5 +165,43 @@ class AdminProductServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("상품 등록 — Redis 재고 키(stock:{id}) 초기화")
+    void createProduct_setsRedisStockKey() {
+        AdminProductCreateRequest req = new AdminProductCreateRequest(
+                "테스트", "설명", "COUPON", 2000L, 3000L, 10,
+                null, "상인", 30, 5);
+        Product saved = createProduct(1L, 10, ProductStatus.ON_SALE);
+        given(productRepository.save(any(Product.class))).willReturn(saved);
+
+        adminProductService.createProduct(req);
+
+        then(valueOps).should().set("stock:1", "10");
+    }
+
+    @Test
+    @DisplayName("상품 삭제(HIDDEN) — Redis 재고 키 삭제")
+    void deleteProduct_deletesRedisStockKey() {
+        Product product = createProduct(1L, 10, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+
+        adminProductService.deleteProduct(1L);
+
+        then(redisTemplate).should().delete("stock:1");
+    }
+
+    @Test
+    @DisplayName("상품 수정 재고 변경 — Redis 재고 키 갱신")
+    void updateProduct_stockChanged_updatesRedisStockKey() {
+        Product product = createProduct(1L, 10, ProductStatus.ON_SALE);
+        AdminProductUpdateRequest req = new AdminProductUpdateRequest(
+                null, null, null, null, null, 20, null, null, null, null, null);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+
+        adminProductService.updateProduct(1L, req);
+
+        then(valueOps).should().set("stock:1", "20");
     }
 }
