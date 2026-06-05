@@ -330,6 +330,7 @@ public class PlaceService {
      * 카카오 로컬 API 활용
      * 응답은 Redis에 30분간 캐싱됨 (CacheConfig: nearby-category 설정)
      */
+    @Transactional(readOnly = true)
     public NearbyCategoryPlacesResponse findNearbyCategoryPlaces(Long placeId, NearbyCategory category, int radius) {
         Place place = placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
@@ -360,25 +361,28 @@ public class PlaceService {
             hasNext = !kakaoResponse.meta().isEnd();
         }
 
-        List<NearbyCategoryPlacesResponse.NearbyCategoryItem> items;
-        try {
-            items = kakaoResponse.documents().stream()
-                    .map(doc -> new NearbyCategoryPlacesResponse.NearbyCategoryItem(
-                            doc.id(),
-                            doc.placeName(),
-                            doc.categoryName(),
-                            doc.phone(),
-                            doc.addressName(),
-                            doc.roadAddressName(),
-                            Double.parseDouble(doc.y()), // y is lat
-                            Double.parseDouble(doc.x()), // x is lng
-                            doc.placeUrl(),
-                            doc.distance() != null && !doc.distance().isBlank() ? Integer.parseInt(doc.distance()) : 0
-                    )).toList();
-        } catch (NumberFormatException e) {
-            log.error("Kakao 카테고리 응답 파싱 실패", e);
-            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
-        }
+        List<NearbyCategoryPlacesResponse.NearbyCategoryItem> items = kakaoResponse.documents().stream()
+                .map(doc -> {
+                    try {
+                        return new NearbyCategoryPlacesResponse.NearbyCategoryItem(
+                                doc.id(),
+                                doc.placeName(),
+                                doc.categoryName(),
+                                doc.phone(),
+                                doc.addressName(),
+                                doc.roadAddressName(),
+                                Double.parseDouble(doc.y()), // y is lat
+                                Double.parseDouble(doc.x()), // x is lng
+                                doc.placeUrl(),
+                                doc.distance() != null && !doc.distance().isBlank() ? Integer.parseInt(doc.distance()) : 0
+                        );
+                    } catch (NumberFormatException e) {
+                        log.warn("Kakao 카테고리 응답 개별 파싱 실패 (스킵 처리): id={}, x={}, y={}", doc.id(), doc.x(), doc.y(), e);
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
 
         NearbyCategoryPlacesResponse response = new NearbyCategoryPlacesResponse(items, hasNext);
         
@@ -392,7 +396,7 @@ public class PlaceService {
         return response;
     }
 
-    public int normalizeRadius(int radius) {
+    private int normalizeRadius(int radius) {
         if (radius <= 500) return 500;
         if (radius <= 1000) return 1000;
         if (radius <= 3000) return 3000;
