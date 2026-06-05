@@ -1,7 +1,8 @@
 package com.chunbaetour.domain.place;
 
-import com.chunbaetour.domain.place.type.PlaceCategory;
-import com.chunbaetour.domain.place.type.PlaceStatus;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -12,14 +13,19 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
+
+import org.locationtech.jts.geom.Point;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
+
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
 @Table(
@@ -29,9 +35,7 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
         // 운영자 목록(searchForAdmin)은 status<>DELETED 필터 + id DESC 정렬 → (status, id) 복합으로 filesort 회피.
         // 기존 단일 idx_places_status는 본 복합의 leftmost prefix라 중복 → 제거(KAN-209 S07 리뷰 G).
         @Index(name = "idx_places_status_id", columnList = "status, id"),
-        @Index(name = "idx_places_lat_lng",  columnList = "lat, lng"),
-        // SA ERD 기준 FULLTEXT INDEX idx_places_name — 키워드 검색용
-        // JPA @Index는 FULLTEXT 미지원: schema.sql 또는 migration에서 직접 생성 필요
+        // 공간 인덱스는 JPA @Index로 정의할 수 없으므로 DB 마이그레이션(V202606041400)에서 직접 생성
         @Index(name = "idx_places_name",     columnList = "name")
     }
 )
@@ -57,13 +61,9 @@ public class Place {
     @Column(nullable = false, length = 255)
     private String address;
 
-    /** 위도 — DECIMAL(10,7): 소수점 7자리 (정밀도 약 1cm) */
-    @Column(nullable = false, precision = 10, scale = 7)
-    private java.math.BigDecimal lat;
-
-    /** 경도 — DECIMAL(10,7) */
-    @Column(nullable = false, precision = 10, scale = 7)
-    private java.math.BigDecimal lng;
+    /** 공간 인덱싱을 위한 JTS Point 객체 (경도, 위도) SRID 4326 */
+    @Column(nullable = false, columnDefinition = "POINT SRID 4326")
+    private Point location;
 
     @Column(name = "thumbnail_url", length = 500)
     private String thumbnailUrl;
@@ -84,9 +84,9 @@ public class Place {
     @Column(name = "admission_fee", length = 50)
     private String admissionFee;
 
-    /** 평균 별점 — 리뷰 작성/삭제 시 재계산 */
+    /** 평균 별점 — 리뷰 작성/삭제 시 재계산 (소수점 1자리를 정수로 저장. 예: 4.5 -> 45) */
     @Column(nullable = false)
-    private float rating = 0f;
+    private int rating = 0;
 
     @Column(name = "review_count", nullable = false)
     private int reviewCount = 0;
@@ -117,7 +117,7 @@ public class Place {
 
     @Builder
     private Place(String name, PlaceCategory category, String description,
-                  String address, java.math.BigDecimal lat, java.math.BigDecimal lng,
+                  String address, Point location, BigDecimal lat, BigDecimal lng,
                   String thumbnailUrl, String imageUrls, String operatingHours,
                   String closedDays, String phone, String admissionFee, String tags) {
         if (name == null || name.isBlank()) {
@@ -129,19 +129,23 @@ public class Place {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("주소는 필수입니다.");
         }
-        if (lat == null || lat.compareTo(new java.math.BigDecimal("-90")) < 0 || lat.compareTo(new java.math.BigDecimal("90")) > 0) {
-            throw new IllegalArgumentException("위도는 -90에서 90 사이여야 합니다.");
+        
+        Point finalLocation = location;
+        if (finalLocation != null) {
+            finalLocation.setSRID(4326);
+        } else if (lat != null && lng != null) {
+            finalLocation = com.chunbaetour.domain.place.util.LocationUtils.createPoint(lat, lng);
         }
-        if (lng == null || lng.compareTo(new java.math.BigDecimal("-180")) < 0 || lng.compareTo(new java.math.BigDecimal("180")) > 0) {
-            throw new IllegalArgumentException("경도는 -180에서 180 사이여야 합니다.");
+        
+        if (finalLocation == null) {
+            throw new IllegalArgumentException("좌표 위치는 필수입니다.");
         }
         
         this.name = name;
         this.category = category;
         this.description = description;
         this.address = address;
-        this.lat = lat;
-        this.lng = lng;
+        this.location = finalLocation;
         this.thumbnailUrl = thumbnailUrl;
         this.imageUrls = imageUrls;
         this.operatingHours = operatingHours;
@@ -174,7 +178,7 @@ public class Place {
             throw new IllegalArgumentException("리뷰 점수나 개수는 음수가 될 수 없습니다.");
         }
         this.reviewCount = newReviewCount;
-        this.rating = newReviewCount == 0 ? 0f : (float) (newTotalScore / newReviewCount);
+        this.rating = newReviewCount == 0 ? 0 : (int) Math.round((newTotalScore / newReviewCount) * 10);
     }
 
     /** 관리자: 관광지 숨김 처리 */
@@ -190,5 +194,19 @@ public class Place {
     /** 관리자: 관광지 다시 노출 */
     public void activate() {
         this.status = PlaceStatus.ACTIVE;
+    }
+
+    // ── 하위 호환성 헬퍼 ────────────────────────────────────────────────
+    public BigDecimal getLat() {
+        return location != null ? BigDecimal.valueOf(location.getY()) : null;
+    }
+
+    public BigDecimal getLng() {
+        return location != null ? BigDecimal.valueOf(location.getX()) : null;
+    }
+
+    /** UI 표시용 float 평점 반환 (예: 45 -> 4.5f) */
+    public float getDisplayRating() {
+        return rating / 10.0f;
     }
 }

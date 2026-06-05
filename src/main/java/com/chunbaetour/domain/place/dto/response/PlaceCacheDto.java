@@ -42,7 +42,7 @@ public record PlaceCacheDto(
                 place.getClosedDays(),
                 place.getAdmissionFee(),
                 place.getPhone(),
-                place.getRating(),
+                place.getDisplayRating(),
                 place.getReviewCount(),
                 place.getLikeCount()
         );
@@ -68,7 +68,7 @@ public record PlaceCacheDto(
                 place.getClosedDays(),
                 place.getAdmissionFee(),
                 place.getPhone(),
-                place.getRating(),
+                place.getDisplayRating(),
                 place.getReviewCount(),
                 likeCount
         );
