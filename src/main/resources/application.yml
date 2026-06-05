@@ -174,9 +174,9 @@ report:
 
 app:
   encryption:
-    # 정산 계좌번호 AES-128 암호화 키 — 반드시 정확히 16자(AES-128 key size).
-    # 운영 배포 시 ACCOUNT_ENCRYPTION_KEY 환경변수로 교체 필수. 기본값은 로컬 개발 전용.
-    account-key: ${ACCOUNT_ENCRYPTION_KEY:chunbae16charkey}
+    # 정산 계좌번호 AES-128 암호화 키 — 반드시 정확히 16바이트(AES-128 key size).
+    # ACCOUNT_ENCRYPTION_KEY 환경변수 미설정 시 Spring 부팅 실패 — 기본값 없음.
+    account-key: ${ACCOUNT_ENCRYPTION_KEY}
 
 google:
   translation:

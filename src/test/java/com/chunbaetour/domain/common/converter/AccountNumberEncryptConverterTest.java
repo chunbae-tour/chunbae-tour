@@ -19,6 +19,7 @@ class AccountNumberEncryptConverterTest {
     void setUp() {
         converter = new AccountNumberEncryptConverter();
         ReflectionTestUtils.setField(converter, "secretKey", TEST_KEY);
+        converter.init();
     }
 
     @Test
@@ -75,6 +76,7 @@ class AccountNumberEncryptConverterTest {
 
         AccountNumberEncryptConverter wrongKeyConverter = new AccountNumberEncryptConverter();
         ReflectionTestUtils.setField(wrongKeyConverter, "secretKey", "WrongKey12345678");
+        wrongKeyConverter.init();
 
         assertThatThrownBy(() -> wrongKeyConverter.convertToEntityAttribute(encrypted))
                 .isInstanceOf(IllegalStateException.class)

@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.common.converter;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import java.nio.charset.StandardCharsets;
@@ -36,9 +37,19 @@ public class AccountNumberEncryptConverter implements AttributeConverter<String,
     private static final int GCM_TAG_BITS = 128;
     // v2: prefix — 포맷 버전 식별자. 레거시 평문(prefix 없음)과 구분.
     private static final String CIPHER_PREFIX = "v2:";
+    // OS entropy 소모 최소화 — 인스턴스 생성 비용이 높으므로 클래스 레벨 공유
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Value("${app.encryption.account-key}")
     private String secretKey;
+
+    // 매 호출마다 SecretKeySpec 재생성 방지 — secretKey는 부팅 후 불변
+    private SecretKeySpec cachedKeySpec;
+
+    @PostConstruct
+    public void init() {
+        this.cachedKeySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
+    }
 
     /** 평문 계좌번호 → AES-GCM 암호화 후 "v2:<base64(iv+ciphertext+tag)>" 반환 */
     @Override
@@ -48,10 +59,9 @@ public class AccountNumberEncryptConverter implements AttributeConverter<String,
         }
         try {
             byte[] iv = new byte[GCM_IV_LENGTH];
-            new SecureRandom().nextBytes(iv);
-            SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
+            SECURE_RANDOM.nextBytes(iv);
             Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            cipher.init(Cipher.ENCRYPT_MODE, cachedKeySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
             byte[] encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
             byte[] combined = new byte[iv.length + encrypted.length];
             System.arraycopy(iv, 0, combined, 0, iv.length);
@@ -79,9 +89,8 @@ public class AccountNumberEncryptConverter implements AttributeConverter<String,
             byte[] combined = Base64.getDecoder().decode(stored.substring(CIPHER_PREFIX.length()));
             byte[] iv = Arrays.copyOfRange(combined, 0, GCM_IV_LENGTH);
             byte[] encrypted = Arrays.copyOfRange(combined, GCM_IV_LENGTH, combined.length);
-            SecretKeySpec keySpec = new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "AES");
             Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            cipher.init(Cipher.DECRYPT_MODE, cachedKeySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new IllegalStateException("계좌번호 복호화 실패", e);
