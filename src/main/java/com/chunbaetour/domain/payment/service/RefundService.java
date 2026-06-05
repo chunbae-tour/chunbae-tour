@@ -20,8 +20,6 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -34,7 +32,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class RefundService {
 
     private static final int REFUND_PERIOD_DAYS = 7;
-    private static final String UK_REFUNDS_PAYMENT_ORDER_ID = "uk_refunds_payment_order_id";
     private static final String PARTIAL_REFUND_REJECT_REASON = "부분환불은 불가합니다";
 
     private final PaymentOrderRepository paymentOrderRepository;
@@ -106,31 +103,19 @@ public class RefundService {
         Wallet wallet = walletRepository.findByUserId(order.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.WALLET_NOT_FOUND));
 
-        try {
-            Refund refund = Refund.create(order.getId(), userId, order.getAmount(), reason);
+        // PaymentOrder 비관적 락으로 직렬화됨 — 동시 요청이 이 시점에 도달할 수 없으므로 UK 위반 불가
+        Refund refund = Refund.create(order.getId(), userId, order.getAmount(), reason);
 
-            if (wallet.getBalance() < order.getAmount()) {
-                // 부분 사용 감지 → 즉시 REJECTED 저장, 이력 보존
-                refund.reject(PARTIAL_REFUND_REJECT_REASON);
-                refundRepository.saveAndFlush(refund);
-                return refund; // REJECTED 상태
-            }
-
-            // 전액 잔액 — PENDING 접수
+        if (wallet.getBalance() < order.getAmount()) {
+            // 부분 사용 감지 → 즉시 REJECTED 저장, 이력 보존
+            refund.reject(PARTIAL_REFUND_REJECT_REASON);
             refundRepository.saveAndFlush(refund);
-            return refund; // PENDING 상태
-        } catch (DataIntegrityViolationException e) {
-            // 동시 요청 UK 위반 → 중복 요청으로 변환
-            Throwable cause = e;
-            while (cause != null) {
-                if (cause instanceof ConstraintViolationException cve
-                        && UK_REFUNDS_PAYMENT_ORDER_ID.equalsIgnoreCase(cve.getConstraintName())) {
-                    throw new BusinessException(ErrorCode.DUPLICATE_REFUND_REQUEST);
-                }
-                cause = cause.getCause();
-            }
-            throw e;
+            return refund; // REJECTED 상태
         }
+
+        // 전액 잔액 — PENDING 접수
+        refundRepository.saveAndFlush(refund);
+        return refund; // PENDING 상태
     }
 
     /**

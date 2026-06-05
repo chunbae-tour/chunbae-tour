@@ -7,6 +7,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import org.mockito.ArgumentCaptor;
+
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest;
@@ -36,9 +38,9 @@ class MerchantApplicationServiceTest {
 
     private static final Long USER_ID = 1L;
 
-    // NTS 정식 알고리즘 기준 유효한 번호: 101-81-34618 (체크섬=8)
-    private static final String VALID_BIZ_NUMBER = "101-81-34618";
-    private static final String VALID_BIZ_NORMALIZED = "1018134618";
+    // NTS 정식 알고리즘 기준 유효한 번호: 124-81-00998 (삼성전자 공개 사업자번호, 체크섬=8)
+    private static final String VALID_BIZ_NUMBER = "124-81-00998";
+    private static final String VALID_BIZ_NORMALIZED = "1248100998";
 
     // 사용자 중복 신청 체크: PENDING만 (APPROVED는 다중 가게 허용)
     private static final List<MerchantApplicationStatus> USER_PENDING_STATUSES =
@@ -98,8 +100,8 @@ class MerchantApplicationServiceTest {
         given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, USER_PENDING_STATUSES))
                 .willReturn(false);
 
-        // 101-81-34619: 마지막 자리 9 (올바른 체크섬은 8)
-        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", "101-81-34619")))
+        // 124-81-00997: 마지막 자리 7 (올바른 체크섬은 8)
+        assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", "124-81-00997")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_BUSINESS_NUMBER);
@@ -181,6 +183,24 @@ class MerchantApplicationServiceTest {
 
         assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("저장되는 엔티티의 사업자번호는 하이픈 제거된 정규화 형태다")
+    void apply_success_savesNormalizedBusinessNumber() {
+        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, USER_PENDING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.existsByBusinessNumberAndStatusIn(VALID_BIZ_NORMALIZED, BIZ_ACTIVE_STATUSES))
+                .willReturn(false);
+        MerchantApplication saved = MerchantApplication.create(USER_ID, makeRequest("우리떡볶이", VALID_BIZ_NUMBER));
+        ReflectionTestUtils.setField(saved, "id", 10L);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class))).willReturn(saved);
+
+        merchantApplicationService.apply(USER_ID, makeRequest("우리떡볶이", VALID_BIZ_NUMBER));
+
+        ArgumentCaptor<MerchantApplication> captor = ArgumentCaptor.forClass(MerchantApplication.class);
+        verify(merchantApplicationRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getBusinessNumber()).isEqualTo(VALID_BIZ_NORMALIZED);
     }
 
     @Test

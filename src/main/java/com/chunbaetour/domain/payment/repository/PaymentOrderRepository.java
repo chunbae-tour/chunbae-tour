@@ -20,9 +20,14 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
     @Query("SELECT p FROM PaymentOrder p WHERE p.orderUid = :orderUid")
     Optional<PaymentOrder> findByOrderUidWithLock(@Param("orderUid") String orderUid);
 
-    /** 멱등성 키로 PENDING 주문 조회 — 재시도 시 기존 주문 재활용 */
-    @Query("SELECT p FROM PaymentOrder p WHERE p.idempotencyKey = :idempotencyKey AND p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING")
-    Optional<PaymentOrder> findPendingByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
+    /**
+     * 멱등성 키로 주문 조회 — 상태 무관 (PENDING·COMPLETED·FAILED·CANCELLED·REFUNDED 모두 포함).
+     *
+     * <p>PENDING이면 재시도 재활용, 그 외 상태면 동일 키 재사용 → PAY_007.
+     * DB UNIQUE 제약은 영구적이므로 Redis TTL(24h) 만료 후 동일 키 재사용 시 500이 아닌 명시적 오류 반환.
+     */
+    @Query("SELECT p FROM PaymentOrder p WHERE p.idempotencyKey = :idempotencyKey")
+    Optional<PaymentOrder> findByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
 
     /** 사용자 결제(충전) 내역 cursor 페이징 조회 — id DESC, cursorId IS NULL이면 첫 페이지 */
     @Query("""
