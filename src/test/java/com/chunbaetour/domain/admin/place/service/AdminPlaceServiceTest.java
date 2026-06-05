@@ -15,7 +15,6 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.math.BigDecimal;
@@ -39,11 +38,8 @@ class AdminPlaceServiceTest {
     @Mock
     private PlaceRepository placeRepository;
 
-    @Mock
-    private ShopRepository shopRepository;
-
     private AdminPlaceService service() {
-        return new AdminPlaceService(placeRepository, shopRepository);
+        return new AdminPlaceService(placeRepository);
     }
 
     private Place activePlace() {
@@ -119,8 +115,6 @@ class AdminPlaceServiceTest {
         // hard delete 미구현 — repository.delete 호출 없음
         then(placeRepository).should(never()).delete(any());
         then(placeRepository).should(never()).deleteById(any());
-        // soft delete 후 연관 shop.place_id null 처리 호출 검증
-        then(shopRepository).should().clearPlaceReference(1L);
     }
 
     @Test

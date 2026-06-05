@@ -19,11 +19,6 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     /** placeId 목록으로 소속 가게 조회 — 통합검색 Place→Shop 연결 (KAN-217). */
     List<Shop> findByPlaceIdIn(Collection<Long> placeIds);
 
-    /** Place soft delete 시 연관 shop.place_id를 null로 일괄 처리 — ON DELETE SET NULL이 DB에서 발화하지 않으므로 서비스 레이어에서 직접 처리 (KAN-361). */
-    @org.springframework.data.jpa.repository.Modifying
-    @Query("UPDATE Shop s SET s.placeId = null WHERE s.placeId = :placeId")
-    void clearPlaceReference(@Param("placeId") Long placeId);
-
     /** 상태별 가게 수 — S06 대시보드 카운트(AdminShopService.getSuspendedShops) 의존. */
     long countByStatus(ShopStatus status);
 

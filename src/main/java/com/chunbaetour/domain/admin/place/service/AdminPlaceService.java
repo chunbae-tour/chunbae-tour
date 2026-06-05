@@ -10,7 +10,6 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.util.List;
@@ -40,7 +39,6 @@ import org.springframework.util.StringUtils;
 public class AdminPlaceService {
 
     private final PlaceRepository placeRepository;
-    private final ShopRepository shopRepository;
 
     /**
      * 관광지 목록 검색 (keyword/category 필터 + cursor 페이징).
@@ -118,8 +116,6 @@ public class AdminPlaceService {
             throw new BusinessException(ErrorCode.PLACE_ALREADY_DELETED);
         }
         place.delete();
-        // Place는 soft delete라 FK ON DELETE SET NULL이 발화하지 않음 — 연관 shop.place_id를 서비스 레이어에서 직접 null 처리
-        shopRepository.clearPlaceReference(placeId);
     }
 
     // ── S10 대시보드 의존 카운트 (본 슬라이스는 메서드 노출까지) ────────────────────
