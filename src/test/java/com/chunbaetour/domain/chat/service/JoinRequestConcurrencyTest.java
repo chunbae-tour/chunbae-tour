@@ -49,7 +49,7 @@ class JoinRequestConcurrencyTest extends AbstractIntegrationTest {
     private static final Long POST_ID_DUPLICATE_TEST = 2L;
     private static final Long POST_ID_DIFFERENT_USERS_TEST = 3L;
 
-    // 동시성 테스트 범위 외 — Redis Pub/Sub 발행을 막아 MessageListenerAdapter NPE 차단
+    // 동시성 테스트 범위 외 — Redis Pub/Sub 발행이 실제 리스너로 전파되지 않도록 차단
     @MockitoBean NotificationRedisPubSubService notificationRedisPubSubService;
 
     @Autowired private JoinRequestService joinRequestService;
