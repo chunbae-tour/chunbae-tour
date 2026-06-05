@@ -154,6 +154,24 @@ class AdminActionLogAspectIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("fixedTargetId=0 bulk 액션 — path variable 없어도 targetId=0으로 로그 기록")
+    void fixedTargetId_bulk_action_records_with_zero_target() {
+        // path variable 없는 환경 재현 — MARKET_SYNC처럼 /sync 경로에 path var 없음
+        MockHttpServletRequest emptyRequest = new MockHttpServletRequest();
+        emptyRequest.setAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, new HashMap<>());
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(emptyRequest));
+
+        dummyService.syncBulk();
+
+        var rows = repository.findAll();
+        assertThat(rows).hasSize(1);
+        AdminActionLog row = rows.getFirst();
+        assertThat(row.getActionType()).isEqualTo(AdminActionType.MARKET_SYNC);
+        assertThat(row.getTargetType()).isEqualTo(AdminTargetType.MARKET);
+        assertThat(row.getTargetId()).isEqualTo(0L);
+    }
+
+    @Test
     @DisplayName("repository.save 강제 실패 → 호출자 예외 없음 + 로그 흡수")
     void save_failure_absorbed_silently() {
         org.mockito.Mockito.doThrow(new RuntimeException("simulated DB outage"))
@@ -204,6 +222,14 @@ class AdminActionLogAspectIntegrationTest extends AbstractIntegrationTest {
         @LogAdminAction(actionType = AdminActionType.USER_SUSPEND, targetType = AdminTargetType.USER)
         public void suspendBusinessFail() {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        /** bulk 액션 — path variable 없이 fixedTargetId = 0L 고정 */
+        @Transactional
+        @LogAdminAction(actionType = AdminActionType.MARKET_SYNC, targetType = AdminTargetType.MARKET,
+                fixedTargetId = 0L)
+        public void syncBulk() {
+            // no-op
         }
 
         @Bean

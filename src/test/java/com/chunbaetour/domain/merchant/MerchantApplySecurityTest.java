@@ -37,7 +37,7 @@ class MerchantApplySecurityTest extends AbstractIntegrationTest {
     private static final String VALID_BODY = """
             {
               "shopName": "테스트가게",
-              "businessNumber": "101-81-34618",
+              "businessNumber": "220-81-62517",
               "category": "한식",
               "address": "서울시 강남구 테헤란로 1",
               "lat": 37.5665,
