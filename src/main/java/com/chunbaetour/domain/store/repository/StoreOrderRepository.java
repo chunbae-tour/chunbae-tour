@@ -20,4 +20,8 @@ public interface StoreOrderRepository extends JpaRepository<StoreOrder, Long> {
             @Param("userId") Long userId,
             @Param("cursorId") Long cursorId,
             Pageable pageable);
+
+    /** 특정 상품에 대한 사용자 누적 구매 수량 합산 — 1인 구매 한도 검증용 */
+    @Query("SELECT COALESCE(SUM(o.quantity), 0) FROM StoreOrder o WHERE o.userId = :userId AND o.productId = :productId")
+    int sumQuantityByUserIdAndProductId(@Param("userId") Long userId, @Param("productId") Long productId);
 }

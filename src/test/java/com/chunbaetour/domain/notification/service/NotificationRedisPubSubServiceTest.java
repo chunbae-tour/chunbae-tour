@@ -15,12 +15,14 @@ import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import tools.jackson.core.JacksonException;
@@ -49,12 +51,27 @@ class NotificationRedisPubSubServiceTest {
             20L,
             NotificationReferenceType.JOIN_REQUEST,
             false,
-            LocalDateTime.of(2026, 5, 28, 0, 0));
+            LocalDateTime.of(2024, 1, 1, 0, 0));
 
     @BeforeEach
     void setUp() {
         service = new NotificationRedisPubSubService(
                 stringRedisTemplate, objectMapper, messagingTemplate, meterRegistry);
+    }
+
+    // onMessage() — PatternTopic 경유 시 실제 채널("notification:1")을 message.getChannel()로 추출해 Push
+    // 핵심 회귀 가드: MessageListenerAdapter가 패턴("notification:*")을 channel로 넘기던 버그 수정 검증
+    @Test
+    void onMessage_extractsActualChannelFromMessage_notPattern() throws Exception {
+        Message message = mock(Message.class);
+        given(message.getChannel()).willReturn(CHANNEL.getBytes(StandardCharsets.UTF_8));
+        given(message.getBody()).willReturn("{}".getBytes(StandardCharsets.UTF_8));
+        given(objectMapper.readValue(eq("{}"), eq(NotificationResponse.class))).willReturn(RESPONSE);
+
+        service.onMessage(message, "notification:*".getBytes(StandardCharsets.UTF_8));
+
+        verify(messagingTemplate).convertAndSendToUser(
+                eq(String.valueOf(USER_ID)), eq(STOMP_QUEUE), eq(RESPONSE));
     }
 
     // publish() — notification:{userId} 채널로 직렬화된 JSON 발행 검증
@@ -71,7 +88,7 @@ class NotificationRedisPubSubServiceTest {
     // publish() — 직렬화 실패 시 예외 미전파 + 메트릭 카운터 증가
     @Test
     void publish_serializationFailure_doesNotThrow_andIncrementsMetric() throws Exception {
-        given(meterRegistry.counter("notification.serialize.failure.total")).willReturn(counter);
+        given(meterRegistry.counter(NotificationRedisPubSubService.METRIC_SERIALIZE_FAILURE)).willReturn(counter);
         given(objectMapper.writeValueAsString(any())).willThrow(mock(JacksonException.class));
 
         assertThatNoException().isThrownBy(() -> service.publish(USER_ID, RESPONSE));
@@ -81,7 +98,7 @@ class NotificationRedisPubSubServiceTest {
     // publish() — Redis 연결 실패 시 예외 미전파 + notification.publish.failure.total 카운터 증가
     @Test
     void publish_redisConnectionFailure_doesNotThrow_andIncrementsMetric() throws Exception {
-        given(meterRegistry.counter("notification.publish.failure.total")).willReturn(counter);
+        given(meterRegistry.counter(NotificationRedisPubSubService.METRIC_PUBLISH_FAILURE)).willReturn(counter);
         given(objectMapper.writeValueAsString(any())).willReturn("{}");
         willThrow(new RuntimeException("Redis connection refused"))
                 .given(stringRedisTemplate).convertAndSend(anyString(), anyString());
@@ -135,7 +152,7 @@ class NotificationRedisPubSubServiceTest {
     @Test
     void handleMessage_broadcastFailure_doesNotThrow_andIncrementsMetric() throws Exception {
         given(objectMapper.readValue(anyString(), eq(NotificationResponse.class))).willReturn(RESPONSE);
-        given(meterRegistry.counter("notification.broadcast.failure.total")).willReturn(counter);
+        given(meterRegistry.counter(NotificationRedisPubSubService.METRIC_BROADCAST_FAILURE)).willReturn(counter);
         willThrow(new RuntimeException("STOMP error"))
                 .given(messagingTemplate).convertAndSendToUser(anyString(), anyString(), any());
 

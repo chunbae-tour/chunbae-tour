@@ -71,4 +71,14 @@ public @interface LogAdminAction {
      * <p>예: {@code @LogAdminAction(..., returnIdField = "id")}
      */
     String returnIdField() default "";
+
+    /**
+     * path variable / 반환값 추출 없이 targetId를 직접 지정한다.
+     *
+     * <p>MARKET_SYNC처럼 특정 대상 엔티티가 없는 bulk 액션에 사용한다 — {@code 0L}을 관례로 쓴다.
+     * 기본값 {@code Long.MIN_VALUE}는 "미지정" 센티넬 — aspect는 이 값이면 기존 추출 로직을 쓴다.
+     *
+     * <p>예: {@code @LogAdminAction(..., fixedTargetId = 0L)}
+     */
+    long fixedTargetId() default Long.MIN_VALUE;
 }

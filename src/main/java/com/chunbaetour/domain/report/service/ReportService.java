@@ -2,6 +2,7 @@ package com.chunbaetour.domain.report.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -336,26 +337,30 @@ public class ReportService {
 
     private void deleteTargetContent(ReportTargetType targetType, Long targetId) {
         switch (targetType) {
-            case POST_COMPANION -> {
-                if (companionPostRepository.findById(targetId).map(post -> { post.hide(); return true; }).isEmpty()) {
-                    log.warn("deleteTargetContent: POST_COMPANION not found, targetId={}", targetId);
+            case POST_COMPANION -> companionPostRepository.findById(targetId).ifPresentOrElse(post -> {
+                if (post.getStatus() == CompanionPostStatus.DELETED) {
+                    log.warn("deleteTargetContent: POST_COMPANION already DELETED, targetId={}", targetId);
+                    return;
                 }
-            }
-            case POST_FREE -> {
-                if (freePostRepository.findById(targetId).map(post -> { post.hide(); return true; }).isEmpty()) {
-                    log.warn("deleteTargetContent: POST_FREE not found, targetId={}", targetId);
+                post.hide();
+            }, () -> log.warn("deleteTargetContent: POST_COMPANION not found, targetId={}", targetId));
+            case POST_FREE -> freePostRepository.findById(targetId).ifPresentOrElse(post -> {
+                if (post.getStatus() == FreePostStatus.DELETED) {
+                    log.warn("deleteTargetContent: POST_FREE already DELETED, targetId={}", targetId);
+                    return;
                 }
-            }
-            case COMMENT -> {
-                if (commentRepository.findById(targetId).map(comment -> { comment.delete(); return true; }).isEmpty()) {
-                    log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId);
+                post.hide();
+            }, () -> log.warn("deleteTargetContent: POST_FREE not found, targetId={}", targetId));
+            case COMMENT -> commentRepository.findById(targetId).ifPresentOrElse(
+                comment -> comment.delete(),
+                () -> log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId));
+            case USER -> accountRepository.findById(targetId).ifPresentOrElse(acc -> {
+                if (acc.getStatus() == AccountStatus.DELETED) {
+                    log.warn("deleteTargetContent: USER already DELETED(탈퇴), targetId={}", targetId);
+                    return;
                 }
-            }
-            case USER -> {
-                if (accountRepository.findById(targetId).map(acc -> { acc.suspend(); return true; }).isEmpty()) {
-                    log.warn("deleteTargetContent: USER not found, targetId={}", targetId);
-                }
-            }
+                acc.suspend();
+            }, () -> log.warn("deleteTargetContent: USER not found, targetId={}", targetId));
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
@@ -376,9 +381,13 @@ public class ReportService {
             log.warn("suspendTargetAuthor: authorId 조회 실패, targetType={}, targetId={}", targetType, targetId);
             return;
         }
-        if (accountRepository.findById(authorId).map(acc -> { acc.suspend(); return true; }).isEmpty()) {
-            log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId);
-        }
+        accountRepository.findById(authorId).ifPresentOrElse(acc -> {
+            if (acc.getStatus() == AccountStatus.DELETED) {
+                log.warn("suspendTargetAuthor: 탈퇴 계정 정지 생략, authorId={}", authorId);
+                return;
+            }
+            acc.suspend();
+        }, () -> log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId));
     }
 
     /**
