@@ -64,6 +64,7 @@ public enum ErrorCode {
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),
     MARKET_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_002", "존재하지 않는 전통시장입니다."),
+    MARKET_SYNC_IN_PROGRESS(HttpStatus.CONFLICT,            "PLACE_003", "전통시장 데이터 수집이 진행 중입니다. 잠시 후 다시 시도해주세요."),
     FESTIVAL_NOT_FOUND(HttpStatus.NOT_FOUND,                "FESTIVAL_001", "존재하지 않는 축제입니다."),
     FESTIVAL_DELETED(HttpStatus.FORBIDDEN,                  "FESTIVAL_002", "삭제된 축제입니다."),
     FESTIVAL_FORBIDDEN(HttpStatus.FORBIDDEN,                "FESTIVAL_003", "축제 관리 권한이 없습니다."),
@@ -150,7 +151,6 @@ public enum ErrorCode {
     DUPLICATE_AD_APPLICATION(HttpStatus.CONFLICT,           "SHOP_014", "이미 처리 대기 중인 광고 신청이 있습니다."),
     AD_APPLICATION_INVALID_STATUS(HttpStatus.CONFLICT,      "SHOP_015", "현재 상태에서는 처리할 수 없는 광고 신청입니다."),
     SHOP_WALLET_ALREADY_EXISTS(HttpStatus.CONFLICT,          "SHOP_016", "이미 등록된 가게 수익 지갑이 있습니다."),
-    SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_016", "업로드할 파일이 비어 있습니다."),
     SHOP_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,       "SHOP_017", "파일 크기가 최대 허용 용량(5MB)을 초과합니다."),
     SHOP_IMAGE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,     "SHOP_018", "지원하지 않는 이미지 형식입니다. (허용: JPEG, PNG, WebP)"),
     // SHOP_019~021: 상인 인증 admin (KAN-204, Admin Epic KAN-177 S05)
@@ -161,6 +161,7 @@ public enum ErrorCode {
     SHOP_ALREADY_CERTIFIED(HttpStatus.CONFLICT,             "SHOP_021", "이미 인증된 가게입니다. 가게당 유효 인증은 1건만 허용됩니다."),
     SHOP_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND,             "SHOP_022", "존재하지 않는 가게 공지입니다."),
     SHOP_STATUS_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_023", "상인이 변경할 수 없는 상태입니다."),
+    SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_024", "업로드할 파일이 비어 있습니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

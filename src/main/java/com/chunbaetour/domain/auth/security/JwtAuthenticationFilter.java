@@ -101,7 +101,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/store/products/**",
             // 축제·캘린더 조회 — 비인증 허용
             "/api/v1/festivals/**",
-            "/api/v1/calendar/**"
+            "/api/v1/calendar/**",
+            // 전통시장 조회 — 비인증 공개 API (KAN-220)
+            "/api/v1/traditional-markets/**"
     );
 
     /**

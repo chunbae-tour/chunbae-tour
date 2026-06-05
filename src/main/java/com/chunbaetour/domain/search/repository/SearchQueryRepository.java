@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.search.repository;
 
 import com.chunbaetour.domain.festival.entity.Festival;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 import static com.chunbaetour.domain.festival.entity.QFestival.festival;
+import static com.chunbaetour.domain.market.entity.QTraditionalMarket.traditionalMarket;
 import static com.chunbaetour.domain.place.QPlace.place;
 import static com.chunbaetour.domain.shop.entity.QMenu.menu;
 import static com.chunbaetour.domain.shop.entity.QShop.shop;
@@ -82,6 +84,17 @@ public class SearchQueryRepository {
                 .fetch();
     }
 
+    public List<TraditionalMarket> searchTraditionalMarkets(String keyword) {
+        return queryFactory
+                .selectFrom(traditionalMarket)
+                .where(
+                        marketNameContains(keyword)
+                )
+                .orderBy(exactMatchScore(traditionalMarket.name, keyword).desc(), traditionalMarket.id.desc())
+                .limit(200)
+                .fetch();
+    }
+
     private BooleanExpression placeNameContains(String keyword) {
         return keyword != null && !keyword.isBlank() ? place.name.containsIgnoreCase(keyword) : Expressions.FALSE;
     }
@@ -96,6 +109,10 @@ public class SearchQueryRepository {
 
     private BooleanExpression festivalNameContains(String keyword) {
         return keyword != null && !keyword.isBlank() ? festival.name.containsIgnoreCase(keyword) : Expressions.FALSE;
+    }
+
+    private BooleanExpression marketNameContains(String keyword) {
+        return keyword != null && !keyword.isBlank() ? traditionalMarket.name.containsIgnoreCase(keyword) : Expressions.FALSE;
     }
 
     private NumberExpression<Integer> exactMatchScore(StringPath path, String keyword) {

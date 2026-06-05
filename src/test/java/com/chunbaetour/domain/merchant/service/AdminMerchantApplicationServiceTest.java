@@ -56,6 +56,8 @@ class AdminMerchantApplicationServiceTest {
     @Mock
     private ShopWalletRepository shopWalletRepository;
 
+    private static final Long APPLICATION_ID_2 = 2L;
+
     private MerchantApplication pendingApplication() {
         MerchantApplication app = MerchantApplication.create(USER_ID,
                 new com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest(
@@ -65,11 +67,30 @@ class AdminMerchantApplicationServiceTest {
         return app;
     }
 
+    private MerchantApplication pendingApplication2() {
+        MerchantApplication app = MerchantApplication.create(USER_ID,
+                new com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest(
+                        "두번째가게", "0987654321", "카페", "서울시 마포구",
+                        new BigDecimal("37.5500"), new BigDecimal("126.9200"), null, null));
+        ReflectionTestUtils.setField(app, "id", APPLICATION_ID_2);
+        return app;
+    }
+
     private Account activeAccount() {
         Account account = (Account) ReflectionTestUtils.invokeMethod(
                 Account.class, "createForSeed",
                 "user@example.com", "hashed", "닉네임",
                 com.chunbaetour.domain.auth.Role.USER,
+                com.chunbaetour.domain.auth.AccountStatus.ACTIVE);
+        ReflectionTestUtils.setField(account, "id", USER_ID);
+        return account;
+    }
+
+    private Account merchantAccount() {
+        Account account = (Account) ReflectionTestUtils.invokeMethod(
+                Account.class, "createForSeed",
+                "merchant@example.com", "hashed", "상인닉네임",
+                com.chunbaetour.domain.auth.Role.MERCHANT,
                 com.chunbaetour.domain.auth.AccountStatus.ACTIVE);
         ReflectionTestUtils.setField(account, "id", USER_ID);
         return account;
@@ -160,6 +181,39 @@ class AdminMerchantApplicationServiceTest {
         assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.MERCHANT_APPLICATION_STATUS_INVALID.getMessage());
+    }
+
+    @Test
+    @DisplayName("승인 성공: 같은 MERCHANT 계정으로 서로 다른 신청서 2회 승인 — Shop/Wallet 각 2회 생성 (KAN-361)")
+    void approve_merchantAccount_secondShop_success() {
+        MerchantApplication app1 = pendingApplication();
+        MerchantApplication app2 = pendingApplication2();
+        Account account = merchantAccount(); // 이미 MERCHANT — promoteToMerchant 멱등 처리
+
+        // 첫 번째 신청서 승인
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app1));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 100L);
+            return s;
+        });
+        given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
+        adminMerchantApplicationService.approve(APPLICATION_ID, null);
+
+        // 두 번째 신청서 승인 (같은 계정, 다른 신청서)
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID_2)).willReturn(Optional.of(app2));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 200L);
+            return s;
+        });
+        adminMerchantApplicationService.approve(APPLICATION_ID_2, null);
+
+        // Shop, Wallet 각 2회 저장 검증
+        verify(shopRepository, org.mockito.Mockito.times(2)).save(any(Shop.class));
+        verify(shopWalletRepository, org.mockito.Mockito.times(2)).save(any(ShopWallet.class));
     }
 
     @Test
