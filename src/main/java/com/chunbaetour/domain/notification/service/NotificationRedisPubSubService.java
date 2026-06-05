@@ -2,9 +2,12 @@ package com.chunbaetour.domain.notification.service;
 
 import com.chunbaetour.domain.notification.dto.response.NotificationResponse;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.redis.connection.Message;
+import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -14,13 +17,13 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class NotificationRedisPubSubService {
+public class NotificationRedisPubSubService implements MessageListener {
 
     private static final String CHANNEL_PREFIX = "notification:";
     private static final String STOMP_QUEUE = "/queue/notifications";
-    private static final String METRIC_BROADCAST_FAILURE = "notification.broadcast.failure.total";
-    private static final String METRIC_SERIALIZE_FAILURE = "notification.serialize.failure.total";
-    private static final String METRIC_PUBLISH_FAILURE = "notification.publish.failure.total";
+    static final String METRIC_BROADCAST_FAILURE = "notification.broadcast.failure.total";
+    static final String METRIC_SERIALIZE_FAILURE = "notification.serialize.failure.total";
+    static final String METRIC_PUBLISH_FAILURE = "notification.publish.failure.total";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -43,8 +46,29 @@ public class NotificationRedisPubSubService {
         }
     }
 
+    // MessageListener 구현 — PatternTopic 구독 시 message.getChannel()로 실제 채널 추출
+    @Override
+    public void onMessage(Message message, byte[] pattern) {
+        byte[] channelBytes = message.getChannel();
+        byte[] bodyBytes = message.getBody();
+        if (channelBytes == null) {
+            log.warn("Redis 메시지에 채널 정보가 없습니다. body={}",
+                    bodyBytes != null ? new String(bodyBytes, StandardCharsets.UTF_8) : "(null)");
+            return;
+        }
+        if (bodyBytes == null || bodyBytes.length == 0) {
+            log.warn("Redis 메시지 body가 없습니다. channel={}", new String(channelBytes, StandardCharsets.UTF_8));
+            return;
+        }
+        String channel = new String(channelBytes, StandardCharsets.UTF_8);
+        String body = new String(bodyBytes, StandardCharsets.UTF_8);
+        handleMessage(body, channel);
+    }
+
     // Redis 구독 콜백 — notification:* 패턴 채널 메시지 수신 → 개인 STOMP 큐로 전송
-    public void handleMessage(String message, String channel) {
+    // channel 파라미터에 반드시 실제 채널명("notification:123")이 전달되어야 함 — onMessage()가 보장
+    // package-private: 외부 진입점은 onMessage()뿐, 테스트에서만 직접 호출
+    void handleMessage(String message, String channel) {
         if (!channel.startsWith(CHANNEL_PREFIX)) {
             log.warn("예상하지 못한 Redis 채널입니다. channel={}", channel);
             return;
