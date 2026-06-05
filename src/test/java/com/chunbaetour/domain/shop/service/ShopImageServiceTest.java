@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.shop.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -92,6 +93,13 @@ class ShopImageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_FILE_EMPTY);
+    }
+
+    @Test
+    @DisplayName("계약 검증: SHOP_IMAGE_FILE_EMPTY 응답 code 값이 SHOP_024 (KAN-361 에러코드 중복 수정)")
+    void shopImageFileEmpty_errorCode_isShop024() {
+        // SHOP_016 → SHOP_024 변경 후 클라이언트 노출 code 문자열 계약 검증
+        assertThat(ErrorCode.SHOP_IMAGE_FILE_EMPTY.getCode()).isEqualTo("SHOP_024");
     }
 
     @Test

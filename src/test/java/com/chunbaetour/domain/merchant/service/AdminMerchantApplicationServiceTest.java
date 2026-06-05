@@ -56,12 +56,23 @@ class AdminMerchantApplicationServiceTest {
     @Mock
     private ShopWalletRepository shopWalletRepository;
 
+    private static final Long APPLICATION_ID_2 = 2L;
+
     private MerchantApplication pendingApplication() {
         MerchantApplication app = MerchantApplication.create(USER_ID,
                 new com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest(
                         "테스트가게", "1234567890", "한식", "서울시 강남구",
                         new BigDecimal("37.5665"), new BigDecimal("126.9780"), null, null));
         ReflectionTestUtils.setField(app, "id", APPLICATION_ID);
+        return app;
+    }
+
+    private MerchantApplication pendingApplication2() {
+        MerchantApplication app = MerchantApplication.create(USER_ID,
+                new com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest(
+                        "두번째가게", "0987654321", "카페", "서울시 마포구",
+                        new BigDecimal("37.5500"), new BigDecimal("126.9200"), null, null));
+        ReflectionTestUtils.setField(app, "id", APPLICATION_ID_2);
         return app;
     }
 
@@ -173,21 +184,36 @@ class AdminMerchantApplicationServiceTest {
     }
 
     @Test
-    @DisplayName("승인 성공: 이미 MERCHANT인 계정의 새 신청서 승인 — 다중 가게 허용 (KAN-361)")
+    @DisplayName("승인 성공: 같은 MERCHANT 계정으로 서로 다른 신청서 2회 승인 — Shop/Wallet 각 2회 생성 (KAN-361)")
     void approve_merchantAccount_secondShop_success() {
-        MerchantApplication app = pendingApplication();
-        Account account = merchantAccount(); // 이미 MERCHANT 역할 — promoteToMerchant 멱등 처리
-        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
+        MerchantApplication app1 = pendingApplication();
+        MerchantApplication app2 = pendingApplication2();
+        Account account = merchantAccount(); // 이미 MERCHANT — promoteToMerchant 멱등 처리
+
+        // 첫 번째 신청서 승인
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app1));
         given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
-        givenShopSavedWithId();
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 100L);
+            return s;
+        });
         given(shopWalletRepository.save(any(ShopWallet.class))).willAnswer(inv -> inv.getArgument(0));
+        adminMerchantApplicationService.approve(APPLICATION_ID, null);
 
-        MerchantApplicationDetailResponse response =
-                adminMerchantApplicationService.approve(APPLICATION_ID, null);
+        // 두 번째 신청서 승인 (같은 계정, 다른 신청서)
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID_2)).willReturn(Optional.of(app2));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        given(shopRepository.save(any(Shop.class))).willAnswer(inv -> {
+            Shop s = inv.getArgument(0);
+            ReflectionTestUtils.setField(s, "id", 200L);
+            return s;
+        });
+        adminMerchantApplicationService.approve(APPLICATION_ID_2, null);
 
-        assertThat(response).isNotNull();
-        verify(shopRepository).save(any(Shop.class));
-        verify(shopWalletRepository).save(any(ShopWallet.class));
+        // Shop, Wallet 각 2회 저장 검증
+        verify(shopRepository, org.mockito.Mockito.times(2)).save(any(Shop.class));
+        verify(shopWalletRepository, org.mockito.Mockito.times(2)).save(any(ShopWallet.class));
     }
 
     @Test
