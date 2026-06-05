@@ -93,4 +93,31 @@ class AccountNumberEncryptConverterTest {
 
         assertThat(decrypted).isEqualTo(plainText);
     }
+
+    @Test
+    @DisplayName("GCM 인증 태그 검증: 암호문 변조 시 IllegalStateException 발생")
+    void tamperedCiphertext_throwsIllegalStateException() {
+        String encrypted = converter.convertToDatabaseColumn("1234567890");
+
+        // v2: 이후 Base64 디코딩 → 암호문 1바이트 반전 → 재인코딩
+        byte[] combined = java.util.Base64.getDecoder()
+                .decode(encrypted.substring("v2:".length()));
+        // IV는 앞 12바이트 — 암호문 영역(12번째 이후) 첫 바이트 변조
+        combined[12] ^= 0xFF;
+        String tampered = "v2:" + java.util.Base64.getEncoder().encodeToString(combined);
+
+        assertThatThrownBy(() -> converter.convertToEntityAttribute(tampered))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("복호화 실패");
+    }
+
+    @Test
+    @DisplayName("v2: prefix 뒤 Base64가 손상된 경우 IllegalStateException 발생")
+    void malformedBase64AfterPrefix_throwsIllegalStateException() {
+        String malformed = "v2:!!!invalid-base64-data!!!";
+
+        assertThatThrownBy(() -> converter.convertToEntityAttribute(malformed))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("복호화 실패");
+    }
 }
