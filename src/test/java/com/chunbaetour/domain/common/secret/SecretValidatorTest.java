@@ -45,7 +45,8 @@ class SecretValidatorTest {
                 .withProperty("PORTONE_CHANNEL_TOSS_PAY", "DUMMY_PORTONE_CHANNEL_TOSS_000000")
                 .withProperty("PORTONE_CHANNEL_FOREIGN_CARD", "DUMMY_PORTONE_CHANNEL_FOREIGN_000000")
                 .withProperty("TOUR_API_SERVICE_KEY", "DUMMY_TOUR_API_KEY_0000000000000000")
-                .withProperty("PUBLIC_DATA_MARKET_KEY", "DUMMY_PUBLIC_DATA_MARKET_KEY_0000");
+                .withProperty("PUBLIC_DATA_MARKET_KEY", "DUMMY_PUBLIC_DATA_MARKET_KEY_0000")
+                .withProperty("ACCOUNT_ENCRYPTION_KEY", "ProdEncKey123456");
     }
 
     private MockEnvironment prodEnv() {
@@ -344,6 +345,61 @@ class SecretValidatorTest {
             assertThatThrownBy(() -> validator.validate(env))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("DB_USERNAME");
+        }
+    }
+
+    @Nested
+    class ACCOUNT_ENCRYPTION_KEY {
+
+        @Test
+        void 누락시_부팅_실패() {
+            MockEnvironment env = validProdEnv().withProperty("ACCOUNT_ENCRYPTION_KEY", "");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
+                    .hasMessageContaining("비어있음");
+        }
+
+        @Test
+        void 길이_미달이면_부팅_실패() {
+            MockEnvironment env = validProdEnv().withProperty("ACCOUNT_ENCRYPTION_KEY", "ShortKey123");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
+                    .hasMessageContaining("16자");
+        }
+
+        @Test
+        void 길이_초과이면_부팅_실패() {
+            MockEnvironment env = validProdEnv().withProperty("ACCOUNT_ENCRYPTION_KEY", "TooLongKeyForAES128!");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
+                    .hasMessageContaining("16자");
+        }
+
+        @Test
+        void dev_기본값_chunbae16charkey_부팅_실패() {
+            MockEnvironment env = validProdEnv().withProperty("ACCOUNT_ENCRYPTION_KEY", "chunbae16charkey");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
+                    .hasMessageContaining("기본값 차단");
+        }
+
+        @Test
+        void placeholder_패턴_부팅_실패() {
+            MockEnvironment env = validProdEnv().withProperty("ACCOUNT_ENCRYPTION_KEY", "your-aes-key1234");
+            assertThatThrownBy(() -> validator.validate(env))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ACCOUNT_ENCRYPTION_KEY")
+                    .hasMessageContaining("placeholder");
+        }
+
+        @Test
+        void 정확히_16자_유효값_통과() {
+            MockEnvironment env = validProdEnv().withProperty("ACCOUNT_ENCRYPTION_KEY", "ProdEncKey123456");
+            assertThatCode(() -> validator.validate(env)).doesNotThrowAnyException();
         }
     }
 
