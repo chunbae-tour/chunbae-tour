@@ -98,10 +98,17 @@ public class FestivalFetchService {
                     skipped++;
                     continue;
                 }
-                switch (self.upsertItem(item)) {
-                    case CREATED -> created++;
-                    case UPDATED -> updated++;
-                    case SKIPPED -> skipped++;
+                String externalId = buildExternalId(item);
+                try {
+                    switch (self.upsertItem(item)) {
+                        case CREATED -> created++;
+                        case UPDATED -> updated++;
+                        case SKIPPED -> skipped++;
+                    }
+                } catch (Exception e) {
+                    log.warn("Festival item skipped — upsert exception: externalId={}, error={}",
+                            externalId, e.getMessage());
+                    skipped++;
                 }
             }
         } finally {
@@ -139,9 +146,10 @@ public class FestivalFetchService {
         } catch (DataIntegrityViolationException e) {
             if (isDuplicateExternalId(e)) {
                 log.warn("Festival insert conflict (duplicate externalId): externalId={}", externalId);
-                return UpsertResult.SKIPPED;
+            } else {
+                log.error("Festival upsert failed due to data integrity violation: externalId={}", externalId, e);
             }
-            log.error("Festival upsert failed due to data integrity violation: externalId={}", externalId, e);
+            // REQUIRES_NEW 트랜잭션은 이미 rollback-only — SKIPPED 반환 불가, re-throw로 호출부 catch에 위임
             throw e;
         } catch (IllegalArgumentException e) {
             log.warn("Festival item skipped: externalId={}, reason={}", externalId, e.getMessage());
@@ -164,9 +172,12 @@ public class FestivalFetchService {
     private boolean isValid(TourApiFestivalItem item) {
         if (item.insttCode() == null || item.insttCode().isBlank()) return false;
         if (item.fstvlNm() == null || item.fstvlNm().isBlank()) return false;
+        if (item.fstvlNm().length() > 255) return false;
         if (item.fstvlStartDate() == null || item.fstvlStartDate().isBlank()) return false;
         if (item.fstvlEndDate() == null || item.fstvlEndDate().isBlank()) return false;
-        if (resolveAddress(item).isBlank()) return false;
+        String addr = resolveAddress(item);
+        if (addr.isBlank() || addr.length() > 255) return false;
+        if (resolveRegion(item).length() > 100) return false;
         try {
             LocalDate start = LocalDate.parse(item.fstvlStartDate());
             LocalDate end   = LocalDate.parse(item.fstvlEndDate());
