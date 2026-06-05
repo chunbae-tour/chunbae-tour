@@ -20,6 +20,11 @@ import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
 import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
+import com.chunbaetour.domain.place.dto.Coord;
+import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
+import com.chunbaetour.domain.place.type.NearbyCategory;
+import org.springframework.cache.annotation.Cacheable;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 
 import lombok.RequiredArgsConstructor;
@@ -37,6 +42,7 @@ public class PlaceService {
     private final PlaceLikeService placeLikeService;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final KakaoLocalApiClient kakaoLocalApiClient;
 
     private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
 
@@ -317,5 +323,16 @@ public class PlaceService {
 
         return new PlaceListResponse(items, hasNext, nextCursorId, nextCursorRating);
     }
-}
 
+    /**
+     * KAN-232: 관광지 주변 장소(맛집, 카페, 숙박) 카테고리 검색 연동
+     * 카카오 로컬 API 활용
+     * 응답은 Redis에 30분간 캐싱됨 (CacheConfig: nearby-category 설정)
+     */
+    @Cacheable(value = "nearby-category", key = "#placeId + ':' + #category.name() + ':' + #radius")
+    public KakaoCategoryResponse findNearbyCategoryPlaces(Long placeId, NearbyCategory category, int radius) {
+        Place place = placeRepository.findById(placeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+        return kakaoLocalApiClient.searchByCategory(new Coord(place.getLat(), place.getLng()), category.getCode(), radius);
+    }
+}
