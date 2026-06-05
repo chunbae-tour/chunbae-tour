@@ -68,6 +68,9 @@ class ReportServiceTest {
     private static final Long FREE_POST_ID = 10L;
     private static final Long COMP_POST_ID = 20L;
     private static final Long REPORT_ID    = 100L;
+    private static final Long COMMENT_ID      = 30L;
+    private static final Long USER_TARGET_ID  = 40L;
+    private static final Long MERCHANT_ID     = 50L;
 
     private FreePost       activeFreePost;
     private CompanionPost  activeCompanionPost;
@@ -445,6 +448,90 @@ class ReportServiceTest {
 
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(pendingReport));
         given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isEqualTo("(삭제됨)");
+        assertThat(result.targetContent()).isEqualTo("(삭제됨)");
+        assertThat(result.targetImageUrls()).isNull();
+    }
+
+    @Test
+    @DisplayName("POST_COMPANION 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
+    void getReport_COMPANION_삭제됨_graceful() {
+        Report companionReport = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION,
+                COMP_POST_ID, ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(companionReport, "id", REPORT_ID);
+
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(companionReport));
+        given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isEqualTo("(삭제됨)");
+        assertThat(result.targetContent()).isEqualTo("(삭제됨)");
+        assertThat(result.targetImageUrls()).isNull();
+    }
+
+    @Test
+    @DisplayName("COMMENT 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
+    void getReport_COMMENT_삭제됨_graceful() {
+        Report commentReport = Report.create(REPORTER_ID, ReportTargetType.COMMENT,
+                COMMENT_ID, ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(commentReport, "id", REPORT_ID);
+
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(commentReport));
+        given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isEqualTo("(삭제됨)");
+        assertThat(result.targetContent()).isEqualTo("(삭제됨)");
+        assertThat(result.targetImageUrls()).isNull();
+    }
+
+    @Test
+    @DisplayName("USER 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
+    void getReport_USER_삭제됨_graceful() {
+        Report userReport = Report.create(REPORTER_ID, ReportTargetType.USER,
+                USER_TARGET_ID, ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(userReport, "id", REPORT_ID);
+
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(userReport));
+        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isEqualTo("(삭제됨)");
+        assertThat(result.targetContent()).isEqualTo("(삭제됨)");
+        assertThat(result.targetImageUrls()).isNull();
+    }
+
+    @Test
+    @DisplayName("MERCHANT 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
+    void getReport_MERCHANT_삭제됨_graceful() {
+        Report merchantReport = Report.create(REPORTER_ID, ReportTargetType.MERCHANT,
+                MERCHANT_ID, ReportReason.SPAM, null);
+        ReflectionTestUtils.setField(merchantReport, "id", REPORT_ID);
+
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(merchantReport));
+        given(shopService.findMerchantAccountId(MERCHANT_ID)).willReturn(Optional.empty());
         given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
 
         ReportDetailResponse result = reportService.getReport(REPORT_ID);
