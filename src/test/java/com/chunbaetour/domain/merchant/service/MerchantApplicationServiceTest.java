@@ -7,6 +7,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import org.mockito.ArgumentCaptor;
+
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.merchant.dto.request.MerchantApplyRequest;
@@ -181,6 +183,24 @@ class MerchantApplicationServiceTest {
 
         assertThatThrownBy(() -> merchantApplicationService.apply(USER_ID, makeRequest("테스트", VALID_BIZ_NUMBER)))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("저장되는 엔티티의 사업자번호는 하이픈 제거된 정규화 형태다")
+    void apply_success_savesNormalizedBusinessNumber() {
+        given(merchantApplicationRepository.existsByUserIdAndStatusIn(USER_ID, USER_PENDING_STATUSES))
+                .willReturn(false);
+        given(merchantApplicationRepository.existsByBusinessNumberAndStatusIn(VALID_BIZ_NORMALIZED, BIZ_ACTIVE_STATUSES))
+                .willReturn(false);
+        MerchantApplication saved = MerchantApplication.create(USER_ID, makeRequest("우리떡볶이", VALID_BIZ_NUMBER));
+        ReflectionTestUtils.setField(saved, "id", 10L);
+        given(merchantApplicationRepository.saveAndFlush(any(MerchantApplication.class))).willReturn(saved);
+
+        merchantApplicationService.apply(USER_ID, makeRequest("우리떡볶이", VALID_BIZ_NUMBER));
+
+        ArgumentCaptor<MerchantApplication> captor = ArgumentCaptor.forClass(MerchantApplication.class);
+        verify(merchantApplicationRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getBusinessNumber()).isEqualTo(VALID_BIZ_NORMALIZED);
     }
 
     @Test

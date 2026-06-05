@@ -9,6 +9,7 @@ import com.chunbaetour.domain.merchant.repository.MerchantApplicationRepository;
 import com.chunbaetour.domain.merchant.type.MerchantApplicationStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,8 +42,9 @@ public class MerchantApplicationService {
      * MySQL unique index에서 NULL은 서로 다른 값으로 취급 → active_flag=null(REJECTED)은 제약 대상 제외,
      * active_flag='1'(PENDING/APPROVED)만 중복 INSERT 시 DataIntegrityViolationException 발생.
      *
-     * <p><b>Known limitation</b>: existsByUserIdAndStatusIn(userId) 체크는 DB 레벨 보호 없음.
-     * 동일 유저의 동시 신청은 실사용에서 극히 드문 케이스이므로 허용된 한계로 남긴다.
+     * <p>유저 동시성: existsByUserIdAndStatusIn + save 사이 race condition을
+     * uk_merchant_active_user_id (user_id, active_flag) 유니크 제약으로 최종 차단.
+     * APPROVED 시 activeFlag=null로 초기화 → MySQL NULL 취급으로 제약 해제 → 동일 상인의 추가 가게 신청 허용.
      */
     @Transactional
     public MerchantApplicationResponse apply(Long userId, MerchantApplyRequest request) {
@@ -89,6 +91,11 @@ public class MerchantApplicationService {
     private boolean containsConstraint(DataIntegrityViolationException e, String constraintName) {
         Throwable cause = e;
         while (cause != null) {
+            // Hibernate ConstraintViolationException에서 제약 이름을 직접 추출 (드라이버 버전 독립적)
+            if (cause instanceof ConstraintViolationException cve
+                    && constraintName.equals(cve.getConstraintName())) {
+                return true;
+            }
             String message = cause.getMessage();
             if (message != null && message.contains(constraintName)) {
                 return true;
@@ -105,6 +112,8 @@ public class MerchantApplicationService {
      */
     private boolean isValidBusinessNumber(String digits) {
         if (digits.length() != 10) return false;
+        // DTO 검증 선행을 신뢰하지만, 비숫자 문자 혼입 시 charAt - '0' 계산이 잘못되므로 방어 체크
+        if (!digits.chars().allMatch(Character::isDigit)) return false;
         int[] weights = {1, 3, 7, 1, 3, 7, 1, 3, 5};
         int sum = 0;
         for (int i = 0; i < 9; i++) {
