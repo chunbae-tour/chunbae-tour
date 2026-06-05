@@ -64,9 +64,9 @@ public class ShopWallet extends BaseEntity {
                 || accountHolder == null || accountHolder.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-        this.bankName = bankName;
-        this.accountNumber = accountNumber;
-        this.accountHolder = accountHolder;
+        this.bankName = bankName.trim();
+        this.accountNumber = accountNumber.trim();
+        this.accountHolder = accountHolder.trim();
     }
 
     /** QR 결제 승인 시 상인 잔액 증가 */
@@ -74,8 +74,9 @@ public class ShopWallet extends BaseEntity {
         if (amount <= 0) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
+        // 정상 운영에서 발생 불가한 금액 — 데이터 이상 또는 비정상 입력
         if (Long.MAX_VALUE - this.balance < amount) {
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         this.balance += amount;
     }
