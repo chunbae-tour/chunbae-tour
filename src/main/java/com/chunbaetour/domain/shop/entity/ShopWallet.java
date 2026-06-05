@@ -1,9 +1,11 @@
 package com.chunbaetour.domain.shop.entity;
 
+import com.chunbaetour.domain.common.converter.AccountNumberEncryptConverter;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -44,7 +46,8 @@ public class ShopWallet extends BaseEntity {
     @Column(name = "bank_name", length = 50)
     private String bankName;
 
-    @Column(name = "account_number", length = 30)
+    @Convert(converter = AccountNumberEncryptConverter.class)
+    @Column(name = "account_number", length = 255)
     private String accountNumber;
 
     @Column(name = "account_holder", length = 50)
