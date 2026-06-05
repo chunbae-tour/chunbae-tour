@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -20,6 +21,9 @@ class ShopRepositoryIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ShopRepository shopRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @AfterEach
     void cleanup() {
@@ -61,6 +65,34 @@ class ShopRepositoryIntegrationTest extends AbstractIntegrationTest {
         // 거리순으로 가장 가까운 nearShop1이 첫 번째로 나와야 함
         assertThat(result.get(0).getShopName()).isEqualTo("가까운상점1");
         assertThat(result.get(1).getShopName()).isEqualTo("가까운상점2");
+    }
+
+    @Test
+    @DisplayName("다중 가게 허용 — uk_shops_user_id 제약 제거 후 동일 userId로 shop 2건 저장 성공 (KAN-361 마이그레이션 효과 검증)")
+    void multiShop_sameUserId_savesSuccessfully() {
+        // uk_shops_user_id 제약을 임시 추가해 제거 전 상태 재현
+        jdbcTemplate.execute(
+                "ALTER TABLE shops ADD CONSTRAINT uk_shops_user_id UNIQUE (user_id)");
+        try {
+            // 제약 제거 (V202606051304 마이그레이션 효과)
+            jdbcTemplate.execute("ALTER TABLE shops DROP INDEX uk_shops_user_id");
+
+            // 동일 userId로 가게 2건 저장 → 제약 없으므로 성공해야 함
+            Shop shop1 = Shop.builder()
+                    .userId(999L).applicationId(1L).shopName("첫번째가게")
+                    .category("FOOD").address("서울").build();
+            Shop shop2 = Shop.builder()
+                    .userId(999L).applicationId(2L).shopName("두번째가게")
+                    .category("CAFE").address("부산").build();
+
+            shopRepository.save(shop1);
+            shopRepository.save(shop2);
+
+            List<Shop> result = shopRepository.findAllByUserId(999L);
+            assertThat(result).hasSize(2);
+        } finally {
+            shopRepository.deleteAll();
+        }
     }
 
     private Shop createTestShop(Long id, String name, String category, String address, Double lat, Double lng, ShopStatus status) {
