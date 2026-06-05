@@ -330,7 +330,6 @@ public class PlaceService {
      * 카카오 로컬 API 활용
      * 응답은 Redis에 30분간 캐싱됨 (CacheConfig: nearby-category 설정)
      */
-    @Transactional(readOnly = true)
     public NearbyCategoryPlacesResponse findNearbyCategoryPlaces(Long placeId, NearbyCategory category, int radius) {
         Place place = placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
@@ -356,19 +355,25 @@ public class PlaceService {
             hasNext = !kakaoResponse.meta().isEnd();
         }
 
-        List<NearbyCategoryPlacesResponse.NearbyCategoryItem> items = kakaoResponse.documents().stream()
-                .map(doc -> new NearbyCategoryPlacesResponse.NearbyCategoryItem(
-                        doc.id(),
-                        doc.placeName(),
-                        doc.categoryName(),
-                        doc.phone(),
-                        doc.addressName(),
-                        doc.roadAddressName(),
-                        Double.parseDouble(doc.y()), // y is lat
-                        Double.parseDouble(doc.x()), // x is lng
-                        doc.placeUrl(),
-                        doc.distance() != null && !doc.distance().isBlank() ? Integer.parseInt(doc.distance()) : 0
-                )).toList();
+        List<NearbyCategoryPlacesResponse.NearbyCategoryItem> items;
+        try {
+            items = kakaoResponse.documents().stream()
+                    .map(doc -> new NearbyCategoryPlacesResponse.NearbyCategoryItem(
+                            doc.id(),
+                            doc.placeName(),
+                            doc.categoryName(),
+                            doc.phone(),
+                            doc.addressName(),
+                            doc.roadAddressName(),
+                            Double.parseDouble(doc.y()), // y is lat
+                            Double.parseDouble(doc.x()), // x is lng
+                            doc.placeUrl(),
+                            doc.distance() != null && !doc.distance().isBlank() ? Integer.parseInt(doc.distance()) : 0
+                    )).toList();
+        } catch (NumberFormatException e) {
+            log.error("Kakao 카테고리 응답 파싱 실패", e);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
 
         NearbyCategoryPlacesResponse response = new NearbyCategoryPlacesResponse(items, hasNext);
         

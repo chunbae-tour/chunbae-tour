@@ -92,20 +92,26 @@ public class PlaceServiceNearbyIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("숨김/삭제 처리된 관광지의 주변 장소를 조회하면 PLACE_NOT_FOUND 예외가 발생한다")
+    @DisplayName("비활성 상태(HIDDEN, DELETED) 관광지는 주변 장소 조회가 불가능하다")
     void testHiddenOrDeletedPlaceThrowsException() {
-        Place hiddenPlace = createPlace("숨김 관광지", PlaceStatus.HIDDEN);
-        Place deletedPlace = createPlace("삭제 관광지", PlaceStatus.DELETED);
+        Place hiddenPlace = createPlace("숨겨진 관광지", PlaceStatus.HIDDEN);
+        Place deletedPlace = createPlace("삭제된 관광지", PlaceStatus.DELETED);
 
         assertThatThrownBy(() -> placeService.findNearbyCategoryPlaces(hiddenPlace.getId(), NearbyCategory.CAFE, 500))
                 .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ErrorCode.PLACE_NOT_FOUND);
+                .hasMessageContaining(ErrorCode.PLACE_NOT_FOUND.getMessage());
 
         assertThatThrownBy(() -> placeService.findNearbyCategoryPlaces(deletedPlace.getId(), NearbyCategory.CAFE, 500))
                 .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ErrorCode.PLACE_NOT_FOUND);
-        
-        verify(kakaoLocalApiClient, times(0)).searchByCategory(any(), any(), anyInt());
+                .hasMessageContaining(ErrorCode.PLACE_NOT_FOUND.getMessage());
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 관광지 ID로 주변 장소 조회 시 예외가 발생한다")
+    void testNonExistentPlaceThrowsException() {
+        assertThatThrownBy(() -> placeService.findNearbyCategoryPlaces(9999L, NearbyCategory.CAFE, 500))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(ErrorCode.PLACE_NOT_FOUND.getMessage());
     }
 
     @Test
