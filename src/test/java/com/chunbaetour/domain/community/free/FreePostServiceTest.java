@@ -53,7 +53,7 @@ class FreePostServiceTest {
 
     @Test
     void 소유자가_아닌_유저가_수정하면_403() {
-        given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
+        given(postRepository.findByIdWithImages(1L)).willReturn(Optional.of(activePost));
 
         assertThatThrownBy(() -> postService.update(999L, 1L, new FreePostUpdateRequest("제목", null, null)))
                 .isInstanceOf(BusinessException.class)
@@ -73,7 +73,7 @@ class FreePostServiceTest {
 
     @Test
     void 탈퇴한_작성자의_게시글_단건조회시_탈퇴한사용자로_반환() {
-        given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
+        given(postRepository.findByIdWithImages(1L)).willReturn(Optional.of(activePost));
         given(accountRepository.findById(1L)).willReturn(Optional.empty());
 
         FreePostGetOneResponse result = postService.findById(1L);
@@ -86,7 +86,7 @@ class FreePostServiceTest {
     void 삭제된_게시글_조회하면_404() {
         FreePost deletedPost = FreePost.create(1L, "삭제글", "내용", List.of());
         deletedPost.delete();
-        given(postRepository.findById(1L)).willReturn(Optional.of(deletedPost));
+        given(postRepository.findByIdWithImages(1L)).willReturn(Optional.of(deletedPost));
 
         assertThatThrownBy(() -> postService.findById(1L))
                 .isInstanceOf(BusinessException.class)

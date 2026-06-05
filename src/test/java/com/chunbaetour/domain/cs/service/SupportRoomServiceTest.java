@@ -17,6 +17,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCloseRequest;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
@@ -123,25 +124,45 @@ class SupportRoomServiceTest {
 
     // ===== closeRoom =====
 
-    // 정상 종료 → CLOSED + closedAt 설정 + 방 소유자에게 이벤트 발행
+    // 정상 종료 — closeIfOpen 1 row → 이벤트 단일 발행, CLOSED 응답 반환
     @Test
     void closeRoom_success_returnsClosedRoom_andPublishesEvent() {
-        SupportRoom room = buildRoom(1L); // userId=1
-        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        SupportRoom closed = buildRoomWithAdminAndStatus(1L, 1L, null, SupportRoomStatus.CLOSED);
         given(clock.instant()).willReturn(FIXED_CLOCK.instant());
         given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        given(supportRoomRepository.closeIfOpen(eq(1L), eq(SupportRoomStatus.CLOSED), any(), eq("해결 완료")))
+                .willReturn(1);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(closed));
 
         SupportRoomResponse result = supportRoomService.closeRoom(1L, new SupportRoomCloseRequest("해결 완료"));
 
         assertThat(result.status()).isEqualTo(SupportRoomStatus.CLOSED);
-        assertThat(result.summary()).isEqualTo("해결 완료");
-        assertThat(result.closedAt()).isNotNull();
         verify(applicationEventPublisher).publishEvent(new SupportRoomClosedEvent(1L, 1L));
     }
 
-    // 존재하지 않는 방 → CS_001
+    // 이미 CLOSED 방 — closeIfOpen 0 rows → CS_002, 이벤트 미발행 (동시 종료 경합 방어 검증)
+    @Test
+    void closeRoom_whenAlreadyClosed_throwsAlreadyClosed_andNoEvent() {
+        SupportRoom closed = buildRoomWithAdminAndStatus(1L, 1L, null, SupportRoomStatus.CLOSED);
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        given(supportRoomRepository.closeIfOpen(eq(1L), eq(SupportRoomStatus.CLOSED), any(), any()))
+                .willReturn(0);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(closed));
+
+        assertThatThrownBy(() -> supportRoomService.closeRoom(1L, new SupportRoomCloseRequest(null)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED));
+        verify(applicationEventPublisher, never()).publishEvent(any());
+    }
+
+    // 존재하지 않는 방 → CS_001 (findById가 closeIfOpen 결과보다 먼저 throw)
     @Test
     void closeRoom_whenNotFound_throwsNotFound() {
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        given(supportRoomRepository.closeIfOpen(eq(999L), any(), any(), any())).willReturn(0);
         given(supportRoomRepository.findById(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> supportRoomService.closeRoom(999L, new SupportRoomCloseRequest(null)))
@@ -195,7 +216,9 @@ class SupportRoomServiceTest {
     @Test
     void assignAdmin_success_returnsInProgressRoom_withAdminId() {
         SupportRoom assigned = buildRoomWithAdminAndStatus(1L, 1L, 99L, SupportRoomStatus.IN_PROGRESS);
-        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(1);
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        given(supportRoomRepository.assignIfWaiting(eq(1L), eq(99L), eq(SupportRoomStatus.IN_PROGRESS), eq(SupportRoomStatus.WAITING), any(LocalDateTime.class))).willReturn(1);
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(assigned));
 
         SupportRoomResponse result = supportRoomService.assignAdmin(1L, 99L);
@@ -208,7 +231,9 @@ class SupportRoomServiceTest {
     @Test
     void assignAdmin_whenConcurrentConflict_throwsAlreadyAssigned() {
         SupportRoom inProgress = buildRoomWithAdminAndStatus(1L, 1L, 88L, SupportRoomStatus.IN_PROGRESS);
-        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        given(supportRoomRepository.assignIfWaiting(eq(1L), eq(99L), eq(SupportRoomStatus.IN_PROGRESS), eq(SupportRoomStatus.WAITING), any(LocalDateTime.class))).willReturn(0);
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(inProgress));
 
         assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))
@@ -221,7 +246,9 @@ class SupportRoomServiceTest {
     @Test
     void assignAdmin_whenClosed_throwsAlreadyClosed() {
         SupportRoom closed = buildRoomWithAdminAndStatus(1L, 1L, null, SupportRoomStatus.CLOSED);
-        given(supportRoomRepository.assignIfWaiting(1L, 99L, SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING)).willReturn(0);
+        given(clock.instant()).willReturn(FIXED_CLOCK.instant());
+        given(clock.getZone()).willReturn(FIXED_CLOCK.getZone());
+        given(supportRoomRepository.assignIfWaiting(eq(1L), eq(99L), eq(SupportRoomStatus.IN_PROGRESS), eq(SupportRoomStatus.WAITING), any(LocalDateTime.class))).willReturn(0);
         given(supportRoomRepository.findById(1L)).willReturn(Optional.of(closed));
 
         assertThatThrownBy(() -> supportRoomService.assignAdmin(1L, 99L))

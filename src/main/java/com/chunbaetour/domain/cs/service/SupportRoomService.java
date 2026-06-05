@@ -21,6 +21,7 @@ import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -115,7 +116,7 @@ public class SupportRoomService {
     @Transactional
     public SupportRoomResponse assignAdmin(Long supportRoomId, Long adminId) {
         int updated = supportRoomRepository.assignIfWaiting(supportRoomId, adminId,
-                SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING);
+                SupportRoomStatus.IN_PROGRESS, SupportRoomStatus.WAITING, LocalDateTime.now(clock));
         if (updated == 0) {
             SupportRoom room = supportRoomRepository.findById(supportRoomId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
@@ -129,13 +130,24 @@ public class SupportRoomService {
         return SupportRoomResponse.from(room);
     }
 
-    // ADMIN 상담 종료 — CLOSED 재종료 시 CS_002, 존재하지 않으면 CS_001
+    // ADMIN 상담 종료 — 조건부 UPDATE로 동시 종료 경합 방어
+    // 실행 순서: closeIfOpen → findById(orElseThrow) → updated==0 체크
+    // closeIfOpen 0 rows + 방 미존재: findById orElseThrow가 updated==0 체크보다 먼저 → CS_001
+    // closeIfOpen 0 rows + 방 CLOSED: findById 반환 후 updated==0 체크 → CS_002
+    // closeIfOpen 1 row: 정확히 한 번만 종료 → SupportRoomClosedEvent 단일 발행 보장
     @Transactional
     public SupportRoomResponse closeRoom(Long supportRoomId, SupportRoomCloseRequest request) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        int updated = supportRoomRepository.closeIfOpen(
+                supportRoomId, SupportRoomStatus.CLOSED, now, request.summary());
+
         SupportRoom room = supportRoomRepository.findById(supportRoomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SUPPORT_ROOM_NOT_FOUND));
-        room.close(clock, request.summary());
-        // 종료 알림 — 방 소유자에게 SUPPORT_ROOM_CLOSED 알림
+
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.SUPPORT_ROOM_ALREADY_CLOSED);
+        }
+
         applicationEventPublisher.publishEvent(new SupportRoomClosedEvent(supportRoomId, room.getUserId()));
         return SupportRoomResponse.from(room);
     }
