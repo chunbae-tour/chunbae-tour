@@ -7,6 +7,7 @@ import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import com.chunbaetour.domain.store.type.ProductStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -79,8 +80,16 @@ public class AdminProductService {
                 request.maxPerPerson(), request.status()
         );
         evictCacheAfterCommit(productId);
-        // 재고 변경 시 Redis 재고 키도 갱신 — 구매 1단계 Redis DECR 정합성 유지
-        if (request.stock() != null) {
+
+        // HIDDEN으로 전환 시 stock 키 삭제 — 숨김 상품 키 잔존 방지
+        if (request.status() == ProductStatus.HIDDEN) {
+            deleteStockKeyAfterCommit(productId);
+        }
+        // 재고 변경 시 또는 ON_SALE 재활성화 시 stock 키 갱신.
+        // HIDDEN/SOLD_OUT → ON_SALE(stock=null) 재활성화 경로에서 키가 없으면 L4(hasKey==false) 재현 방지.
+        // Note: afterCommit SET이 동시 구매 DECR보다 늦게 실행될 경우 Redis 재고가 실제보다 많아질 수 있음.
+        // 구매 2단계에서 DB 비관적 락으로 최종 검증하므로 오버셀링 위험 없음(Best-Effort 정책).
+        if (request.stock() != null || request.status() == ProductStatus.ON_SALE) {
             setStockKeyAfterCommit(productId, product.getStock());
         }
         List<String> imageUrls = request.imageUrls() != null
