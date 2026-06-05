@@ -8,6 +8,7 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.output.MigrateResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -141,13 +142,16 @@ class FlywayBaselineIntegrationTest {
     @Test
     @DisplayName("운영 prod baseline 시나리오: 기존 schema 있는 DB → V1을 BASELINE marker로만 기록, schema 변경 0")
     void baseline_on_migrate_records_v1_as_baseline_without_executing_sql() {
-        // 기존 운영 schema가 있다고 가정 — 임의 테이블 생성으로 시뮬레이션
-        // (Flyway가 schema 비어있지 않다고 판단 → baseline-on-migrate 발동)
+        // 기존 운영 schema가 있다고 가정 — 임의 테이블 생성 대신 실제 V1 스키마를 모두 생성하여
+        // 후속 마이그레이션(V2~최신)이 외래키/ALTER 참조 시 실패하지 않도록 완벽히 시뮬레이션.
+        org.springframework.core.io.Resource resource = new org.springframework.core.io.ClassPathResource("db/migration/V1__baseline.sql");
+        try (java.sql.Connection conn = dataSource.getConnection()) {
+            org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(conn, resource);
+        } catch (java.sql.SQLException e) {
+            throw new RuntimeException(e);
+        }
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE TABLE existing_legacy_table (id BIGINT PRIMARY KEY)");
-        // V3(KAN-180)가 users를 ALTER하므로 baseline 대상 기존 schema에 users가 존재해야 한다.
-        // 실제 운영 prod baseline 시점엔 users 등 전체 schema가 이미 존재 — 이를 최소 테이블로 시뮬레이션.
-        jdbc.execute("CREATE TABLE users (id BIGINT PRIMARY KEY)");
 
         // 운영 prod 설정 (application.yml 그대로): baseline-on-migrate=true + baseline-version=1
         Flyway flyway = Flyway.configure()
@@ -181,9 +185,9 @@ class FlywayBaselineIntegrationTest {
                 .as("V3 row의 type이 SQL이어야 한다 (baseline 외 일반 마이그레이션)")
                 .isEqualTo("SQL");
 
-        // V1 SQL이 실행되지 않았는지 검증 — ad_applications 등 V1 dump 테이블이 없어야 함
-        // (existing_legacy_table + 사전 생성 users만 존재, V1이 만드는 나머지 테이블은 부재)
-        assertTableDoesNotExist(jdbc, "ad_applications");
+        // V1 SQL은 Flyway가 실행한 게 아니라 사전에 ScriptUtils로 구성한 상태이므로 존재함
+        // (flyway_schema_history type = BASELINE을 통해 Flyway가 무시했음을 위에서 증명 완료)
+        assertTableExists(jdbc, "ad_applications");
         assertTableExists(jdbc, "existing_legacy_table"); // 기존 schema는 보존
         // V2는 baseline-version=1보다 위라 실 실행되므로 admin_action_logs 테이블은 존재해야 함
         assertTableExists(jdbc, "admin_action_logs");

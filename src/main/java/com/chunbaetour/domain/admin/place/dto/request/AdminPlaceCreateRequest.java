@@ -71,13 +71,16 @@ public record AdminPlaceCreateRequest(
 
     /** 요청을 {@link Place} 엔티티로 변환한다(빌더 — status는 ACTIVE 고정). */
     public Place toEntity() {
+        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
+        org.locationtech.jts.geom.Point location = gf.createPoint(new org.locationtech.jts.geom.Coordinate(lng.doubleValue(), lat.doubleValue()));
+        location.setSRID(4326);
+
         return Place.builder()
                 .name(name)
                 .category(category)
                 .description(description)
                 .address(address)
-                .lat(lat)
-                .lng(lng)
+                .location(location)
                 .thumbnailUrl(thumbnailUrl)
                 .imageUrls(imageUrls)
                 .operatingHours(operatingHours)

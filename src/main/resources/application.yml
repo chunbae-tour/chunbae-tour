@@ -124,9 +124,9 @@ ratelimit:
     #   → 정책 미추가. 추후 JWT 이후 사용자 식별 기반 rate-limit이 도입되면 그 위에서 재검토.
 
 portone:
-  secret: ${PORTONE_SECRET:}
-  webhook-secret: ${PORTONE_WEBHOOK_SECRET:}
-  store-id: ${PORTONE_STORE_ID:}
+  secret: ${PORTONE_SECRET}
+  webhook-secret: ${PORTONE_WEBHOOK_SECRET}
+  store-id: ${PORTONE_STORE_ID}
   base-url: https://api.portone.io
   channel:
     card: ${PORTONE_CHANNEL_CARD:}

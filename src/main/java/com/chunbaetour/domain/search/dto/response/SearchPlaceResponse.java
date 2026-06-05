@@ -27,4 +27,7 @@ public record SearchPlaceResponse(
         float rating,
         int reviewCount
 ) {
+    public SearchPlaceResponse(Long placeId, String name, PlaceCategory category, String address, String thumbnailUrl, int storedRating, int reviewCount) {
+        this(placeId, name, category, address, thumbnailUrl, storedRating / 10.0f, reviewCount);
+    }
 }

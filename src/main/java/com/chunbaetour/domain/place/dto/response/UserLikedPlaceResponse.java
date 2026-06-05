@@ -33,7 +33,7 @@ public record UserLikedPlaceResponse(
                 .category(place.getCategory())
                 .address(place.getAddress())
                 .thumbnailUrl(place.getThumbnailUrl())
-                .rating(place.getRating())
+                .rating(place.getDisplayRating())
                 .reviewCount(place.getReviewCount())
                 .likeCount(place.getLikeCount())
                 .likedAt(userLike.getCreatedAt())

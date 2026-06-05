@@ -1,27 +1,31 @@
 package com.chunbaetour.domain.place.service;
 
-import com.chunbaetour.domain.common.error.BusinessException;
-import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
-import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
-import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
-import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
-import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
-import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
-import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.place.type.PlaceStatus;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
+import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
+import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
+import com.chunbaetour.domain.place.dto.response.NearbyPlaceResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
+import com.chunbaetour.domain.place.dto.response.PlaceDetailResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
+import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Service
@@ -34,53 +38,61 @@ public class PlaceService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final Duration PLACE_DETAIL_TTL         = Duration.ofMinutes(10);
+    private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
 
     @Transactional(readOnly = true)
-    public NearbyPlacePageResponse findNearby(double lat, double lng, double radius, Long cursor, Double cursorDistance, int size) {
+    public NearbyPlacePageResponse findNearby(double lat, double lng, double radius,
+                                                             Long cursor, Double cursorDistance, Integer size) {
         // 캐시 키 생성: 좌표 소수점 3자리 반올림 및 반경 정수형 변환
         String latRounded = String.format("%.3f", lat);
         String lngRounded = String.format("%.3f", lng);
         double radiusRounded = Math.round(radius);
-        String cacheKey = String.format("nearby:%s:%s:%.0f:%d", latRounded, lngRounded, radiusRounded, size);
 
-        // 첫 페이지일 경우에만 캐시 조회 (0L도 첫 페이지로 간주)
-        boolean isFirstPage = (cursor == null || cursor == 0L);
+        // 첫 페이지일 경우에만 캐시 조회 (cursor 없음)
+        boolean isFirstPage = (cursor == null);
+        String cacheKey = String.format("nearby:%s:%s:%.0f:%d", latRounded, lngRounded, radiusRounded, size);
+        
         if (isFirstPage) {
             String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
             if (cachedData != null) {
                 try {
                     log.debug("Redis Cache Hit");
-                    return objectMapper.readValue(cachedData, new TypeReference<>() {});
+                    return objectMapper.readValue(cachedData, new TypeReference<NearbyPlacePageResponse>() {});
                 } catch (Exception e) {
                     log.error("Redis Cache parsing error", e);
                 }
             }
         }
 
-        // DB 쿼리 (Haversine) - 다음 페이지 존재 여부 확인을 위해 size + 1 요청
         log.info("Redis Cache Miss or Paging: Fetching from DB");
-        List<NearbyPlaceResponse> places = placeQueryRepository.findNearbyPlaces(lat, lng, radius, cursor, cursorDistance, size + 1);
+
+        int safeSize = (size != null) ? size : 10;
+
+        // DB 단에서 공간 조회, 커서 페이징 로직 및 LIMIT(safeSize + 1)을 모두 수행
+        List<NearbyPlaceResponse> pagedPlaces = placeQueryRepository.findNearbyPlaces(
+                lat, lng, radius, cursor, cursorDistance, safeSize
+        );
 
         boolean hasNext = false;
-        if (places.size() > size) {
+
+        if (pagedPlaces.size() > safeSize) {
             hasNext = true;
-            places.remove(size); // 초과 조회한 마지막 요소 제거
+            pagedPlaces.remove(safeSize); // 초과 조회한 마지막 요소 제거
         }
-        
-        NearbyPlacePageResponse pageResponse = new NearbyPlacePageResponse(places, hasNext);
+
+        NearbyPlacePageResponse response = new NearbyPlacePageResponse(pagedPlaces, hasNext);
 
         // 첫 페이지 결과 캐싱 (TTL 5분)
-        if (isFirstPage && !places.isEmpty()) {
+        if (isFirstPage && !pagedPlaces.isEmpty()) {
             try {
-                String json = objectMapper.writeValueAsString(pageResponse);
+                String json = objectMapper.writeValueAsString(response);
                 stringRedisTemplate.opsForValue().set(cacheKey, json, Duration.ofMinutes(5));
             } catch (Exception e) {
                 log.error("Redis Cache writing error", e);
             }
         }
 
-        return pageResponse;
+        return response;
     }
 
     /**
@@ -266,6 +278,44 @@ public class PlaceService {
             log.warn("imageUrls JSON parsing failed: {}", imageUrlsJson, e);
             return Collections.emptyList();
         }
+    }
+    /**
+     * 관광지 목록 조회 (PHASE 8-2)
+     *
+     * <p>카테고리/지역 필터와 커서 기반 페이지네이션을 지원합니다.
+     * 필터 조합이 너무 다양하여 Redis 캐싱 효율이 낮으므로 캐싱은 미적용합니다.
+     * (인기 목록은 추천 API의 Redis ZSet 방식을 사용합니다.)
+     *
+     * @param request 목록 조회 요청 DTO (category, region, cursor, size)
+     * @return 관광지 목록 응답 (items, hasNext, nextCursor)
+     */
+    @Transactional(readOnly = true)
+    public PlaceListResponse findList(PlaceListRequest request) {
+        // Repository에서 limit(size+1)을 처리하므로, 여기서는 요청한 size만 넘깁니다.
+        List<PlaceListResponse.PlaceListItem> items = placeQueryRepository.findByFilter(
+                request.category(),
+                request.region(),
+                request.cursor(),
+                request.cursorRating(),   // 복합 커서: rating도 함께 전달
+                request.size()
+        );
+
+        boolean hasNext = items.size() > request.size();
+        if (hasNext) {
+            // subList는 원본의 뷰(view)를 반환하므로 독립된 리스트로 복사하여 안전성 확보
+            items = new java.util.ArrayList<>(items.subList(0, request.size()));
+        }
+
+        // 다음 페이지 복합 커서: 현재 페이지 마지막 아이템의 ID와 rating
+        Long nextCursorId = null;
+        Float nextCursorRating = null;
+        if (hasNext && !items.isEmpty()) {
+            PlaceListResponse.PlaceListItem last = items.get(items.size() - 1);
+            nextCursorId = last.id();
+            nextCursorRating = last.rating();
+        }
+
+        return new PlaceListResponse(items, hasNext, nextCursorId, nextCursorRating);
     }
 }
 
