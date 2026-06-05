@@ -228,6 +228,7 @@ public class MarketSyncService {
         int inserted = 0, updated = 0, skipped = 0;
         for (MarketApiItem item : items) {
             if (item == null) {
+                log.warn("[MarketSync] null 아이템 감지 — skipped 처리");
                 skipped++;
                 continue;
             }
