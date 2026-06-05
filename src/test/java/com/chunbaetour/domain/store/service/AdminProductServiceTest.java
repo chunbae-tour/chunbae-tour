@@ -206,6 +206,18 @@ class AdminProductServiceTest {
     }
 
     @Test
+    @DisplayName("상품 삭제 — 캐시 키(product:id)와 재고 키(stock:id) 모두 삭제")
+    void deleteProduct_deletesBoothCacheKeyAndStockKey() {
+        Product product = createProduct(1L, 10, ProductStatus.ON_SALE);
+        given(productRepository.findByIdWithLock(1L)).willReturn(Optional.of(product));
+
+        adminProductService.deleteProduct(1L);
+
+        then(redisTemplate).should().delete("product:1");
+        then(redisTemplate).should().delete("stock:1");
+    }
+
+    @Test
     @DisplayName("상품 수정 — status=HIDDEN 전환 시 Redis 재고 키 삭제, 세팅 없음")
     void updateProduct_hidden_deletesStockKeyOnly() {
         Product product = createProduct(1L, 10, ProductStatus.ON_SALE);
