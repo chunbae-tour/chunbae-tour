@@ -70,7 +70,9 @@ public class FreePostService {
 
     @Transactional
     public FreePostGetOneResponse update(Long accountId, Long postId, FreePostUpdateRequest request) {
-        FreePost post = findActivePost(postId);
+        FreePost post = postRepository.findByIdWithImages(postId)
+                .filter(p -> p.getStatus() == FreePostStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
