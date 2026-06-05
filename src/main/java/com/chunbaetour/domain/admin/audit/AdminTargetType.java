@@ -21,6 +21,7 @@ public enum AdminTargetType {
     REFUND,
     PLACE,
     FESTIVAL,
+    MARKET,
     BANNER,
     FAQ,
     SUPPORT_ROOM;
