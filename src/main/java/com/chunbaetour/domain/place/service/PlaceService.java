@@ -44,6 +44,7 @@ public class PlaceService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final KakaoLocalApiClient kakaoLocalApiClient;
+    private final PlaceDetailEnrichmentService placeDetailEnrichmentService;
 
     private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
     private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
@@ -231,6 +232,10 @@ public class PlaceService {
             log.debug("Place is not ACTIVE: placeId={}, status={}", placeId, place.getStatus());
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
+
+        // Tier-2: API 수집 관광지의 상세(설명/운영시간/휴무일)가 비어 있으면 첫 조회 시 KorService2로 채워 영구 저장.
+        // 외부 호출·저장 실패는 내부에서 흡수하고 원본 Place를 반환하므로 상세 조회 흐름을 깨지 않는다.
+        place = placeDetailEnrichmentService.enrichIfNeeded(place);
 
         List<String> imageUrlList = parseImageUrls(place.getImageUrls());
 

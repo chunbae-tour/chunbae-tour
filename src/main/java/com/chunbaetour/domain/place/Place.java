@@ -73,10 +73,10 @@ public class Place {
     @Column(name = "image_urls", columnDefinition = "JSON")
     private String imageUrls;
 
-    @Column(name = "operating_hours", length = 100)
+    @Column(name = "operating_hours", length = 500)
     private String operatingHours;
 
-    @Column(name = "closed_days", length = 100)
+    @Column(name = "closed_days", length = 500)
     private String closedDays;
 
     @Column(length = 20)
@@ -205,6 +205,27 @@ public class Place {
         }
         this.thumbnailUrl = thumbnailUrl;
         this.phone = phone;
+    }
+
+    /**
+     * Tier-2: 상세 API(detailCommon2/detailIntro2)로 설명·운영시간·휴무일을 채운다(KAN-221, 첫 상세 조회 시 1회).
+     *
+     * <p>{@code description}은 빈 값이라도 비-null("")로 채워 "상세 수집 완료"를 표시한다 —
+     * {@code description == null}을 "아직 미수집" sentinel로 써서 매 조회마다 외부 API를 재호출하지 않게 한다.
+     * 운영시간/휴무일은 컬럼 길이(500)를 넘으면 방어적으로 잘라 저장한다.
+     */
+    public void applyApiDetail(String description, String operatingHours, String closedDays) {
+        this.description = description != null ? description : "";
+        if (operatingHours != null && !operatingHours.isBlank()) {
+            this.operatingHours = truncate(operatingHours, 500);
+        }
+        if (closedDays != null && !closedDays.isBlank()) {
+            this.closedDays = truncate(closedDays, 500);
+        }
+    }
+
+    private static String truncate(String value, int maxLength) {
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     // ── 도메인 메서드 ───────────────────────────────────────────────────
