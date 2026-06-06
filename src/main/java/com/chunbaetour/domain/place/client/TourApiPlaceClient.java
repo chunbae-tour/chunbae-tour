@@ -55,11 +55,14 @@ public class TourApiPlaceClient {
                 log.error("KorService2 최대 페이지 수({}) 초과 — 무한루프 방지로 중단", MAX_PAGES);
                 break;
             }
-            KorServiceResponse.Body body = fetchPage(pageNo).response().body();
-            List<TourApiPlaceItem> items = body.itemList();
+            List<TourApiPlaceItem> items = fetchPage(pageNo).response().body().itemList();
             result.addAll(items);
 
-            if (items.isEmpty() || result.size() >= body.totalCountValue()) {
+            // 종료 조건: 빈 페이지 또는 가득 차지 않은(=마지막) 페이지.
+            // totalCount 정확 일치에 의존하지 않는다 — KorService2는 페이지 간 중복 contentid를 반환할 수 있어
+            // result.size()>=totalCount 가드는 마지막 페이지를 조용히 누락시킬 수 있다.
+            // 중복은 upsert(external_id UNIQUE)가 흡수하므로 페이지를 더 받아도 데이터는 안전하다.
+            if (items.isEmpty() || items.size() < PAGE_SIZE) {
                 break;
             }
             pageNo++;

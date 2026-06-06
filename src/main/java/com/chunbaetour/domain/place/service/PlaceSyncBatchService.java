@@ -61,8 +61,9 @@ public class PlaceSyncBatchService {
             }
 
             Place place = existing.get();
-            // 운영자가 숨김/삭제한 관광지는 API 재수집으로 되살리지 않는다(운영 의사 존중).
-            if (place.getStatus() == PlaceStatus.DELETED) {
+            // 운영자가 숨김(HIDDEN)·삭제(DELETED)한 관광지는 API 재수집으로 데이터를 덮어쓰지 않는다(운영 의사 존중).
+            // ACTIVE만 갱신 — 운영자가 정상 노출 상태로 둔 것만 최신 데이터로 동기화한다.
+            if (place.getStatus() != PlaceStatus.ACTIVE) {
                 return UpsertResult.SKIPPED;
             }
             place.updateFromApi(item.title().trim(), item.fullAddress(), lat, lng, thumbnail, phone);

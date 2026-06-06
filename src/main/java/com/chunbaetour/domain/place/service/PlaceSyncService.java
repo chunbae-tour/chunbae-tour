@@ -39,7 +39,8 @@ public class PlaceSyncService {
     private final LockProvider lockProvider;
 
     /** 스케줄 자동 수집. 락 획득 실패(다른 인스턴스 수집 중)는 조용히 건너뛴다. */
-    @Scheduled(cron = "${tour-api.kor-service.place-sync-cron}", zone = "Asia/Seoul")
+    // 프로퍼티 부재 시 "-"(Scheduled.CRON_DISABLED)로 폴백 → 스케줄 비활성, 컨텍스트 기동 실패 방지.
+    @Scheduled(cron = "${tour-api.kor-service.place-sync-cron:-}", zone = "Asia/Seoul")
     public void scheduledSync() {
         try {
             PlaceSyncResult result = syncAllPlaces();
