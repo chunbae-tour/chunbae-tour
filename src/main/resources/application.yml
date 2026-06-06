@@ -177,6 +177,12 @@ report:
     # 배포 없이 운영 중 조정 가능 (AWS 환경변수 또는 application-prod.yml 오버라이드)
     threshold: ${REPORT_AUTO_HIDE_THRESHOLD:3}
 
+app:
+  encryption:
+    # 정산 계좌번호 AES-128 암호화 키 — 반드시 정확히 16바이트(AES-128 key size).
+    # ACCOUNT_ENCRYPTION_KEY 환경변수 미설정 시 Spring 부팅 실패 — 기본값 없음.
+    account-key: ${ACCOUNT_ENCRYPTION_KEY}
+
 google:
   translation:
     api-key: ${GOOGLE_TRANSLATION_API_KEY:}

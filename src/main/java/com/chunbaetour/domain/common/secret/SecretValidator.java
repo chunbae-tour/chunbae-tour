@@ -2,6 +2,7 @@ package com.chunbaetour.domain.common.secret;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -35,6 +36,12 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
 
     /** DB 비밀번호 최소 길이 — 카탈로그 §데이터베이스/캐시 §DB_PASSWORD. */
     private static final int MIN_DB_PASSWORD_LENGTH = 12;
+
+    /** AES-128 키 크기 — 정확히 16바이트(128비트) 필요. */
+    private static final int AES_128_KEY_LENGTH = 16;
+
+    /** 로컬 개발 전용 기본 암호화 키 — prod 배포 시 반드시 교체해야 한다. */
+    private static final String DEV_DEFAULT_ACCOUNT_KEY = "chunbae16charkey";
 
     /**
      * 평문 디폴트/예제 비밀번호 차단 목록. 누구나 추측 가능한 값은 부팅 거부.
@@ -92,6 +99,9 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
         validateExternalKey(env, "PORTONE_CHANNEL_TOSS_PAY", "portone.channel.toss-pay", violations);
         validateExternalKey(env, "PORTONE_CHANNEL_FOREIGN_CARD", "portone.channel.foreign-card", violations);
         validateExternalKey(env, "TOUR_API_SERVICE_KEY", "tour-api.service-key", violations);
+
+        // 계좌번호 AES-128 암호화 키 — 길이 16자 + dev 기본값 차단.
+        validateAccountEncryptionKey(env, violations);
 
         if (!violations.isEmpty()) {
             String summary = "SECRET_VALIDATION FAILED (prod 프로파일): "
@@ -249,6 +259,37 @@ public class SecretValidator implements ApplicationListener<ApplicationEnvironme
         }
         if (containsPlaceholder(v.toLowerCase(Locale.ROOT))) {
             violations.add(envVarName + ": placeholder 패턴 포함 (.env.example 더미 값으로 추정)");
+        }
+    }
+
+    /**
+     * ACCOUNT_ENCRYPTION_KEY 검증:
+     * <ol>
+     *   <li>비어있지 않음</li>
+     *   <li>정확히 16자 — AES-128 키 크기(128비트)</li>
+     *   <li>dev 기본값({@code chunbae16charkey}) 차단 — 로컬 개발 전용 키</li>
+     *   <li>placeholder 패턴 차단</li>
+     * </ol>
+     */
+    private void validateAccountEncryptionKey(Environment env, List<String> violations) {
+        String key = env.getProperty("ACCOUNT_ENCRYPTION_KEY");
+        if (key == null || key.isBlank()) {
+            key = env.getProperty("app.encryption.account-key");
+        }
+        if (key == null || key.isBlank()) {
+            violations.add("ACCOUNT_ENCRYPTION_KEY: 비어있음 (prod는 AES-128 암호화 키 필수)");
+            return;
+        }
+        int keyByteLength = key.getBytes(StandardCharsets.UTF_8).length;
+        if (keyByteLength != AES_128_KEY_LENGTH) {
+            violations.add("ACCOUNT_ENCRYPTION_KEY: UTF-8 기준 정확히 16바이트 필요 (AES-128) — 현재 "
+                    + keyByteLength + "바이트");
+        }
+        if (DEV_DEFAULT_ACCOUNT_KEY.equals(key)) {
+            violations.add("ACCOUNT_ENCRYPTION_KEY: 로컬 개발 기본값 차단 — prod 전용 키로 교체 필요");
+        }
+        if (containsPlaceholder(key.toLowerCase(Locale.ROOT))) {
+            violations.add("ACCOUNT_ENCRYPTION_KEY: placeholder 패턴 포함 (.env.example 더미 값으로 추정)");
         }
     }
 

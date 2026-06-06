@@ -78,6 +78,9 @@ class FlywayEntitySchemaValidationIntegrationTest {
         registry.add("portone.channel.kakao-pay", () -> "dummy");
         registry.add("portone.channel.toss-pay", () -> "dummy");
         registry.add("portone.channel.foreign-card", () -> "dummy");
+        // 계좌번호 AES-128 암호화 키 — UTF-8 정확히 16바이트. application.yml 기본값 제거(KAN-244) 후
+        // AccountNumberEncryptConverter @PostConstruct 검증을 통과시키기 위해 더미 키 주입.
+        registry.add("app.encryption.account-key", () -> "test-account-key");
     }
 
     @Test
