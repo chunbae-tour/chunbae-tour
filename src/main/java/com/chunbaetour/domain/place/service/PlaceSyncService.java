@@ -5,6 +5,8 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.client.TourApiPlaceClient;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
 import com.chunbaetour.domain.place.dto.response.PlaceSyncResult;
+import com.chunbaetour.domain.place.entity.PlaceSyncState;
+import com.chunbaetour.domain.place.repository.PlaceSyncStateRepository;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.UpsertResult;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,11 +21,14 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 관광지 KorService2 수집 오케스트레이션 (KAN-221 Tier-1).
+ * 관광지 KorService2 증분 동기화 오케스트레이션 (KAN-221).
  *
  * <p>스케줄러 자동 수집 + 관리자 수동 트리거 공통 진입점. ShedLock {@link LockProvider}로 다중 인스턴스
- * 중복 실행을 차단한다(축제·전통시장과 동일 패턴). HTTP fetch는 트랜잭션 밖에서 수행하고, 영속화는
- * {@link PlaceSyncBatchService}의 REQUIRES_NEW 아이템 단위 트랜잭션에 위임한다.
+ * 중복 실행을 차단한다. HTTP fetch는 트랜잭션 밖에서 수행하고, 영속화는 {@link PlaceSyncBatchService}의
+ * REQUIRES_NEW 아이템 단위 트랜잭션에 위임한다.
+ *
+ * <p>증분: {@link PlaceSyncState}의 lastModifiedTime 이후 변경분만 수집한다(최초엔 전수). 수집 후 가장 최신
+ * modifiedtime을 상태에 저장한다. {@code showflag != "1"} 항목은 삭제(soft delete)로 반영한다.
  */
 @Slf4j
 @Service
@@ -36,19 +41,22 @@ public class PlaceSyncService {
 
     private final TourApiPlaceClient placeClient;
     private final PlaceSyncBatchService batchService;
+    private final PlaceSyncStateRepository syncStateRepository;
     private final LockProvider lockProvider;
 
-    /** 스케줄 자동 수집. 락 획득 실패(다른 인스턴스 수집 중)는 조용히 건너뛴다. */
-    // 프로퍼티 부재 시 "-"(Scheduled.CRON_DISABLED)로 폴백 → 스케줄 비활성, 컨텍스트 기동 실패 방지.
+    /**
+     * 스케줄 자동 동기화. 증분이라 변경분만 처리 → 매일 돌려도 부하가 작다.
+     * 락 획득 실패(다른 인스턴스 수집 중)는 조용히 건너뛴다. 프로퍼티 부재 시 "-"(비활성) 폴백.
+     */
     @Scheduled(cron = "${tour-api.kor-service.place-sync-cron:-}", zone = "Asia/Seoul")
     public void scheduledSync() {
         try {
             PlaceSyncResult result = syncAllPlaces();
-            log.info("관광지 스케줄 수집 완료: fetched={}, created={}, updated={}, skipped={}",
-                    result.fetched(), result.created(), result.updated(), result.skipped());
+            log.info("관광지 스케줄 동기화 완료: fetched={}, created={}, updated={}, deleted={}, skipped={}",
+                    result.fetched(), result.created(), result.updated(), result.deleted(), result.skipped());
         } catch (BusinessException e) {
             if (e.getErrorCode() == ErrorCode.PLACE_SYNC_IN_PROGRESS) {
-                log.warn("관광지 스케줄 수집 건너뜀 — 다른 인스턴스 수집 중");
+                log.warn("관광지 스케줄 동기화 건너뜀 — 다른 인스턴스 수집 중");
                 return;
             }
             throw e;
@@ -56,7 +64,7 @@ public class PlaceSyncService {
     }
 
     /**
-     * 전국 관광지 수집 공통 진입점. ShedLock으로 다중 인스턴스 중복 실행 차단.
+     * 관광지 증분 동기화 공통 진입점. ShedLock으로 다중 인스턴스 중복 실행 차단.
      * 락 획득 실패 시 {@link ErrorCode#PLACE_SYNC_IN_PROGRESS} 예외.
      */
     public PlaceSyncResult syncAllPlaces() {
@@ -75,27 +83,52 @@ public class PlaceSyncService {
     }
 
     private PlaceSyncResult doSync() {
-        // 1) HTTP 수집은 트랜잭션 밖 (네트워크 지연이 DB 커넥션을 잡지 않도록)
-        List<TourApiPlaceItem> items = placeClient.fetchAll();
+        // 1) 마지막 동기화 경계(lastModifiedTime) 로드 — 없으면 null(최초 전수 수집)
+        String since = syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)
+                .map(PlaceSyncState::getLastModifiedTime)
+                .orElse(null);
 
-        // 2) 아이템 단위 REQUIRES_NEW upsert — 개별 실패가 전체를 중단시키지 않음
-        int created = 0, updated = 0, skipped = 0;
+        // 2) HTTP 수집은 트랜잭션 밖 — 경계 이후 변경분만
+        List<TourApiPlaceItem> items = placeClient.fetchModifiedSince(since);
+
+        // 3) 아이템 단위 REQUIRES_NEW 처리 — 개별 실패가 전체를 중단시키지 않음
+        int created = 0, updated = 0, deleted = 0, skipped = 0;
+        String maxModified = since;
         for (TourApiPlaceItem item : items) {
+            maxModified = laterOf(maxModified, item.modifiedTime());
             try {
-                UpsertResult result = batchService.upsertItem(item);
-                switch (result) {
-                    case CREATED -> created++;
-                    case UPDATED -> updated++;
-                    case SKIPPED -> skipped++;
+                if (item.isDeleted()) {
+                    if (batchService.markDeleted(item.contentId()) == UpsertResult.DELETED) {
+                        deleted++;
+                    } else {
+                        skipped++;
+                    }
+                } else {
+                    switch (batchService.upsertItem(item)) {
+                        case CREATED -> created++;
+                        case UPDATED -> updated++;
+                        default -> skipped++;
+                    }
                 }
             } catch (Exception e) {
-                // 제약 위반(중복 등) 등 개별 아이템 예외는 skip 집계
-                log.warn("관광지 item 건너뜀 — upsert 예외: contentId={}, error={}",
+                log.warn("관광지 item 건너뜀 — 처리 예외: contentId={}, error={}",
                         item.contentId(), e.getMessage());
                 skipped++;
             }
         }
 
-        return new PlaceSyncResult(items.size(), created, updated, skipped);
+        // 4) 다음 증분의 경계 갱신 (이번에 처리한 가장 최신 modifiedtime)
+        if (!items.isEmpty() && maxModified != null) {
+            batchService.saveLastModifiedTime(maxModified);
+        }
+
+        return new PlaceSyncResult(items.size(), created, updated, deleted, skipped);
+    }
+
+    /** 두 modifiedtime(yyyyMMddHHmmss 문자열) 중 더 최신(사전순 큰) 값을 반환. null 안전. */
+    private String laterOf(String a, String b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.compareTo(b) >= 0 ? a : b;
     }
 }

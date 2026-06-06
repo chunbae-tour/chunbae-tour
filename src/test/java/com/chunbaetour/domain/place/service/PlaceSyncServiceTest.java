@@ -12,6 +12,8 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.client.TourApiPlaceClient;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
 import com.chunbaetour.domain.place.dto.response.PlaceSyncResult;
+import com.chunbaetour.domain.place.entity.PlaceSyncState;
+import com.chunbaetour.domain.place.repository.PlaceSyncStateRepository;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.UpsertResult;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +35,8 @@ class PlaceSyncServiceTest {
     @Mock
     private PlaceSyncBatchService batchService;
     @Mock
+    private PlaceSyncStateRepository syncStateRepository;
+    @Mock
     private LockProvider lockProvider;
     @Mock
     private SimpleLock simpleLock;
@@ -40,24 +44,36 @@ class PlaceSyncServiceTest {
     @InjectMocks
     private PlaceSyncService placeSyncService;
 
-    private TourApiPlaceItem item(String contentId) {
+    private TourApiPlaceItem item(String contentId, String modifiedTime) {
         return new TourApiPlaceItem(contentId, "관광지" + contentId, "서울특별시", "",
-                "127.0", "37.5", null, null, null, null);
+                "127.0", "37.5", null, null, null, modifiedTime, "1");
+    }
+
+    private TourApiPlaceItem deletedItem(String contentId, String modifiedTime) {
+        return new TourApiPlaceItem(contentId, "삭제됨", "서울특별시", "",
+                "127.0", "37.5", null, null, null, modifiedTime, "0"); // showflag != "1"
     }
 
     @Test
-    @DisplayName("락 획득 시 전 아이템을 upsert하고 결과를 집계하며, 끝에 락을 해제한다")
+    @DisplayName("락 획득 시 변경분을 upsert·삭제 반영하고, 최신 modifiedtime을 저장하며, 끝에 락을 해제한다")
     void syncWithLock() {
         given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
-        given(placeClient.fetchAll()).willReturn(List.of(item("1"), item("2")));
-        given(batchService.upsertItem(any()))
-                .willReturn(UpsertResult.CREATED, UpsertResult.SKIPPED);
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "20260101000001"),
+                deletedItem("2", "20260101000003"),
+                item("3", "20260101000002")));
+        given(batchService.upsertItem(any())).willReturn(UpsertResult.CREATED, UpsertResult.UPDATED);
+        given(batchService.markDeleted("2")).willReturn(UpsertResult.DELETED);
 
         PlaceSyncResult result = placeSyncService.syncAllPlaces();
 
-        assertThat(result.fetched()).isEqualTo(2);
+        assertThat(result.fetched()).isEqualTo(3);
         assertThat(result.created()).isEqualTo(1);
-        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.updated()).isEqualTo(1);
+        assertThat(result.deleted()).isEqualTo(1);
+        // 가장 최신 modifiedtime 저장
+        verify(batchService).saveLastModifiedTime("20260101000003");
         verify(simpleLock).unlock();
     }
 
@@ -71,14 +87,15 @@ class PlaceSyncServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.PLACE_SYNC_IN_PROGRESS);
 
-        verify(placeClient, never()).fetchAll();
+        verify(placeClient, never()).fetchModifiedSince(any());
     }
 
     @Test
     @DisplayName("수집 중 예외가 나도 finally에서 락을 해제한다")
     void unlockOnException() {
         given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
-        given(placeClient.fetchAll())
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        given(placeClient.fetchModifiedSince(any()))
                 .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
 
         assertThatThrownBy(() -> placeSyncService.syncAllPlaces())

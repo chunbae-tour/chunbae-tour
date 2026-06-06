@@ -33,7 +33,7 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
 
     private TourApiPlaceItem item(String contentId, String title, String mapX, String mapY) {
         return new TourApiPlaceItem(contentId, title, "충청남도 천안시 동남구", "", mapX, mapY,
-                "http://tong.visitkorea.or.kr/img.jpg", null, "041-100-1000", "20251124134437");
+                "http://tong.visitkorea.or.kr/img.jpg", null, "041-100-1000", "20251124134437", "1");
     }
 
     @Test
@@ -89,5 +89,23 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(found).isPresent();
         assertThat(found.get().getStatus()).isEqualTo(PlaceStatus.DELETED);
         assertThat(found.get().getName()).isEqualTo("삭제된관광지"); // 갱신 안 됨
+    }
+
+    @Test
+    @DisplayName("showflag 삭제 항목(markDeleted)은 기존 관광지를 soft-delete(DELETED)한다")
+    void markDeletedSoftDeletes() {
+        batchService.upsertItem(item("500", "삭제예정관광지", "127.1", "36.8"));
+
+        UpsertResult result = batchService.markDeleted("500");
+
+        assertThat(result).isEqualTo(UpsertResult.DELETED);
+        assertThat(placeRepository.findByExternalId("500").orElseThrow().getStatus())
+                .isEqualTo(PlaceStatus.DELETED);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 contentId의 삭제 요청은 SKIPPED")
+    void markDeletedNotFound() {
+        assertThat(batchService.markDeleted("999")).isEqualTo(UpsertResult.SKIPPED);
     }
 }

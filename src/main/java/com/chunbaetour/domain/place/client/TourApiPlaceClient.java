@@ -14,13 +14,14 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * 한국관광공사 KorService2(국문 관광정보) 관광지 목록 수집 클라이언트 (KAN-221 Tier-1).
+ * 한국관광공사 KorService2(국문 관광정보) 관광지 목록 수집 클라이언트 (KAN-221).
  *
- * <p>{@code areaBasedList2}를 contentTypeId=12(관광지)로 전국 전수 페이지네이션 조회한다.
- * RestClient 빈은 축제와 동일한 관용 컨버터({@code tourApiRestClient})를 재사용한다.
+ * <p>{@code areaBasedSyncList2}(관광정보 동기화 목록)를 contentTypeId=12(관광지) + 수정일순(arrange=C)으로 조회한다.
+ * 응답에 {@code showflag}(삭제 플래그)와 {@code modifiedtime}이 포함되어 증분 동기화와 삭제 반영이 가능하다.
  *
- * <p>호출량: 전국 관광지 약 1.3만 건 ÷ {@link #PAGE_SIZE} = 약 127콜/회 → 개발계정 일일 한도(1000)
- * 안에서 1회 배치로 전수 수집 가능. 상세(설명/운영시간)는 Tier-2 온디맨드로 분리.
+ * <p>증분 수집: {@code lastModifiedTime} 이후(초과) 변경분만 수집한다. 수정일 내림차순이므로 처음으로
+ * {@code modifiedtime <= lastModifiedTime}인 항목을 만나면 이후는 모두 이미 동기화된 것이므로 즉시 중단한다.
+ * 최초 동기화({@code lastModifiedTime == null})는 전수 수집한다.
  */
 @Slf4j
 @Component
@@ -45,30 +46,36 @@ public class TourApiPlaceClient {
         this.baseUrl = baseUrl;
     }
 
-    /** 전국 관광지(contentTypeId=12) 전 페이지 수집. */
-    public List<TourApiPlaceItem> fetchAll() {
+    /**
+     * {@code lastModifiedTime}(yyyyMMddHHmmss) 이후 변경된 관광지만 수집한다.
+     * null이면 전수 수집(최초 동기화). 수정일 내림차순이라 경계 도달 시 조기 종료한다.
+     */
+    public List<TourApiPlaceItem> fetchModifiedSince(String lastModifiedTime) {
         List<TourApiPlaceItem> result = new ArrayList<>();
-        int pageNo = 1;
 
-        while (true) {
-            if (pageNo > MAX_PAGES) {
-                log.error("KorService2 최대 페이지 수({}) 초과 — 무한루프 방지로 중단", MAX_PAGES);
-                break;
-            }
+        for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
             List<TourApiPlaceItem> items = fetchPage(pageNo).response().body().itemList();
-            result.addAll(items);
-
-            // 종료 조건: 빈 페이지 또는 가득 차지 않은(=마지막) 페이지.
-            // totalCount 정확 일치에 의존하지 않는다 — KorService2는 페이지 간 중복 contentid를 반환할 수 있어
-            // result.size()>=totalCount 가드는 마지막 페이지를 조용히 누락시킬 수 있다.
-            // 중복은 upsert(external_id UNIQUE)가 흡수하므로 페이지를 더 받아도 데이터는 안전하다.
-            if (items.isEmpty() || items.size() < PAGE_SIZE) {
+            if (items.isEmpty()) {
                 break;
             }
-            pageNo++;
+            for (TourApiPlaceItem item : items) {
+                // 수정일 내림차순 — 경계보다 오래된 항목을 만나면 이후는 전부 이미 동기화됨 → 즉시 종료.
+                if (lastModifiedTime != null && item.modifiedTime() != null
+                        && item.modifiedTime().compareTo(lastModifiedTime) <= 0) {
+                    log.info("KorService2 증분 수집 완료(경계 도달): collected={}", result.size());
+                    return result;
+                }
+                result.add(item);
+            }
+            if (items.size() < PAGE_SIZE) {
+                break; // 가득 차지 않은 페이지 = 마지막 페이지
+            }
+            if (pageNo == MAX_PAGES) {
+                log.error("KorService2 최대 페이지 수({}) 초과 — 무한루프 방지로 중단", MAX_PAGES);
+            }
         }
 
-        log.info("KorService2 관광지 fetchAll 완료: total={}", result.size());
+        log.info("KorService2 관광지 수집 완료: collected={}", result.size());
         return result;
     }
 
@@ -104,7 +111,7 @@ public class TourApiPlaceClient {
 
     // serviceKey는 반드시 decoded(raw) 값 + .encode() 1회 (축제 TourApiClient 패턴과 동일 — 이중 인코딩 주의).
     private String buildUri(int pageNo) {
-        return UriComponentsBuilder.fromUriString(baseUrl + "/areaBasedList2")
+        return UriComponentsBuilder.fromUriString(baseUrl + "/areaBasedSyncList2")
                 .queryParam("serviceKey", serviceKey)
                 .queryParam("MobileOS", MOBILE_OS)
                 .queryParam("MobileApp", MOBILE_APP)
@@ -112,7 +119,7 @@ public class TourApiPlaceClient {
                 .queryParam("numOfRows", PAGE_SIZE)
                 .queryParam("pageNo", pageNo)
                 .queryParam("contentTypeId", CONTENT_TYPE_TOURIST_SPOT)
-                .queryParam("arrange", "A") // 제목순 — 페이지네이션 안정 정렬
+                .queryParam("arrange", "C") // 수정일순(내림차순) — 증분 수집의 조기 종료 전제
                 .encode()
                 .build()
                 .toUriString();

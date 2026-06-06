@@ -2,7 +2,9 @@ package com.chunbaetour.domain.place.service;
 
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
+import com.chunbaetour.domain.place.entity.PlaceSyncState;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.repository.PlaceSyncStateRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -25,8 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlaceSyncBatchService {
 
     private final PlaceRepository placeRepository;
+    private final PlaceSyncStateRepository syncStateRepository;
 
-    public enum UpsertResult { CREATED, UPDATED, SKIPPED }
+    public enum UpsertResult { CREATED, UPDATED, SKIPPED, DELETED }
 
     /**
      * contentid(external_id) 기준 단일 관광지 upsert.
@@ -78,6 +81,39 @@ public class PlaceSyncBatchService {
             log.warn("관광지 데이터 품질 오류 — skip: contentId={}, reason={}", item.contentId(), e.getMessage());
             return UpsertResult.SKIPPED;
         }
+    }
+
+    /**
+     * 동기화 응답에서 삭제(showflag != "1") 처리된 항목을 soft-delete 한다.
+     * 존재하지 않거나 이미 DELETED면 SKIPPED. API 수집 데이터의 원천 삭제를 반영(MANUAL은 external_id가 null이라 매칭 안 됨).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public UpsertResult markDeleted(String externalId) {
+        if (externalId == null || externalId.isBlank()) {
+            return UpsertResult.SKIPPED;
+        }
+        Optional<Place> existing = placeRepository.findByExternalId(externalId);
+        if (existing.isEmpty()) {
+            return UpsertResult.SKIPPED;
+        }
+        Place place = existing.get();
+        if (place.getStatus() == PlaceStatus.DELETED) {
+            return UpsertResult.SKIPPED;
+        }
+        place.delete();
+        placeRepository.saveAndFlush(place);
+        return UpsertResult.DELETED;
+    }
+
+    /**
+     * 동기화 완료 후 최신 modifiedtime을 상태 테이블(단일 행)에 저장한다 — 다음 증분 수집의 경계.
+     */
+    @Transactional
+    public void saveLastModifiedTime(String lastModifiedTime) {
+        PlaceSyncState state = syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)
+                .orElseGet(PlaceSyncState::init);
+        state.updateLastModifiedTime(lastModifiedTime);
+        syncStateRepository.save(state);
     }
 
     private BigDecimal parseCoord(String value) {
