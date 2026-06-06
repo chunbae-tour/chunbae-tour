@@ -1,15 +1,18 @@
 package com.chunbaetour.domain.shop.entity;
 
+import com.chunbaetour.domain.common.converter.AccountNumberEncryptConverter;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,6 +33,10 @@ public class ShopWallet extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    @Column(nullable = false)
+    private Long version;
+
     @Column(name = "shop_id", nullable = false)
     private Long shopId;
 
@@ -39,7 +46,8 @@ public class ShopWallet extends BaseEntity {
     @Column(name = "bank_name", length = 50)
     private String bankName;
 
-    @Column(name = "account_number", length = 30)
+    @Convert(converter = AccountNumberEncryptConverter.class)
+    @Column(name = "account_number", length = 255)
     private String accountNumber;
 
     @Column(name = "account_holder", length = 50)
@@ -59,9 +67,9 @@ public class ShopWallet extends BaseEntity {
                 || accountHolder == null || accountHolder.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-        this.bankName = bankName;
-        this.accountNumber = accountNumber;
-        this.accountHolder = accountHolder;
+        this.bankName = bankName.trim();
+        this.accountNumber = accountNumber.trim();
+        this.accountHolder = accountHolder.trim();
     }
 
     /** QR 결제 승인 시 상인 잔액 증가 */
@@ -69,6 +77,7 @@ public class ShopWallet extends BaseEntity {
         if (amount <= 0) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
+        // 정상 운영에서 발생 불가한 잔액 오버플로우 — 데이터 정합성 이상, 서버 측 오류로 분류
         if (Long.MAX_VALUE - this.balance < amount) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
