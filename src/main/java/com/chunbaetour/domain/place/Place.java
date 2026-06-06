@@ -20,6 +20,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 
 import lombok.AccessLevel;
@@ -107,6 +108,15 @@ public class Place {
     @Column(nullable = false, length = 20)
     private PlaceStatus status = PlaceStatus.ACTIVE;
 
+    /** 외부 API 식별자(KorService2 contentid). 수동 등록 관광지는 null. (KAN-221) */
+    @Column(name = "external_id", length = 64, unique = true)
+    private String externalId;
+
+    /** 데이터 출처(MANUAL/API_FETCH). 기본은 수동 등록(MANUAL). (KAN-221) */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PlaceSource source = PlaceSource.MANUAL;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -154,6 +164,47 @@ public class Place {
         this.admissionFee = admissionFee;
         this.tags = tags;
         this.status = PlaceStatus.ACTIVE;
+        this.source = PlaceSource.MANUAL;
+    }
+
+    // ── API 수집 팩토리 (KAN-221) ───────────────────────────────────────
+
+    /**
+     * 한국관광공사 KorService2(국문 관광정보) 목록 응답으로 관광지를 생성한다(Tier-1 배치).
+     * category=TOURIST_SPOT, source=API_FETCH 고정. 설명/운영시간 등 상세 필드는 Tier-2(상세 조회 시)에서 채운다.
+     * name·address·좌표가 비면 빌더가 IllegalArgumentException을 던지므로 호출부(배치)가 skip 처리한다.
+     */
+    public static Place createFromApi(String externalId, String name, String address,
+                                      BigDecimal lat, BigDecimal lng,
+                                      String thumbnailUrl, String phone) {
+        Place place = Place.builder()
+                .name(name)
+                .category(PlaceCategory.TOURIST_SPOT)
+                .address(address)
+                .lat(lat)
+                .lng(lng)
+                .thumbnailUrl(thumbnailUrl)
+                .phone(phone)
+                .build();
+        place.externalId = externalId;
+        place.source = PlaceSource.API_FETCH;
+        return place;
+    }
+
+    /**
+     * API 수집 관광지의 목록성 필드를 최신 응답으로 갱신한다(Tier-1 재동기화).
+     * 좌표가 둘 다 있을 때만 위치를 교체한다. 상세(description/operatingHours 등)는 건드리지 않는다.
+     */
+    public void updateFromApi(String name, String address, BigDecimal lat, BigDecimal lng,
+                              String thumbnailUrl, String phone) {
+        if (name != null && !name.isBlank()) this.name = name;
+        if (address != null && !address.isBlank()) this.address = address;
+        if (lat != null && lng != null) {
+            Point updated = com.chunbaetour.domain.place.util.LocationUtils.createPoint(lat, lng);
+            if (updated != null) this.location = updated;
+        }
+        this.thumbnailUrl = thumbnailUrl;
+        this.phone = phone;
     }
 
     // ── 도메인 메서드 ───────────────────────────────────────────────────

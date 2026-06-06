@@ -12,6 +12,8 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.place.dto.response.PlaceSyncResult;
+import com.chunbaetour.domain.place.service.PlaceSyncService;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,6 +56,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPlaceController {
 
     private final AdminPlaceService adminPlaceService;
+    private final PlaceSyncService placeSyncService;
 
     @Operation(summary = "관광지 목록 조회 (keyword/category 필터 + cursor 페이징)")
     @GetMapping
@@ -101,5 +104,13 @@ public class AdminPlaceController {
             targetIdVar = "placeId")
     public void deletePlace(@PathVariable @Positive Long placeId) {
         adminPlaceService.deletePlace(placeId);
+    }
+
+    @Operation(summary = "관광지 즉시 수집",
+            description = "[ADMIN 전용] 한국관광공사 KorService2(국문 관광정보)에서 전국 관광지를 즉시 수집·upsert (KAN-221 Tier-1).")
+    @PostMapping("/sync")
+    @LogAdminAction(actionType = AdminActionType.PLACE_SYNC, targetType = AdminTargetType.PLACE)
+    public ApiResponse<PlaceSyncResult> syncPlaces() {
+        return ApiResponse.success(placeSyncService.syncAllPlaces());
     }
 }
