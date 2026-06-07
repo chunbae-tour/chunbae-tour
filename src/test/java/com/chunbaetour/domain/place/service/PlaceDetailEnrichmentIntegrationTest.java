@@ -53,7 +53,7 @@ class PlaceDetailEnrichmentIntegrationTest extends AbstractIntegrationTest {
     private Place saveApiPlace(String externalId) {
         return placeRepository.saveAndFlush(Place.createFromApi(
                 externalId, "테스트관광지", "서울특별시 종로구",
-                BigDecimal.valueOf(37.5), BigDecimal.valueOf(127.0), null, null));
+                BigDecimal.valueOf(37.5), BigDecimal.valueOf(127.0), null, null, "서울특별시", "종로구"));
     }
 
     @Test

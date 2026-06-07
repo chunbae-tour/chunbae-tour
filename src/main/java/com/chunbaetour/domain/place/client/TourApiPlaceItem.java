@@ -24,7 +24,9 @@ public record TourApiPlaceItem(
         @JsonProperty("tel")         String tel,
         @JsonProperty("modifiedtime") String modifiedTime,
         // areaBasedSyncList2 전용: "1"=노출, 그 외=삭제/비노출. areaBasedList2 응답엔 없어 null.
-        @JsonProperty("showflag")    String showFlag
+        @JsonProperty("showflag")    String showFlag,
+        // 지역 기반 검색용(KAN-249): areacode로 시도 매핑. sigungu는 주소 파싱이라 sigungucode는 미사용.
+        @JsonProperty("areacode")    String areaCode
 ) {
     /** addr1 + addr2 합친 전체 주소(공백 정리). addr1 없으면 빈 문자열. */
     public String fullAddress() {

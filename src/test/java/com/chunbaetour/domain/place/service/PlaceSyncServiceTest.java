@@ -46,12 +46,12 @@ class PlaceSyncServiceTest {
 
     private TourApiPlaceItem item(String contentId, String modifiedTime) {
         return new TourApiPlaceItem(contentId, "관광지" + contentId, "서울특별시", "",
-                "127.0", "37.5", null, null, null, modifiedTime, "1");
+                "127.0", "37.5", null, null, null, modifiedTime, "1", "1");
     }
 
     private TourApiPlaceItem deletedItem(String contentId, String modifiedTime) {
         return new TourApiPlaceItem(contentId, "삭제됨", "서울특별시", "",
-                "127.0", "37.5", null, null, null, modifiedTime, "0"); // showflag != "1"
+                "127.0", "37.5", null, null, null, modifiedTime, "0", "1"); // showflag != "1"
     }
 
     @Test

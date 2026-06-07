@@ -69,7 +69,7 @@ class KorServiceResponseTest {
     void fullAddressWithAddr2() {
         TourApiPlaceItem item = new TourApiPlaceItem(
                 "1", "이름", "서울특별시 중구 세종대로", "110", "127.0", "37.5",
-                null, null, null, null, null);
+                null, null, null, null, null, null);
         assertThat(item.fullAddress()).isEqualTo("서울특별시 중구 세종대로 110");
     }
 }

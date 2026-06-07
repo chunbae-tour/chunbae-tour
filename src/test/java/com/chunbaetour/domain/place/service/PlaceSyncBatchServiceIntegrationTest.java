@@ -33,7 +33,7 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
 
     private TourApiPlaceItem item(String contentId, String title, String mapX, String mapY) {
         return new TourApiPlaceItem(contentId, title, "충청남도 천안시 동남구", "", mapX, mapY,
-                "http://tong.visitkorea.or.kr/img.jpg", null, "041-100-1000", "20251124134437", "1");
+                "http://tong.visitkorea.or.kr/img.jpg", null, "041-100-1000", "20251124134437", "1", "34");
     }
 
     @Test
@@ -76,9 +76,9 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("운영자가 삭제(DELETED)한 관광지는 재수집해도 SKIPPED로 되살리지 않는다")
     void preserveDeleted() {
-        // createFromApi(externalId, name, address, lat, lng, thumbnail, phone)
+        // createFromApi(externalId, name, address, lat, lng, thumbnail, phone, sido, sigungu)
         Place toDelete = Place.createFromApi("400", "삭제된관광지", "충청남도 천안시",
-                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null);
+                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null, "충청남도", "천안시");
         toDelete.delete();
         placeRepository.saveAndFlush(toDelete);
 

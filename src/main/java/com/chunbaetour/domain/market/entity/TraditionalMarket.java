@@ -22,7 +22,9 @@ import lombok.NoArgsConstructor;
     name = "traditional_markets",
     indexes = {
         @Index(name = "idx_traditional_markets_name", columnList = "name"),
-        @Index(name = "idx_traditional_markets_lat_lng", columnList = "lat, lng")
+        @Index(name = "idx_traditional_markets_lat_lng", columnList = "lat, lng"),
+        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606071000)
+        @Index(name = "idx_traditional_markets_region", columnList = "sido, sigungu")
     }
 )
 @Getter
@@ -65,10 +67,18 @@ public class TraditionalMarket extends BaseEntity {
     @Column(name = "establish_year")
     private Integer establishYear;
 
+    /** 시도(행정구역). 지역 기반 검색용. 예: "서울특별시". 주소 파싱으로 채움. (KAN-249) */
+    @Column(length = 20)
+    private String sido;
+
+    /** 시군구(행정구역). 지역 기반 검색용. 예: "수원시". 주소 파싱으로 채움. (KAN-249) */
+    @Column(length = 30)
+    private String sigungu;
+
     @Builder
     private TraditionalMarket(String name, String address, BigDecimal lat, BigDecimal lng,
                               String marketType, String phoneNumber, String homepageUrl,
-                              Integer establishYear) {
+                              Integer establishYear, String sido, String sigungu) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("시장명은 필수입니다.");
         }
@@ -90,17 +100,23 @@ public class TraditionalMarket extends BaseEntity {
         this.phoneNumber = phoneNumber;
         this.homepageUrl = homepageUrl;
         this.establishYear = establishYear;
+        this.sido = sido;
+        this.sigungu = sigungu;
     }
 
     /** 시장 정보 업데이트 (동기화/관리자 공용). 좌표 보정 포함. */
     public void update(BigDecimal lat, BigDecimal lng, String marketType,
-                       String phoneNumber, String homepageUrl, Integer establishYear) {
+                       String phoneNumber, String homepageUrl, Integer establishYear,
+                       String sido, String sigungu) {
         if (lat != null) this.lat = validateLat(lat);
         if (lng != null) this.lng = validateLng(lng);
         if (marketType != null) this.marketType = marketType;
         if (phoneNumber != null) this.phoneNumber = phoneNumber;
         if (homepageUrl != null) this.homepageUrl = homepageUrl;
         if (establishYear != null) this.establishYear = establishYear;
+        // 주소 기반 재계산 값 — null이어도 최신 파싱 결과로 갱신(주소 변경 반영)
+        this.sido = sido;
+        this.sigungu = sigungu;
     }
 
     private static BigDecimal validateLat(BigDecimal lat) {

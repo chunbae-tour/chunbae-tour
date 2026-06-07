@@ -1,10 +1,12 @@
 package com.chunbaetour.domain.place.service;
 
+import com.chunbaetour.domain.common.util.RegionParser;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
 import com.chunbaetour.domain.place.entity.PlaceSyncState;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.PlaceSyncStateRepository;
+import com.chunbaetour.domain.place.type.AreaCode;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -54,12 +56,20 @@ public class PlaceSyncBatchService {
         String thumbnail = blankToNull(item.firstImage());
         String phone = blankToNull(item.tel());
 
+        // 지역(시도/시군구) 추출 — 시도는 areacode 우선(정확), 없으면 주소 파싱 fallback. 시군구는 주소 파싱.
+        RegionParser.Region region = RegionParser.parse(item.fullAddress());
+        String sido = AreaCode.sidoOf(item.areaCode());
+        if (sido == null) {
+            sido = region.sido();
+        }
+        String sigungu = region.sigungu();
+
         try {
             Optional<Place> existing = placeRepository.findByExternalId(item.contentId());
             if (existing.isEmpty()) {
                 placeRepository.saveAndFlush(Place.createFromApi(
                         item.contentId(), item.title().trim(), item.fullAddress(),
-                        lat, lng, thumbnail, phone));
+                        lat, lng, thumbnail, phone, sido, sigungu));
                 return UpsertResult.CREATED;
             }
 
@@ -69,7 +79,7 @@ public class PlaceSyncBatchService {
             if (place.getStatus() != PlaceStatus.ACTIVE) {
                 return UpsertResult.SKIPPED;
             }
-            place.updateFromApi(item.title().trim(), item.fullAddress(), lat, lng, thumbnail, phone);
+            place.updateFromApi(item.title().trim(), item.fullAddress(), lat, lng, thumbnail, phone, sido, sigungu);
             placeRepository.saveAndFlush(place);
             return UpsertResult.UPDATED;
         } catch (DataIntegrityViolationException e) {

@@ -37,7 +37,9 @@ import lombok.NoArgsConstructor;
         // 기존 단일 idx_places_status는 본 복합의 leftmost prefix라 중복 → 제거(KAN-209 S07 리뷰 G).
         @Index(name = "idx_places_status_id", columnList = "status, id"),
         // 공간 인덱스는 JPA @Index로 정의할 수 없으므로 DB 마이그레이션(V202606041400)에서 직접 생성
-        @Index(name = "idx_places_name",     columnList = "name")
+        @Index(name = "idx_places_name",     columnList = "name"),
+        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606071000)
+        @Index(name = "idx_places_region",   columnList = "sido, sigungu")
     }
 )
 @Getter
@@ -108,6 +110,14 @@ public class Place {
     @Column(nullable = false, length = 20)
     private PlaceStatus status = PlaceStatus.ACTIVE;
 
+    /** 시도(행정구역). 지역 기반 검색용. 예: "서울특별시". 수집 시 채움. (KAN-249) */
+    @Column(length = 20)
+    private String sido;
+
+    /** 시군구(행정구역). 지역 기반 검색용. 예: "수원시". 수집 시 채움. (KAN-249) */
+    @Column(length = 30)
+    private String sigungu;
+
     /** 외부 API 식별자(KorService2 contentid). 수동 등록 관광지는 null. (KAN-221) */
     @Column(name = "external_id", length = 64, unique = true)
     private String externalId;
@@ -176,7 +186,8 @@ public class Place {
      */
     public static Place createFromApi(String externalId, String name, String address,
                                       BigDecimal lat, BigDecimal lng,
-                                      String thumbnailUrl, String phone) {
+                                      String thumbnailUrl, String phone,
+                                      String sido, String sigungu) {
         Place place = Place.builder()
                 .name(name)
                 .category(PlaceCategory.TOURIST_SPOT)
@@ -188,6 +199,8 @@ public class Place {
                 .build();
         place.externalId = externalId;
         place.source = PlaceSource.API_FETCH;
+        place.sido = sido;
+        place.sigungu = sigungu;
         return place;
     }
 
@@ -196,7 +209,7 @@ public class Place {
      * 좌표가 둘 다 있을 때만 위치를 교체한다. 상세(description/operatingHours 등)는 건드리지 않는다.
      */
     public void updateFromApi(String name, String address, BigDecimal lat, BigDecimal lng,
-                              String thumbnailUrl, String phone) {
+                              String thumbnailUrl, String phone, String sido, String sigungu) {
         if (name != null && !name.isBlank()) this.name = name;
         if (address != null && !address.isBlank()) this.address = address;
         if (lat != null && lng != null) {
@@ -205,6 +218,8 @@ public class Place {
         }
         this.thumbnailUrl = thumbnailUrl;
         this.phone = phone;
+        this.sido = sido;
+        this.sigungu = sigungu;
     }
 
     /**
