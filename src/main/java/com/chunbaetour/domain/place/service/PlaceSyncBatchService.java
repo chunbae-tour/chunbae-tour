@@ -97,7 +97,9 @@ public class PlaceSyncBatchService {
             return UpsertResult.SKIPPED;
         }
         Place place = existing.get();
-        if (place.getStatus() == PlaceStatus.DELETED) {
+        // upsert와 동일 규칙: ACTIVE만 처리. 운영자가 숨김(HIDDEN)·삭제(DELETED)한 관광지는
+        // showflag 삭제가 와도 운영 의사를 존중해 건드리지 않는다.
+        if (place.getStatus() != PlaceStatus.ACTIVE) {
             return UpsertResult.SKIPPED;
         }
         place.delete();

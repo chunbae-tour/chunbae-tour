@@ -117,9 +117,14 @@ public class PlaceSyncService {
             }
         }
 
-        // 4) 다음 증분의 경계 갱신 (이번에 처리한 가장 최신 modifiedtime)
-        if (!items.isEmpty() && maxModified != null) {
+        // 4) 다음 증분의 경계 갱신 (이번에 처리한 가장 최신 modifiedtime).
+        //    maxModified가 since와 동일하면 경계가 전진하지 않은 것 — 수집 항목 전부 modifiedtime이 비었거나
+        //    경계와 같은 초란 뜻이다. 옛 경계를 무의미하게 재저장(silent no-op)하지 않고 데이터 품질 경고만 남긴다.
+        if (!items.isEmpty() && maxModified != null && !maxModified.equals(since)) {
             batchService.saveLastModifiedTime(maxModified);
+        } else if (!items.isEmpty()) {
+            log.warn("관광지 동기화 경계 전진 없음 — 수집 항목의 modifiedtime이 비었거나 경계와 동일: items={}, since={}",
+                    items.size(), since);
         }
 
         return new PlaceSyncResult(items.size(), created, updated, deleted, skipped);

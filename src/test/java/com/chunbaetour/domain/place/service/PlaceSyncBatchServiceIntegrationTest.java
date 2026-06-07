@@ -108,4 +108,37 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     void markDeletedNotFound() {
         assertThat(batchService.markDeleted("999")).isEqualTo(UpsertResult.SKIPPED);
     }
+
+    @Test
+    @DisplayName("운영자가 숨김(HIDDEN)한 관광지는 showflag 삭제(markDeleted)가 와도 건드리지 않고 SKIPPED")
+    void markDeletedSkipsHidden() {
+        batchService.upsertItem(item("600", "숨김관광지", "127.1", "36.8"));
+        Place hidden = placeRepository.findByExternalId("600").orElseThrow();
+        hidden.hide();
+        placeRepository.saveAndFlush(hidden);
+
+        UpsertResult result = batchService.markDeleted("600");
+
+        // 운영자 숨김 의사 존중 — sync 삭제가 DELETED로 덮어쓰지 않는다
+        assertThat(result).isEqualTo(UpsertResult.SKIPPED);
+        assertThat(placeRepository.findByExternalId("600").orElseThrow().getStatus())
+                .isEqualTo(PlaceStatus.HIDDEN);
+    }
+
+    @Test
+    @DisplayName("운영자가 숨김(HIDDEN)한 관광지는 재수집(upsert)해도 SKIPPED로 데이터를 덮어쓰지 않는다")
+    void preserveHidden() {
+        batchService.upsertItem(item("700", "숨김관광지", "127.1", "36.8"));
+        Place hidden = placeRepository.findByExternalId("700").orElseThrow();
+        hidden.hide();
+        placeRepository.saveAndFlush(hidden);
+
+        UpsertResult result = batchService.upsertItem(item("700", "덮어쓰기시도", "127.2", "36.9"));
+
+        // ACTIVE만 갱신 — HIDDEN은 이름/좌표 갱신 없이 보존
+        assertThat(result).isEqualTo(UpsertResult.SKIPPED);
+        Place found = placeRepository.findByExternalId("700").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.HIDDEN);
+        assertThat(found.getName()).isEqualTo("숨김관광지"); // 갱신 안 됨
+    }
 }

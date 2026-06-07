@@ -19,9 +19,10 @@ import org.springframework.web.util.UriComponentsBuilder;
  * <p>{@code areaBasedSyncList2}(관광정보 동기화 목록)를 contentTypeId=12(관광지) + 수정일순(arrange=C)으로 조회한다.
  * 응답에 {@code showflag}(삭제 플래그)와 {@code modifiedtime}이 포함되어 증분 동기화와 삭제 반영이 가능하다.
  *
- * <p>증분 수집: {@code lastModifiedTime} 이후(초과) 변경분만 수집한다. 수정일 내림차순이므로 처음으로
- * {@code modifiedtime <= lastModifiedTime}인 항목을 만나면 이후는 모두 이미 동기화된 것이므로 즉시 중단한다.
- * 최초 동기화({@code lastModifiedTime == null})는 전수 수집한다.
+ * <p>증분 수집: {@code lastModifiedTime} 이상(경계 초 포함) 변경분을 수집한다. 수정일 내림차순이므로 처음으로
+ * {@code modifiedtime < lastModifiedTime}인 항목(경계보다 엄격히 과거)을 만나면 이후는 모두 이미 동기화된
+ * 것이므로 즉시 중단한다. 경계와 동일 초 항목은 이전 run의 페이지 경계로 갈려 누락될 수 있어 매 run 재수집한다
+ * (멱등 upsert라 안전). 최초 동기화({@code lastModifiedTime == null})는 전수 수집한다.
  */
 @Slf4j
 @Component
@@ -59,9 +60,11 @@ public class TourApiPlaceClient {
                 break;
             }
             for (TourApiPlaceItem item : items) {
-                // 수정일 내림차순 — 경계보다 오래된 항목을 만나면 이후는 전부 이미 동기화됨 → 즉시 종료.
+                // 수정일 내림차순 — 경계보다 "엄격히" 과거(< )인 항목을 만나면 이후는 전부 이미 동기화됨 → 즉시 종료.
+                // 경계와 동일 초(==)는 종료시키지 않는다: 같은 modifiedtime 항목이 이전 run의 페이지 경계로
+                // 갈렸을 수 있어, ==에서 멈추면 다음 증분에서 영구 누락된다. 동일 초는 멱등 upsert로 재처리해도 안전.
                 if (lastModifiedTime != null && item.modifiedTime() != null
-                        && item.modifiedTime().compareTo(lastModifiedTime) <= 0) {
+                        && item.modifiedTime().compareTo(lastModifiedTime) < 0) {
                     log.info("KorService2 증분 수집 완료(경계 도달): collected={}", result.size());
                     return result;
                 }
