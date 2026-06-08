@@ -49,7 +49,7 @@ public class GeocodingController {
     public ApiResponse<GeocodingResponse> geocode(
             @RequestParam
             @NotBlank(message = "주소를 입력해주세요.")
-            @Size(max = 100, message = "주소는 최대 100자까지 입력 가능합니다.")
+            @Size(min = 2, max = 100, message = "주소는 2자 이상 100자 이하로 입력해주세요.")
             String query
     ) {
         return ApiResponse.success(geocodingService.geocode(query));

@@ -112,7 +112,8 @@ public class KakaoLocalApiClient {
     /**
      * 주소 → 좌표 변환 (Geocoding).
      * • 도로명/지번 주소 모두 지원
-     * • 일치 결과가 없으면 null 반환 (호출자가 GEOCODING_RESULT_NOT_FOUND 예외 발생 체임)
+     * • 일치 결과가 없으면 documents가 빈 리스트인 KakaoAddressResponse를 반환 (null 아님)
+     * • 카카오 API 장애 시 MAP_SERVICE_UNAVAILABLE 예외 발생
      */
     public KakaoAddressResponse searchAddress(String query) {
         try {
