@@ -211,10 +211,11 @@ public enum ErrorCode {
     // CS_005: 이미 배정된 상담방 — 중복 배정 차단
     SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다."),
 
-    // ===== COMPANION REVIEW (담당: 임하은) =====
+    // ===== COMPANION / COMPANION REVIEW (담당: 임하은, CR 프리픽스 공유) =====
     COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),
     COMPANION_REVIEW_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "CR_002", "자기 자신에게 리뷰를 작성할 수 없습니다."),
     COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "해당 채팅방 참여자가 아니면 리뷰를 작성할 수 없습니다."),
+    // CR_004~007: 동행(Companion) 시작/종료/참여자 관리 — 고도화 #5·#6에서 사용
     // CR_004: 방당 동행 1번만 — 이미 동행이 존재하는 방에서 재시작 차단
     COMPANION_ALREADY_EXISTS(HttpStatus.CONFLICT,           "CR_004", "이미 동행이 시작된 채팅방입니다."),
     COMPANION_NOT_FOUND(HttpStatus.NOT_FOUND,               "CR_005", "존재하지 않는 동행입니다."),

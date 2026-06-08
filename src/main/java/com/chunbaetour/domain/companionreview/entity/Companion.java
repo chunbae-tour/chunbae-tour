@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -17,7 +18,13 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "companions")
+@Table(
+        name = "companions",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_companions_chat_room_id",
+                columnNames = "chat_room_id"
+        )
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Companion extends BaseEntity {
@@ -27,7 +34,7 @@ public class Companion extends BaseEntity {
     private Long id;
 
     // 동행 채팅방 — FK to chat_rooms, UNIQUE (방당 동행 1번만)
-    @Column(name = "chat_room_id", nullable = false, unique = true)
+    @Column(name = "chat_room_id", nullable = false)
     private Long chatRoomId;
 
     @Enumerated(EnumType.STRING)

@@ -10,7 +10,7 @@ CREATE TABLE `companions` (
   `started_at`    datetime(6)  NOT NULL,
   `ended_at`      datetime(6)  DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_companions_chat_room_id` (`chat_room_id`),
+  UNIQUE KEY `uq_companions_chat_room_id` (`chat_room_id`),
   CONSTRAINT `fk_companions_chat_room` FOREIGN KEY (`chat_room_id`) REFERENCES `chat_rooms` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -26,6 +26,7 @@ CREATE TABLE `companion_participants` (
   `added_at`      datetime(6)  NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_companion_participant` (`companion_id`, `user_id`),
+  INDEX `idx_companion_participants_user_id` (`user_id`),
   CONSTRAINT `fk_companion_participants_companion` FOREIGN KEY (`companion_id`) REFERENCES `companions` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_companion_participants_user`      FOREIGN KEY (`user_id`)      REFERENCES `users` (`id`)      ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
