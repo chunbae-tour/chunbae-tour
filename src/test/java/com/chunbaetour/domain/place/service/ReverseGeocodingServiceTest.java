@@ -143,6 +143,34 @@ class ReverseGeocodingServiceTest {
     }
 
     @Test
+    @DisplayName("락 획득 실패 및 캐시 미스 시 외부 API 직접 조회(Fallback)")
+    void reverseGeocode_lockAcquisitionFailsAndCacheMiss_fallbackToApi() throws Exception {
+        // given
+        // 첫 조회 null, 두 번째 조회(Fallback)도 null
+        given(valueOps.get(CACHE_KEY))
+                .willReturn(null)
+                .willReturn(null);
+        
+        given(rLock.tryLock(anyLong(), anyLong(), any())).willReturn(false);
+
+        KakaoRegionResponse.Document doc = new KakaoRegionResponse.Document(
+                "B", "제주특별자치도 서귀포시 안덕면", "제주특별자치도", "서귀포시", "안덕면", ""
+        );
+        KakaoRegionResponse mockResponse = new KakaoRegionResponse(
+                new KakaoRegionResponse.Meta(1), List.of(doc)
+        );
+        given(kakaoLocalApiClient.getRegionCode(LAT, LNG)).willReturn(mockResponse);
+
+        // when
+        RegionResponse result = reverseGeocodingService.reverseGeocode(LAT, LNG);
+
+        // then
+        assertThat(result.depth2()).isEqualTo("서귀포시");
+        assertThat(result.depth3()).isEqualTo("안덕면");
+        then(kakaoLocalApiClient).should().getRegionCode(LAT, LNG);
+    }
+
+    @Test
     @DisplayName("카카오 API 응답이 없으면 GEOCODING_RESULT_NOT_FOUND 예외")
     void reverseGeocode_kakaoApiReturnsEmpty_throwsException() {
         // given

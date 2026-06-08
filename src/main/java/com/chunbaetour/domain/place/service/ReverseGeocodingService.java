@@ -54,7 +54,8 @@ public class ReverseGeocodingService {
                 if (fallback != null) {
                     return fallback;
                 }
-                throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+                log.warn("[ReverseGeocoding] 락 획득 실패 및 캐시 미스, 카카오 API 강제 조회로 Fallback. key={}", cacheKey);
+                return fetchFromKakaoAndCache(lat, lng, cacheKey);
             }
             try {
                 // Double-checked locking
