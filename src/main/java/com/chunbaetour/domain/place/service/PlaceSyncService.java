@@ -98,6 +98,8 @@ public class PlaceSyncService {
         // 다음 run에서 실패 item이 반드시 재수집되게 한다. (경계를 초과하면 조기 종료(< since)로 영구 누락)
         String minFailedModified = null;
         for (TourApiPlaceItem item : items) {
+            // 공백/빈 modifiedtime은 null로 정규화 — bound=""이 경계로 저장돼 커서가 깨지는 것을 막는다.
+            String itemModified = normalizeModifiedTime(item.modifiedTime());
             try {
                 if (item.isDeleted()) {
                     if (batchService.markDeleted(item.contentId()) == UpsertResult.DELETED) {
@@ -113,12 +115,12 @@ public class PlaceSyncService {
                     }
                 }
                 // 성공한 item만 경계 전진에 반영 — 실패 item의 modifiedtime은 경계를 끌어올리지 않는다.
-                maxModified = laterOf(maxModified, item.modifiedTime());
+                maxModified = laterOf(maxModified, itemModified);
             } catch (Exception e) {
                 log.warn("관광지 item 건너뜀 — 처리 예외: contentId={}, error={}",
                         item.contentId(), e.getMessage());
                 // 실패 item의 modifiedtime을 경계 캡 후보로 누적 (다음 run 재시도 보장)
-                minFailedModified = earlierOf(minFailedModified, item.modifiedTime());
+                minFailedModified = earlierOf(minFailedModified, itemModified);
                 skipped++;
             }
         }
@@ -141,15 +143,26 @@ public class PlaceSyncService {
         return new PlaceSyncResult(items.size(), created, updated, deleted, skipped);
     }
 
-    /** 두 modifiedtime(yyyyMMddHHmmss 문자열) 중 더 최신(사전순 큰) 값을 반환. null 안전. */
+    /** 공백/빈 문자열을 null로 정규화. 유효 timestamp만 경계 계산에 반영하기 위함. */
+    private String normalizeModifiedTime(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** 두 modifiedtime(yyyyMMddHHmmss 문자열) 중 더 최신(사전순 큰) 값을 반환. 공백/null 안전. */
     private String laterOf(String a, String b) {
+        a = normalizeModifiedTime(a);
+        b = normalizeModifiedTime(b);
         if (a == null) return b;
         if (b == null) return a;
         return a.compareTo(b) >= 0 ? a : b;
     }
 
-    /** 두 modifiedtime 중 더 과거(사전순 작은) 값을 반환. null은 "제약 없음"으로 보고 다른 값을 반환. */
+    /** 두 modifiedtime 중 더 과거(사전순 작은) 값을 반환. 공백/null은 "제약 없음"으로 보고 다른 값을 반환. */
     private String earlierOf(String a, String b) {
+        a = normalizeModifiedTime(a);
+        b = normalizeModifiedTime(b);
         if (a == null) return b;
         if (b == null) return a;
         return a.compareTo(b) <= 0 ? a : b;

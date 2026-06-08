@@ -41,8 +41,15 @@ public class PlaceSyncState {
         return state;
     }
 
-    /** 동기화 완료 후 최신 modifiedtime 갱신. */
+    /**
+     * 동기화 완료 후 최신 modifiedtime 갱신.
+     * 증분 경계가 무효화되지 않도록 yyyyMMddHHmmss(14자리 숫자) 형식을 강제한다 —
+     * null/공백/비정상 값이 경계로 저장되면 다음 증분 커서가 깨져 누락·중복이 발생한다.
+     */
     public void updateLastModifiedTime(String lastModifiedTime) {
+        if (lastModifiedTime == null || !lastModifiedTime.matches("\\d{14}")) {
+            throw new IllegalArgumentException("lastModifiedTime must be yyyyMMddHHmmss: " + lastModifiedTime);
+        }
         this.lastModifiedTime = lastModifiedTime;
         this.updatedAt = LocalDateTime.now();
     }

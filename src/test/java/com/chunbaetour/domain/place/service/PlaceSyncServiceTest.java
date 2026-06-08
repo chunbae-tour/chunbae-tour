@@ -135,6 +135,22 @@ class PlaceSyncServiceTest {
     }
 
     @Test
+    @DisplayName("modifiedtime이 공백/빈 문자열인 item만 있으면 경계로 빈 값을 저장하지 않는다")
+    void blankModifiedTimeNotSavedAsBoundary() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "   "),
+                item("2", "")));
+        given(batchService.upsertItem(any())).willReturn(UpsertResult.CREATED, UpsertResult.CREATED);
+
+        placeSyncService.syncAllPlaces();
+
+        // 공백은 null로 정규화 → 경계 전진 없음 → saveLastModifiedTime 미호출(빈 값 저장 방지)
+        verify(batchService, never()).saveLastModifiedTime(any());
+    }
+
+    @Test
     @DisplayName("수집 중 예외가 나도 finally에서 락을 해제한다")
     void unlockOnException() {
         given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
