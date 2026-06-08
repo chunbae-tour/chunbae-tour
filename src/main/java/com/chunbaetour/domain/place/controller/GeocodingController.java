@@ -38,7 +38,7 @@ public class GeocodingController {
      *   GET /api/v1/places/geocoding?query=서울 종로구 사직로 161
      * </pre>
      *
-     * @param query 변환할 주소 (1~100자)
+     * @param query 변환할 주소 (2~100자)
      * @return 정제된 주소명, 위도(lat), 경도(lng)
      */
     @Operation(
