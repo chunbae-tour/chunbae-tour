@@ -3,6 +3,7 @@ package com.chunbaetour.domain.place.client;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.dto.Coord;
+import com.chunbaetour.domain.place.dto.KakaoAddressResponse;
 import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
 import com.chunbaetour.domain.place.dto.KakaoLocalResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -23,17 +24,20 @@ public class KakaoLocalApiClient {
     private final String apiKey;
     private final String coord2AddressUrl;
     private final String categorySearchUrl;
+    private final String addressSearchUrl;
 
     public KakaoLocalApiClient(
             RestClient kakaoRestClient,
             @Value("${kakao.map.api-key}") String apiKey,
             @Value("${kakao.map.coord2address-url}") String coord2AddressUrl,
-            @Value("${kakao.map.category-search-url}") String categorySearchUrl
+            @Value("${kakao.map.category-search-url}") String categorySearchUrl,
+            @Value("${kakao.map.address-search-url}") String addressSearchUrl
     ) {
         this.kakaoRestClient = kakaoRestClient;
         this.apiKey = apiKey;
         this.coord2AddressUrl = coord2AddressUrl;
         this.categorySearchUrl = categorySearchUrl;
+        this.addressSearchUrl = addressSearchUrl;
     }
 
     public String getAddressName(Coord coord, String defaultValue) {
@@ -101,6 +105,38 @@ public class KakaoLocalApiClient {
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Category API Network Error", e);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * 주소 → 좌표 변환 (Geocoding).
+     * • 도로명/지번 주소 모두 지원
+     * • 일치 결과가 없으면 null 반환 (호출자가 GEOCODING_RESULT_NOT_FOUND 예외 발생 체임)
+     */
+    public KakaoAddressResponse searchAddress(String query) {
+        try {
+            String url = UriComponentsBuilder.fromUriString(addressSearchUrl)
+                    .queryParam("query", query)
+                    .queryParam("size", 1)
+                    .build()
+                    .toUriString();
+
+            return kakaoRestClient.get()
+                    .uri(url)
+                    .header("Authorization", "KakaoAK " + apiKey)
+                    .retrieve()
+                    .body(KakaoAddressResponse.class);
+
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is4xxClientError()) {
+                log.warn("Kakao Address Search API Error (4xx): status={}", e.getStatusCode());
+            } else {
+                log.error("Kakao Address Search API Server Error (5xx): status={}", e.getStatusCode(), e);
+            }
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        } catch (RestClientException e) {
+            log.error("Kakao Address Search API Network Error", e);
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }
