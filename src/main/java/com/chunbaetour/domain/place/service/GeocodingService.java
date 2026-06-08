@@ -64,8 +64,9 @@ public class GeocodingService {
         }
 
         // Cache Stampede 방지를 위한 Redisson 분산 락
-        RLock lock = redissonClient.getLock("lock:" + cacheKey);
+        RLock lock;
         try {
+            lock = redissonClient.getLock("lock:" + cacheKey);
             boolean isLocked = lock.tryLock(5, 10, TimeUnit.SECONDS);
             if (!isLocked) {
                 // 락 획득 실패(5초 초과 대기) 시 앞선 스레드가 방금 캐시를 갱신했을 수 있으므로 1번 더 조회 (Fallback)
@@ -92,6 +93,11 @@ public class GeocodingService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new java.util.concurrent.CancellationException("스레드 인터럽트로 인한 지오코딩 작업 취소");
+        } catch (BusinessException e) {
+            throw e; // 명시적으로 던진 비즈니스 예외는 그대로 전파
+        } catch (Exception e) {
+            log.warn("[Geocoding] Redis 장애로 락 획득 예외 발생, 카카오 API 강제 조회. keyHash={}", cacheKey);
+            return fetchFromKakaoAndCache(query, cacheKey);
         }
     }
 
