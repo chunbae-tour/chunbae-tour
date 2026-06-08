@@ -126,7 +126,6 @@ public class KakaoLocalApiClient {
         }
     }
 
-<<<<<<< HEAD
     /**
      * 주소 → 좌표 변환 (Geocoding).
      * • 도로명/지번 주소 모두 지원
@@ -138,13 +137,6 @@ public class KakaoLocalApiClient {
             String url = UriComponentsBuilder.fromUriString(addressSearchUrl)
                     .queryParam("query", query)
                     .queryParam("size", 1)
-=======
-    public KakaoRegionResponse getRegionCode(double lat, double lng) {
-        try {
-            String url = UriComponentsBuilder.fromUriString(coord2RegioncodeUrl)
-                    .queryParam("x", String.format(Locale.ROOT, "%.8f", lng))
-                    .queryParam("y", String.format(Locale.ROOT, "%.8f", lat))
->>>>>>> e8ebb1b6abbafb3376364b50eb26c3237774f443
                     .build()
                     .toUriString();
 
@@ -152,19 +144,37 @@ public class KakaoLocalApiClient {
                     .uri(url)
                     .header("Authorization", "KakaoAK " + apiKey)
                     .retrieve()
-<<<<<<< HEAD
                     .body(KakaoAddressResponse.class);
 
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
-                log.warn("Kakao Address Search API Error (4xx): status={}", e.getStatusCode());
+                if (e.getStatusCode().value() == 401) {
+                    log.error("Kakao Address Search API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
+                } else {
+                    log.warn("Kakao Address Search API Error (4xx): status={}", e.getStatusCode());
+                }
             } else {
                 log.error("Kakao Address Search API Server Error (5xx): status={}", e.getStatusCode(), e);
             }
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Address Search API Network Error", e);
-=======
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    public KakaoRegionResponse getRegionCode(double lat, double lng) {
+        try {
+            String url = UriComponentsBuilder.fromUriString(coord2RegioncodeUrl)
+                    .queryParam("x", String.format(Locale.ROOT, "%.8f", lng))
+                    .queryParam("y", String.format(Locale.ROOT, "%.8f", lat))
+                    .build()
+                    .toUriString();
+
+            return kakaoRestClient.get()
+                    .uri(url)
+                    .header("Authorization", "KakaoAK " + apiKey)
+                    .retrieve()
                     .body(KakaoRegionResponse.class);
 
         } catch (RestClientResponseException e) {
@@ -180,7 +190,6 @@ public class KakaoLocalApiClient {
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Region API Network Error", e);
->>>>>>> e8ebb1b6abbafb3376364b50eb26c3237774f443
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }
