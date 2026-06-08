@@ -6,6 +6,8 @@ import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.KakaoAddressResponse;
 import com.chunbaetour.domain.place.dto.response.GeocodingResponse;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 주소 → 좌표 변환(지오코딩) 서비스.
@@ -38,8 +40,7 @@ public class GeocodingService {
     private final KakaoLocalApiClient kakaoLocalApiClient;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
-
-    private final ConcurrentHashMap<String, Object> locks = new ConcurrentHashMap<>();
+    private final RedissonClient redissonClient;
 
     /**
      * 주소 문자열을 위도·경도로 변환한다.
@@ -62,9 +63,14 @@ public class GeocodingService {
             return result;
         }
 
-        // Cache Stampede 방지를 위한 Local Lock
-        Object lock = locks.computeIfAbsent(cacheKey, k -> new Object());
-        synchronized (lock) {
+        // Cache Stampede 방지를 위한 Redisson 분산 락
+        RLock lock = redissonClient.getLock("lock:" + cacheKey);
+        try {
+            boolean isLocked = lock.tryLock(3, 10, TimeUnit.SECONDS);
+            if (!isLocked) {
+                // 락 획득 실패 시 타 스레드가 처리 중이거나 지연 발생 상태. API 무한 대기 방지를 위해 예외 처리.
+                throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+            }
             try {
                 // Double-checked locking
                 result = getFromCache(cacheKey);
@@ -74,8 +80,13 @@ public class GeocodingService {
 
                 return fetchFromKakaoAndCache(query, cacheKey);
             } finally {
-                locks.remove(cacheKey);
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 

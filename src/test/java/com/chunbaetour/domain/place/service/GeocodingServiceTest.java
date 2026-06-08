@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -37,6 +39,10 @@ class GeocodingServiceTest {
     private StringRedisTemplate stringRedisTemplate;
     @Mock
     private ValueOperations<String, String> valueOps;
+    @Mock
+    private RedissonClient redissonClient;
+    @Mock
+    private RLock rLock;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -57,9 +63,13 @@ class GeocodingServiceTest {
     }
 
     @BeforeEach
-    void setUp() {
-        geocodingService = new GeocodingService(kakaoLocalApiClient, stringRedisTemplate, objectMapper);
+    void setUp() throws InterruptedException {
+        geocodingService = new GeocodingService(kakaoLocalApiClient, stringRedisTemplate, objectMapper, redissonClient);
+        
         org.mockito.Mockito.lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
+        org.mockito.Mockito.lenient().when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        org.mockito.Mockito.lenient().when(rLock.tryLock(anyLong(), anyLong(), any())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(rLock.isHeldByCurrentThread()).thenReturn(true);
     }
 
     @Test
@@ -91,6 +101,9 @@ class GeocodingServiceTest {
         // 카카오 API 1회 호출 + Redis 캐시 저장 확인
         then(kakaoLocalApiClient).should().searchAddress(QUERY);
         then(valueOps).should().set(eq(key), anyString(), any());
+        
+        // 락 해제 확인
+        then(rLock).should().unlock();
     }
 
     @Test
@@ -109,6 +122,9 @@ class GeocodingServiceTest {
         then(kakaoLocalApiClient).should(never()).searchAddress(any());
         assertThat(result.lat()).isEqualByComparingTo("37.57960000");
         assertThat(result.addressName()).isEqualTo("서울 종로구 사직로 161");
+        
+        // 캐시 히트 시 락을 획득하지 않고 바로 리턴하는지 확인
+        then(rLock).should(never()).tryLock(anyLong(), anyLong(), any());
     }
 
     @Test
@@ -124,6 +140,9 @@ class GeocodingServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
+                
+        // 예외 발생 시에도 락은 해제되어야 함
+        then(rLock).should().unlock();
     }
 
     @Test
@@ -188,5 +207,21 @@ class GeocodingServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
+    }
+    
+    @Test
+    @DisplayName("락 획득 실패 시 MAP_SERVICE_UNAVAILABLE 예외 발생")
+    void geocode_lockAcquisitionFails_throwsException() throws Exception {
+        // given
+        given(valueOps.get(cacheKey(QUERY))).willReturn(null);
+        given(rLock.tryLock(anyLong(), anyLong(), any())).willReturn(false); // 락 획득 실패 시뮬레이션
+        
+        // when & then
+        assertThatThrownBy(() -> geocodingService.geocode(QUERY))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+                
+        then(kakaoLocalApiClient).should(never()).searchAddress(anyString());
     }
 }
