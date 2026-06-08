@@ -20,6 +20,7 @@ import java.util.Optional;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -148,6 +149,25 @@ class PlaceSyncServiceTest {
 
         // 공백은 null로 정규화 → 경계 전진 없음 → saveLastModifiedTime 미호출(빈 값 저장 방지)
         verify(batchService, never()).saveLastModifiedTime(any());
+    }
+
+    @Test
+    @DisplayName("제약 위반(DataIntegrityViolationException)은 영구 실패로 보고 경계를 막지 않는다(다음 run 대량 재수집 방지)")
+    void permanentFailureDoesNotCapBoundary() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        // 성공(최신 0003) → 제약 위반 실패(과거 0001)
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "20260101000003"),
+                item("2", "20260101000001")));
+        given(batchService.upsertItem(any()))
+                .willReturn(UpsertResult.CREATED)
+                .willThrow(new DataIntegrityViolationException("constraint"));
+
+        placeSyncService.syncAllPlaces();
+
+        // 영구 실패는 경계 캡 대상이 아니므로 성공 최신(0003)까지 경계가 전진해야 함
+        verify(batchService).saveLastModifiedTime("20260101000003");
     }
 
     @Test

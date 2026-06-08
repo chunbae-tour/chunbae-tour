@@ -127,6 +127,13 @@ public class Place {
     @Column(nullable = false, length = 20)
     private PlaceSource source = PlaceSource.MANUAL;
 
+    /** Tier-2 상세 수집 재시도 한도 — overview 빈 응답이 이 횟수에 도달하면 "설명 없음"으로 확정. (KAN-221) */
+    public static final int MAX_ENRICH_ATTEMPTS = 3;
+
+    /** Tier-2 상세 수집 시도 횟수(KAN-221). 성공 응답이지만 overview가 비어 누적된 횟수. */
+    @Column(name = "enrich_attempt_count", nullable = false)
+    private int enrichAttemptCount = 0;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -223,20 +230,37 @@ public class Place {
     }
 
     /**
-     * Tier-2: 상세 API(detailCommon2/detailIntro2)로 설명·운영시간·휴무일을 채운다(KAN-221, 첫 상세 조회 시 1회).
+     * Tier-2: 상세 API(detailCommon2/detailIntro2)로 설명·운영시간·휴무일을 채운다(KAN-221, overview가 존재할 때만 호출).
      *
-     * <p>{@code description}은 빈 값이라도 비-null("")로 채워 "상세 수집 완료"를 표시한다 —
-     * {@code description == null}을 "아직 미수집" sentinel로 써서 매 조회마다 외부 API를 재호출하지 않게 한다.
-     * 운영시간/휴무일은 컬럼 길이(500)를 넘으면 방어적으로 잘라 저장한다.
+     * <p>overview가 비어 있는 경우는 이 메서드를 호출하지 않고 {@link #recordEmptyEnrichAttempt()}로 시도 횟수만
+     * 누적한다(빈 값을 "수집 완료"로 굳혀 일시 누락이 영구화되는 것을 방지). 운영시간/휴무일은 컬럼 길이(500)를
+     * 넘으면 방어적으로 잘라 저장한다.
      */
     public void applyApiDetail(String description, String operatingHours, String closedDays) {
-        this.description = description != null ? description : "";
+        this.description = description;
         if (operatingHours != null && !operatingHours.isBlank()) {
             this.operatingHours = truncate(operatingHours, 500);
         }
         if (closedDays != null && !closedDays.isBlank()) {
             this.closedDays = truncate(closedDays, 500);
         }
+    }
+
+    /**
+     * Tier-2 상세 수집 대상 여부. API 수집 관광지(external_id 있음)이고 설명이 아직 비었으며
+     * 재시도 한도({@link #MAX_ENRICH_ATTEMPTS}) 미만일 때만 수집한다.
+     * 한도 도달 시 "설명 없는 관광지"로 확정하고 더 이상 외부 API를 호출하지 않는다.
+     */
+    public boolean needsDetailEnrichment() {
+        return source == PlaceSource.API_FETCH
+                && externalId != null
+                && description == null
+                && enrichAttemptCount < MAX_ENRICH_ATTEMPTS;
+    }
+
+    /** 상세 API는 성공했으나 overview가 비어 있을 때 호출 — 재시도 횟수를 1 누적한다. */
+    public void recordEmptyEnrichAttempt() {
+        this.enrichAttemptCount++;
     }
 
     private static String truncate(String value, int maxLength) {

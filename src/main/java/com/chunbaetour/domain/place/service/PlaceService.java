@@ -25,7 +25,6 @@ import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.NearbyCategory;
-import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 
 import lombok.RequiredArgsConstructor;
@@ -246,12 +245,12 @@ public class PlaceService {
         PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrlList, likeCount);
 
         // 캐싱 (TTL 10분)
-        // 단, enrich 미완료(API 수집 관광지인데 설명이 아직 null)면 캐시하지 않는다.
+        // 단, enrich 미완료(아직 수집 대상)면 캐시하지 않는다.
         // enrichIfNeeded가 락 미획득 등으로 상세를 못 채우고 원본(description=null)을 반환한 경우,
         // 이 상태를 캐시하면 TTL(10분) 동안 다른 요청이 수집을 끝내도 설명이 안 보인다(캐시 오염).
         // → 미완료면 캐시 skip하여 다음 조회가 다시 enrich를 시도하게 한다.
-        boolean enrichmentPending =
-                place.getSource() == PlaceSource.API_FETCH && place.getDescription() == null;
+        // 재시도 한도 소진/수집 완료된 관광지는 needsDetailEnrichment()=false → 정상 캐시(더 이상 DB·API 안 침).
+        boolean enrichmentPending = place.needsDetailEnrichment();
         if (!enrichmentPending) {
             try {
                 String json = objectMapper.writeValueAsString(cacheDto);

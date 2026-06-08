@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -116,10 +117,16 @@ public class PlaceSyncService {
                 }
                 // 성공한 item만 경계 전진에 반영 — 실패 item의 modifiedtime은 경계를 끌어올리지 않는다.
                 maxModified = laterOf(maxModified, itemModified);
-            } catch (Exception e) {
-                log.warn("관광지 item 건너뜀 — 처리 예외: contentId={}, error={}",
+            } catch (DataIntegrityViolationException e) {
+                // 제약 위반 등 영구 실패 가능성이 큰 예외 — 재시도해도 동일 실패다.
+                // 경계를 막지 않고 skip만 한다(poison item이 경계를 영구 점유해 매 run 대량 재수집하는 것 방지).
+                log.warn("관광지 item 건너뜀 — 제약 위반(영구 실패 추정, 경계 미반영): contentId={}, error={}",
                         item.contentId(), e.getMessage());
-                // 실패 item의 modifiedtime을 경계 캡 후보로 누적 (다음 run 재시도 보장)
+                skipped++;
+            } catch (Exception e) {
+                // 네트워크/락/DB 일시 오류 등 재시도 가치가 있는 실패 — 경계를 이 item 이전으로 캡해 다음 run 재수집 보장.
+                log.warn("관광지 item 건너뜀 — 처리 예외(재시도 대상): contentId={}, error={}",
+                        item.contentId(), e.getMessage());
                 minFailedModified = earlierOf(minFailedModified, itemModified);
                 skipped++;
             }
@@ -143,11 +150,15 @@ public class PlaceSyncService {
         return new PlaceSyncResult(items.size(), created, updated, deleted, skipped);
     }
 
-    /** 공백/빈 문자열을 null로 정규화. 유효 timestamp만 경계 계산에 반영하기 위함. */
+    /**
+     * modifiedtime을 경계 계산용으로 정규화. yyyyMMddHHmmss(14자리 숫자)가 아니면 null로 본다.
+     * 공백/빈 문자열은 물론, 이상 포맷이 경계로 저장돼 saveLastModifiedTime 도메인 검증에서 예외가 터지는 것을
+     * 사전 차단한다(아이템 upsert는 REQUIRES_NEW로 이미 커밋됐는데 경계만 저장 실패하는 애매한 상태 방지).
+     */
     private String normalizeModifiedTime(String value) {
         if (value == null) return null;
         String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+        return trimmed.matches("\\d{14}") ? trimmed : null;
     }
 
     /** 두 modifiedtime(yyyyMMddHHmmss 문자열) 중 더 최신(사전순 큰) 값을 반환. 공백/null 안전. */

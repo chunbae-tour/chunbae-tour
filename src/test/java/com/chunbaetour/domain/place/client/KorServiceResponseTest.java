@@ -2,9 +2,10 @@ package com.chunbaetour.domain.place.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -15,10 +16,12 @@ import org.junit.jupiter.api.Test;
 class KorServiceResponseTest {
 
     // RestClient 빈(tourApiRestClient)과 동일한 관용 설정 — 알 수 없는 필드/빈 문자열 허용
-    private final ObjectMapper mapper = new ObjectMapper()
+    // Jackson3(tools.jackson): ObjectMapper는 불변이라 JsonMapper.builder()로 구성한다.
+    private final ObjectMapper mapper = JsonMapper.builder()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             .configure(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT, true)
-            .configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
+            .configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true)
+            .build();
 
     @Test
     @DisplayName("areaBasedList2 정상 응답을 파싱해 아이템 필드와 totalCount를 매핑한다")

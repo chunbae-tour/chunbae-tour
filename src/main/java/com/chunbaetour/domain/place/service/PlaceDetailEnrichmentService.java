@@ -6,7 +6,6 @@ import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceDetail;
 import com.chunbaetour.domain.place.client.TourApiPlaceDetailClient;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.place.type.PlaceSource;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -86,11 +85,9 @@ public class PlaceDetailEnrichmentService {
         }
     }
 
-    // API 수집 관광지이면서 아직 상세 미수집(description == null)일 때만 수집 대상.
+    // API 수집 관광지이면서 상세 미수집 + 재시도 한도 미만일 때만 수집 대상(Place 도메인 규칙 위임).
     private boolean needsEnrichment(Place place) {
-        return place.getSource() == PlaceSource.API_FETCH
-                && place.getExternalId() != null
-                && place.getDescription() == null;
+        return place.needsDetailEnrichment();
     }
 
     /**
@@ -103,10 +100,17 @@ public class PlaceDetailEnrichmentService {
     public Place applyDetail(Long placeId, TourApiPlaceDetail detail) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
-        if (place.getDescription() != null) {
-            return place; // 이미 수집됨(다른 요청이 선반영) — 중복 write 방지(idempotent)
+        if (!place.needsDetailEnrichment()) {
+            return place; // 이미 수집 완료 또는 재시도 한도 소진 — 중복/초과 write 방지(idempotent)
         }
-        place.applyApiDetail(detail.description(), detail.operatingHours(), detail.closedDays());
+        String overview = detail.description();
+        if (overview != null && !overview.isBlank()) {
+            place.applyApiDetail(overview, detail.operatingHours(), detail.closedDays());
+        } else {
+            // 성공 응답이나 overview 누락 — 재시도 횟수만 누적. 한도 도달 시 needsDetailEnrichment=false로 종료된다.
+            // (빈 overview를 "수집 완료"로 굳혀 일시 누락이 영구화되는 것을 방지)
+            place.recordEmptyEnrichAttempt();
+        }
         return placeRepository.save(place);
     }
 }

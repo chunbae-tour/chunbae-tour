@@ -2,18 +2,20 @@ package com.chunbaetour.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.mock;
 
 import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.client.TourApiPlaceDetail;
 import com.chunbaetour.domain.place.client.TourApiPlaceDetailClient;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.place.type.PlaceSource;
 import java.time.Duration;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,12 +40,11 @@ class PlaceDetailEnrichmentServiceTest {
     @InjectMocks
     private PlaceDetailEnrichmentService service;
 
-    // 상세 수집 대상 조건을 만족하는 Place 목 (API_FETCH + externalId 있음 + description null)
+    // 상세 수집 대상인 Place 목 (needsDetailEnrichment=true)
     private Place enrichTargetPlace() {
         Place place = mock(Place.class);
-        given(place.getSource()).willReturn(PlaceSource.API_FETCH);
+        given(place.needsDetailEnrichment()).willReturn(true);
         given(place.getExternalId()).willReturn("123456");
-        given(place.getDescription()).willReturn(null);
         return place;
     }
 
@@ -57,7 +58,6 @@ class PlaceDetailEnrichmentServiceTest {
 
         Place result = service.enrichIfNeeded(place);
 
-        // 원본 그대로 반환 + 외부 API 미호출(동시요청 폭주로 인한 일일 한도 소진 방지)
         assertThat(result).isSameAs(place);
         verify(detailClient, never()).fetchDetail(anyString());
     }
@@ -77,17 +77,59 @@ class PlaceDetailEnrichmentServiceTest {
     }
 
     @Test
-    @DisplayName("이미 상세가 채워진(description != null) Place는 수집 대상이 아니므로 Redis·외부 API를 건드리지 않는다")
-    void skipWhenAlreadyEnriched() {
+    @DisplayName("수집 대상이 아니면(needsDetailEnrichment=false) Redis·외부 API를 건드리지 않는다")
+    void skipWhenNotTarget() {
         Place place = mock(Place.class);
-        given(place.getSource()).willReturn(PlaceSource.API_FETCH);
-        given(place.getExternalId()).willReturn("123456");
-        given(place.getDescription()).willReturn("이미 채워진 설명");
+        given(place.needsDetailEnrichment()).willReturn(false);
 
         Place result = service.enrichIfNeeded(place);
 
         assertThat(result).isSameAs(place);
         verifyNoInteractions(redisTemplate);
         verifyNoInteractions(detailClient);
+    }
+
+    @Test
+    @DisplayName("applyDetail: overview가 있으면 상세를 반영한다")
+    void applyDetailWithOverview() {
+        Place place = mock(Place.class);
+        given(place.needsDetailEnrichment()).willReturn(true);
+        given(placeRepository.findById(1L)).willReturn(Optional.of(place));
+        given(placeRepository.save(place)).willReturn(place);
+
+        service.applyDetail(1L, new TourApiPlaceDetail("설명입니다", "10:00-18:00", "월요일"));
+
+        verify(place).applyApiDetail("설명입니다", "10:00-18:00", "월요일");
+        verify(place, never()).recordEmptyEnrichAttempt();
+        verify(placeRepository).save(place);
+    }
+
+    @Test
+    @DisplayName("applyDetail: 성공 응답이지만 overview가 비면 설명을 채우지 않고 재시도 횟수만 누적한다")
+    void applyDetailWithEmptyOverview() {
+        Place place = mock(Place.class);
+        given(place.needsDetailEnrichment()).willReturn(true);
+        given(placeRepository.findById(1L)).willReturn(Optional.of(place));
+        given(placeRepository.save(place)).willReturn(place);
+
+        service.applyDetail(1L, new TourApiPlaceDetail(null, null, null));
+
+        verify(place).recordEmptyEnrichAttempt();
+        verify(place, never()).applyApiDetail(anyString(), any(), any());
+        verify(placeRepository).save(place);
+    }
+
+    @Test
+    @DisplayName("applyDetail: 이미 수집 완료/한도 소진(needsDetailEnrichment=false)이면 아무 것도 하지 않는다")
+    void applyDetailIdempotentWhenDone() {
+        Place place = mock(Place.class);
+        given(place.needsDetailEnrichment()).willReturn(false);
+        given(placeRepository.findById(1L)).willReturn(Optional.of(place));
+
+        service.applyDetail(1L, new TourApiPlaceDetail("설명", null, null));
+
+        verify(place, never()).applyApiDetail(anyString(), any(), any());
+        verify(place, never()).recordEmptyEnrichAttempt();
+        verify(placeRepository, never()).save(any());
     }
 }
