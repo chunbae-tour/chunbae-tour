@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.dto.Coord;
 import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
 import com.chunbaetour.domain.place.dto.KakaoLocalResponse;
+import com.chunbaetour.domain.place.dto.KakaoRegionResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,17 +23,20 @@ public class KakaoLocalApiClient {
     private final RestClient kakaoRestClient;
     private final String apiKey;
     private final String coord2AddressUrl;
+    private final String coord2RegioncodeUrl;
     private final String categorySearchUrl;
 
     public KakaoLocalApiClient(
             RestClient kakaoRestClient,
             @Value("${kakao.map.api-key}") String apiKey,
             @Value("${kakao.map.coord2address-url}") String coord2AddressUrl,
+            @Value("${kakao.map.coord2regioncode-url}") String coord2RegioncodeUrl,
             @Value("${kakao.map.category-search-url}") String categorySearchUrl
     ) {
         this.kakaoRestClient = kakaoRestClient;
         this.apiKey = apiKey;
         this.coord2AddressUrl = coord2AddressUrl;
+        this.coord2RegioncodeUrl = coord2RegioncodeUrl;
         this.categorySearchUrl = categorySearchUrl;
     }
 
@@ -101,6 +105,33 @@ public class KakaoLocalApiClient {
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Category API Network Error", e);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    public KakaoRegionResponse getRegionCode(double lat, double lng) {
+        try {
+            String url = UriComponentsBuilder.fromUriString(coord2RegioncodeUrl)
+                    .queryParam("x", String.format(Locale.ROOT, "%.8f", lng))
+                    .queryParam("y", String.format(Locale.ROOT, "%.8f", lat))
+                    .build()
+                    .toUriString();
+
+            return kakaoRestClient.get()
+                    .uri(url)
+                    .header("Authorization", "KakaoAK " + apiKey)
+                    .retrieve()
+                    .body(KakaoRegionResponse.class);
+
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is4xxClientError()) {
+                log.warn("Kakao Region API Error (4xx): status={}", e.getStatusCode());
+            } else {
+                log.error("Kakao Region API Server Error (5xx): status={}", e.getStatusCode(), e);
+            }
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        } catch (RestClientException e) {
+            log.error("Kakao Region API Network Error", e);
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }

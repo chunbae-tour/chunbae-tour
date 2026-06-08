@@ -191,6 +191,7 @@ kakao:
   map:
     api-key: ${KAKAO_MAP_API_KEY:}
     coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
+    coord2regioncode-url: https://dapi.kakao.com/v2/local/geo/coord2regioncode.json
     category-search-url: https://dapi.kakao.com/v2/local/search/category.json
     map-url: https://map.kakao.com/link/from
 
