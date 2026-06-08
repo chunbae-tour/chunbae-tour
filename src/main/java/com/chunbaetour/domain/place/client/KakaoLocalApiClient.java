@@ -72,7 +72,7 @@ public class KakaoLocalApiClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
                 if (e.getStatusCode().value() == 401) {
-                    log.error("Kakao API Unauthorized (401): API Key might be invalid or expired.", e);
+                    log.error("Kakao API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
                 } else {
                     // 보안: 위/경도 및 응답 Body(개인정보/키) 로깅 제거, 상태 코드만 기록
                     log.warn("Kakao API Client Error (4xx): status={}", e.getStatusCode());
@@ -108,7 +108,7 @@ public class KakaoLocalApiClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
                 if (e.getStatusCode().value() == 401) {
-                    log.error("Kakao Category API Unauthorized (401): API Key might be invalid or expired.", e);
+                    log.error("Kakao Category API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
                 } else {
                     log.warn("Kakao Category API Error (4xx): status={}", e.getStatusCode());
                 }
@@ -139,7 +139,7 @@ public class KakaoLocalApiClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
                 if (e.getStatusCode().value() == 401) {
-                    log.error("Kakao Region API Unauthorized (401): API Key might be invalid or expired.", e);
+                    log.error("Kakao Region API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
                 } else {
                     log.warn("Kakao Region API Error (4xx): status={}", e.getStatusCode());
                 }
