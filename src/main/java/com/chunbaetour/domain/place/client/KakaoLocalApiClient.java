@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.dto.Coord;
 import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
 import com.chunbaetour.domain.place.dto.KakaoLocalResponse;
+import com.chunbaetour.domain.place.dto.KakaoRegionResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,18 +23,26 @@ public class KakaoLocalApiClient {
     private final RestClient kakaoRestClient;
     private final String apiKey;
     private final String coord2AddressUrl;
+    private final String coord2RegioncodeUrl;
     private final String categorySearchUrl;
 
     public KakaoLocalApiClient(
             RestClient kakaoRestClient,
             @Value("${kakao.map.api-key}") String apiKey,
             @Value("${kakao.map.coord2address-url}") String coord2AddressUrl,
+            @Value("${kakao.map.coord2regioncode-url}") String coord2RegioncodeUrl,
             @Value("${kakao.map.category-search-url}") String categorySearchUrl
     ) {
         this.kakaoRestClient = kakaoRestClient;
         this.apiKey = apiKey;
         this.coord2AddressUrl = coord2AddressUrl;
+        this.coord2RegioncodeUrl = coord2RegioncodeUrl;
         this.categorySearchUrl = categorySearchUrl;
+    }
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        org.springframework.util.Assert.hasText(apiKey, "Kakao API Key must not be blank");
     }
 
     public String getAddressName(Coord coord, String defaultValue) {
@@ -62,8 +71,12 @@ public class KakaoLocalApiClient {
             return defaultValue;
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
-                // 보안: 위/경도 및 응답 Body(개인정보/키) 로깅 제거, 상태 코드만 기록
-                log.warn("Kakao API Client Error (4xx): status={}", e.getStatusCode());
+                if (e.getStatusCode().value() == 401) {
+                    log.error("Kakao API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
+                } else {
+                    // 보안: 위/경도 및 응답 Body(개인정보/키) 로깅 제거, 상태 코드만 기록
+                    log.warn("Kakao API Client Error (4xx): status={}", e.getStatusCode());
+                }
             } else {
                 log.error("Kakao coord2address API Server Error (5xx): status={}", e.getStatusCode(), e);
             }
@@ -94,13 +107,48 @@ public class KakaoLocalApiClient {
 
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
-                log.warn("Kakao Category API Error (4xx): status={}", e.getStatusCode());
+                if (e.getStatusCode().value() == 401) {
+                    log.error("Kakao Category API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
+                } else {
+                    log.warn("Kakao Category API Error (4xx): status={}", e.getStatusCode());
+                }
             } else {
                 log.error("Kakao Category API Server Error (5xx): status={}", e.getStatusCode(), e);
             }
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Category API Network Error", e);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    public KakaoRegionResponse getRegionCode(double lat, double lng) {
+        try {
+            String url = UriComponentsBuilder.fromUriString(coord2RegioncodeUrl)
+                    .queryParam("x", String.format(Locale.ROOT, "%.8f", lng))
+                    .queryParam("y", String.format(Locale.ROOT, "%.8f", lat))
+                    .build()
+                    .toUriString();
+
+            return kakaoRestClient.get()
+                    .uri(url)
+                    .header("Authorization", "KakaoAK " + apiKey)
+                    .retrieve()
+                    .body(KakaoRegionResponse.class);
+
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is4xxClientError()) {
+                if (e.getStatusCode().value() == 401) {
+                    log.error("Kakao Region API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
+                } else {
+                    log.warn("Kakao Region API Error (4xx): status={}", e.getStatusCode());
+                }
+            } else {
+                log.error("Kakao Region API Server Error (5xx): status={}", e.getStatusCode(), e);
+            }
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        } catch (RestClientException e) {
+            log.error("Kakao Region API Network Error", e);
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }
