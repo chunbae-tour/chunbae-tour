@@ -94,8 +94,10 @@ public class PlaceSyncService {
         // 3) 아이템 단위 REQUIRES_NEW 처리 — 개별 실패가 전체를 중단시키지 않음
         int created = 0, updated = 0, deleted = 0, skipped = 0;
         String maxModified = since;
+        // 처리 실패(예외)한 item 중 가장 과거 modifiedtime. 경계를 이 값보다 더 전진시키지 않아
+        // 다음 run에서 실패 item이 반드시 재수집되게 한다. (경계를 초과하면 조기 종료(< since)로 영구 누락)
+        String minFailedModified = null;
         for (TourApiPlaceItem item : items) {
-            maxModified = laterOf(maxModified, item.modifiedTime());
             try {
                 if (item.isDeleted()) {
                     if (batchService.markDeleted(item.contentId()) == UpsertResult.DELETED) {
@@ -110,9 +112,13 @@ public class PlaceSyncService {
                         default -> skipped++;
                     }
                 }
+                // 성공한 item만 경계 전진에 반영 — 실패 item의 modifiedtime은 경계를 끌어올리지 않는다.
+                maxModified = laterOf(maxModified, item.modifiedTime());
             } catch (Exception e) {
                 log.warn("관광지 item 건너뜀 — 처리 예외: contentId={}, error={}",
                         item.contentId(), e.getMessage());
+                // 실패 item의 modifiedtime을 경계 캡 후보로 누적 (다음 run 재시도 보장)
+                minFailedModified = earlierOf(minFailedModified, item.modifiedTime());
                 skipped++;
             }
         }
@@ -120,10 +126,15 @@ public class PlaceSyncService {
         // 4) 다음 증분의 경계 갱신 (이번에 처리한 가장 최신 modifiedtime).
         //    maxModified가 since와 동일하면 경계가 전진하지 않은 것 — 수집 항목 전부 modifiedtime이 비었거나
         //    경계와 같은 초란 뜻이다. 옛 경계를 무의미하게 재저장(silent no-op)하지 않고 데이터 품질 경고만 남긴다.
-        if (!items.isEmpty() && maxModified != null && !maxModified.equals(since)) {
-            batchService.saveLastModifiedTime(maxModified);
+        // 경계 = 성공分 최신 modifiedtime. 단 실패 item이 있으면 그 최소 modifiedtime을 넘지 않도록 캡한다
+        // → 경계 이상인 실패 item이 다음 run에 재수집되어 재시도된다(멱등 upsert라 안전).
+        String boundary = (minFailedModified != null)
+                ? earlierOf(maxModified, minFailedModified)
+                : maxModified;
+        if (!items.isEmpty() && boundary != null && !boundary.equals(since)) {
+            batchService.saveLastModifiedTime(boundary);
         } else if (!items.isEmpty()) {
-            log.warn("관광지 동기화 경계 전진 없음 — 수집 항목의 modifiedtime이 비었거나 경계와 동일: items={}, since={}",
+            log.warn("관광지 동기화 경계 전진 없음 — modifiedtime이 비었거나 경계와 동일/실패 item으로 캡됨: items={}, since={}",
                     items.size(), since);
         }
 
@@ -135,5 +146,12 @@ public class PlaceSyncService {
         if (a == null) return b;
         if (b == null) return a;
         return a.compareTo(b) >= 0 ? a : b;
+    }
+
+    /** 두 modifiedtime 중 더 과거(사전순 작은) 값을 반환. null은 "제약 없음"으로 보고 다른 값을 반환. */
+    private String earlierOf(String a, String b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.compareTo(b) <= 0 ? a : b;
     }
 }

@@ -63,8 +63,11 @@ public class TourApiPlaceDetailClient {
             TourApiDetailCommonResponse resp = restClient.get().uri(uri).retrieve()
                     .body(TourApiDetailCommonResponse.class);
             if (resp == null || !SUCCESS_CODE.equals(resp.resultCode())) {
-                log.error("detailCommon2 비정상 응답: contentId={}, resultCode={}",
-                        contentId, resp == null ? "null" : resp.resultCode());
+                // 실패 원인 구분: 응답 자체 없음 / 헤더(resultCode) 누락 / 코드는 왔으나 성공코드 아님
+                String diag = (resp == null) ? "응답 없음(resp=null)"
+                        : (resp.resultCode() == null) ? "헤더/resultCode 누락(null)"
+                        : "resultCode=" + resp.resultCode();
+                log.error("detailCommon2 비정상 응답: contentId={}, 원인={}", contentId, diag);
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
             }
             return blankToNull(resp.overview());

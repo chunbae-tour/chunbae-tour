@@ -51,15 +51,18 @@ public class PlaceDetailEnrichmentService {
 
         // 동시 최초 조회 레이스 방지: contentid 단위 짧은 분산 락. 미획득이면 다른 요청이 수집 중이므로
         // 이번엔 원본 반환(외부 API 중복 호출·중복 write 차단). 다음 조회 때 채워진 값을 캐시/DB에서 본다.
-        // Redis 장애 시에는 락 없이 진행(상세 채우기 우선) — 중복 호출만 감수, applyDetail 가드가 중복 write를 막는다.
         String lockKey = "lock:place:enrich:" + place.getExternalId();
         boolean acquired;
         try {
             acquired = Boolean.TRUE.equals(
                     redisTemplate.opsForValue().setIfAbsent(lockKey, "1", ENRICH_LOCK_TTL));
         } catch (Exception e) {
-            acquired = true; // Redis 장애 → 락 우회 진행
-            lockKey = null;
+            // Redis 장애 시 락 없이 진행하면 동시 요청이 전부 외부 detailCommon2를 호출해
+            // 일일 API 한도를 순식간에 소진할 수 있다. enrich는 best-effort이므로 장애 시에는
+            // 채우기를 건너뛰고 원본을 반환한다 — 설명은 Redis 복구 후 다음 조회 때 채워진다.
+            log.warn("enrich 락 조회 실패(Redis 장애 추정) — 외부 API 한도 보호 위해 상세 수집 skip: contentId={}, err={}",
+                    place.getExternalId(), e.getMessage());
+            return place;
         }
         if (!acquired) {
             return place;

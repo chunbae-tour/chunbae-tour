@@ -25,6 +25,7 @@ import com.chunbaetour.domain.place.dto.response.PlaceListResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.NearbyCategory;
+import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 
 import lombok.RequiredArgsConstructor;
@@ -245,11 +246,19 @@ public class PlaceService {
         PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrlList, likeCount);
 
         // 캐싱 (TTL 10분)
-        try {
-            String json = objectMapper.writeValueAsString(cacheDto);
-            stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
-        } catch (Exception e) {
-            log.error("Place Detail Cache writing error: placeId={}", placeId, e);
+        // 단, enrich 미완료(API 수집 관광지인데 설명이 아직 null)면 캐시하지 않는다.
+        // enrichIfNeeded가 락 미획득 등으로 상세를 못 채우고 원본(description=null)을 반환한 경우,
+        // 이 상태를 캐시하면 TTL(10분) 동안 다른 요청이 수집을 끝내도 설명이 안 보인다(캐시 오염).
+        // → 미완료면 캐시 skip하여 다음 조회가 다시 enrich를 시도하게 한다.
+        boolean enrichmentPending =
+                place.getSource() == PlaceSource.API_FETCH && place.getDescription() == null;
+        if (!enrichmentPending) {
+            try {
+                String json = objectMapper.writeValueAsString(cacheDto);
+                stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
+            } catch (Exception e) {
+                log.error("Place Detail Cache writing error: placeId={}", placeId, e);
+            }
         }
 
         return cacheDto;

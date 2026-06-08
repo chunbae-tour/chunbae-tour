@@ -91,6 +91,50 @@ class PlaceSyncServiceTest {
     }
 
     @Test
+    @DisplayName("처리 실패한 item의 modifiedtime이 최신보다 과거면, 경계를 그 실패 item 이전으로 캡해 다음 run 재수집을 보장한다")
+    void boundaryCappedByOlderFailedItem() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        // 목록 순서: 성공(최신 0003) → 실패(과거 0001)
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "20260101000003"),
+                item("2", "20260101000001")));
+        // 첫 item은 성공, 두 번째 item은 처리 중 예외
+        given(batchService.upsertItem(any()))
+                .willReturn(UpsertResult.CREATED)
+                .willThrow(new RuntimeException("boom"));
+
+        PlaceSyncResult result = placeSyncService.syncAllPlaces();
+
+        assertThat(result.fetched()).isEqualTo(2);
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.skipped()).isEqualTo(1);
+        // 성공 최신(0003)이 아니라 실패 item(0001)으로 경계가 캡되어야 함 → 다음 run에서 실패 item 재수집
+        verify(batchService).saveLastModifiedTime("20260101000001");
+    }
+
+    @Test
+    @DisplayName("처리 실패한 item이 최신이어도, 경계는 성공한 item까지만 전진해 실패 item 재수집을 보장한다")
+    void boundaryDoesNotAdvancePastNewerFailedItem() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        // 목록 순서: 성공(과거 0001) → 실패(최신 0003)
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "20260101000001"),
+                item("2", "20260101000003")));
+        given(batchService.upsertItem(any()))
+                .willReturn(UpsertResult.CREATED)
+                .willThrow(new RuntimeException("boom"));
+
+        PlaceSyncResult result = placeSyncService.syncAllPlaces();
+
+        assertThat(result.fetched()).isEqualTo(2);
+        assertThat(result.skipped()).isEqualTo(1);
+        // 경계는 성공한 item(0001)까지만 — 실패 item(0003)은 다음 run에 재수집됨
+        verify(batchService).saveLastModifiedTime("20260101000001");
+    }
+
+    @Test
     @DisplayName("수집 중 예외가 나도 finally에서 락을 해제한다")
     void unlockOnException() {
         given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
