@@ -5,15 +5,16 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import com.chunbaetour.domain.place.dto.KakaoAddressResponse;
 import com.chunbaetour.domain.place.dto.response.GeocodingResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +38,9 @@ class GeocodingServiceTest {
     @Mock
     private ValueOperations<String, String> valueOps;
 
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
+
     private GeocodingService geocodingService;
 
     private static final String QUERY = "서울 종로구 사직로 161";
@@ -54,8 +58,8 @@ class GeocodingServiceTest {
 
     @BeforeEach
     void setUp() {
-        geocodingService = new GeocodingService(kakaoLocalApiClient, stringRedisTemplate, new ObjectMapper());
-        given(stringRedisTemplate.opsForValue()).willReturn(valueOps);
+        geocodingService = new GeocodingService(kakaoLocalApiClient, stringRedisTemplate, objectMapper);
+        org.mockito.Mockito.lenient().when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
     @Test
@@ -95,7 +99,7 @@ class GeocodingServiceTest {
         // given: 캐시에 JSON 저장되어 있음
         GeocodingResponse cached = new GeocodingResponse("서울 종로구 사직로 161",
                 new BigDecimal("37.57960000"), new BigDecimal("126.97700000"));
-        String cachedJson = new ObjectMapper().writeValueAsString(cached);
+        String cachedJson = objectMapper.writeValueAsString(cached);
         given(valueOps.get(cacheKey(QUERY))).willReturn(cachedJson);
 
         // when
@@ -170,5 +174,19 @@ class GeocodingServiceTest {
 
         // 장애 시 캐시 저장 미호출 확인
         then(valueOps).should(never()).set(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("query가 null이거나 공백이면 GEOCODING_RESULT_NOT_FOUND 예외")
+    void geocode_invalidQuery_throwsException() {
+        assertThatThrownBy(() -> geocodingService.geocode(null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
+
+        assertThatThrownBy(() -> geocodingService.geocode("   "))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
     }
 }

@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,6 +46,7 @@ public class GeocodingController {
             summary = "주소 → 좌표 변환 (지오코딩)",
             description = "입력한 주소 문자열을 카카오 API를 통해 위도·경도로 변환합니다. 로그인 필수."
     )
+    @PreAuthorize("isAuthenticated()")
     @GetMapping
     public ApiResponse<GeocodingResponse> geocode(
             @RequestParam

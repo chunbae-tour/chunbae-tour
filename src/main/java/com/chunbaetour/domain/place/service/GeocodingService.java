@@ -6,17 +6,18 @@ import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.KakaoAddressResponse;
 import com.chunbaetour.domain.place.dto.response.GeocodingResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 주소 → 좌표 변환(지오코딩) 서비스.
@@ -38,6 +39,8 @@ public class GeocodingService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
+    private final ConcurrentHashMap<String, Object> locks = new ConcurrentHashMap<>();
+
     /**
      * 주소 문자열을 위도·경도로 변환한다.
      *
@@ -47,9 +50,36 @@ public class GeocodingService {
      * @throws BusinessException MAP_SERVICE_UNAVAILABLE   — 카카오 API 장애 시
      */
     public GeocodingResponse geocode(String query) {
+        if (query == null || query.isBlank()) {
+            throw new BusinessException(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
+        }
+
         String cacheKey = buildCacheKey(query);
 
-        // 1. Redis 캐시 조회
+        // 1. Redis 캐시 조회 (빠른 경로)
+        GeocodingResponse result = getFromCache(cacheKey);
+        if (result != null) {
+            return result;
+        }
+
+        // Cache Stampede 방지를 위한 Local Lock
+        Object lock = locks.computeIfAbsent(cacheKey, k -> new Object());
+        synchronized (lock) {
+            try {
+                // Double-checked locking
+                result = getFromCache(cacheKey);
+                if (result != null) {
+                    return result;
+                }
+
+                return fetchFromKakaoAndCache(query, cacheKey);
+            } finally {
+                locks.remove(cacheKey);
+            }
+        }
+    }
+
+    private GeocodingResponse getFromCache(String cacheKey) {
         String cached = stringRedisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
             try {
@@ -59,7 +89,10 @@ public class GeocodingService {
                 log.warn("[Geocoding] 캐시 역직렬화 실패, 카카오 API 재조회. keyHash={}", cacheKey);
             }
         }
+        return null;
+    }
 
+    private GeocodingResponse fetchFromKakaoAndCache(String query, String cacheKey) {
         // 2. 카카오 주소 검색 API 호출
         KakaoAddressResponse response = kakaoLocalApiClient.searchAddress(query);
 
@@ -68,6 +101,10 @@ public class GeocodingService {
         }
 
         KakaoAddressResponse.Document doc = response.documents().get(0);
+
+        if (doc.x() == null || doc.y() == null) {
+            throw new BusinessException(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
+        }
 
         // 3. 좌표 파싱 — x=경도, y=위도
         BigDecimal lat;
@@ -87,6 +124,10 @@ public class GeocodingService {
             addressName = doc.roadAddress().addressName();
         } else if (doc.address() != null && doc.address().addressName() != null) {
             addressName = doc.address().addressName();
+        }
+
+        if (addressName == null || addressName.isBlank()) {
+            throw new BusinessException(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
         }
 
         GeocodingResponse result = new GeocodingResponse(addressName, lat, lng);
@@ -118,9 +159,8 @@ public class GeocodingService {
             }
             return PlaceRedisConstants.GEOCODING_CACHE_PREFIX + hex;
         } catch (NoSuchAlgorithmException e) {
-            // SHA-256은 Java 표준 알고리즘이므로 실제로는 발생하지 않음
-            log.warn("[Geocoding] SHA-256 해시 실패 — query 원문을 키로 사용 (fallback)");
-            return PlaceRedisConstants.GEOCODING_CACHE_PREFIX + query;
+            log.error("[Geocoding] SHA-256 알고리즘을 찾을 수 없습니다.", e);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
         }
     }
 }

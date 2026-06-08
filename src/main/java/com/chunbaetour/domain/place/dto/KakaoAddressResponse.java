@@ -15,8 +15,8 @@ public record KakaoAddressResponse(
     public record Document(
             @JsonProperty("address_name") String addressName,
             @JsonProperty("address_type") String addressType,
-            String x,  // 경도(lng)
-            String y,  // 위도(lat)
+            @JsonProperty("x") String x,  // 경도(lng)
+            @JsonProperty("y") String y,  // 위도(lat)
             Address address,
             @JsonProperty("road_address") RoadAddress roadAddress
     ) {}
@@ -27,8 +27,8 @@ public record KakaoAddressResponse(
             @JsonProperty("region_2depth_name") String region2depthName,
             @JsonProperty("region_3depth_name") String region3depthName,
             @JsonProperty("road_name") String roadName,
-            String x,
-            String y
+            @JsonProperty("x") String x,
+            @JsonProperty("y") String y
     ) {}
 
     public record RoadAddress(
@@ -38,8 +38,8 @@ public record KakaoAddressResponse(
             @JsonProperty("region_3depth_name") String region3depthName,
             @JsonProperty("road_name") String roadName,
             @JsonProperty("building_name") String buildingName,
-            String x,
-            String y
+            @JsonProperty("x") String x,
+            @JsonProperty("y") String y
     ) {}
 
     public record Meta(
