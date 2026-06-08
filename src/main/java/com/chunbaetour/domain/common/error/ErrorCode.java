@@ -126,6 +126,12 @@ public enum ErrorCode {
     PURCHASE_PROCESSING(HttpStatus.SERVICE_UNAVAILABLE,     "STORE_005", "구매 처리 중입니다. 잠시 후 다시 시도해주세요."),
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND,                   "STORE_006", "존재하지 않는 주문입니다."),
     ORDER_ALREADY_CANCELLED(HttpStatus.BAD_REQUEST,         "STORE_007", "이미 취소된 주문입니다."),
+    ITEM_NOT_FOUND(HttpStatus.NOT_FOUND,                    "STORE_008", "보유 아이템을 찾을 수 없습니다."),
+    ITEM_FORBIDDEN(HttpStatus.FORBIDDEN,                    "STORE_009", "본인 보유 아이템만 사용할 수 있습니다."),
+    ITEM_ALREADY_USED(HttpStatus.CONFLICT,                  "STORE_010", "이미 사용된 아이템입니다."),
+    ITEM_EXPIRED(HttpStatus.CONFLICT,                       "STORE_011", "만료된 아이템입니다."),
+    ITEM_QR_EXPIRED(HttpStatus.UNAUTHORIZED,                "STORE_012", "아이템 QR이 만료되었습니다."),
+    ITEM_QR_INVALID(HttpStatus.UNAUTHORIZED,                "STORE_013", "아이템 QR이 유효하지 않습니다."),
 
     // ===== MERCHANT (담당: 신현민) =====
     MERCHANT_CERT_ALREADY_PENDING(HttpStatus.CONFLICT,      "MERCHANT_001", "이미 상인 인증 신청이 진행 중입니다."),

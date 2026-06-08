@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.store.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -48,6 +51,12 @@ public class UserItem extends BaseEntity {
     @Column
     private LocalDate expiresAt;
 
+    @Column(name = "used_at")
+    private LocalDateTime usedAt;
+
+    @Column(name = "used_shop_id")
+    private Long usedShopId;
+
     @Builder
     private UserItem(Long userId, Long orderId, Long productId, String productName,
                      UserItemStatus status, LocalDate expiresAt) {
@@ -71,5 +80,17 @@ public class UserItem extends BaseEntity {
                         ? today.plusDays(product.getValidityDays())
                         : null)
                 .build();
+    }
+
+    public void use(LocalDateTime usedAt, Long usedShopId) {
+        if (this.status == UserItemStatus.USED) {
+            throw new BusinessException(ErrorCode.ITEM_ALREADY_USED);
+        }
+        if (this.status == UserItemStatus.EXPIRED) {
+            throw new BusinessException(ErrorCode.ITEM_EXPIRED);
+        }
+        this.status = UserItemStatus.USED;
+        this.usedAt = usedAt;
+        this.usedShopId = usedShopId;
     }
 }

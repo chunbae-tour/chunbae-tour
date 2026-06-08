@@ -22,8 +22,11 @@ public class TokenIssuer {
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_TOKEN_ID = "tid";
     private static final String CLAIM_TYPE = "typ";
+    private static final String CLAIM_ITEM_ID = "itemId";
     private static final String TYPE_ACCESS = "access";
     private static final String TYPE_REFRESH = "refresh";
+    private static final String TYPE_ITEM_QR = "item_qr";
+    private static final Duration ITEM_QR_TTL = Duration.ofMinutes(5);
 
     private final SecretKey signingKey;
     private final Duration accessTtl;
@@ -70,6 +73,18 @@ public class TokenIssuer {
         return new TokenWithId(tokenId, token);
     }
 
+    public String issueItemQr(long userId, long itemId) {
+        Instant now = clock.instant();
+        return Jwts.builder()
+                .subject(Long.toString(userId))
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(ITEM_QR_TTL)))
+                .claim(CLAIM_TYPE, TYPE_ITEM_QR)
+                .claim(CLAIM_ITEM_ID, itemId)
+                .signWith(signingKey)
+                .compact();
+    }
+
     public AccessClaims verifyAccess(String token) {
         Claims claims = parse(token);
         requireType(claims, TYPE_ACCESS);
@@ -97,6 +112,23 @@ public class TokenIssuer {
             return new RefreshClaims(userId, tokenId);
         } catch (RuntimeException e) {
             throw new JwtException("토큰 클레임이 유효하지 않습니다.", e);
+        }
+    }
+
+    public ItemQrClaims verifyItemQr(String token) {
+        Claims claims = parse(token);
+        requireType(claims, TYPE_ITEM_QR);
+        try {
+            long userId = Long.parseLong(claims.getSubject());
+            Long itemId = claims.get(CLAIM_ITEM_ID, Long.class);
+            if (itemId == null) {
+                throw new JwtException("item qr token payload is missing itemId");
+            }
+            return new ItemQrClaims(userId, itemId, claims.getExpiration().toInstant());
+        } catch (JwtException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new JwtException("item qr token payload is invalid", e);
         }
     }
 
