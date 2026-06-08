@@ -247,4 +247,56 @@ class GeocodingServiceTest {
         assertThat(result.addressName()).isEqualTo("서울 종로구 사직로 161");
         then(kakaoLocalApiClient).should(never()).searchAddress(anyString());
     }
+
+    @Test
+    @DisplayName("Redis 장애로 캐시 조회 예외 발생 시 카카오 API로 우회하여 성공")
+    void geocode_redisReadFails_fallbackToKakaoSucceeds() throws Exception {
+        // given: Redis get 호출 시 예외 발생
+        given(valueOps.get(anyString())).willThrow(new RuntimeException("Redis connection failed"));
+
+        KakaoAddressResponse.Document doc = new KakaoAddressResponse.Document(
+                "서울 종로구 사직로 161", "ROAD_ADDR",
+                "126.97700000", "37.57960000",
+                null, null
+        );
+        given(kakaoLocalApiClient.searchAddress(QUERY))
+                .willReturn(new KakaoAddressResponse(List.of(doc), null));
+
+        // when
+        GeocodingResponse result = geocodingService.geocode(QUERY);
+
+        // then: 캐시 조회가 실패했어도 카카오 API를 통해 정상 결과 반환
+        assertThat(result.addressName()).isEqualTo("서울 종로구 사직로 161");
+        then(kakaoLocalApiClient).should().searchAddress(QUERY);
+    }
+
+    @Test
+    @DisplayName("우선순위 주소명(도로명)이 빈 문자열이면 다음 우선순위 주소명 선택")
+    void geocode_blankRoadAddress_fallsBackToNextPriority() throws Exception {
+        // given
+        given(valueOps.get(cacheKey(QUERY))).willReturn(null);
+
+        // 도로명 주소 이름이 공백("  ")인 상황
+        KakaoAddressResponse.RoadAddress blankRoad = new KakaoAddressResponse.RoadAddress(
+                "  ", "서울", "종로구", "", "사직로", "경복궁", "126.97700000", "37.57960000"
+        );
+        KakaoAddressResponse.Address validJibun = new KakaoAddressResponse.Address(
+                "서울 종로구 사직동 1-1", "서울", "종로구", "사직동", "", "126.97700000", "37.57960000"
+        );
+
+        KakaoAddressResponse.Document doc = new KakaoAddressResponse.Document(
+                "원래 주소명", "ROAD_ADDR",
+                "126.97700000", "37.57960000",
+                validJibun, blankRoad
+        );
+
+        given(kakaoLocalApiClient.searchAddress(QUERY))
+                .willReturn(new KakaoAddressResponse(List.of(doc), null));
+
+        // when
+        GeocodingResponse result = geocodingService.geocode(QUERY);
+
+        // then: 도로명 "  "를 건너뛰고 지번 주소 "서울 종로구 사직동 1-1" 선택
+        assertThat(result.addressName()).isEqualTo("서울 종로구 사직동 1-1");
+    }
 }

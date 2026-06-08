@@ -96,14 +96,14 @@ public class GeocodingService {
     }
 
     private GeocodingResponse getFromCache(String cacheKey) {
-        String cached = stringRedisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) {
-            try {
+        try {
+            String cached = stringRedisTemplate.opsForValue().get(cacheKey);
+            if (cached != null) {
                 return objectMapper.readValue(cached, GeocodingResponse.class);
-            } catch (Exception e) {
-                // query는 개인정보가 될 수 있으므로 로그에 미포함
-                log.warn("[Geocoding] 캐시 역직렬화 실패, 카카오 API 재조회. keyHash={}", cacheKey);
             }
+        } catch (Exception e) {
+            // query는 개인정보가 될 수 있으므로 로그에 미포함
+            log.warn("[Geocoding] 캐시 조회/역직렬화 실패, 카카오 API 재조회. keyHash={}", cacheKey);
         }
         return null;
     }
@@ -136,9 +136,9 @@ public class GeocodingService {
 
         // 4. 주소명 결정: 도로명 주소 우선, 없으면 지번 주소, 최후엔 원본 addressName
         String addressName = doc.addressName();
-        if (doc.roadAddress() != null && doc.roadAddress().addressName() != null) {
+        if (doc.roadAddress() != null && doc.roadAddress().addressName() != null && !doc.roadAddress().addressName().isBlank()) {
             addressName = doc.roadAddress().addressName();
-        } else if (doc.address() != null && doc.address().addressName() != null) {
+        } else if (doc.address() != null && doc.address().addressName() != null && !doc.address().addressName().isBlank()) {
             addressName = doc.address().addressName();
         }
 
