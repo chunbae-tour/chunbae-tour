@@ -6,7 +6,7 @@ CREATE TABLE `companions` (
   `created_at`    datetime(6)  NOT NULL,
   `updated_at`    datetime(6)  NOT NULL,
   `chat_room_id`  bigint       NOT NULL,
-  `status`        enum('ONGOING','ENDED') NOT NULL DEFAULT 'ONGOING',
+  `status`        enum('ONGOING','ENDED') NOT NULL,
   `started_at`    datetime(6)  NOT NULL,
   `ended_at`      datetime(6)  DEFAULT NULL,
   PRIMARY KEY (`id`),
