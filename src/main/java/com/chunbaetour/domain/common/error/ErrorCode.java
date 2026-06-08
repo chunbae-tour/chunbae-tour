@@ -82,7 +82,7 @@ public enum ErrorCode {
     REVIEW_FORBIDDEN(HttpStatus.FORBIDDEN,                "PLACE_014", "본인의 리뷰만 수정·삭제할 수 있습니다."),
     // PLACE_015: 이미 soft delete(DELETED)된 관광지를 다시 삭제 시도 (운영자 멱등 가드, S07 리뷰 I)
     PLACE_ALREADY_DELETED(HttpStatus.CONFLICT,            "PLACE_015", "이미 삭제된 관광지입니다."),
-    GEOCODING_RESULT_NOT_FOUND(HttpStatus.NOT_FOUND,      "PLACE_016", "해당 주소의 좌표를 찾을 수 없습니다."),
+    GEOCODING_RESULT_NOT_FOUND(HttpStatus.NOT_FOUND,      "PLACE_016", "API를 통한 위치/주소 변환 결과를 찾을 수 없습니다."),
 
     // ===== BANNER (담당: 정민교, Admin Epic KAN-177 S09) =====
     BANNER_NOT_FOUND(HttpStatus.NOT_FOUND,                 "BANNER_001", "존재하지 않는 배너입니다."),
