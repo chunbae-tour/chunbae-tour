@@ -17,11 +17,12 @@ name: CD
 #   AWS_ROLE_ARN, ECR_REPOSITORY(풀 URI), EC2_HOST, EC2_USER, EC2_SSH_KEY
 #
 # ⚠️ 보안그룹 22번(SSH): 인바운드가 릴리 개인 IP로 제한돼 있으면 GitHub Actions
-#    러너 IP에서 SSH가 막혀 'Deploy' 스텝이 타임아웃된다. D2 대응:
-#      (a) 22번을 0.0.0.0/0 개방 + 키 인증만(비번 로그인 비활성=EC2 기본) — 임시 실용안
-#      (b) GitHub Actions 공개 IP 대역(api.github.com/meta 의 "actions")만 화이트리스트
-#          — 대역이 많고 자주 바뀌어 유지보수 부담
-#    근본 해결은 D3에서 AWS SSM Session Manager 전환(인바운드 22 불필요, IAM 인증).
+#    러너 IP에서 SSH가 막혀 'Deploy' 스텝이 타임아웃된다. D2 대응(보안 우선순위 순):
+#      (a) GitHub Actions 공개 IP 대역(api.github.com/meta 의 "actions")만 SG 화이트리스트 — 권장.
+#      (b) 부득이 22번을 0.0.0.0/0 개방해야 한다면 EC2 강화 필수: PasswordAuthentication no +
+#          PermitRootLogin no(EC2 기본) + fail2ban/SSHGuard + 비표준 포트/rate limiting.
+#          키 인증만으로도 브루트포스·sshd 취약점 노출면이 커지므로 광범위 개방은 최소화/한시적으로.
+#    근본 해결은 D3에서 AWS SSM Session Manager 전환(인바운드 22 불필요, IAM 인증) — 권장 경로.
 #
 # 이미지 태그 정책(ECR immutable): 커밋 SHA를 태그로 사용 → 커밋마다 고유, 덮어쓰기 없음.
 #   immutable 리포라 동일 태그 재push 불가 → 같은 커밋 재배포(워크플로우 재실행) 시
@@ -120,6 +121,11 @@ jobs:
             # 인스턴스 IAM Role(chunbae-ec2-role)로 ECR 로그인 — 키 없음
             aws ecr get-login-password --region "$AWS_REGION" \
               | docker login --username AWS --password-stdin "$REGISTRY"
+            # Docker 네트워크 보장(멱등) — 없으면 생성해 CD가 수동 상태에 의존하지 않게 한다.
+            # 단 mysql/redis는 docker compose가 이 네트워크에 띄우므로 정상 운영에선 이미 존재하고,
+            # 데이터 계층 도달의 실제 전제는 'compose 인프라(mysql/redis)가 떠 있을 것'이다.
+            docker network inspect chunbae-tour_default >/dev/null 2>&1 \
+              || docker network create chunbae-tour_default
             docker pull "$IMAGE_URI:$GIT_SHA"
             # 단순 재시작 (blue/green 무중단은 D3 별도 슬라이스). --restart로 재부팅 생존.
             docker rm -f chunbae-app 2>/dev/null || true
