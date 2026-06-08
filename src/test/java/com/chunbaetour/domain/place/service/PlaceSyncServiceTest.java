@@ -152,6 +152,43 @@ class PlaceSyncServiceTest {
     }
 
     @Test
+    @DisplayName("modifiedtime이 14자리 형식이 아니면(비공백 이상값) 경계로 저장하지 않는다")
+    void malformedModifiedTimeNotSavedAsBoundary() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "2026"),       // 14자리 아님
+                item("2", "abcd12345678")));  // 숫자 아님
+        given(batchService.upsertItem(any())).willReturn(UpsertResult.CREATED, UpsertResult.CREATED);
+
+        placeSyncService.syncAllPlaces();
+
+        // 이상 포맷은 null로 정규화 → 경계 전진 없음 → 빈/깨진 값이 경계로 저장되지 않음
+        verify(batchService, never()).saveLastModifiedTime(any());
+    }
+
+    @Test
+    @DisplayName("retryable 실패와 영구 실패가 섞이면 경계는 retryable 실패 기준으로만 캡된다")
+    void mixedFailuresCapByRetryableOnly() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        // 성공(0005) → 영구실패(0001, 가장 과거) → retryable 실패(0003)
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "20260101000005"),
+                item("2", "20260101000001"),
+                item("3", "20260101000003")));
+        given(batchService.upsertItem(any()))
+                .willReturn(UpsertResult.CREATED)
+                .willThrow(new DataIntegrityViolationException("constraint"))
+                .willThrow(new RuntimeException("transient"));
+
+        placeSyncService.syncAllPlaces();
+
+        // 영구실패(0001)는 경계를 끌어내리지 않고, retryable(0003)만 캡 → boundary = min(0005, 0003) = 0003
+        verify(batchService).saveLastModifiedTime("20260101000003");
+    }
+
+    @Test
     @DisplayName("제약 위반(DataIntegrityViolationException)은 영구 실패로 보고 경계를 막지 않는다(다음 run 대량 재수집 방지)")
     void permanentFailureDoesNotCapBoundary() {
         given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));

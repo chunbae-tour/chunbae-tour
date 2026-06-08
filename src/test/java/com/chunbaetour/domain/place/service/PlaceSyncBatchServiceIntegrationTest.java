@@ -36,6 +36,11 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
                 "http://tong.visitkorea.or.kr/img.jpg", null, "041-100-1000", "20251124134437", "1", "34");
     }
 
+    private TourApiPlaceItem itemWithModified(String contentId, String modifiedTime) {
+        return new TourApiPlaceItem(contentId, "관광지", "충청남도 천안시 동남구", "", "127.1", "36.8",
+                null, null, null, modifiedTime, "1", "34");
+    }
+
     @Test
     @DisplayName("신규 contentid는 CREATED로 저장되며 source=API_FETCH·category=TOURIST_SPOT가 설정된다")
     void create() {
@@ -62,6 +67,44 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
         Place updated = placeRepository.findByExternalId("200").orElseThrow();
         assertThat(updated.getName()).isEqualTo("새이름");
         assertThat(placeRepository.findAll()).hasSize(1); // 중복 생성 없이 1건 유지
+    }
+
+    @Test
+    @DisplayName("재동기화 시 외부 modifiedtime이 증가하면 enrichAttemptCount가 리셋되어 상세 재수집 대상이 된다")
+    void resyncNewerModifiedTimeResetsEnrichRetries() {
+        batchService.upsertItem(itemWithModified("800", "20260101000000"));
+        // 한도 소진 시뮬레이션
+        Place place = placeRepository.findByExternalId("800").orElseThrow();
+        for (int i = 0; i < Place.MAX_ENRICH_ATTEMPTS; i++) {
+            place.recordEmptyEnrichAttempt();
+        }
+        placeRepository.saveAndFlush(place);
+        assertThat(placeRepository.findByExternalId("800").orElseThrow().needsDetailEnrichment()).isFalse();
+
+        // 외부 데이터 갱신(modifiedtime 증가) 재동기화
+        batchService.upsertItem(itemWithModified("800", "20260601000000"));
+
+        Place after = placeRepository.findByExternalId("800").orElseThrow();
+        assertThat(after.getEnrichAttemptCount()).isZero();
+        assertThat(after.needsDetailEnrichment()).isTrue();
+    }
+
+    @Test
+    @DisplayName("재동기화 시 외부 modifiedtime이 동일하면 enrichAttemptCount를 리셋하지 않는다(API 반복 호출 방지)")
+    void resyncSameModifiedTimeKeepsEnrichRetries() {
+        batchService.upsertItem(itemWithModified("810", "20260101000000"));
+        Place place = placeRepository.findByExternalId("810").orElseThrow();
+        for (int i = 0; i < Place.MAX_ENRICH_ATTEMPTS; i++) {
+            place.recordEmptyEnrichAttempt();
+        }
+        placeRepository.saveAndFlush(place);
+
+        // 동일 modifiedtime(==boundary 재수집 상황) 재동기화 — 리셋되면 안 됨
+        batchService.upsertItem(itemWithModified("810", "20260101000000"));
+
+        Place after = placeRepository.findByExternalId("810").orElseThrow();
+        assertThat(after.getEnrichAttemptCount()).isEqualTo(Place.MAX_ENRICH_ATTEMPTS);
+        assertThat(after.needsDetailEnrichment()).isFalse();
     }
 
     @Test

@@ -64,12 +64,16 @@ public class PlaceSyncBatchService {
         }
         String sigungu = region.sigungu();
 
+        String modifiedTime = blankToNull(item.modifiedTime());
+
         try {
             Optional<Place> existing = placeRepository.findByExternalId(item.contentId());
             if (existing.isEmpty()) {
-                placeRepository.saveAndFlush(Place.createFromApi(
+                Place created = Place.createFromApi(
                         item.contentId(), item.title().trim(), item.fullAddress(),
-                        lat, lng, thumbnail, phone, sido, sigungu));
+                        lat, lng, thumbnail, phone, sido, sigungu);
+                created.syncExternalModifiedTime(modifiedTime);
+                placeRepository.saveAndFlush(created);
                 return UpsertResult.CREATED;
             }
 
@@ -80,6 +84,8 @@ public class PlaceSyncBatchService {
                 return UpsertResult.SKIPPED;
             }
             place.updateFromApi(item.title().trim(), item.fullAddress(), lat, lng, thumbnail, phone, sido, sigungu);
+            // 외부 modifiedtime이 증가했으면 상세 재시도 한도 리셋 (뒤늦게 overview 생긴 경우 재수집 기회 회복)
+            place.syncExternalModifiedTime(modifiedTime);
             placeRepository.saveAndFlush(place);
             return UpsertResult.UPDATED;
         } catch (DataIntegrityViolationException e) {

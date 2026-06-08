@@ -134,6 +134,10 @@ public class Place {
     @Column(name = "enrich_attempt_count", nullable = false)
     private int enrichAttemptCount = 0;
 
+    /** 외부(KorService2) modifiedtime(yyyyMMddHHmmss). Tier-1 갱신 시 증가 여부로 재시도 한도 리셋을 판단. (KAN-221) */
+    @Column(name = "external_modified_time", length = 14)
+    private String externalModifiedTime;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -261,6 +265,22 @@ public class Place {
     /** 상세 API는 성공했으나 overview가 비어 있을 때 호출 — 재시도 횟수를 1 누적한다. */
     public void recordEmptyEnrichAttempt() {
         this.enrichAttemptCount++;
+    }
+
+    /**
+     * Tier-1 동기화 시 외부 modifiedtime을 반영한다(KAN-221).
+     * 외부 modifiedtime이 이전보다 증가(데이터 갱신)했으면 상세 재시도 한도(enrichAttemptCount)를 리셋한다 —
+     * 처음엔 overview가 비었다가 뒤늦게 채워진 관광지가 한도 소진으로 영구 제외되는 것을 방지한다.
+     * 동일/과거 값(==boundary 재수집 포함)이면 리셋하지 않아 외부 API 반복 호출을 피한다.
+     */
+    public void syncExternalModifiedTime(String modifiedTime) {
+        if (modifiedTime == null || !modifiedTime.matches("\\d{14}")) {
+            return;
+        }
+        if (externalModifiedTime == null || modifiedTime.compareTo(externalModifiedTime) > 0) {
+            this.enrichAttemptCount = 0;
+            this.externalModifiedTime = modifiedTime;
+        }
     }
 
     private static String truncate(String value, int maxLength) {

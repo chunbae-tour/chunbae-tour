@@ -58,4 +58,37 @@ class PlaceEnrichmentTest {
         assertThat(place.needsDetailEnrichment()).isFalse();
         assertThat(place.getDescription()).isNull();
     }
+
+    @Test
+    @DisplayName("한도 소진 후 외부 modifiedtime이 증가하면 재시도 한도가 리셋되어 다시 수집 대상이 된다")
+    void newerModifiedTimeResetsRetries() {
+        Place place = apiPlace();
+        place.syncExternalModifiedTime("20260101000000"); // 최초 동기화 시각
+
+        for (int i = 0; i < Place.MAX_ENRICH_ATTEMPTS; i++) {
+            place.recordEmptyEnrichAttempt();
+        }
+        assertThat(place.needsDetailEnrichment()).isFalse(); // 한도 소진
+
+        place.syncExternalModifiedTime("20260601000000"); // 외부 데이터 갱신(modifiedtime 증가)
+
+        assertThat(place.needsDetailEnrichment()).isTrue(); // 재수집 기회 회복
+    }
+
+    @Test
+    @DisplayName("외부 modifiedtime이 동일하거나 과거이면 재시도 한도를 리셋하지 않는다(API 반복 호출 방지)")
+    void sameOrOlderModifiedTimeDoesNotReset() {
+        Place place = apiPlace();
+        place.syncExternalModifiedTime("20260601000000");
+        for (int i = 0; i < Place.MAX_ENRICH_ATTEMPTS; i++) {
+            place.recordEmptyEnrichAttempt();
+        }
+        assertThat(place.needsDetailEnrichment()).isFalse();
+
+        place.syncExternalModifiedTime("20260601000000"); // 동일 (==boundary 재수집 상황)
+        assertThat(place.needsDetailEnrichment()).isFalse();
+
+        place.syncExternalModifiedTime("20250101000000"); // 과거
+        assertThat(place.needsDetailEnrichment()).isFalse();
+    }
 }
