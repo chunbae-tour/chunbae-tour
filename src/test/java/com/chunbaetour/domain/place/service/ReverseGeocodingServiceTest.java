@@ -53,8 +53,10 @@ class ReverseGeocodingServiceTest {
 
     private static final double LAT = 33.450701;
     private static final double LNG = 126.570667;
-    // 캐시 키는 소수점 3자리
-    private static final String CACHE_KEY = String.format(Locale.ROOT, "region:%.3f:%.3f", LAT, LNG);
+    // 캐시 키는 소수점 4자리 (반올림된 값)
+    private static final double ROUNDED_LAT = Math.round(LAT * 10000.0) / 10000.0;
+    private static final double ROUNDED_LNG = Math.round(LNG * 10000.0) / 10000.0;
+    private static final String CACHE_KEY = String.format(Locale.ROOT, "region:%.4f:%.4f", ROUNDED_LAT, ROUNDED_LNG);
 
     @BeforeEach
     void setUp() throws Exception {
@@ -183,5 +185,46 @@ class ReverseGeocodingServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("락 대기 중 InterruptedException 발생 시 MAP_SERVICE_UNAVAILABLE 던짐")
+    void reverseGeocode_lockInterrupted_throwsException() throws Exception {
+        // given
+        given(valueOps.get(CACHE_KEY)).willReturn(null);
+        given(rLock.tryLock(anyLong(), anyLong(), any())).willThrow(new InterruptedException());
+
+        // when & then
+        assertThatThrownBy(() -> reverseGeocodingService.reverseGeocode(LAT, LNG))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        
+        assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        // 테스트 스레드의 interrupt 상태 초기화 (다른 테스트에 영향 방지)
+        Thread.interrupted();
+    }
+
+    @Test
+    @DisplayName("Redis 장애로 getLock이 예외를 던지면 카카오 API 직접 조회(Fallback)")
+    void reverseGeocode_redisException_fallbackToApi() throws Exception {
+        // given
+        given(valueOps.get(CACHE_KEY)).willReturn(null);
+        given(redissonClient.getLock(anyString())).willThrow(new RuntimeException("Redis Connection Error"));
+
+        KakaoRegionResponse.Document doc = new KakaoRegionResponse.Document(
+                "B", "제주특별자치도 서귀포시 안덕면", "제주특별자치도", "서귀포시", "안덕면", ""
+        );
+        KakaoRegionResponse mockResponse = new KakaoRegionResponse(
+                new KakaoRegionResponse.Meta(1), List.of(doc)
+        );
+        given(kakaoLocalApiClient.getRegionCode(anyDouble(), anyDouble())).willReturn(mockResponse);
+
+        // when
+        RegionResponse result = reverseGeocodingService.reverseGeocode(LAT, LNG);
+
+        // then
+        assertThat(result.depth2()).isEqualTo("서귀포시");
+        then(kakaoLocalApiClient).should().getRegionCode(anyDouble(), anyDouble());
     }
 }

@@ -33,11 +33,12 @@ public class ReverseGeocodingService {
      * 좌표(위경도)를 행정구역 주소로 변환 (소수점 3자리 캐싱)
      */
     public RegionResponse reverseGeocode(double lat, double lng) {
-        // 1. 소수점 3자리(약 111m 정밀도) 반올림 처리 (캐시 키와 카카오 API 호출 모두에 적용하여 데이터 정합성 유지)
-        double roundedLat = Math.round(lat * 1000.0) / 1000.0;
-        double roundedLng = Math.round(lng * 1000.0) / 1000.0;
+        // 1. 소수점 4자리(약 11m 정밀도) 반올림 처리 (캐시 키와 카카오 API 호출 모두에 적용하여 데이터 정합성 유지)
+        // 행정동 경계 부근 오염을 최소화하기 위해 111m(3자리)에서 11m(4자리)로 정밀도 상향 (트레이드오프: 히트율 소폭 감소)
+        double roundedLat = Math.round(lat * 10000.0) / 10000.0;
+        double roundedLng = Math.round(lng * 10000.0) / 10000.0;
 
-        String cacheKey = String.format(Locale.ROOT, "%s%.3f:%.3f", CACHE_KEY_PREFIX, roundedLat, roundedLng);
+        String cacheKey = String.format(Locale.ROOT, "%s%.4f:%.4f", CACHE_KEY_PREFIX, roundedLat, roundedLng);
 
         // 2. 빠른 경로 (Fast path) 조회
         RegionResponse cached = getFromCache(cacheKey);
@@ -57,6 +58,7 @@ public class ReverseGeocodingService {
                     return fallback;
                 }
                 log.warn("[ReverseGeocoding] 락 획득 실패 및 캐시 미스, 카카오 API 강제 조회로 Fallback. key={}", cacheKey);
+                // TODO: Redis 장애 시 N개 스레드가 동시에 카카오 API로 팬아웃될 수 있으므로, 추후 Rate-limit이나 Circuit Breaker 도입 고려
                 return fetchFromKakaoAndCache(roundedLat, roundedLng, cacheKey);
             }
             try {
@@ -74,7 +76,7 @@ public class ReverseGeocodingService {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new java.util.concurrent.CancellationException("스레드 인터럽트로 인한 작업 취소");
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
