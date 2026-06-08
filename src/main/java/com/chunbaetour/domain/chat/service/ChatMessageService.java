@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.Message;
+import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.MessageRepository;
@@ -25,6 +26,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +47,7 @@ public class ChatMessageService {
     private final MessageRepository messageRepository;
     private final ChatRedisPubSubService chatRedisPubSubService;
     private final RateLimiter rateLimiter;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 메시지 전송 — rate limit 선검증 후 ACTIVE 멤버 확인, DB 저장 및 Redis 발행
     @Transactional
@@ -76,6 +79,17 @@ public class ChatMessageService {
 
         Message saved = messageRepository.save(message);
         ChatMessageResponse response = ChatMessageResponse.from(saved, sender);
+
+        // 알림 수신 대상 — ACTIVE 멤버 중 발신자 제외, AFTER_COMMIT 리스너가 각자에게 알림 생성
+        // 수신자 없으면(혼자 있는 방 등) 이벤트 미발행 — REQUIRES_NEW 트랜잭션 낭비 방지
+        List<Long> recipientUserIds = chatRoomMemberRepository
+                .findByChatRoomIdAndMemberStateInAndUserIdNot(chatRoomId, ChatMemberState.activeStates(), userId)
+                .stream()
+                .map(ChatRoomMember::getUserId)
+                .toList();
+        if (!recipientUserIds.isEmpty()) {
+            eventPublisher.publishEvent(new ChatMessageSentEvent(chatRoomId, userId, recipientUserIds));
+        }
 
         // DB 커밋 이후 발행 — 커밋 실패·롤백 시 유령 메시지 브로드캐스트 방지
         // isActualTransactionActive: 실트랜잭션 없는 컨텍스트(단위 테스트 등) → 즉시 발행 fallback
