@@ -29,6 +29,10 @@ public class ReverseGeocodingService {
     private static final long CACHE_TTL_HOURS = 24;
     private static final String CACHE_KEY_PREFIX = "region:";
 
+    private String keyFingerprint(String cacheKey) {
+        return Integer.toHexString(cacheKey.hashCode());
+    }
+
     /**
      * 좌표(위경도)를 행정구역 주소로 변환 (소수점 3자리 캐싱)
      */
@@ -57,7 +61,7 @@ public class ReverseGeocodingService {
                 if (fallback != null) {
                     return fallback;
                 }
-                log.warn("[ReverseGeocoding] 락 획득 실패 및 캐시 미스, 카카오 API 강제 조회로 Fallback. key={}", cacheKey);
+                log.warn("[ReverseGeocoding] 락 획득 실패 및 캐시 미스, 카카오 API 강제 조회로 Fallback. keyFp={}", keyFingerprint(cacheKey));
                 // TODO: Redis 장애 시 N개 스레드가 동시에 카카오 API로 팬아웃될 수 있으므로, 추후 Rate-limit이나 Circuit Breaker 도입 고려
                 return fetchFromKakaoAndCache(roundedLat, roundedLng, cacheKey);
             }
@@ -80,7 +84,7 @@ public class ReverseGeocodingService {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("[ReverseGeocoding] Redis 장애로 락 획득 예외 발생, 카카오 API 강제 조회. key={}", cacheKey);
+            log.warn("[ReverseGeocoding] Redis 장애로 락 획득 예외 발생, 카카오 API 강제 조회. keyFp={}", keyFingerprint(cacheKey));
             return fetchFromKakaoAndCache(roundedLat, roundedLng, cacheKey);
         }
     }
@@ -92,7 +96,7 @@ public class ReverseGeocodingService {
                 return objectMapper.readValue(cached, RegionResponse.class);
             }
         } catch (Exception e) {
-            log.warn("[ReverseGeocoding] 캐시 조회 실패, 카카오 API 재조회. key={}", cacheKey);
+            log.warn("[ReverseGeocoding] 캐시 조회 실패, 카카오 API 재조회. keyFp={}", keyFingerprint(cacheKey));
         }
         return null;
     }
@@ -121,7 +125,7 @@ public class ReverseGeocodingService {
             String json = objectMapper.writeValueAsString(result);
             stringRedisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL_HOURS, TimeUnit.HOURS);
         } catch (Exception e) {
-            log.warn("[ReverseGeocoding] 캐시 저장 실패, 로직은 정상 반환 진행. key={}", cacheKey, e);
+            log.warn("[ReverseGeocoding] 캐시 저장 실패, 로직은 정상 반환 진행. keyFp={}", keyFingerprint(cacheKey), e);
         }
 
         return result;
