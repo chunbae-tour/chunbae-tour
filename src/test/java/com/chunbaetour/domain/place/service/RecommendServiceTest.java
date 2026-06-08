@@ -1,0 +1,430 @@
+package com.chunbaetour.domain.place.service;
+
+import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
+import com.chunbaetour.domain.place.dto.response.RecommendPlaceResponse;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceStatus;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+
+import java.util.Collections;
+import java.util.List;
+
+import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
+import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class RecommendServiceTest {
+
+    @Mock
+    private PlaceRepository placeRepository;
+
+    @Mock
+    private ShopRepository shopRepository;
+
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Mock
+    private org.springframework.data.redis.core.RedisOperations<String, String> redisOperations;
+
+    @Mock
+    private org.springframework.data.redis.core.ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private ZSetOperations<String, String> zSetOperations;
+
+    @Mock
+    private ObjectMapper objectMapper;
+
+    @InjectMocks
+    private RecommendService recommendService;
+
+    private Place createTestPlace(Long id, String name, double lat, double lng) {
+        Place place = Place.builder()
+                .name(name)
+                .category(PlaceCategory.TOURIST_SPOT)
+                .address("Test Address")
+                .lat(java.math.BigDecimal.valueOf(lat))
+                .lng(java.math.BigDecimal.valueOf(lng))
+                .build();
+        org.springframework.test.util.ReflectionTestUtils.setField(place, "id", id);
+        return place;
+    }
+
+    @Test
+    @DisplayName("인기 추천 - Redis 캐시에 값이 있을 때 (Cache Hit, 정렬 유지 확인)")
+    void getPopularRecommendations_CacheHit() {
+        // given
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        // ID 2, 1 순서로 캐시되어 있다고 가정 (정렬 테스트)
+        when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
+                .thenReturn(new java.util.LinkedHashSet<>(List.of("2", "1")));
+
+        Place place1 = createTestPlace(1L, "Place 1", 37.5, 127.0);
+        Place place2 = createTestPlace(2L, "Place 2", 37.5, 127.0);
+        
+        when(placeRepository.findAllById(any())).thenReturn(List.of(place1, place2));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
+
+        // then
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).placeId()).isEqualTo(2L); // 순서 보장
+        assertThat(result.get(1).placeId()).isEqualTo(1L);
+        verify(placeRepository, never()).findTopPopularPlaces(anyDouble(), anyDouble(), any());
+    }
+
+    @Test
+    @DisplayName("인기 추천 - Redis 캐시 미스 시 DB Fallback 및 Cache-Aside 수행")
+    void getPopularRecommendations_CacheMiss() {
+        // given
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
+                .thenReturn(Collections.emptySet());
+
+        Place place = createTestPlace(2L, "DB 추천 명소", 37.5, 127.0);
+        org.springframework.test.util.ReflectionTestUtils.setField(place, "likeCount", 10);
+        org.springframework.test.util.ReflectionTestUtils.setField(place, "viewCount", 20);
+
+        when(placeRepository.findTopPopularPlaces(anyDouble(), anyDouble(), any())).thenReturn(List.of(place));
+
+        when(stringRedisTemplate.executePipelined(any(org.springframework.data.redis.core.SessionCallback.class)))
+                .thenAnswer(invocation -> {
+                    org.springframework.data.redis.core.SessionCallback<?> callback = invocation.getArgument(0);
+                    when(redisOperations.opsForZSet()).thenReturn(zSetOperations);
+                    callback.execute(redisOperations);
+                    return Collections.emptyList();
+                });
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        
+        // Pipeline Delete 및 Expire 호출 검증
+        verify(redisOperations).delete(PlaceRedisConstants.RECOMMEND_POPULAR_KEY);
+        verify(redisOperations).expire(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), eq(PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES), eq(TimeUnit.MINUTES));
+        
+        // ZADD(Bulk) 호출 확인
+        verify(zSetOperations).add(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), argThat(set -> {
+            if (set == null || set.size() != 1) return false;
+            ZSetOperations.TypedTuple<String> tuple = (ZSetOperations.TypedTuple<String>) set.iterator().next();
+            return tuple.getValue().equals("2") && tuple.getScore() == (10 * 0.7 + 20 * 0.3);
+        }));
+    }
+    
+    @Test
+    @DisplayName("인기 추천 - Redis 캐시 중 유효하지 않은 ID 파싱 실패 시 해당 항목 무시")
+    void getPopularRecommendations_InvalidIdIgnored() {
+        // given
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.reverseRange(PlaceRedisConstants.RECOMMEND_POPULAR_KEY, 0, 9))
+                .thenReturn(new java.util.LinkedHashSet<>(List.of("1", "invalid_id", "2")));
+
+        Place place1 = createTestPlace(1L, "Place 1", 37.5, 127.0);
+        Place place2 = createTestPlace(2L, "Place 2", 37.5, 127.0);
+        
+        when(placeRepository.findAllById(any())).thenReturn(List.of(place1, place2));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
+
+        // then
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).placeId()).isEqualTo(1L);
+        assertThat(result.get(1).placeId()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("인기 추천 - Redis 조회 실패 시 DB Fallback 정상 수행")
+    void getPopularRecommendations_RedisFailureFallback() {
+        // given
+        when(stringRedisTemplate.opsForZSet()).thenThrow(new RuntimeException("Redis down"));
+        when(placeRepository.findTopPopularPlaces(anyDouble(), anyDouble(), any())).thenReturn(Collections.emptyList());
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPopularRecommendations();
+
+        // then
+        assertThat(result).isEmpty();
+        verify(placeRepository).findTopPopularPlaces(anyDouble(), anyDouble(), any());
+    }
+
+    @Test
+    @DisplayName("근처 추천 - DB 조회 후 Java 메모리 셔플 및 제한 확인")
+    void getNearbyRecommendations() {
+        // given
+        Place place1 = createTestPlace(1L, "Place 1", 37.501, 127.001);
+        Place place2 = createTestPlace(2L, "Place 2", 37.502, 127.002);
+
+        when(placeRepository.findNearbyPlacesWithinRadius(anyDouble(), anyDouble(), anyDouble(), anyString(), anyInt()))
+                .thenReturn(new java.util.ArrayList<>(List.of(place1, place2)));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getNearbyRecommendations(37.5, 127.0, 5.0, 1);
+
+        // then
+        assertThat(result).hasSize(1); // limit 적용 확인
+        assertThat(result.get(0).distanceMeters()).isNotNull(); // 거리 계산 확인
+    }
+
+    @Test
+    @DisplayName("카테고리 추천 - 정상 조회")
+    void getCategoryRecommendations() {
+        // given
+        when(placeRepository.findTopByCategory(eq(PlaceCategory.TOURIST_SPOT), any())).thenReturn(Collections.emptyList());
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getCategoryRecommendations(PlaceCategory.TOURIST_SPOT);
+
+        // then
+        assertThat(result).isEmpty();
+        verify(placeRepository).findTopByCategory(eq(PlaceCategory.TOURIST_SPOT), any());
+    }
+    @Test
+    @DisplayName("카테고리 추천 - 카테고리가 null일 경우 예외 발생")
+    void getCategoryRecommendations_NullCategory() {
+        // given & when & then
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            recommendService.getCategoryRecommendations(null);
+        });
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Cache Hit")
+    void getPlaceBasedRecommendations_CacheHit() throws Exception {
+        // given
+        Long placeId = 1L;
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+        String cachedJson = "[{\"placeId\":2}]";
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(cachedJson);
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
+        
+        List<RecommendPlaceResponse> mockResponse = List.of(
+            RecommendPlaceResponse.builder().placeId(2L).build()
+        );
+        when(objectMapper.readValue(eq(cachedJson), any(TypeReference.class))).thenReturn(mockResponse);
+
+        Place cachedNearbyPlace = createTestPlace(2L, "Cached Nearby", 37.5, 127.0);
+        when(placeRepository.findAllById(List.of(2L))).thenReturn(List.of(cachedNearbyPlace));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Cache Miss & DB 조회")
+    void getPlaceBasedRecommendations_CacheMiss() throws Exception {
+        // given
+        Long placeId = 1L;
+        String cacheKey = PlaceRedisConstants.RECOMMEND_PLACE_BASED_PREFIX + placeId;
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(null);
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
+
+        Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(20000.0), eq(5)))
+                .thenReturn(List.of(nearbyPlace));
+
+        String jsonResult = "[{}]";
+        when(objectMapper.writeValueAsString(any())).thenReturn(jsonResult);
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(valueOperations).set(eq(cacheKey), eq(jsonResult), eq(PlaceRedisConstants.RECOMMEND_PLACE_BASED_TTL_MINUTES), eq(TimeUnit.MINUTES));
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - 존재하지 않는 장소이거나 ACTIVE가 아닐 때 예외 발생")
+    void getPlaceBasedRecommendations_NotFoundOrInactive() {
+        // given
+        Long placeId = 1L;
+        // 캐시 확인 전에 예외가 터지므로 캐시 모킹은 필요 없음
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.empty());
+
+        // when & then
+        com.chunbaetour.domain.common.error.BusinessException ex =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        com.chunbaetour.domain.common.error.BusinessException.class,
+                        () -> recommendService.getPlaceBasedRecommendations(placeId)
+                );
+        assertThat(ex.getErrorCode())
+                .isEqualTo(com.chunbaetour.domain.common.error.ErrorCode.PLACE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("특정 관광지 기반 추천 - Redis 장애 시 DB Fallback 정상 동작")
+    void getPlaceBasedRecommendations_RedisFailure() throws Exception {
+        // given
+        Long placeId = 1L;
+        when(stringRedisTemplate.opsForValue()).thenThrow(new RuntimeException("Redis get error"));
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE)).thenReturn(java.util.Optional.of(basePlace));
+
+        Place nearbyPlace = createTestPlace(2L, "Nearby", 37.501, 127.001);
+        when(placeRepository.findNearbyPlacesByCategory(anyDouble(), anyDouble(), eq("TOURIST_SPOT"), eq(placeId), anyString(), eq(20000.0), eq(5)))
+                .thenReturn(List.of(nearbyPlace));
+
+        // when
+        List<RecommendPlaceResponse> result = recommendService.getPlaceBasedRecommendations(placeId);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).placeId()).isEqualTo(2L);
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
+        verify(placeRepository).findNearbyPlacesByCategory(
+                eq(37.5),
+                eq(127.0),
+                eq("TOURIST_SPOT"),
+                eq(placeId),
+                anyString(),
+                eq(20000.0),
+                eq(5)
+        );
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 성공")
+    void getNearbyShops_Success() {
+        // given
+        Long placeId = 1L;
+        int limit = 5;
+
+        Place basePlace = createTestPlace(placeId, "Base", 37.5, 127.0);
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE))
+            .thenReturn(java.util.Optional.of(basePlace));
+
+        // Shop 모킹: Shop.builder는 address 필수 (Integration 테스트 참조)
+        Shop shop1 = Shop.builder()
+            .userId(1L)
+            .applicationId(1L)
+            .shopName("상점 1")
+            .category("식당")
+            .address("테스트 상점 1번지")
+            .lat(BigDecimal.valueOf(37.501))
+            .lng(BigDecimal.valueOf(127.001))
+            .description("맛있는 식당")
+            .build();
+            
+        when(shopRepository.findNearbyShops(anyDouble(), anyDouble(), eq(5.0), eq(limit)))
+            .thenReturn(List.of(shop1));
+
+        // when
+        List<NearbyShopResponse> result = recommendService.getNearbyShops(placeId, limit);
+
+        // then
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).shopName()).isEqualTo("상점 1");
+        // 거리가 계산되었는지 확인 (대략 0은 아님)
+        assertThat(result.get(0).distanceMeters()).isGreaterThan(0.0);
+        
+        verify(placeRepository).findByIdAndStatus(placeId, PlaceStatus.ACTIVE);
+        verify(shopRepository).findNearbyShops(basePlace.getLat().doubleValue(), basePlace.getLng().doubleValue(), 5.0, limit);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (관광지를 찾을 수 없음)")
+    void getNearbyShops_Fail_PlaceNotFound() {
+        // given
+        Long placeId = 999L;
+        int limit = 5;
+
+        when(placeRepository.findByIdAndStatus(placeId, PlaceStatus.ACTIVE))
+            .thenReturn(java.util.Optional.empty());
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PLACE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (limit이 1 미만)")
+    void getNearbyShops_Fail_InvalidLimit_TooSmall() {
+        // given
+        Long placeId = 1L;
+        int limit = 0;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (limit이 50 초과)")
+    void getNearbyShops_Fail_InvalidLimit_TooLarge() {
+        // given
+        Long placeId = 1L;
+        int limit = 51;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("주변 상점 조회 - 실패 (placeId가 null)")
+    void getNearbyShops_Fail_PlaceIdNull() {
+        // given
+        Long placeId = null;
+        int limit = 5;
+
+        // when & then
+        BusinessException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                BusinessException.class,
+                () -> recommendService.getNearbyShops(placeId, limit)
+        );
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+}

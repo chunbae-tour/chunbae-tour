@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "ko-KR"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  review_details: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - develop
+      - main
+
+  path_instructions:
+    - path: "src/main/java/**"
+      instructions: >
+        Spring Boot 백엔드 코드입니다.
+        Spring Security 권한 검증, JWT 인증 흐름,
+        트랜잭션 경계, 예외 처리, 테스트 누락,
+        도메인 책임 분리를 중점적으로 리뷰하세요.
+
+    - path: "src/main/resources/**"
+      instructions: >
+        설정 파일입니다.
+        민감 정보 하드코딩, 프로필 분리,
+        환경변수 사용 여부를 확인하세요.
+
+    - path: ".github/workflows/**"
+      instructions: >
+        GitHub Actions CI 설정입니다.
+        Gradle 빌드 안정성, secret 노출,
+        캐시 설정 문제를 확인하세요.
+
+    - path: "docker-compose.yml"
+      instructions: >
+        로컬 개발 Docker 설정입니다.
+        팀원이 환경변수와 포트 충돌 없이 실행할 수 있는지,
+        MySQL/Redis 설정이 명확한지 확인하세요.
+
+chat:
+  auto_reply: true

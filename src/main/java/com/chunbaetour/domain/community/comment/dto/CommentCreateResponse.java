@@ -1,0 +1,24 @@
+package com.chunbaetour.domain.community.comment.dto;
+
+import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.common.WriterInfo;
+import java.time.LocalDateTime;
+
+public record CommentCreateResponse(
+        Long commentId,
+        Long parentCommentId,
+        String content,
+        WriterInfo writer,
+        LocalDateTime createdAt
+) {
+    public static CommentCreateResponse of(Comment comment, Account author) {
+        return new CommentCreateResponse(
+                comment.getId(),
+                comment.getParentCommentId(),
+                comment.getContent(),
+                WriterInfo.fromComment(author),
+                comment.getCreatedAt()
+        );
+    }
+}

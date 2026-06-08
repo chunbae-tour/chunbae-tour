@@ -1,0 +1,102 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.0.6'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.chunbaetour'
+version = '0.0.1-SNAPSHOT'
+description = 'chunbae-tour team project'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// AspectJ (KAN-179, Admin Epic KAN-177 S01).
+	// AdminActionLog 자동 wiring용 @LogAdminAction 어노테이션 + advice. 호출자 코드 변경 없이 액션 자동 기록.
+	// Spring Boot 4.0 BOM은 spring-boot-starter-aop을 자체 게시하지 않으므로 spring-aspects + aspectjweaver를 직접 명시.
+	// spring-aspects가 EnableAspectJAutoProxy 자동 등록 + AspectJ proxy 인프라 제공. aspectjweaver는 @Aspect 메타데이터 처리.
+	implementation 'org.springframework:spring-aspects'
+	implementation 'org.aspectj:aspectjweaver'
+	// Micrometer Prometheus registry — /actuator/prometheus endpoint 노출 (KAN-104).
+	// Spring Boot가 버전 관리. 인증 필터/서비스에 Counter/Timer 추가 시 자동 수집.
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+	// 보안 감사 로그 JSON 인코더 (KAN-105). audit.security logger를 logstash JSON format으로 출력.
+	// 외부 log aggregator(ELK/CloudWatch Logs)가 별도 인덱스로 수집 가능. Spring Boot 4 호환 7.x 사용.
+	implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.apache.httpcomponents.client5:httpclient5'
+
+	// JPA & Hibernate Spatial
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.hibernate.orm:hibernate-spatial'
+
+	// QueryDSL — OpenFeign 유지보수 fork 사용
+	// - com.querydsl는 5.1.0에서 유지보수 중단, CVE-2024-49203 미패치
+	// - io.github.openfeign.querydsl 5.6.1: CVE 패치
+	// - querydsl-jpa는 :jakarta classifier 필요 (기본 jar는 여전히 javax.persistence 참조).
+	//   classifier 없이 사용하면 JPAQueryFactory 생성자 시그니처에서 EntityManager 클래스를 못 찾아 컴파일 실패.
+	implementation 'io.github.openfeign.querydsl:querydsl-jpa:5.6.1:jakarta'
+	annotationProcessor 'io.github.openfeign.querydsl:querydsl-apt:5.6.1:jakarta'
+	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+	annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
+
+	// MySQL
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// Flyway 마이그레이션 도구 (KAN-178, Admin Epic KAN-177 S00).
+	// MySQL 8.x는 flyway-mysql 모듈 분리됨 (Flyway 9.x+) — flyway-core 단독으로는 MySQL Dialect 미인식.
+	// 운영 prod 적용 정책: baseline-on-migrate=true + baseline-version=1 → 기존 schema는 V1 적용된 것으로 간주.
+	// Spring Boot 4.0이 Flyway 버전 자동 관리하므로 version 명시 X.
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-mysql'
+	// Spring Boot 4에서 Flyway auto-configuration이 spring-boot-flyway 모듈로 분리됨.
+	// flyway-core/flyway-mysql만으로는 부팅 시 migration이 자동 실행되지 않음.
+	// ddl-auto=validate 환경에서 Flyway가 Hibernate 검증 전에 먼저 실행되어야 하므로 필수.
+	implementation 'org.springframework.boot:spring-boot-flyway'
+
+	// Redis
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	implementation 'org.redisson:redisson:3.35.0'
+
+	// ShedLock — 다중 인스턴스 환경에서 @Scheduled 중복 실행 방지 (분산 스케줄러 락)
+	implementation 'net.javacrumbs.shedlock:shedlock-spring:7.7.0'
+	implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.7.0'
+
+	// Security + JWT (S2~S5에서 본격 사용, S1에서는 BCryptPasswordEncoder + SecurityConfig 최소 구성)
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+	// Swagger / OpenAPI UI
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
+
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter:1.20.4'
+	testImplementation 'org.testcontainers:mysql:1.20.4'
+	testCompileOnly 'org.projectlombok:lombok'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

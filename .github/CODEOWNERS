@@ -1,0 +1,9 @@
+# 모든 파일의 기본 소유자
+* @DuJjoneKoo
+
+# CI/CD 워크플로
+.github/workflows/ @DuJjoneKoo
+
+# 빌드 설정
+build.gradle @DuJjoneKoo
+docker-compose.yml @DuJjoneKoo

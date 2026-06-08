@@ -1,0 +1,312 @@
+package com.chunbaetour.domain.payment.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.payment.client.PaymentGatewayClient;
+import com.chunbaetour.domain.payment.dto.response.RefundDetailResponse;
+import com.chunbaetour.domain.payment.entity.PaymentOrder;
+import com.chunbaetour.domain.payment.entity.Refund;
+import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import com.chunbaetour.domain.payment.repository.RefundRepository;
+import com.chunbaetour.domain.payment.type.PaymentMethod;
+import com.chunbaetour.domain.payment.type.PaymentOrderStatus;
+import com.chunbaetour.domain.payment.type.RefundStatus;
+import com.chunbaetour.domain.yeopjeon.service.WalletService;
+import com.chunbaetour.domain.common.util.CursorUtils;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@ExtendWith(MockitoExtension.class)
+class AdminRefundServiceTest {
+
+    @Mock
+    private RefundRepository refundRepository;
+
+    @Mock
+    private PaymentOrderRepository paymentOrderRepository;
+
+    @Mock
+    private PaymentGatewayClient paymentGatewayClient;
+
+    @Mock
+    private WalletService walletService;
+
+    @InjectMocks
+    private AdminRefundService adminRefundService;
+
+    private static final Long REFUND_ID = 10L;
+    private static final Long ORDER_ID = 100L;
+    private static final Long USER_ID = 1L;
+    private static final Long AMOUNT = 10_000L;
+
+    private Refund makePendingRefund() {
+        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "단순 변심");
+        ReflectionTestUtils.setField(refund, "id", REFUND_ID);
+        return refund;
+    }
+
+    private Refund makeRequiresAdminRefund() {
+        Refund refund = Refund.create(ORDER_ID, USER_ID, AMOUNT, "단순 변심");
+        ReflectionTestUtils.setField(refund, "id", REFUND_ID);
+        ReflectionTestUtils.setField(refund, "status", RefundStatus.REQUIRES_ADMIN);
+        return refund;
+    }
+
+    private PaymentOrder makeCompletedOrder() {
+        PaymentOrder order = PaymentOrder.create("uid-1", USER_ID, AMOUNT, "idem-1", PaymentMethod.CARD, "pg-order-1");
+        ReflectionTestUtils.setField(order, "id", ORDER_ID);
+        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.COMPLETED);
+        ReflectionTestUtils.setField(order, "pgTransactionId", "pg-txn-123");
+        return order;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // approveRefund
+    // ──────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("환불 승인 성공: order REFUNDED → refund APPROVED → 엽전 차감 → PG 취소 (단일 트랜잭션)")
+    void approveRefund_success() {
+        Refund refund = makePendingRefund();
+        PaymentOrder order = makeCompletedOrder();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
+        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+
+        RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID);
+
+        verify(walletService).reclaimForRefund(USER_ID, AMOUNT, ORDER_ID);
+        verify(paymentGatewayClient).cancelPayment(eq("uid-1"), eq(AMOUNT), any(), any());
+        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+        assertThat(order.getStatus()).isEqualTo(PaymentOrderStatus.REFUNDED);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 환불 ID 승인 시 REFUND_NOT_FOUND 예외")
+    void approveRefund_refund_not_found() {
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.REFUND_NOT_FOUND);
+
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("PENDING이 아닌 환불 승인 시 REFUND_INVALID_STATUS_TRANSITION 예외")
+    void approveRefund_not_pending_throws() {
+        Refund refund = makePendingRefund();
+        refund.approve(); // APPROVED로 전이
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("REQUIRES_ADMIN 환불 승인: 자동 재시도 소진 건도 관리자가 수동 승인 가능")
+    void approveRefund_requires_admin_success() {
+        Refund refund = makeRequiresAdminRefund();
+        PaymentOrder order = makeCompletedOrder();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
+        willDoNothing().given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+
+        RefundDetailResponse response = adminRefundService.approveRefund(REFUND_ID);
+
+        assertThat(response.status()).isEqualTo(RefundStatus.APPROVED);
+        verify(paymentGatewayClient).cancelPayment(eq("uid-1"), eq(AMOUNT), any(), any());
+    }
+
+    @Test
+    @DisplayName("REQUIRES_ADMIN 환불 거절: 자동 재시도 소진 건도 관리자가 수동 거절 가능")
+    void rejectRefund_requires_admin_success() {
+        Refund refund = makeRequiresAdminRefund();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        adminRefundService.rejectRefund(REFUND_ID, "복구 불가 건");
+
+        assertThat(refund.getStatus()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(refund.getRejectReason()).isEqualTo("복구 불가 건");
+    }
+
+    @Test
+    @DisplayName("PaymentOrder가 COMPLETED 아닐 때 REFUND_NOT_ELIGIBLE 예외 — PG·Wallet 호출 없음")
+    void approveRefund_order_not_completed_throws() {
+        Refund refund = makePendingRefund();
+        PaymentOrder order = makeCompletedOrder();
+        ReflectionTestUtils.setField(order, "status", PaymentOrderStatus.REFUNDED);
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.REFUND_NOT_ELIGIBLE);
+
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("PG 취소 실패 시 예외 전파")
+    void approveRefund_pg_cancel_fails_throws() {
+        Refund refund = makePendingRefund();
+        PaymentOrder order = makeCompletedOrder();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        willDoNothing().given(walletService).reclaimForRefund(any(), any(), any());
+        willThrow(new RuntimeException("PG timeout"))
+                .given(paymentGatewayClient).cancelPayment(any(), any(), any(), any());
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("PG timeout");
+    }
+
+    @Test
+    @DisplayName("엽전 잔액 부족 시 INSUFFICIENT_BALANCE 예외 — PG 호출 없음 (DB 작업 롤백)")
+    void approveRefund_insufficient_wallet_throws() {
+        Refund refund = makePendingRefund();
+        PaymentOrder order = makeCompletedOrder();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+        given(paymentOrderRepository.findByIdWithLock(ORDER_ID)).willReturn(Optional.of(order));
+        willThrow(new BusinessException(ErrorCode.INSUFFICIENT_BALANCE))
+                .given(walletService).reclaimForRefund(any(), any(), any());
+
+        assertThatThrownBy(() -> adminRefundService.approveRefund(REFUND_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE);
+
+        verifyNoInteractions(paymentGatewayClient);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // rejectRefund
+    // ──────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("환불 거절 성공: 상태 REJECTED, 거절 사유 저장, PG 호출 없음")
+    void rejectRefund_success() {
+        Refund refund = makePendingRefund();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID, "엽전 사용 이력 있음");
+
+        assertThat(response.status()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(response.rejectReason()).isEqualTo("엽전 사용 이력 있음");
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("환불 거절 시 reason null이면 rejectReason null로 저장")
+    void rejectRefund_null_reason_success() {
+        Refund refund = makePendingRefund();
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        RefundDetailResponse response = adminRefundService.rejectRefund(REFUND_ID, null);
+
+        assertThat(response.status()).isEqualTo(RefundStatus.REJECTED);
+        assertThat(response.rejectReason()).isNull();
+        verifyNoInteractions(paymentGatewayClient, walletService);
+    }
+
+    @Test
+    @DisplayName("PENDING이 아닌 환불 거절 시 REFUND_INVALID_STATUS_TRANSITION 예외")
+    void rejectRefund_not_pending_throws() {
+        Refund refund = makePendingRefund();
+        refund.reject(null); // 이미 REJECTED
+        given(refundRepository.findByIdWithLock(REFUND_ID)).willReturn(Optional.of(refund));
+
+        assertThatThrownBy(() -> adminRefundService.rejectRefund(REFUND_ID, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.REFUND_INVALID_STATUS_TRANSITION);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // getRefunds (cursor pagination)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("cursor 없이 조회 시 최신순 첫 페이지 반환")
+    void getRefunds_no_cursor_returns_first_page() {
+        Refund r1 = makePendingRefund();
+        ReflectionTestUtils.setField(r1, "id", 2L);
+        Refund r2 = makePendingRefund();
+        ReflectionTestUtils.setField(r2, "id", 1L);
+        given(refundRepository.findWithCursor(eq(null), any())).willReturn(List.of(r1, r2));
+
+        CursorPageResponse<RefundDetailResponse> page = adminRefundService.getRefunds(null, 20);
+
+        assertThat(page.content()).hasSize(2);
+        assertThat(page.hasNext()).isFalse();
+        assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("결과가 size+1이면 hasNext=true이고 nextCursor가 설정된다")
+    void getRefunds_has_next_page() {
+        List<Refund> refunds = new java.util.ArrayList<>();
+        for (long i = 5; i >= 1; i--) {
+            Refund r = makePendingRefund();
+            ReflectionTestUtils.setField(r, "id", i);
+            refunds.add(r);
+        }
+        given(refundRepository.findWithCursor(eq(null), any())).willReturn(refunds); // 5개 반환 (size=4 요청)
+
+        CursorPageResponse<RefundDetailResponse> page = adminRefundService.getRefunds(null, 4);
+
+        assertThat(page.content()).hasSize(4);
+        assertThat(page.hasNext()).isTrue();
+        assertThat(page.nextCursor()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("잘못된 cursor 형식 디코딩 시 INVALID_CURSOR 예외")
+    void getRefunds_invalid_cursor_throws() {
+        assertThatThrownBy(() -> adminRefundService.getRefunds("!!invalid!!", 10))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_CURSOR);
+    }
+
+    @Test
+    @DisplayName("유효한 cursor로 조회 시 findByIdLessThan 호출")
+    void getRefunds_with_valid_cursor() {
+        String cursor = CursorUtils.encode(50L);
+        given(refundRepository.findWithCursor(eq(50L), any())).willReturn(List.of());
+
+        CursorPageResponse<RefundDetailResponse> page = adminRefundService.getRefunds(cursor, 10);
+
+        verify(refundRepository).findWithCursor(eq(50L), any());
+        assertThat(page.content()).isEmpty();
+        assertThat(page.hasNext()).isFalse();
+    }
+}
