@@ -193,6 +193,7 @@ kakao:
     coord2address-url: https://dapi.kakao.com/v2/local/geo/coord2address.json
     coord2regioncode-url: https://dapi.kakao.com/v2/local/geo/coord2regioncode.json
     category-search-url: https://dapi.kakao.com/v2/local/search/category.json
+    address-search-url: https://dapi.kakao.com/v2/local/search/address.json
     map-url: https://map.kakao.com/link/from
 
 tour-api:
