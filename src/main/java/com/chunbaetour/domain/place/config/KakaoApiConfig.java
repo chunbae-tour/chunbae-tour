@@ -24,13 +24,13 @@ public class KakaoApiConfig {
         connectionManager.setDefaultMaxPerRoute(100); // [CRITICAL] 카카오 단일 호스트 전용이므로 MaxTotal과 동일해야 100개 풀을 온전히 씀
 
         ConnectionConfig connectionConfig = ConnectionConfig.custom()
-                .setConnectTimeout(Timeout.ofSeconds(2))
+                .setConnectTimeout(Timeout.ofSeconds(1)) // [CRITICAL] 외부 API 장애가 내부로 전파되는 것 방지 (1초)
                 .build();
         connectionManager.setDefaultConnectionConfig(connectionConfig);
 
         RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectionRequestTimeout(Timeout.ofSeconds(2)) // [CRITICAL] 풀에서 커넥션을 빌려올 때 무한 대기 방지
-                .setResponseTimeout(Timeout.ofSeconds(3))
+                .setConnectionRequestTimeout(Timeout.ofSeconds(1)) // [CRITICAL] 풀에서 커넥션을 빌려올 때 무한 대기 방지
+                .setResponseTimeout(Timeout.ofSeconds(2)) // [CRITICAL] Read Timeout 2초 설정
                 .build();
 
         return HttpClients.custom()
