@@ -224,4 +224,27 @@ class GeocodingServiceTest {
                 
         then(kakaoLocalApiClient).should(never()).searchAddress(anyString());
     }
+
+    @Test
+    @DisplayName("락 획득 실패 시 캐시 재조회(Fallback) 성공하면 캐시 값을 반환")
+    void geocode_lockAcquisitionFails_butFallbackSucceeds() throws Exception {
+        // given: 첫 조회는 null, 락 획득 실패, 그 사이 다른 스레드가 캐시 갱신
+        String cacheKey = cacheKey(QUERY);
+        GeocodingResponse cached = new GeocodingResponse("서울 종로구 사직로 161",
+                new BigDecimal("37.57960000"), new BigDecimal("126.97700000"));
+        String cachedJson = objectMapper.writeValueAsString(cached);
+
+        given(valueOps.get(cacheKey))
+                .willReturn(null)        // 1번째 조회 (빠른 경로): null
+                .willReturn(cachedJson); // 2번째 조회 (Fallback): 캐시 히트
+
+        given(rLock.tryLock(anyLong(), anyLong(), any())).willReturn(false);
+
+        // when
+        GeocodingResponse result = geocodingService.geocode(QUERY);
+
+        // then
+        assertThat(result.addressName()).isEqualTo("서울 종로구 사직로 161");
+        then(kakaoLocalApiClient).should(never()).searchAddress(anyString());
+    }
 }

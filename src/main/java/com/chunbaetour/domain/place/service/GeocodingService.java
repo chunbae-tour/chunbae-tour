@@ -66,9 +66,14 @@ public class GeocodingService {
         // Cache Stampede 방지를 위한 Redisson 분산 락
         RLock lock = redissonClient.getLock("lock:" + cacheKey);
         try {
-            boolean isLocked = lock.tryLock(3, 10, TimeUnit.SECONDS);
+            boolean isLocked = lock.tryLock(5, 10, TimeUnit.SECONDS);
             if (!isLocked) {
-                // 락 획득 실패 시 타 스레드가 처리 중이거나 지연 발생 상태. API 무한 대기 방지를 위해 예외 처리.
+                // 락 획득 실패(5초 초과 대기) 시 앞선 스레드가 방금 캐시를 갱신했을 수 있으므로 1번 더 조회 (Fallback)
+                result = getFromCache(cacheKey);
+                if (result != null) {
+                    return result;
+                }
+                // 그래도 없으면 최종 실패
                 throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
             }
             try {
@@ -86,7 +91,7 @@ public class GeocodingService {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+            throw new java.util.concurrent.CancellationException("스레드 인터럽트로 인한 지오코딩 작업 취소");
         }
     }
 
