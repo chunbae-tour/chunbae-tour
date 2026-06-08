@@ -1,0 +1,148 @@
+name: CD
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 운영 배포 파이프라인 (배포 에픽 D2 — CI/CD 자동 배포, 단순 재시작).
+#
+# 흐름: develop에서 개발/테스트 → develop→main 릴리즈 PR(머지 시 ci.yml 테스트 게이트)
+#       → main 머지 = 이 워크플로우 트리거 → 테스트 재게이트 → ECR push → EC2 pull+재시작.
+#
+# 사전 인프라(릴리가 AWS 콘솔에서 직접 생성 — 코드 아님):
+#   - ECR 프라이빗 리포 chunbae-tour (이미지 태그 immutable)
+#   - EC2 인스턴스 IAM Role(chunbae-ec2-role): ECR pull 권한(키 없이 pull)
+#   - GitHub OIDC Identity Provider + IAM Role(chunbae-gha-ecr-push): ECR push,
+#     trust policy를 repo:chunbae-tour/chunbae-tour:ref:refs/heads/main 으로 제한.
+#     push 정책에 ecr:DescribeImages 포함 필요(아래 immutable 가드에서 사용).
+#
+# 시크릿(전부 GH Secrets — 코드에 평문/계정ID 노출 없음):
+#   AWS_ROLE_ARN, ECR_REPOSITORY(풀 URI), EC2_HOST, EC2_USER, EC2_SSH_KEY
+#
+# ⚠️ 보안그룹 22번(SSH): 인바운드가 릴리 개인 IP로 제한돼 있으면 GitHub Actions
+#    러너 IP에서 SSH가 막혀 'Deploy' 스텝이 타임아웃된다. D2 대응(보안 우선순위 순):
+#      (a) GitHub Actions 공개 IP 대역(api.github.com/meta 의 "actions")만 SG 화이트리스트 — 권장.
+#      (b) 부득이 22번을 0.0.0.0/0 개방해야 한다면 EC2 강화 필수: PasswordAuthentication no +
+#          PermitRootLogin no(EC2 기본) + fail2ban/SSHGuard + 비표준 포트/rate limiting.
+#          키 인증만으로도 브루트포스·sshd 취약점 노출면이 커지므로 광범위 개방은 최소화/한시적으로.
+#    근본 해결은 D3에서 AWS SSM Session Manager 전환(인바운드 22 불필요, IAM 인증) — 권장 경로.
+#
+# 이미지 태그 정책(ECR immutable): 커밋 SHA를 태그로 사용 → 커밋마다 고유, 덮어쓰기 없음.
+#   immutable 리포라 동일 태그 재push 불가 → 같은 커밋 재배포(워크플로우 재실행) 시
+#   push를 건너뛰고 기존 이미지로 deploy(아래 describe-images 가드, 멱등).
+#   가변 'latest' 태그는 쓰지 않는다(immutable에선 이동 불가). 롤백 = 과거 SHA로 EC2 docker run.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [ main ]      # main 머지(릴리즈)만 배포. develop/feature는 ci.yml(테스트)만.
+
+# OIDC AssumeRoleWithWebIdentity에 id-token 발급 필요. 그 외 최소 권한.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2      # 비밀 아님 — 서울 리전
+
+# 운영 배포 직렬화 — 동시 실행 방지(이전 배포 끝난 뒤 다음, 진행 중 배포는 취소하지 않음).
+concurrency:
+  group: cd-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, Push (ECR), Deploy (EC2 restart)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # 배포 전 테스트 게이트(방어). 릴리즈 PR에서 이미 통과했더라도 main 직접 push(hotfix)
+      # 경로를 위해 한 번 더 강제 — 테스트 깨진 코드가 운영 배포되는 것을 차단한다.
+      - name: Test gate (./gradlew test)
+        run: ./gradlew test --no-daemon
+
+      # OIDC로 AWS 역할 assume — 장기 Access Key 없음(GH Secret에 AWS 키 저장하지 않음).
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 커밋 SHA 태그로 빌드+push. Dockerfile 멀티스테이지가 bootJar를 내부에서 빌드하므로
+      # 별도 gradle assemble 불필요(컨텍스트 = repo 루트). immutable 리포라 동일 태그가
+      # 이미 있으면(재실행 등) 빌드/푸시를 건너뛰어 'tag immutable' 실패를 피한다(멱등).
+      - name: Build & push image to ECR (SHA tag, immutable-safe)
+        env:
+          IMAGE_URI: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          set -e
+          REPO_NAME="${IMAGE_URI##*/}"        # 풀 URI에서 리포명만 (chunbae-tour)
+          if aws ecr describe-images --repository-name "$REPO_NAME" \
+               --image-ids imageTag=${{ github.sha }} --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "이미지 태그 ${{ github.sha }} 가 ECR에 이미 존재(immutable) — 빌드/푸시 건너뜀"
+          else
+            docker build -t "$IMAGE_URI:${{ github.sha }}" .
+            docker push "$IMAGE_URI:${{ github.sha }}"
+          fi
+
+      # EC2 SSH 접속 → 인스턴스 Role로 ECR 인증 → SHA 이미지 pull → 단순 재시작(D2).
+      # EC2에서 빌드하지 않는다(ECR pull만). prod.env는 EC2 ~/prod.env 에만 존재(GH엔 없음).
+      - name: Deploy to EC2 (pull + restart)
+        uses: appleboy/ssh-action@v1
+        env:
+          IMAGE_URI: ${{ secrets.ECR_REPOSITORY }}
+          GIT_SHA: ${{ github.sha }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_URI,GIT_SHA,AWS_REGION
+          script_stop: true
+          script: |
+            set -e
+            REGISTRY="${IMAGE_URI%%/*}"       # 풀 URI에서 레지스트리 호스트만 추출
+            # 인스턴스 IAM Role(chunbae-ec2-role)로 ECR 로그인 — 키 없음
+            aws ecr get-login-password --region "$AWS_REGION" \
+              | docker login --username AWS --password-stdin "$REGISTRY"
+            # Docker 네트워크 보장(멱등) — 없으면 생성해 CD가 수동 상태에 의존하지 않게 한다.
+            # 단 mysql/redis는 docker compose가 이 네트워크에 띄우므로 정상 운영에선 이미 존재하고,
+            # 데이터 계층 도달의 실제 전제는 'compose 인프라(mysql/redis)가 떠 있을 것'이다.
+            docker network inspect chunbae-tour_default >/dev/null 2>&1 \
+              || docker network create chunbae-tour_default
+            docker pull "$IMAGE_URI:$GIT_SHA"
+            # 단순 재시작 (blue/green 무중단은 D3 별도 슬라이스). --restart로 재부팅 생존.
+            docker rm -f chunbae-app 2>/dev/null || true
+            docker run -d --name chunbae-app --restart unless-stopped \
+              --network chunbae-tour_default \
+              --env-file ~/prod.env \
+              -p 8080:8080 \
+              "$IMAGE_URI:$GIT_SHA"
+            # 기동 검증 — actuator /health 가 UP 될 때까지(최대 ~60s).
+            # prod는 management 포트 9090 + address 127.0.0.1(컨테이너 loopback)이라
+            # 호스트 포트매핑으론 도달 불가 → 컨테이너 내부에서 검사(docker exec).
+            # jre-alpine 런타임 이미지엔 busybox wget 포함.
+            for i in $(seq 1 30); do
+              if docker exec chunbae-app wget -q -O - http://127.0.0.1:9090/actuator/health 2>/dev/null \
+                   | grep -q '"status":"UP"'; then
+                echo "✅ health UP ($i)"; exit 0
+              fi
+              echo "기동 대기... ($i/30)"; sleep 2
+            done
+            echo "❌ health 실패 — 최근 로그:"; docker logs --tail 50 chunbae-app; exit 1
