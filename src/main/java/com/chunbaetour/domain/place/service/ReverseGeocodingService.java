@@ -33,9 +33,11 @@ public class ReverseGeocodingService {
      * 좌표(위경도)를 행정구역 주소로 변환 (소수점 3자리 캐싱)
      */
     public RegionResponse reverseGeocode(double lat, double lng) {
-        // 1. 소수점 3자리(약 111m 정밀도) 반올림 처리하여 캐시 키 생성
-        // 행정구역은 111m 차이로 달라질 확률이 적으므로 Cache Hit 비율 향상
-        String cacheKey = String.format(Locale.ROOT, "%s%.3f:%.3f", CACHE_KEY_PREFIX, lat, lng);
+        // 1. 소수점 3자리(약 111m 정밀도) 반올림 처리 (캐시 키와 카카오 API 호출 모두에 적용하여 데이터 정합성 유지)
+        double roundedLat = Math.round(lat * 1000.0) / 1000.0;
+        double roundedLng = Math.round(lng * 1000.0) / 1000.0;
+
+        String cacheKey = String.format(Locale.ROOT, "%s%.3f:%.3f", CACHE_KEY_PREFIX, roundedLat, roundedLng);
 
         // 2. 빠른 경로 (Fast path) 조회
         RegionResponse cached = getFromCache(cacheKey);
@@ -55,7 +57,7 @@ public class ReverseGeocodingService {
                     return fallback;
                 }
                 log.warn("[ReverseGeocoding] 락 획득 실패 및 캐시 미스, 카카오 API 강제 조회로 Fallback. key={}", cacheKey);
-                return fetchFromKakaoAndCache(lat, lng, cacheKey);
+                return fetchFromKakaoAndCache(roundedLat, roundedLng, cacheKey);
             }
             try {
                 // Double-checked locking
@@ -64,7 +66,7 @@ public class ReverseGeocodingService {
                     return doubleCheck;
                 }
 
-                return fetchFromKakaoAndCache(lat, lng, cacheKey);
+                return fetchFromKakaoAndCache(roundedLat, roundedLng, cacheKey);
             } finally {
                 if (lock.isHeldByCurrentThread()) {
                     lock.unlock();
@@ -77,7 +79,7 @@ public class ReverseGeocodingService {
             throw e;
         } catch (Exception e) {
             log.warn("[ReverseGeocoding] Redis 장애로 락 획득 예외 발생, 카카오 API 강제 조회. key={}", cacheKey);
-            return fetchFromKakaoAndCache(lat, lng, cacheKey);
+            return fetchFromKakaoAndCache(roundedLat, roundedLng, cacheKey);
         }
     }
 
@@ -100,7 +102,11 @@ public class ReverseGeocodingService {
             throw new BusinessException(ErrorCode.GEOCODING_RESULT_NOT_FOUND);
         }
 
-        KakaoRegionResponse.Document doc = response.documents().get(0);
+        // 일관된 주소 표현을 위해 '법정동(B)' 우선 선택, 없으면 0번째 사용
+        KakaoRegionResponse.Document doc = response.documents().stream()
+                .filter(d -> "B".equals(d.regionType()))
+                .findFirst()
+                .orElse(response.documents().get(0));
         
         String depth1 = doc.region1depthName() != null ? doc.region1depthName() : "";
         String depth2 = doc.region2depthName() != null ? doc.region2depthName() : "";

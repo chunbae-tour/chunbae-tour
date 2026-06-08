@@ -19,6 +19,7 @@ import jakarta.validation.constraints.NotNull;
 @RestController
 @RequestMapping("/api/v1/places/region")
 @RequiredArgsConstructor
+@PreAuthorize("isAuthenticated()")
 public class ReverseGeocodingController {
 
     private final ReverseGeocodingService reverseGeocodingService;

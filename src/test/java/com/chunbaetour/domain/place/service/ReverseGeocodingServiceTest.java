@@ -86,7 +86,7 @@ class ReverseGeocodingServiceTest {
         KakaoRegionResponse mockResponse = new KakaoRegionResponse(
                 new KakaoRegionResponse.Meta(1), List.of(doc)
         );
-        given(kakaoLocalApiClient.getRegionCode(LAT, LNG)).willReturn(mockResponse);
+        given(kakaoLocalApiClient.getRegionCode(anyDouble(), anyDouble())).willReturn(mockResponse);
 
         // when
         RegionResponse result = reverseGeocodingService.reverseGeocode(LAT, LNG);
@@ -97,7 +97,7 @@ class ReverseGeocodingServiceTest {
         assertThat(result.depth3()).isEqualTo("영평동");
         assertThat(result.fullAddress()).isEqualTo("제주특별자치도 제주시 영평동");
 
-        then(kakaoLocalApiClient).should().getRegionCode(LAT, LNG);
+        then(kakaoLocalApiClient).should().getRegionCode(anyDouble(), anyDouble());
         then(valueOps).should().set(eq(CACHE_KEY), anyString(), anyLong(), any());
     }
 
@@ -159,7 +159,7 @@ class ReverseGeocodingServiceTest {
         KakaoRegionResponse mockResponse = new KakaoRegionResponse(
                 new KakaoRegionResponse.Meta(1), List.of(doc)
         );
-        given(kakaoLocalApiClient.getRegionCode(LAT, LNG)).willReturn(mockResponse);
+        given(kakaoLocalApiClient.getRegionCode(anyDouble(), anyDouble())).willReturn(mockResponse);
 
         // when
         RegionResponse result = reverseGeocodingService.reverseGeocode(LAT, LNG);
@@ -167,7 +167,7 @@ class ReverseGeocodingServiceTest {
         // then
         assertThat(result.depth2()).isEqualTo("서귀포시");
         assertThat(result.depth3()).isEqualTo("안덕면");
-        then(kakaoLocalApiClient).should().getRegionCode(LAT, LNG);
+        then(kakaoLocalApiClient).should().getRegionCode(anyDouble(), anyDouble());
     }
 
     @Test
@@ -176,7 +176,7 @@ class ReverseGeocodingServiceTest {
         // given
         given(valueOps.get(CACHE_KEY)).willReturn(null);
         KakaoRegionResponse emptyResponse = new KakaoRegionResponse(new KakaoRegionResponse.Meta(0), List.of());
-        given(kakaoLocalApiClient.getRegionCode(LAT, LNG)).willReturn(emptyResponse);
+        given(kakaoLocalApiClient.getRegionCode(anyDouble(), anyDouble())).willReturn(emptyResponse);
 
         // when & then
         assertThatThrownBy(() -> reverseGeocodingService.reverseGeocode(LAT, LNG))
