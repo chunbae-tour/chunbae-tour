@@ -101,26 +101,32 @@ public class OauthSignupService {
         eventPublisher.publishEvent(
                 new UserRegisteredEvent(saved.getId(), saved.getEmail(), saved.getNickname()));
 
-        // KAN-105: 소셜 가입 성공도 이메일 가입과 동일 체계로 감사 로그 — OAuth 흐름 관측 사각지대 제거.
-        // 커밋 후에만 emit — refresh 저장/커밋/flush가 뒤에서 실패해 롤백되면 잘못된 success 로그가 남으므로
-        // afterCommit으로 미룬다 (email SignupService와 동일 패턴, CR 반영).
+        // 토큰 생성(JWT 서명)은 순수 연산이라 트랜잭션 안에서 해도 무방하나, Redis refresh 저장 + 성공 감사로그는
+        // 외부 side-effect라 커밋 이후로 미룬다 — 커밋이 실패해 계정이 롤백되면 (1) DB엔 없는 계정의 refresh가
+        // Redis에 남는 orphan, (2) 잘못된 SIGNUP_SUCCESS 로그가 생기는 것을 막는다 (hyeonmin02 리뷰 반영, email
+        // SignupService의 afterCommit 철학과 동일). afterCommit은 프록시 커밋 완료 중 실행되므로 컨트롤러가
+        // TokenPair를 받는 시점엔 refresh 저장이 끝나 있다. 비-트랜잭션 컨텍스트(테스트)는 즉시 실행으로 폴백.
         Long savedId = saved.getId();
         Map<String, String> auditMetadata =
                 Map.of("method", "oauth", "provider", ticket.provider().name(), "role", saved.getRole().name());
+        String accessToken = tokenIssuer.issueAccess(saved.getId(), saved.getRole(), saved.getEmail());
+        TokenWithId refresh = tokenIssuer.issueRefresh(saved.getId());
+
+        // 커밋 후에만 실행: refresh 저장(orphan 방지) + 성공 감사로그(false success 방지).
+        Runnable afterCommitActions = () -> {
+            refreshTokenStore.save(savedId, refresh.tokenId(), jwtProperties.refreshTokenTtl());
+            auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId, auditMetadata);
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId, auditMetadata);
+                    afterCommitActions.run();
                 }
             });
         } else {
-            auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId, auditMetadata);
+            afterCommitActions.run();
         }
-
-        String accessToken = tokenIssuer.issueAccess(saved.getId(), saved.getRole(), saved.getEmail());
-        TokenWithId refresh = tokenIssuer.issueRefresh(saved.getId());
-        refreshTokenStore.save(saved.getId(), refresh.tokenId(), jwtProperties.refreshTokenTtl());
 
         return new TokenPair(accessToken, refresh.token(), refresh.tokenId(), saved.getRole());
     }

@@ -44,7 +44,14 @@ public class OAuthController {
     private final RefreshCookieFactory refreshCookieFactory;
 
     @SecurityRequirements
-    @Operation(summary = "소셜 로그인 (1단계)", description = "인가코드로 로그인. 신규면 needSignup=true + 가입 티켓 반환.")
+    @Operation(
+            summary = "소셜 로그인 (1단계)",
+            description = "인가코드로 로그인. 신규면 needSignup=true + 가입 티켓 반환.\n\n"
+                    + "[보안 전제 — CSRF/state] 본 엔드포인트는 SPA가 OAuth state(또는 PKCE) 검증을 "
+                    + "완료한 뒤에만 호출하는 것을 전제로 한다. 프론트가 인가 요청 시 state를 생성·보관하고 "
+                    + "콜백에서 일치할 때만 code를 본 API로 전달해야 한다(login CSRF 방어). 백엔드는 미인증 "
+                    + "로그인 진입점이라 바인딩할 세션이 없어 서버측 state를 강제하지 않으며, 추가 방어로 IP "
+                    + "rate-limit을 적용한다. 서버 발급 state/PKCE(백엔드 검증)는 hardening follow-up.")
     @PostMapping("/{provider}")
     public ResponseEntity<ApiResponse<OauthLoginResponse>> oauthLogin(
             @PathVariable String provider,
