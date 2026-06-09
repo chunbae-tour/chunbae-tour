@@ -5,6 +5,7 @@ import com.chunbaetour.domain.place.dto.response.PlaceListResponse.PlaceListItem
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.place.util.LocationUtils;
 import com.chunbaetour.domain.place.dto.response.MapMarkerResponse;
 import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.BooleanExpression;
@@ -266,16 +267,8 @@ public class PlaceQueryRepository {
      * @return 뷰포트 내의 지도 마커 리스트 (최대 500개)
      */
     public List<MapMarkerResponse> findMarkersInBoundingBox(double swLat, double swLng, double neLat, double neLng) {
-        // MySQL ST_GeomFromText Polygon 생성: SW -> NW -> NE -> SE -> SW (시계방향 또는 반시계방향으로 닫힌 다각형)
-        // axis-order=long-lat 기준이므로 X=Lng, Y=Lat
-        String mbrPolygon = String.format(java.util.Locale.US,
-                "POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
-                swLng, swLat,  // SW (최소 경도, 최소 위도)
-                swLng, neLat,  // NW (최소 경도, 최대 위도)
-                neLng, neLat,  // NE (최대 경도, 최대 위도)
-                neLng, swLat,  // SE (최대 경도, 최소 위도)
-                swLng, swLat   // 원점 회귀
-        );
+        // MySQL ST_GeomFromText Polygon 생성 (LocationUtils 헬퍼 사용)
+        String mbrPolygon = LocationUtils.calculateMbrPolygon(swLat, swLng, neLat, neLng);
 
         return queryFactory
                 .select(Projections.constructor(MapMarkerResponse.class,

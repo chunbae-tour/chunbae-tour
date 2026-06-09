@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -45,8 +46,12 @@ class PlaceControllerMapMarkerTest {
 
     @BeforeEach
     void setUp() {
+        LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
+        validator.afterPropertiesSet();
+
         mockMvc = MockMvcBuilders.standaloneSetup(placeController)
-                .setControllerAdvice(new com.chunbaetour.domain.common.error.GlobalExceptionHandler()) // 예외 처리를 위해 필요하다면 추가
+                .setValidator(validator)
+                .setControllerAdvice(new com.chunbaetour.domain.common.error.GlobalExceptionHandler()) // 예외 처리
                 .build();
     }
 
@@ -82,6 +87,18 @@ class PlaceControllerMapMarkerTest {
                         // swLng 누락
                         .param("neLat", "34.0")
                         .param("neLng", "127.0")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("남서쪽 위경도가 북동쪽 위경도보다 큰 역전 박스일 경우 400 에러를 반환한다")
+    void getMapMarkers_ReversedBoundingBox() throws Exception {
+        mockMvc.perform(get("/api/v1/places/map-markers")
+                        .param("swLat", "34.0") // neLat(33.0) 보다 큼
+                        .param("swLng", "127.0") // neLng(126.0) 보다 큼
+                        .param("neLat", "33.0")
+                        .param("neLng", "126.0")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
     }
