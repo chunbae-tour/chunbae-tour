@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.core.LockConfiguration;
@@ -21,7 +22,6 @@ import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -48,6 +48,12 @@ public class PlaceSyncService {
     private final PlaceSyncBatchService batchService;
     private final PlaceSyncStateRepository syncStateRepository;
     private final LockProvider lockProvider;
+    /** 관광지 동기화 백그라운드 실행기 (AsyncConfig의 placeSyncExecutor 빈 — 필드명으로 주입 매칭). */
+    private final Executor placeSyncExecutor;
+
+    private LockConfiguration syncLockConfiguration() {
+        return new LockConfiguration(Instant.now(), LOCK_NAME, LOCK_AT_MOST_FOR, LOCK_AT_LEAST_FOR);
+    }
 
     /**
      * 스케줄 자동 동기화. 증분이라 변경분만 처리 → 매일 돌려도 부하가 작다.
@@ -73,9 +79,7 @@ public class PlaceSyncService {
      * 락 획득 실패 시 {@link ErrorCode#PLACE_SYNC_IN_PROGRESS} 예외.
      */
     public PlaceSyncResult syncAllPlaces() {
-        LockConfiguration lockConfig = new LockConfiguration(
-                Instant.now(), LOCK_NAME, LOCK_AT_MOST_FOR, LOCK_AT_LEAST_FOR);
-        Optional<SimpleLock> lock = lockProvider.lock(lockConfig);
+        Optional<SimpleLock> lock = lockProvider.lock(syncLockConfiguration());
         if (lock.isEmpty()) {
             log.warn("place_sync_all 락 획득 실패 — 이미 수집 중인 인스턴스 존재");
             throw new BusinessException(ErrorCode.PLACE_SYNC_IN_PROGRESS);
@@ -88,25 +92,37 @@ public class PlaceSyncService {
     }
 
     /**
-     * 관리자 수동 동기화 비동기 시작 (KAN-262). 요청 스레드를 블로킹하지 않도록 전용 실행기에서 백그라운드로
-     * 수집을 돌린다. 진행 상황은 페이지/청크 단위 INFO 로그로 추적한다(별도 진행상태 API 없음 — 로그로 충분).
-     * 락 미획득(이미 수집 중)은 조용히 건너뛴다.
+     * 관리자 수동 동기화 시작 (KAN-262). 중복 정책을 API 레벨에서 일관되게 맞추기 위해 <b>요청 스레드에서
+     * ShedLock을 먼저 획득</b>한다. 이미 수집 중이면 {@link ErrorCode#PLACE_SYNC_IN_PROGRESS}(409)를 호출자
+     * (컨트롤러)로 전파한다.
+     *
+     * <p>락을 얻은 경우에만 백그라운드 실행기로 {@link #doSync()}를 위임하고, 완료/실패 시 finally에서 unlock 한다.
+     * {@code JdbcTemplateLockProvider}는 thread-bound가 아니라(DB 행 기반) 요청 스레드 획득 → 워커 unlock이 안전하다.
+     *
+     * <p>기존 {@code @Async} 워커에서 락을 잡던 방식의 문제를 해결한다:
+     * (1) 409가 워커에서 catch/log로 끝나 클라이언트에 전달되지 않던 것, (2) executor 큐(capacity=10)에 대기한
+     * 요청들이 첫 동기화 종료 후 락을 재획득해 전체 동기화를 연속 실행하던 것. 이제 중복 요청은 제출 전에 409로 거절돼
+     * 큐에 쌓이지 않는다.
      */
-    @Async("placeSyncExecutor")
     public void startAsyncSync() {
-        try {
-            PlaceSyncResult result = syncAllPlaces();
-            log.info("관광지 수동 동기화 완료: fetched={}, created={}, updated={}, deleted={}, skipped={}",
-                    result.fetched(), result.created(), result.updated(), result.deleted(), result.skipped());
-        } catch (BusinessException e) {
-            if (e.getErrorCode() == ErrorCode.PLACE_SYNC_IN_PROGRESS) {
-                log.warn("관광지 수동 동기화 건너뜀 — 이미 수집 중인 작업 존재");
-                return;
-            }
-            log.error("관광지 수동 동기화 실패", e);
-        } catch (Exception e) {
-            log.error("관광지 수동 동기화 실패", e);
+        // 요청 스레드에서 락 판정 — 미획득(이미 수집 중)이면 409를 컨트롤러로 전파(백그라운드 큐에 적재하지 않음).
+        Optional<SimpleLock> lock = lockProvider.lock(syncLockConfiguration());
+        if (lock.isEmpty()) {
+            log.warn("관광지 수동 동기화 거절 — 이미 수집 중 (PLACE_SYNC_IN_PROGRESS)");
+            throw new BusinessException(ErrorCode.PLACE_SYNC_IN_PROGRESS);
         }
+        // 락 보유 상태로 백그라운드 위임 — 완료 시 unlock.
+        placeSyncExecutor.execute(() -> {
+            try {
+                PlaceSyncResult result = doSync();
+                log.info("관광지 수동 동기화 완료: fetched={}, created={}, updated={}, deleted={}, skipped={}",
+                        result.fetched(), result.created(), result.updated(), result.deleted(), result.skipped());
+            } catch (Exception e) {
+                log.error("관광지 수동 동기화 실패", e);
+            } finally {
+                lock.get().unlock();
+            }
+        });
     }
 
     private PlaceSyncResult doSync() {

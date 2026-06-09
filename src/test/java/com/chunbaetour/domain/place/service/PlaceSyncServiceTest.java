@@ -20,6 +20,7 @@ import com.chunbaetour.domain.place.service.PlaceSyncBatchService.ChunkResult;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.UpsertResult;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
@@ -45,9 +46,19 @@ class PlaceSyncServiceTest {
     private LockProvider lockProvider;
     @Mock
     private SimpleLock simpleLock;
+    @Mock
+    private Executor placeSyncExecutor;
 
     @InjectMocks
     private PlaceSyncService placeSyncService;
+
+    /** 백그라운드 실행기를 동기 실행으로 스텁 — 제출된 Runnable을 즉시 호출한다. */
+    private void runExecutorInline() {
+        willAnswer(inv -> {
+            ((Runnable) inv.getArgument(0)).run();
+            return null;
+        }).given(placeSyncExecutor).execute(any());
+    }
 
     private TourApiPlaceItem item(String contentId, String modifiedTime) {
         return new TourApiPlaceItem(contentId, "관광지" + contentId, "서울특별시", "",
@@ -262,6 +273,51 @@ class PlaceSyncServiceTest {
         // 청크 성공 → 단건 upsertItem 미호출, 경계는 최신(0005)
         verify(batchService, never()).upsertItem(any());
         verify(batchService).saveLastModifiedTime("20260101000005");
+    }
+
+    @Test
+    @DisplayName("startAsyncSync는 이미 수집 중이면(락 미획득) PLACE_SYNC_IN_PROGRESS(409)를 전파하고 백그라운드에 제출하지 않는다")
+    void startAsyncSync_whenLocked_throwsAndDoesNotSubmit() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.empty());
+
+        // 중복 /sync 요청은 요청 스레드에서 409로 거절 — executor 큐에 적재되지 않음
+        assertThatThrownBy(() -> placeSyncService.startAsyncSync())
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PLACE_SYNC_IN_PROGRESS);
+
+        verify(placeSyncExecutor, never()).execute(any());
+        verify(placeClient, never()).fetchModifiedSince(any(), any());
+    }
+
+    @Test
+    @DisplayName("startAsyncSync는 락 획득 시 백그라운드로 doSync를 실행하고 완료 후 락을 해제한다")
+    void startAsyncSync_whenLockAcquired_runsAndUnlocks() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        stubPages(item("1", "20260101000001"));
+        given(batchService.upsertChunk(any())).willReturn(new ChunkResult(1, 0, 0));
+        runExecutorInline();
+
+        placeSyncService.startAsyncSync();
+
+        verify(placeClient).fetchModifiedSince(any(), any());
+        verify(batchService).saveLastModifiedTime("20260101000001");
+        verify(simpleLock).unlock();
+    }
+
+    @Test
+    @DisplayName("startAsyncSync는 백그라운드 doSync가 실패해도 finally에서 락을 해제한다")
+    void startAsyncSync_unlocksOnBackgroundFailure() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        willThrow(new RuntimeException("boom")).given(placeClient).fetchModifiedSince(any(), any());
+        runExecutorInline();
+
+        // 백그라운드 예외는 워커에서 로그 처리 — startAsyncSync 자체는 던지지 않음
+        placeSyncService.startAsyncSync();
+
+        verify(simpleLock).unlock();
     }
 
     @Test

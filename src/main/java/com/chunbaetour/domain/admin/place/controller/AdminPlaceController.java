@@ -106,8 +106,9 @@ public class AdminPlaceController {
     }
 
     @Operation(summary = "관광지 동기화 시작 (비동기)",
-            description = "[ADMIN 전용] 한국관광공사 KorService2(국문 관광정보) 동기화를 백그라운드로 시작하고 즉시 응답한다. "
-                    + "수집은 페이지 단위로 즉시 upsert되며 진행 상황은 서버 로그로 확인한다 (KAN-262).")
+            description = "[ADMIN 전용] 한국관광공사 KorService2(국문 관광정보) 동기화를 백그라운드로 시작하고 즉시 202로 응답한다. "
+                    + "수집은 페이지 단위로 즉시 upsert되며 진행 상황은 서버 로그로 확인한다. "
+                    + "이미 수집이 진행 중이면 409(PLACE_SYNC_IN_PROGRESS)를 반환한다 — 요청 스레드에서 락을 먼저 판정한다 (KAN-262).")
     @PostMapping("/sync")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @LogAdminAction(actionType = AdminActionType.PLACE_SYNC, targetType = AdminTargetType.PLACE)
