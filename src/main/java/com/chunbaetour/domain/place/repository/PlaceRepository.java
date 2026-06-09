@@ -101,4 +101,9 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      * 사용자에게 노출되는 ACTIVE/HIDDEN만 집계한다.
      */
     long countByStatusNot(PlaceStatus status);
+
+    /**
+     * 외부 API 식별자(KorService2 contentid)로 단건 조회 — KAN-221 배치 upsert dedup.
+     */
+    Optional<Place> findByExternalId(String externalId);
 }
