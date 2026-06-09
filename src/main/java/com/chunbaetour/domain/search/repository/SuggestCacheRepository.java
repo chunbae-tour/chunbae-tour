@@ -40,19 +40,14 @@ public class SuggestCacheRepository {
      */
     public Optional<List<SuggestResponse>> get(String prefix) {
         try {
-            String cached = stringRedisTemplate.opsForValue().get(KEY_PREFIX + prefix.toLowerCase());
+            String cached = stringRedisTemplate.opsForValue().get(KEY_PREFIX + prefix.toLowerCase(java.util.Locale.ROOT));
             
             // 캐시 Miss
             if (cached == null) {
                 return Optional.empty();
             }
             
-            // 캐싱된 빈 결과
-            if (cached.isEmpty()) {
-                return Optional.of(List.of());
-            }
-            
-            // 캐시 Hit
+            // 캐시 Hit (빈 리스트 "[]"도 정상 역직렬화 됨)
             List<SuggestResponse> results = objectMapper.readValue(cached, new TypeReference<>() {});
             return Optional.of(results);
         } catch (Exception e) {
@@ -69,14 +64,14 @@ public class SuggestCacheRepository {
      */
     public void set(String prefix, List<SuggestResponse> suggestions) {
         try {
-            String key = KEY_PREFIX + prefix.toLowerCase();
+            String key = KEY_PREFIX + prefix.toLowerCase(java.util.Locale.ROOT);
+            String json = objectMapper.writeValueAsString(suggestions);
             
             if (suggestions.isEmpty()) {
                 // 결과 0건 캐싱: 짧은 TTL로 캐시 스탬피드 방지 및 DB 부하 완화
-                stringRedisTemplate.opsForValue().set(key, "", TTL_EMPTY);
+                stringRedisTemplate.opsForValue().set(key, json, TTL_EMPTY);
                 log.debug("[SuggestCacheRepository] 빈 자동완성 결과 캐시 저장 - prefix: {}", prefix);
             } else {
-                String json = objectMapper.writeValueAsString(suggestions);
                 stringRedisTemplate.opsForValue().set(key, json, TTL_NORMAL);
                 log.debug("[SuggestCacheRepository] 자동완성 캐시 저장 - prefix: {}, count: {}", prefix, suggestions.size());
             }

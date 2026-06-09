@@ -13,7 +13,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.util.List;
 import java.util.Optional;
 import com.chunbaetour.domain.search.dto.response.SuggestResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,7 +31,7 @@ class SuggestCacheRepositoryTest {
     private ValueOperations<String, String> valueOperations;
 
     @Mock
-    private tools.jackson.databind.ObjectMapper objectMapper;
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private SuggestCacheRepository suggestCacheRepository;

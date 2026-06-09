@@ -85,6 +85,7 @@ public class SuggestService {
         }
 
         // 3. 카카오 로컬 API 키워드 검색 보완 (단축 호출)
+        boolean kakaoDegraded = false;
         if (merged.size() < SUGGEST_MAX_SIZE) {
             int remainingForKakao = SUGGEST_MAX_SIZE - merged.size();
             KakaoKeywordResponse kakaoResponse = null;
@@ -95,6 +96,7 @@ public class SuggestService {
                 ).get(300, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (Exception e) {
                 log.warn("[SuggestService] Kakao API Suggestion Timeout or Exception: {}", e.getMessage());
+                kakaoDegraded = true;
             }
             
             if (kakaoResponse != null && kakaoResponse.documents() != null) {
@@ -127,8 +129,12 @@ public class SuggestService {
 
         List<SuggestResponse> finalResults = new ArrayList<>(merged);
 
-        // 5. 결과 캐싱
-        suggestCacheRepository.set(normalized, finalResults);
+        // 5. 결과 캐싱 (Kakao 장애 시에는 불완전한 결과를 캐싱하지 않아 다음 요청 시 재시도 유도)
+        if (!kakaoDegraded) {
+            suggestCacheRepository.set(normalized, finalResults);
+        } else {
+            log.debug("[SuggestService] Kakao 장애로 인한 불완전한 결과 캐싱 스킵 - prefix: {}", normalized);
+        }
 
         return finalResults;
     }
