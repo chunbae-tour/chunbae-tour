@@ -2,6 +2,8 @@ package com.chunbaetour.domain.search.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
+import com.chunbaetour.domain.place.dto.KakaoKeywordResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.search.repository.SuggestCacheRepository;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,7 @@ public class SuggestService {
     private final PlaceQueryRepository placeQueryRepository;
     private final SuggestCacheRepository suggestCacheRepository;
     private final PopularSearchService popularSearchService;
+    private final KakaoLocalApiClient kakaoLocalApiClient;
 
     /**
      * 검색어 자동완성.
@@ -75,22 +78,41 @@ public class SuggestService {
         // 2. 캐시 Miss — DB 조회
         List<String> dbResults = placeQueryRepository.suggestByPrefix(normalized, SUGGEST_MAX_SIZE);
 
-        // 3. 인기 검색어 ZSet 보완 조회
+        // 3. 카카오 로컬 API 키워드 검색 보완
+        KakaoKeywordResponse kakaoResponse = kakaoLocalApiClient.searchByKeyword(normalized, SUGGEST_MAX_SIZE);
+        List<String> kakaoResults = new ArrayList<>();
+        if (kakaoResponse != null && kakaoResponse.documents() != null) {
+            kakaoResults = kakaoResponse.documents().stream()
+                    .map(KakaoKeywordResponse.Document::placeName)
+                    .toList();
+        }
+
+        // 4. 인기 검색어 ZSet 보완 조회
         List<String> redisResults = popularSearchService.fetchPopularSuggestions(normalized, SUGGEST_MAX_SIZE);
 
-        // 4. DB + ZSet 병합 (LinkedHashSet을 사용하여 DB 순서 우선 및 중복 제거)
+        // 5. DB + 카카오 + ZSet 병합 (LinkedHashSet을 사용하여 DB 순서 우선 및 중복 제거)
+        // 우선순위: 1. DB 자체 검색결과 -> 2. 카카오 키워드 검색결과 -> 3. 인기 검색어
         Set<String> merged = new LinkedHashSet<>(dbResults);
+        
+        for (String keyword : kakaoResults) {
+            if (merged.size() >= SUGGEST_MAX_SIZE) {
+                break;
+            }
+            merged.add(keyword);
+        }
+
         for (String keyword : redisResults) {
             if (merged.size() >= SUGGEST_MAX_SIZE) {
                 break;
             }
             merged.add(keyword);
         }
+
         List<String> result = new ArrayList<>(merged).stream()
                 .limit(SUGGEST_MAX_SIZE)
                 .toList();
 
-        // 5. 결과 캐싱
+        // 6. 결과 캐싱
         suggestCacheRepository.set(normalized, result);
 
         return result;
