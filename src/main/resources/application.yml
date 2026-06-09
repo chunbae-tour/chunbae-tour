@@ -147,6 +147,11 @@ ratelimit:
       path: /api/v1/places/region
       limit: 30
       window: PT1M
+    - id: search-suggest
+      method: GET
+      path: /api/v1/search/suggest
+      limit: 30
+      window: PT1M
     # 로그아웃: rate-limit 미적용(의도). logout은 인증(Bearer) 필수 + 효과가 "자기 토큰 폐기"로 자기 자신에만
     #   국한돼 남용 가치가 거의 없다. 반대로 IP 기반 한도를 걸면 같은 NAT/회사망/모바일망 공유 사용자 중 한 명의
     #   반복 호출이 타 사용자의 정상 로그아웃을 막아 "실패시키면 더 불편한" 동작을 악화시킨다(hyeonmin02 리뷰).

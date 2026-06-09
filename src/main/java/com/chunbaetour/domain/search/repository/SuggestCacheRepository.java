@@ -9,6 +9,9 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 
 /**
  * 검색어 자동완성 전용 캐시 리포지토리.
@@ -26,11 +29,8 @@ public class SuggestCacheRepository {
     private static final Duration TTL_NORMAL = Duration.ofMinutes(5);
     private static final Duration TTL_EMPTY = Duration.ofSeconds(10);
     
-    // 일반적인 장소명에 사용되지 않는 ASCII Unit Separator를 구분자로 사용하여 
-    // "제주||도" 같은 문자열에 의한 분할 오작동을 방지한다.
-    private static final String DELIMITER = "\u001F";
-
     private final StringRedisTemplate stringRedisTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * 자동완성 결과 캐시 조회
@@ -38,7 +38,7 @@ public class SuggestCacheRepository {
      * @param prefix 정규화된 검색어 (non-null/non-blank)
      * @return 캐시 Hit 시 결과 리스트(빈 리스트 포함), Miss 또는 조회 실패 시 빈 Optional
      */
-    public Optional<List<String>> get(String prefix) {
+    public Optional<List<SuggestResponse>> get(String prefix) {
         try {
             String cached = stringRedisTemplate.opsForValue().get(KEY_PREFIX + prefix.toLowerCase());
             
@@ -53,7 +53,8 @@ public class SuggestCacheRepository {
             }
             
             // 캐시 Hit
-            return Optional.of(List.of(cached.split(DELIMITER)));
+            List<SuggestResponse> results = objectMapper.readValue(cached, new TypeReference<>() {});
+            return Optional.of(results);
         } catch (Exception e) {
             log.warn("[SuggestCacheRepository] 캐시 조회 실패 (DB fallback) - prefix: {}", prefix, e);
             return Optional.empty();
@@ -66,7 +67,7 @@ public class SuggestCacheRepository {
      * @param prefix 정규화된 검색어
      * @param suggestions 자동완성 결과 리스트
      */
-    public void set(String prefix, List<String> suggestions) {
+    public void set(String prefix, List<SuggestResponse> suggestions) {
         try {
             String key = KEY_PREFIX + prefix.toLowerCase();
             
@@ -75,7 +76,8 @@ public class SuggestCacheRepository {
                 stringRedisTemplate.opsForValue().set(key, "", TTL_EMPTY);
                 log.debug("[SuggestCacheRepository] 빈 자동완성 결과 캐시 저장 - prefix: {}", prefix);
             } else {
-                stringRedisTemplate.opsForValue().set(key, String.join(DELIMITER, suggestions), TTL_NORMAL);
+                String json = objectMapper.writeValueAsString(suggestions);
+                stringRedisTemplate.opsForValue().set(key, json, TTL_NORMAL);
                 log.debug("[SuggestCacheRepository] 자동완성 캐시 저장 - prefix: {}, count: {}", prefix, suggestions.size());
             }
         } catch (Exception e) {

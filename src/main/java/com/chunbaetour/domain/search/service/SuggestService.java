@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import com.chunbaetour.domain.place.dto.KakaoKeywordResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
+import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 import com.chunbaetour.domain.search.repository.SuggestCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,14 +46,15 @@ public class SuggestService {
      * <p>
      * 1. 캐시 조회 (Hit 시 즉시 반환) <br>
      * 2. 캐시 Miss 시 DB prefix 매칭 조회 <br>
-     * 3. Redis 인기 검색어 ZSet 결과 보완 <br>
-     * 4. 병합(중복 제거) 후 결과 캐싱
+     * 3. 카카오 로컬 API 키워드 검색 보완 (단축 호출) <br>
+     * 4. Redis 인기 검색어 ZSet 결과 보완 (단축 호출) <br>
+     * 5. 병합(중복 제거) 후 결과 캐싱
      * </p>
      *
      * @param prefix 입력 중인 검색어
-     * @return 최대 SUGGEST_MAX_SIZE 개의 자동완성 키워드
+     * @return 최대 SUGGEST_MAX_SIZE 개의 자동완성 키워드 (출처 포함)
      */
-    public List<String> suggest(String prefix) {
+    public List<SuggestResponse> suggest(String prefix) {
         // 검색어 원문 보안 로깅 (길이만)
         log.info("[SuggestService] 자동완성 요청 - prefixLength: {}", prefix != null ? prefix.length() : 0);
 
@@ -67,7 +69,7 @@ public class SuggestService {
         }
 
         // 1. Redis 캐시 조회
-        Optional<List<String>> cached = suggestCacheRepository.get(normalized);
+        Optional<List<SuggestResponse>> cached = suggestCacheRepository.get(normalized);
         if (cached.isPresent()) {
             log.debug("[SuggestService] 자동완성 캐시 Hit - prefix: {}", normalized);
             return cached.get().stream()
@@ -75,47 +77,52 @@ public class SuggestService {
                     .toList();
         }
 
+        Set<SuggestResponse> merged = new LinkedHashSet<>();
+
         // 2. 캐시 Miss — DB 조회
         List<String> dbResults = placeQueryRepository.suggestByPrefix(normalized, SUGGEST_MAX_SIZE);
-
-        // 3. 카카오 로컬 API 키워드 검색 보완
-        KakaoKeywordResponse kakaoResponse = kakaoLocalApiClient.searchByKeyword(normalized, SUGGEST_MAX_SIZE);
-        List<String> kakaoResults = new ArrayList<>();
-        if (kakaoResponse != null && kakaoResponse.documents() != null) {
-            kakaoResults = kakaoResponse.documents().stream()
-                    .map(KakaoKeywordResponse.Document::placeName)
-                    .filter(name -> name != null && !name.isBlank())
-                    .toList();
+        for (String dbResult : dbResults) {
+            merged.add(new SuggestResponse(dbResult, SuggestResponse.SuggestSource.DB));
         }
 
-        // 4. 인기 검색어 ZSet 보완 조회
-        List<String> redisResults = popularSearchService.fetchPopularSuggestions(normalized, SUGGEST_MAX_SIZE);
-
-        // 5. DB + 카카오 + ZSet 병합 (LinkedHashSet을 사용하여 DB 순서 우선 및 중복 제거)
-        // 우선순위: 1. DB 자체 검색결과 -> 2. 카카오 키워드 검색결과 -> 3. 인기 검색어
-        Set<String> merged = new LinkedHashSet<>(dbResults);
-        
-        for (String keyword : kakaoResults) {
-            if (merged.size() >= SUGGEST_MAX_SIZE) {
-                break;
+        // 3. 카카오 로컬 API 키워드 검색 보완 (단축 호출)
+        if (merged.size() < SUGGEST_MAX_SIZE) {
+            int remainingForKakao = SUGGEST_MAX_SIZE - merged.size();
+            KakaoKeywordResponse kakaoResponse = kakaoLocalApiClient.searchByKeyword(normalized, remainingForKakao);
+            
+            if (kakaoResponse != null && kakaoResponse.documents() != null) {
+                for (KakaoKeywordResponse.Document doc : kakaoResponse.documents()) {
+                    if (merged.size() >= SUGGEST_MAX_SIZE) break;
+                    String placeName = doc.placeName();
+                    if (placeName != null && !placeName.isBlank()) {
+                        // 중복 체크 로직: 동일 키워드가 DB에 이미 있으면 Kakao 결과를 스킵
+                        boolean exists = merged.stream().anyMatch(m -> m.keyword().equals(placeName));
+                        if (!exists) {
+                            merged.add(new SuggestResponse(placeName, SuggestResponse.SuggestSource.KAKAO));
+                        }
+                    }
+                }
             }
-            merged.add(keyword);
         }
 
-        for (String keyword : redisResults) {
-            if (merged.size() >= SUGGEST_MAX_SIZE) {
-                break;
+        // 4. 인기 검색어 ZSet 보완 조회 (단축 호출)
+        if (merged.size() < SUGGEST_MAX_SIZE) {
+            int remainingForRedis = SUGGEST_MAX_SIZE - merged.size();
+            List<String> redisResults = popularSearchService.fetchPopularSuggestions(normalized, remainingForRedis);
+            for (String redisResult : redisResults) {
+                if (merged.size() >= SUGGEST_MAX_SIZE) break;
+                boolean exists = merged.stream().anyMatch(m -> m.keyword().equals(redisResult));
+                if (!exists) {
+                    merged.add(new SuggestResponse(redisResult, SuggestResponse.SuggestSource.REDIS));
+                }
             }
-            merged.add(keyword);
         }
 
-        List<String> result = new ArrayList<>(merged).stream()
-                .limit(SUGGEST_MAX_SIZE)
-                .toList();
+        List<SuggestResponse> finalResults = new ArrayList<>(merged);
 
-        // 6. 결과 캐싱
-        suggestCacheRepository.set(normalized, result);
+        // 5. 결과 캐싱
+        suggestCacheRepository.set(normalized, finalResults);
 
-        return result;
+        return finalResults;
     }
 }

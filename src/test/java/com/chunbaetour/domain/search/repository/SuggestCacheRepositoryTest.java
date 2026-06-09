@@ -12,6 +12,8 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.List;
 import java.util.Optional;
+import com.chunbaetour.domain.search.dto.response.SuggestResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +30,9 @@ class SuggestCacheRepositoryTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
+    @Mock
+    private ObjectMapper objectMapper;
+
     @InjectMocks
     private SuggestCacheRepository suggestCacheRepository;
 
@@ -40,7 +45,7 @@ class SuggestCacheRepositoryTest {
         when(valueOperations.get(anyString())).thenThrow(new RedisConnectionFailureException("Redis Down"));
 
         // when
-        Optional<List<String>> result = suggestCacheRepository.get(prefix);
+        Optional<List<SuggestResponse>> result = suggestCacheRepository.get(prefix);
 
         // then
         assertThat(result).isEmpty();
@@ -51,7 +56,7 @@ class SuggestCacheRepositoryTest {
     void set_DoesNotThrowException_WhenRedisThrowsException() {
         // given
         String prefix = "경복";
-        List<String> suggestions = List.of("경복궁");
+        List<SuggestResponse> suggestions = List.of(new SuggestResponse("경복궁", SuggestResponse.SuggestSource.DB));
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         
         org.mockito.Mockito.doThrow(new RedisConnectionFailureException("Redis Down"))

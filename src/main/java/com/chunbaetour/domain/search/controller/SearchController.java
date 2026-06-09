@@ -13,6 +13,7 @@ import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
 import com.chunbaetour.domain.search.service.IntegratedSearchService;
 import com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem;
+import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -201,10 +202,10 @@ public class SearchController {
     @SecurityRequirements
     @Operation(summary = "검색어 자동완성")
     @GetMapping("/suggest")
-    public ApiResponse<List<String>> suggest(
+    public ApiResponse<List<SuggestResponse>> suggest(
             @RequestParam(name = "q") String q
     ) {
-        List<String> result = suggestService.suggest(q);
+        List<SuggestResponse> result = suggestService.suggest(q);
         return ApiResponse.success(result);
     }
 
