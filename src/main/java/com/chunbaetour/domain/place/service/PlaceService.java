@@ -44,6 +44,7 @@ public class PlaceService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final KakaoLocalApiClient kakaoLocalApiClient;
+    private final PlaceDetailEnrichmentService placeDetailEnrichmentService;
 
     private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
     private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
@@ -232,6 +233,10 @@ public class PlaceService {
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
 
+        // Tier-2: API 수집 관광지의 상세(설명/운영시간/휴무일)가 비어 있으면 첫 조회 시 KorService2로 채워 영구 저장.
+        // 외부 호출·저장 실패는 내부에서 흡수하고 원본 Place를 반환하므로 상세 조회 흐름을 깨지 않는다.
+        place = placeDetailEnrichmentService.enrichIfNeeded(place);
+
         List<String> imageUrlList = parseImageUrls(place.getImageUrls());
 
         // Redis 카운터에서 likeCount 케시 오버라이드
@@ -240,11 +245,19 @@ public class PlaceService {
         PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrlList, likeCount);
 
         // 캐싱 (TTL 10분)
-        try {
-            String json = objectMapper.writeValueAsString(cacheDto);
-            stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
-        } catch (Exception e) {
-            log.error("Place Detail Cache writing error: placeId={}", placeId, e);
+        // 단, enrich 미완료(아직 수집 대상)면 캐시하지 않는다.
+        // enrichIfNeeded가 락 미획득 등으로 상세를 못 채우고 원본(description=null)을 반환한 경우,
+        // 이 상태를 캐시하면 TTL(10분) 동안 다른 요청이 수집을 끝내도 설명이 안 보인다(캐시 오염).
+        // → 미완료면 캐시 skip하여 다음 조회가 다시 enrich를 시도하게 한다.
+        // 재시도 한도 소진/수집 완료된 관광지는 needsDetailEnrichment()=false → 정상 캐시(더 이상 DB·API 안 침).
+        boolean enrichmentPending = place.needsDetailEnrichment();
+        if (!enrichmentPending) {
+            try {
+                String json = objectMapper.writeValueAsString(cacheDto);
+                stringRedisTemplate.opsForValue().set(cacheKey, json, PLACE_DETAIL_TTL);
+            } catch (Exception e) {
+                log.error("Place Detail Cache writing error: placeId={}", placeId, e);
+            }
         }
 
         return cacheDto;
