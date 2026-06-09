@@ -17,6 +17,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 /**
  * 관광지 KorService2 수집 배치 저장 서비스 (KAN-221 Tier-1).
@@ -94,7 +95,11 @@ public class PlaceSyncBatchService {
             log.warn("관광지 upsert 제약 위반 — skip: contentId={}, msg={}", item.contentId(), e.getMessage());
             throw e;
         } catch (IllegalArgumentException e) {
-            // Place 불변식 위반(이름/주소/좌표) — 데이터 품질 문제로 skip
+            // Place 불변식 위반(이름/주소/좌표) — 데이터 품질 문제로 skip.
+            // 기존(managed) Place를 updateFromApi로 이미 변경한 뒤 후속 검증(syncExternalModifiedTime 등)에서
+            // 던져질 수 있다. 이때 그냥 SKIPPED를 반환하면 REQUIRES_NEW 커밋 시 dirty checking으로 부분 갱신이
+            // 흘러들어간다 → 결과는 SKIPPED인데 DB는 일부만 바뀌는 불일치. 트랜잭션을 롤백 전용으로 표시해 차단.
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             log.warn("관광지 데이터 품질 오류 — skip: contentId={}, reason={}", item.contentId(), e.getMessage());
             return UpsertResult.SKIPPED;
         } catch (DataAccessException e) {

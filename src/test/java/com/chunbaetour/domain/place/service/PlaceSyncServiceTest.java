@@ -208,6 +208,24 @@ class PlaceSyncServiceTest {
     }
 
     @Test
+    @DisplayName("전부 제약 위반(영구 실패)인 run에서도 경계가 최신 실패 item까지 전진해 다음 run 재수집을 막는다")
+    void allPermanentFailuresStillAdvanceBoundary() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        // 성공 건 0 — 전부 DataIntegrityViolationException(영구 실패). 경계가 since에 묶이면 매 run 동일 poison 재수집.
+        given(placeClient.fetchModifiedSince(any())).willReturn(List.of(
+                item("1", "20260101000001"),
+                item("2", "20260101000003")));
+        given(batchService.upsertItem(any()))
+                .willThrow(new DataIntegrityViolationException("constraint"));
+
+        placeSyncService.syncAllPlaces();
+
+        // 영구 실패는 경계 캡 대상이 아니므로 최신 실패 item(0003)까지 경계가 전진해야 함 (poison 영구 점유 방지)
+        verify(batchService).saveLastModifiedTime("20260101000003");
+    }
+
+    @Test
     @DisplayName("수집 중 예외가 나도 finally에서 락을 해제한다")
     void unlockOnException() {
         given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));

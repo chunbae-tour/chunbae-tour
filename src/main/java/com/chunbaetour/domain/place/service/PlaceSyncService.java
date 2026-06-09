@@ -120,8 +120,11 @@ public class PlaceSyncService {
                 maxModified = laterOf(maxModified, itemModified);
             } catch (DataIntegrityViolationException e) {
                 // 제약 위반 등 영구 실패 가능성이 큰 예외 — 재시도해도 동일 실패다.
-                // 경계를 막지 않고 skip만 한다(poison item이 경계를 영구 점유해 매 run 대량 재수집하는 것 방지).
-                log.warn("관광지 item 건너뜀 — 제약 위반(영구 실패 추정, 경계 미반영): contentId={}, error={}",
+                // 영구 실패이므로 경계를 이 item까지 전진시킨다 — 그래야 boundary가 이 poison item을 넘어가
+                // 다음 run에서 다시 가져오지 않는다(성공 건이 0인 run에서도 경계가 since에 묶여 매 run 재수집되는 것 방지).
+                // retryable(아래 broad catch)과 달리 minFailedModified로 경계를 캡하지 않는다.
+                maxModified = laterOf(maxModified, itemModified);
+                log.warn("관광지 item 건너뜀 — 제약 위반(영구 실패 추정, 경계 전진): contentId={}, error={}",
                         item.contentId(), e.getMessage());
                 skipped++;
             } catch (DataAccessException e) {
