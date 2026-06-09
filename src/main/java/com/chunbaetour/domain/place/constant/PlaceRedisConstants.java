@@ -32,6 +32,9 @@ public final class PlaceRedisConstants {
     /** 인기 점수 가중치: 조회수 */
     public static final double POPULAR_VIEW_WEIGHT = 0.3;
 
+    /** 주소 지오코딩 캐시 키 접두사 — 키: geocoding::{SHA-256(query)} */
+    public static final String GEOCODING_CACHE_PREFIX = "geocoding::";
+
     private PlaceRedisConstants() {
         // 인스턴스화 방지
     }
