@@ -38,7 +38,7 @@ import lombok.NoArgsConstructor;
         @Index(name = "idx_places_status_id", columnList = "status, id"),
         // 공간 인덱스는 JPA @Index로 정의할 수 없으므로 DB 마이그레이션(V202606041400)에서 직접 생성
         @Index(name = "idx_places_name",     columnList = "name"),
-        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606071000)
+        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606091036)
         @Index(name = "idx_places_region",   columnList = "sido, sigungu")
     }
 )

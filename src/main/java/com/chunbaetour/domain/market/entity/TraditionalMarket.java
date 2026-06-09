@@ -23,7 +23,7 @@ import lombok.NoArgsConstructor;
     indexes = {
         @Index(name = "idx_traditional_markets_name", columnList = "name"),
         @Index(name = "idx_traditional_markets_lat_lng", columnList = "lat, lng"),
-        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606071000)
+        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606091036)
         @Index(name = "idx_traditional_markets_region", columnList = "sido, sigungu")
     }
 )
