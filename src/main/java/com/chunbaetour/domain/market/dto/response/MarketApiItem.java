@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.market.dto.response;
 
+import com.chunbaetour.domain.common.util.RegionParser;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
@@ -59,6 +60,9 @@ public class MarketApiItem {
             ? new BigDecimal(longitude)
             : null;
 
+        // 전통시장 API는 지역코드가 없어 도로명주소(rdnmadr)에서 시도/시군구를 파싱한다.
+        RegionParser.Region region = RegionParser.parse(rdnmadr);
+
         return TraditionalMarket.builder()
                 .name(mrktNm)
                 .address(rdnmadr)
@@ -68,6 +72,8 @@ public class MarketApiItem {
                 .phoneNumber(phoneNumber)
                 .homepageUrl(homepageUrl)
                 .establishYear(parseYearOrNull(estblYear))
+                .sido(region.sido())
+                .sigungu(region.sigungu())
                 .build();
     }
 

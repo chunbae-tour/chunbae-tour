@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.market.service;
 
+import com.chunbaetour.domain.common.util.RegionParser;
 import com.chunbaetour.domain.market.dto.response.MarketApiItem;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
@@ -51,13 +52,17 @@ public class MarketSyncBatchService {
                     ? new BigDecimal(item.getLatitude()) : null;
                 BigDecimal lngValue = item.getLongitude() != null && !item.getLongitude().isBlank()
                     ? new BigDecimal(item.getLongitude()) : null;
+                // 지역(시도/시군구)은 도로명주소 파싱으로 재계산 — 주소 변경 시 갱신 반영
+                RegionParser.Region region = RegionParser.parse(item.getRdnmadr());
                 market.update(
                     latValue,
                     lngValue,
                     item.getMrktType(),
                     item.getPhoneNumber(),
                     item.getHomepageUrl(),
-                    MarketApiItem.parseYearOrNull(item.getEstblYear())
+                    MarketApiItem.parseYearOrNull(item.getEstblYear()),
+                    region.sido(),
+                    region.sigungu()
                 );
                 // saveAndFlush: REQUIRES_NEW 트랜잭션 내 flush 시점 명확화 → 제약 위반을 즉시 catch
                 marketRepository.saveAndFlush(market);

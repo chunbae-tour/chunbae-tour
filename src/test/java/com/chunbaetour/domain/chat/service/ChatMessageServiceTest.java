@@ -7,12 +7,15 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.entity.Message;
+import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.MessageRepository;
@@ -53,6 +56,9 @@ class ChatMessageServiceTest {
     @Mock
     private RateLimiter rateLimiter;
 
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     @InjectMocks
     private ChatMessageService chatMessageService;
 
@@ -65,6 +71,10 @@ class ChatMessageServiceTest {
         given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
         given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
                 eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        ChatRoomMember recipient = mock(ChatRoomMember.class);
+        given(recipient.getUserId()).willReturn(2L);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInAndUserIdNot(
+                eq(ROOM_ID), any(), eq(USER_ID))).willReturn(List.of(recipient));
         Account sender = mock(Account.class);
         given(sender.getNickname()).willReturn("테스터");
         given(accountRepository.findById(USER_ID)).willReturn(Optional.of(sender));
@@ -81,6 +91,34 @@ class ChatMessageServiceTest {
 
         then(messageRepository).should().save(any(Message.class));
         then(chatRedisPubSubService).should().publish(any(), any());
+        then(eventPublisher).should().publishEvent(any(ChatMessageSentEvent.class));
+    }
+
+    // 수신 대상 없음(혼자 있는 방 등) — 알림 이벤트 미발행, Redis 발행은 정상 진행
+    @Test
+    void sendMessage_noRecipients_doesNotPublishNotificationEvent() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInAndUserIdNot(
+                eq(ROOM_ID), any(), eq(USER_ID))).willReturn(List.of());
+        Account sender = mock(Account.class);
+        given(sender.getNickname()).willReturn("테스터");
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(sender));
+        Message saved = mock(Message.class);
+        given(saved.getId()).willReturn(1L);
+        given(saved.getChatRoomId()).willReturn(ROOM_ID);
+        given(saved.getSenderId()).willReturn(USER_ID);
+        given(saved.getMessageType()).willReturn(MessageType.TEXT);
+        given(saved.getContent()).willReturn("안녕하세요");
+        given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 26, 12, 0));
+        given(messageRepository.save(any())).willReturn(saved);
+
+        chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("안녕하세요"));
+
+        then(chatRedisPubSubService).should().publish(any(), any());
+        then(eventPublisher).should(never())
+                .publishEvent(any(ChatMessageSentEvent.class));
     }
 
     @Test
