@@ -25,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -159,6 +160,28 @@ class CompanionServiceTest {
         verify(companionRepository, never()).save(any());
     }
 
+    // uq_companions_chat_room_id TOCTOU race → CR_007
+    @Test
+    void startCompanion_uniqueConstraintRace_throwsAlreadyStarted() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        var constraintEx = new org.hibernate.exception.ConstraintViolationException(
+                "dup", null, "uq_companions_chat_room_id");
+        var dataEx = new DataIntegrityViolationException("uq_companions_chat_room_id", constraintEx);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
+                .willReturn(true);
+        given(companionRepository.save(any())).willThrow(dataEx);
+
+        assertThatThrownBy(() -> companionService.startCompanion(ownerId, roomId, new CompanionStartRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_ALREADY_STARTED));
+    }
+
     // ===== endCompanion =====
 
     // 정상 종료 — status ENDED, endedAt 설정
@@ -170,7 +193,7 @@ class CompanionServiceTest {
         Companion companion = Companion.builder().chatRoomId(roomId).build();
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
 
         CompanionEndResponse response = companionService.endCompanion(ownerId, roomId);
 
@@ -200,7 +223,7 @@ class CompanionServiceTest {
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> companionService.endCompanion(ownerId, 10L))
                 .isInstanceOf(BusinessException.class)
@@ -217,7 +240,7 @@ class CompanionServiceTest {
         endedCompanion.end();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(endedCompanion));
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.of(endedCompanion));
 
         assertThatThrownBy(() -> companionService.endCompanion(ownerId, 10L))
                 .isInstanceOf(BusinessException.class)

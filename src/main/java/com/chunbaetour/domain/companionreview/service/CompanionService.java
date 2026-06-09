@@ -78,8 +78,12 @@ public class CompanionService {
                     Companion.builder().chatRoomId(roomId).build());
         } catch (DataIntegrityViolationException e) {
             // uq_companions_chat_room_id 위반 — TOCTOU 동시 요청이 앱 레벨 체크 통과한 경우
-            // status를 알 수 없으므로 CR_007(이미 진행 중)으로 반환
-            throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
+            Throwable cause = e.getCause();
+            if (cause instanceof org.hibernate.exception.ConstraintViolationException cve
+                    && "uq_companions_chat_room_id".equals(cve.getConstraintName())) {
+                throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
+            }
+            throw e;
         }
 
         List<CompanionParticipant> participants = allParticipantIds.stream()
@@ -103,7 +107,8 @@ public class CompanionService {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
-        Companion companion = companionRepository.findByChatRoomId(roomId)
+        // PESSIMISTIC_WRITE — 동시 종료 요청 둘 다 ONGOING 읽고 end() 호출하는 경쟁 방어
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
 
         companion.end();
