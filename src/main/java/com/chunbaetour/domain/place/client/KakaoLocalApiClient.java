@@ -7,6 +7,7 @@ import com.chunbaetour.domain.place.dto.KakaoAddressResponse;
 import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
 import com.chunbaetour.domain.place.dto.KakaoLocalResponse;
 import com.chunbaetour.domain.place.dto.KakaoRegionResponse;
+import com.chunbaetour.domain.place.dto.KakaoKeywordResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ public class KakaoLocalApiClient {
     private final String coord2RegioncodeUrl;
     private final String categorySearchUrl;
     private final String addressSearchUrl;
+    private final String keywordSearchUrl;
 
     public KakaoLocalApiClient(
             RestClient kakaoRestClient,
@@ -34,7 +36,8 @@ public class KakaoLocalApiClient {
             @Value("${kakao.map.coord2address-url}") String coord2AddressUrl,
             @Value("${kakao.map.coord2regioncode-url}") String coord2RegioncodeUrl,
             @Value("${kakao.map.category-search-url}") String categorySearchUrl,
-            @Value("${kakao.map.address-search-url}") String addressSearchUrl
+            @Value("${kakao.map.address-search-url}") String addressSearchUrl,
+            @Value("${kakao.map.keyword-search-url}") String keywordSearchUrl
     ) {
         this.kakaoRestClient = kakaoRestClient;
         this.apiKey = apiKey;
@@ -42,6 +45,7 @@ public class KakaoLocalApiClient {
         this.coord2RegioncodeUrl = coord2RegioncodeUrl;
         this.categorySearchUrl = categorySearchUrl;
         this.addressSearchUrl = addressSearchUrl;
+        this.keywordSearchUrl = keywordSearchUrl;
     }
 
     @jakarta.annotation.PostConstruct
@@ -190,6 +194,48 @@ public class KakaoLocalApiClient {
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Region API Network Error", e);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * 카카오 로컬 API - 키워드로 장소 검색.
+     * <p>자동완성 등에서 사용되며, API 호출 실패 시 MAP_SERVICE_UNAVAILABLE 예외를 발생시켜 호출자가 장애 상태를 감지하고 처리할 수 있도록 한다.</p>
+     * @throws com.chunbaetour.domain.common.error.BusinessException API 호출 실패(4xx/5xx) 또는 네트워크 오류 시
+     */
+    public KakaoKeywordResponse searchByKeyword(String query, int size) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("query must not be blank");
+        }
+        int normalizedSize = Math.max(1, Math.min(size, 15));
+
+        try {
+            String url = UriComponentsBuilder.fromUriString(keywordSearchUrl)
+                    .queryParam("query", query)
+                    .queryParam("size", normalizedSize)
+                    .encode()
+                    .build()
+                    .toUriString();
+
+            return kakaoRestClient.get()
+                    .uri(url)
+                    .header("Authorization", "KakaoAK " + apiKey)
+                    .retrieve()
+                    .body(KakaoKeywordResponse.class);
+
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().is4xxClientError()) {
+                if (e.getStatusCode().value() == 401) {
+                    log.error("Kakao Keyword API Unauthorized (401): API Key might be invalid or expired.", e);
+                } else {
+                    log.warn("Kakao Keyword API Error (4xx): status={}", e.getStatusCode());
+                }
+            } else {
+                log.error("Kakao Keyword API Server Error (5xx): status={}", e.getStatusCode().value(), e);
+            }
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
+        } catch (RestClientException e) {
+            log.error("Kakao Keyword API Network Error", e);
             throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }
