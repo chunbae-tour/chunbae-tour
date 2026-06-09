@@ -49,7 +49,7 @@ public class PlaceQueryRepository {
                 ))
                 .from(place)
                 .where(
-                        Expressions.booleanTemplate("MBRContains(ST_GeomFromText({0}, 4326, 'axis-order=long-lat'), {1})", mbrPolygon, place.location),
+                        Expressions.numberTemplate(Integer.class, "MBRContains(ST_GeomFromText({0}, 4326, 'axis-order=long-lat'), {1})", mbrPolygon, place.location).eq(1),
                         distanceExpression.loe(radiusMeters),
                         place.status.eq(PlaceStatus.ACTIVE),
                         cursorConditionForNearby(cursorId, cursorDistance, distanceExpression)
