@@ -117,6 +117,8 @@ public class UserItemService {
         if (item.getStatus() == UserItemStatus.EXPIRED) {
             throw new BusinessException(ErrorCode.ITEM_EXPIRED);
         }
+        // 만료일은 inclusive-through-date — 만료일 '당일'까지는 사용 가능(쿠폰/교환권 관례).
+        // 예: expiresAt=6/9면 6/9 23:59까지 OK, 6/10부터 만료. 그래서 isBefore(오늘)만 만료 처리.
         if (item.getExpiresAt() != null && item.getExpiresAt().isBefore(LocalDate.now(clock))) {
             throw new BusinessException(ErrorCode.ITEM_EXPIRED);
         }

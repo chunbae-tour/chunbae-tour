@@ -102,6 +102,52 @@ class UserItemQrServiceTest {
     }
 
     @Test
+    @DisplayName("이미 USED된 아이템에 같은 토큰으로 재사용을 시도하면 ITEM_ALREADY_USED로 멱등 차단된다")
+    void useByQr_alreadyUsed_idempotent() {
+        // 첫 사용으로 USED 전환된 아이템을 두 번째 useByQr이 findByIdWithLock으로 다시 잡은 상황 재현.
+        // 비관락 + USED 상태 검증으로 이중 사용(double-redeem)을 막는다.
+        given(shopRepository.findByIdAndUserId(SHOP_ID, VERIFIER_ID)).willReturn(Optional.of(shop()));
+        given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, NOW.plusSeconds(300)));
+        given(userItemRepository.findByIdWithLock(ITEM_ID)).willReturn(Optional.of(item(USER_ID, UserItemStatus.USED)));
+
+        assertThatThrownBy(() -> userItemService.useByQr(VERIFIER_ID, SHOP_ID, "qr-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ITEM_ALREADY_USED);
+    }
+
+    @Test
+    @DisplayName("만료일이 어제인 아이템은 ITEM_EXPIRED로 사용 거부된다")
+    void useByQr_expiredByDate() {
+        // expiresAt=어제(6/7) < 오늘(6/8) → 만료 처리
+        given(shopRepository.findByIdAndUserId(SHOP_ID, VERIFIER_ID)).willReturn(Optional.of(shop()));
+        given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, NOW.plusSeconds(300)));
+        given(userItemRepository.findByIdWithLock(ITEM_ID))
+                .willReturn(Optional.of(item(USER_ID, UserItemStatus.AVAILABLE, LocalDate.of(2026, 6, 7))));
+        stubClock();
+
+        assertThatThrownBy(() -> userItemService.useByQr(VERIFIER_ID, SHOP_ID, "qr-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ITEM_EXPIRED);
+    }
+
+    @Test
+    @DisplayName("만료일이 '오늘'인 아이템은 당일까지 사용 가능하다(inclusive-through-date 경계)")
+    void useByQr_expiresToday_stillUsable() {
+        // expiresAt=오늘(6/8) — isBefore(오늘)=false → 만료 아님, 정상 USED 처리
+        given(shopRepository.findByIdAndUserId(SHOP_ID, VERIFIER_ID)).willReturn(Optional.of(shop()));
+        given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, NOW.plusSeconds(300)));
+        given(userItemRepository.findByIdWithLock(ITEM_ID))
+                .willReturn(Optional.of(item(USER_ID, UserItemStatus.AVAILABLE, LocalDate.of(2026, 6, 8))));
+        stubClock();
+
+        UserItemUseResponse response = userItemService.useByQr(VERIFIER_ID, SHOP_ID, "qr-token");
+
+        assertThat(response.status()).isEqualTo(UserItemStatus.USED);
+    }
+
+    @Test
     @DisplayName("만료된 사용자 아이템 QR은 ITEM_QR_EXPIRED 예외가 발생한다")
     void useByQr_expiredToken() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, VERIFIER_ID)).willReturn(Optional.of(shop()));
@@ -115,10 +161,17 @@ class UserItemQrServiceTest {
     }
 
     private UserItem item(Long userId, UserItemStatus status) {
+        return item(userId, status, LocalDate.of(2026, 6, 8));
+    }
+
+    private UserItem item(Long userId, UserItemStatus status, LocalDate expiresAt) {
         Product product = Product.create("테스트 아이템", "설명", "쿠폰", 1000L,
                 null, 10, "[]", "테스트 상점", 30, 1);
         ReflectionTestUtils.setField(product, "id", 100L);
+        // create(...)의 4번째 인자는 구매일(today)이며 expiresAt=today+validityDays로 계산된다.
+        // 경계 테스트는 정확한 expiresAt이 필요하므로 생성 후 필드를 직접 덮어쓴다.
         UserItem item = UserItem.create(userId, 200L, product, LocalDate.of(2026, 6, 8));
+        ReflectionTestUtils.setField(item, "expiresAt", expiresAt);
         ReflectionTestUtils.setField(item, "id", ITEM_ID);
         ReflectionTestUtils.setField(item, "status", status);
         return item;
