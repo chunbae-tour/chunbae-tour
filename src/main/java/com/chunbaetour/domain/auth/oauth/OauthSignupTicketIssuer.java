@@ -81,12 +81,17 @@ public class OauthSignupTicketIssuer {
             if (!TYPE_OAUTH_SIGNUP.equals(claims.get(CLAIM_TYPE))) {
                 throw new BusinessException(ErrorCode.OAUTH_SIGNUP_TICKET_INVALID);
             }
-            OauthProvider provider = OauthProvider.valueOf(claims.get(CLAIM_PROVIDER, String.class));
+            // provider/oauthId 클레임 null 가드 — 조작/손상 티켓에 provider 클레임이 없으면
+            // OauthProvider.valueOf(null)이 NullPointerException을 던지는데, 이는 아래 catch
+            // (JwtException|IllegalArgumentException)에 안 잡혀 500으로 새어나간다. 명시적 null 체크로
+            // OAUTH_SIGNUP_TICKET_INVALID(401)로 변환 (TokenIssuer.requireStringClaim과 동일 방어).
+            String providerValue = claims.get(CLAIM_PROVIDER, String.class);
             String oauthId = claims.getSubject();
-            if (oauthId == null || oauthId.isBlank()) {
+            if (providerValue == null || providerValue.isBlank() || oauthId == null || oauthId.isBlank()) {
                 throw new BusinessException(ErrorCode.OAUTH_SIGNUP_TICKET_INVALID);
             }
-            return new OauthSignupTicket(provider, oauthId);
+            // 잘못된(enum에 없는) provider 문자열은 valueOf가 IllegalArgumentException → 아래 catch에서 401 변환.
+            return new OauthSignupTicket(OauthProvider.valueOf(providerValue), oauthId);
         } catch (BusinessException e) {
             throw e;
         } catch (JwtException | IllegalArgumentException e) {

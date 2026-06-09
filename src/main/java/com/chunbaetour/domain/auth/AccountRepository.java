@@ -48,6 +48,16 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     long countByOauthIdentityIncludingDeleted(@Param("provider") String provider, @Param("oauthId") String oauthId);
 
     /**
+     * 탈퇴 row 포함 닉네임 존재 검사 — DB UNIQUE(nickname)와 범위 일치.
+     *
+     * <p>{@link #existsByNickname}은 {@code @SQLRestriction}으로 탈퇴 계정을 못 봐서, 탈퇴자가 점유한 닉네임으로
+     * 가입 시 INSERT가 DB UNIQUE 위반(500)으로 떨어진다(email/phone과 동일 부류). 가입 race recheck에서 본
+     * 쿼리로 탈퇴 row까지 봐 {@code DUPLICATE_NICKNAME}로 정확히 변환한다.
+     */
+    @Query(value = "SELECT COUNT(*) FROM users WHERE nickname = :nickname", nativeQuery = true)
+    long countByNicknameIncludingDeleted(@Param("nickname") String nickname);
+
+    /**
      * 본인 외 닉네임 중복 체크 — PATCH /users/me (KAN-127 S2)에서 사용.
      *
      * <p>{@link #existsByNickname}을 그대로 쓰면 자기 자신 닉네임에도 true가 나와 변경 거부됨.

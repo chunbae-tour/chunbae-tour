@@ -62,7 +62,7 @@ public class OauthSignupService {
         if (accountRepository.countByEmailIncludingDeleted(email) > 0) {
             throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
         }
-        if (accountRepository.existsByNickname(nickname)) {
+        if (accountRepository.countByNicknameIncludingDeleted(nickname) > 0) {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
         if (accountRepository.countByPhoneIncludingDeleted(phone) > 0) {
