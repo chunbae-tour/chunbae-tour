@@ -20,8 +20,8 @@ import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -82,8 +82,10 @@ public class CompanionPostService {
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
         Set<Long> postIds = content.stream().map(CompanionPost::getId).collect(Collectors.toSet());
-        Map<Long, Long> chatRoomIdByPostId = chatRoomRepository.findAllByPostIdIn(postIds).stream()
-                .collect(Collectors.toMap(ChatRoom::getPostId, ChatRoom::getId));
+        Map<Long, Long> chatRoomIdByPostId = postIds.isEmpty()
+                ? Map.of()
+                : chatRoomRepository.findAllByPostIdIn(postIds).stream()
+                        .collect(Collectors.toMap(ChatRoom::getPostId, ChatRoom::getId));
 
         List<CompanionPostGetListResponse> items = content.stream()
                 .map(post -> CompanionPostGetListResponse.of(
