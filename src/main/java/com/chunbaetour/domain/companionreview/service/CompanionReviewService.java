@@ -2,15 +2,16 @@ package com.chunbaetour.domain.companionreview.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
-import com.chunbaetour.domain.chat.type.ChatMemberState;
-import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionReviewCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewCreateResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionScoreResponse;
+import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.entity.CompanionReview;
 import com.chunbaetour.domain.companionreview.event.CompanionScoreCacheEvictEvent;
+import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
+import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
 import com.chunbaetour.domain.companionreview.repository.ScoreCountProjection;
 import java.util.List;
@@ -28,10 +29,11 @@ public class CompanionReviewService {
 
     private final CompanionReviewRepository companionReviewRepository;
     private final AccountRepository accountRepository;
-    private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final CompanionRepository companionRepository;
+    private final CompanionParticipantRepository companionParticipantRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
 
-    // 동행 리뷰 등록 — 참여자 검증, 자기 자신 방지, 중복 방지, companionScore 증분 갱신
+    // 동행 리뷰 등록 — 동행 참여자 검증, 자기 자신 방지, 중복 방지, companionScore 증분 갱신
     // PESSIMISTIC_WRITE 락으로 동시 점수 갱신 경합 방어
     @Transactional
     public CompanionReviewCreateResponse createReview(Long reviewerId, CompanionReviewCreateRequest request) {
@@ -39,13 +41,13 @@ public class CompanionReviewService {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_SELF_NOT_ALLOWED);
         }
 
-        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
-                request.chatRoomId(), reviewerId, activeStates)) {
+        Companion companion = companionRepository.findByChatRoomId(request.chatRoomId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+
+        if (!companionParticipantRepository.existsByCompanionIdAndUserId(companion.getId(), reviewerId)) {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER);
         }
-        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
-                request.chatRoomId(), request.targetUserId(), activeStates)) {
+        if (!companionParticipantRepository.existsByCompanionIdAndUserId(companion.getId(), request.targetUserId())) {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER);
         }
 
