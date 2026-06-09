@@ -122,13 +122,13 @@ public class TokenIssuer {
             long userId = Long.parseLong(claims.getSubject());
             Long itemId = claims.get(CLAIM_ITEM_ID, Long.class);
             if (itemId == null) {
-                throw new JwtException("item qr token payload is missing itemId");
+                throw new JwtException("아이템 QR 토큰의 itemId 클레임이 누락되었습니다.");
             }
             return new ItemQrClaims(userId, itemId, claims.getExpiration().toInstant());
         } catch (JwtException e) {
             throw e;
         } catch (RuntimeException e) {
-            throw new JwtException("item qr token payload is invalid", e);
+            throw new JwtException("아이템 QR 토큰 페이로드가 유효하지 않습니다.", e);
         }
     }
 

@@ -83,11 +83,16 @@ public class UserItem extends BaseEntity {
     }
 
     public void use(LocalDateTime usedAt, Long usedShopId) {
-        if (this.status == UserItemStatus.USED) {
-            throw new BusinessException(ErrorCode.ITEM_ALREADY_USED);
-        }
-        if (this.status == UserItemStatus.EXPIRED) {
-            throw new BusinessException(ErrorCode.ITEM_EXPIRED);
+        // AVAILABLE만 사용 가능 — 엔티티 불변식을 서비스 검증에 기대지 않고 자체적으로 명시한다.
+        // (향후 enum 확장/데이터 오염 대비, 서비스의 status != AVAILABLE → INVALID_REQUEST 정책과 정합)
+        if (this.status != UserItemStatus.AVAILABLE) {
+            if (this.status == UserItemStatus.USED) {
+                throw new BusinessException(ErrorCode.ITEM_ALREADY_USED);
+            }
+            if (this.status == UserItemStatus.EXPIRED) {
+                throw new BusinessException(ErrorCode.ITEM_EXPIRED);
+            }
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         this.status = UserItemStatus.USED;
         this.usedAt = usedAt;
