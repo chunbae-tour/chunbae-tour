@@ -13,6 +13,7 @@ import com.chunbaetour.domain.search.service.SearchService;
 import com.chunbaetour.domain.search.service.SuggestService;
 import com.chunbaetour.domain.search.service.IntegratedSearchService;
 import com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem;
+import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -189,12 +190,14 @@ public class SearchController {
      * <pre>
      * GET /search/suggest?q=경복
      * 200 OK
-     * { "data": ["경복궁", "경복궁 야간개장", "경복궁 한복체험"] }
+     * {
+     *   "data": ["경복궁", "경복궁역", "경복궁 야간개장"]
+     * }
      * </pre>
      * </p>
      *
      * @param q prefix (필수, 1자 이상)
-     * @return 200 OK + 자동완성 후보 목록 (최대 5개)
+     * @return 200 OK + 자동완성 후보 키워드 목록 (최대 5개)
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 null/blank인 경우 PLACE_005
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 50자를 초과하는 경우 PLACE_006
      */
@@ -204,8 +207,11 @@ public class SearchController {
     public ApiResponse<List<String>> suggest(
             @RequestParam(name = "q") String q
     ) {
-        List<String> result = suggestService.suggest(q);
-        return ApiResponse.success(result);
+        List<SuggestResponse> result = suggestService.suggest(q);
+        List<String> keywords = result.stream()
+                .map(SuggestResponse::keyword)
+                .toList();
+        return ApiResponse.success(keywords);
     }
 
     /**
