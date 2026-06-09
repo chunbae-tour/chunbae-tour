@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.core.LockConfiguration;
 import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -123,6 +124,12 @@ public class PlaceSyncService {
                 log.warn("관광지 item 건너뜀 — 제약 위반(영구 실패 추정, 경계 미반영): contentId={}, error={}",
                         item.contentId(), e.getMessage());
                 skipped++;
+            } catch (DataAccessException e) {
+                // 인프라 예외(CannotAcquireLockException·QueryTimeoutException·커넥션 풀 고갈 등) — DIV와 달리
+                // per-item skip으로 흡수하지 않고 즉시 전파해 배치 전체를 중단한다(fail-fast).
+                // market #390 계약: DB 다운 상태로 수천 item을 'skipped 성공'으로 돌려 운영자가 동기화 성공으로 오인하는 것을 방지.
+                log.error("관광지 동기화 중단 — 인프라 예외 전파(fail-fast): contentId={}", item.contentId(), e);
+                throw e;
             } catch (Exception e) {
                 // 네트워크/락/DB 일시 오류 등 재시도 가치가 있는 실패 — 경계를 이 item 이전으로 캡해 다음 run 재수집 보장.
                 log.warn("관광지 item 건너뜀 — 처리 예외(재시도 대상): contentId={}, error={}",

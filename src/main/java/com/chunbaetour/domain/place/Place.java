@@ -217,7 +217,8 @@ public class Place {
 
     /**
      * API 수집 관광지의 목록성 필드를 최신 응답으로 갱신한다(Tier-1 재동기화).
-     * 좌표가 둘 다 있을 때만 위치를 교체한다. 상세(description/operatingHours 등)는 건드리지 않는다.
+     * 좌표가 둘 다 있을 때만 위치를 교체한다. 지역(시도/시군구)도 non-blank일 때만 갱신(파싱 미스 시 기존값 보존).
+     * 상세(description/operatingHours 등)는 건드리지 않는다.
      */
     public void updateFromApi(String name, String address, BigDecimal lat, BigDecimal lng,
                               String thumbnailUrl, String phone, String sido, String sigungu) {
@@ -229,8 +230,10 @@ public class Place {
         }
         this.thumbnailUrl = thumbnailUrl;
         this.phone = phone;
-        this.sido = sido;
-        this.sigungu = sigungu;
+        // 지역(시도/시군구)은 non-null·non-blank일 때만 갱신 — areacode 누락/비표준 주소로 파싱이 미스되면
+        // 최초 정상 채워진 지역값을 null로 덮어쓰지 않는다(증분 sync마다 idx_places_region 검색에서 silent 누락 방지).
+        if (sido != null && !sido.isBlank()) this.sido = sido;
+        if (sigungu != null && !sigungu.isBlank()) this.sigungu = sigungu;
     }
 
     /**

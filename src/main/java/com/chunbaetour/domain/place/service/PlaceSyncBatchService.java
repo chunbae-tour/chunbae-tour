@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -96,6 +97,11 @@ public class PlaceSyncBatchService {
             // Place 불변식 위반(이름/주소/좌표) — 데이터 품질 문제로 skip
             log.warn("관광지 데이터 품질 오류 — skip: contentId={}, reason={}", item.contentId(), e.getMessage());
             return UpsertResult.SKIPPED;
+        } catch (DataAccessException e) {
+            // DB/인프라 장애(락 획득 실패·쿼리 타임아웃·커넥션 풀 고갈 등) — 은닉하지 않고 전파(배치 전체 중단).
+            // market #390 계약과 동일: per-item skip으로 흡수하면 DB 다운 상태로 전 item을 'skipped 성공'으로 돌게 된다.
+            log.error("관광지 DB 접근 오류 — 동기화 중단: contentId={}", item.contentId(), e);
+            throw e;
         }
     }
 
