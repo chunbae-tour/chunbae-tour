@@ -38,4 +38,7 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
 
     // 채팅방 상세 조회 — 현재 활동 중인 멤버만, 참여 순서(joinedAt ASC, id ASC) 정렬
     List<ChatRoomMember> findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(Long chatRoomId, List<ChatMemberState> states);
+
+    // 메시지 알림 수신 대상 조회 — ACTIVE 멤버 중 발신자 제외, DB 레벨 필터링
+    List<ChatRoomMember> findByChatRoomIdAndMemberStateInAndUserIdNot(Long chatRoomId, List<ChatMemberState> states, Long senderId);
 }
