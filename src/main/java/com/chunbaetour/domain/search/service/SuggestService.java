@@ -40,6 +40,7 @@ public class SuggestService {
     private final SuggestCacheRepository suggestCacheRepository;
     private final PopularSearchService popularSearchService;
     private final KakaoLocalApiClient kakaoLocalApiClient;
+    private final java.util.concurrent.ExecutorService kakaoVirtualThreadExecutor;
 
     /**
      * 검색어 자동완성.
@@ -72,9 +73,7 @@ public class SuggestService {
         Optional<List<SuggestResponse>> cached = suggestCacheRepository.get(normalized);
         if (cached.isPresent()) {
             log.debug("[SuggestService] 자동완성 캐시 Hit - prefix: {}", normalized);
-            return cached.get().stream()
-                    .limit(SUGGEST_MAX_SIZE)
-                    .toList();
+            return cached.get();
         }
 
         Set<SuggestResponse> merged = new LinkedHashSet<>();
@@ -88,7 +87,15 @@ public class SuggestService {
         // 3. 카카오 로컬 API 키워드 검색 보완 (단축 호출)
         if (merged.size() < SUGGEST_MAX_SIZE) {
             int remainingForKakao = SUGGEST_MAX_SIZE - merged.size();
-            KakaoKeywordResponse kakaoResponse = kakaoLocalApiClient.searchByKeyword(normalized, remainingForKakao);
+            KakaoKeywordResponse kakaoResponse = null;
+            try {
+                kakaoResponse = java.util.concurrent.CompletableFuture.supplyAsync(
+                        () -> kakaoLocalApiClient.searchByKeyword(normalized, remainingForKakao),
+                        kakaoVirtualThreadExecutor
+                ).get(300, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                log.warn("[SuggestService] Kakao API Suggestion Timeout or Exception: {}", e.getMessage());
+            }
             
             if (kakaoResponse != null && kakaoResponse.documents() != null) {
                 for (KakaoKeywordResponse.Document doc : kakaoResponse.documents()) {

@@ -6,7 +6,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /**
  * 카카오 로컬 API - 키워드로 장소 검색 응답 DTO.
  */
-public record KakaoKeywordResponse(List<Document> documents, Meta meta) {
+public record KakaoKeywordResponse(
+        @JsonProperty("documents") List<Document> documents, 
+        @JsonProperty("meta") Meta meta
+) {
     public record Meta(
             @JsonProperty("total_count") int totalCount,
             @JsonProperty("pageable_count") int pageableCount,

@@ -41,6 +41,9 @@ class SuggestServiceTest {
     @Mock
     private KakaoLocalApiClient kakaoLocalApiClient;
 
+    @org.mockito.Spy
+    private java.util.concurrent.ExecutorService kakaoVirtualThreadExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+
     @InjectMocks
     private SuggestService suggestService;
 
@@ -169,5 +172,30 @@ class SuggestServiceTest {
 
         assertThat(result).hasSize(5);
         verify(popularSearchService, never()).fetchPopularSuggestions(anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Kakao API 호출 시 예외나 타임아웃이 발생하면 무시하고 Redis 보완 조회를 진행한다")
+    void suggest_ContinuesWithRedis_WhenKakaoThrowsException() {
+        String prefix = "경복";
+        List<String> dbResults = List.of("경복궁");
+        List<String> redisResults = List.of("경복궁 야간개장");
+
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
+        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
+        
+        // Kakao API 예외 발생 모킹
+        when(kakaoLocalApiClient.searchByKeyword(prefix, 4)).thenThrow(new RuntimeException("Kakao Timeout"));
+        
+        when(popularSearchService.fetchPopularSuggestions(prefix, 4)).thenReturn(redisResults);
+
+        List<SuggestResponse> result = suggestService.suggest(prefix);
+
+        // Kakao가 실패했어도 DB(1) + Redis(1) 결과가 정상 반환되어야 함
+        assertThat(result).hasSize(2)
+                .extracting(SuggestResponse::keyword)
+                .containsExactly("경복궁", "경복궁 야간개장");
+        
+        verify(suggestCacheRepository).set(eq(prefix), eq(result));
     }
 }

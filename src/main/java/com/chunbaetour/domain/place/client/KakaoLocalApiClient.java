@@ -206,7 +206,8 @@ public class KakaoLocalApiClient {
         try {
             String url = UriComponentsBuilder.fromUriString(keywordSearchUrl)
                     .queryParam("query", query)
-                    .queryParam("size", size)
+                    .queryParam("size", Math.min(size, 15))
+                    .encode()
                     .build()
                     .toUriString();
 
