@@ -9,5 +9,5 @@ import com.chunbaetour.domain.auth.OauthProvider;
  * 추가정보 입력(이름/전화/생년월일/이메일/닉네임) 단계에서 이 티켓을 제출해야 가입이 진행된다 —
  * 임의의 oauthId로 계정을 만드는 위조를 차단한다.
  */
-public record OauthSignupTicket(OauthProvider provider, String oauthId) {
+public record OauthSignupTicket(OauthProvider provider, String oauthId, String email) {
 }

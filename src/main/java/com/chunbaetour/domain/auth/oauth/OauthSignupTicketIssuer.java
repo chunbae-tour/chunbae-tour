@@ -32,6 +32,7 @@ public class OauthSignupTicketIssuer {
     private static final String CLAIM_TYPE = "typ";
     private static final String TYPE_OAUTH_SIGNUP = "oauth_signup";
     private static final String CLAIM_PROVIDER = "provider";
+    private static final String CLAIM_EMAIL = "email";
     private static final Duration TICKET_TTL = Duration.ofMinutes(10);
 
     private final SecretKey signingKey;
@@ -50,19 +51,26 @@ public class OauthSignupTicketIssuer {
     /**
      * 신규 소셜 사용자에게 단기 가입 티켓 발급.
      *
+     * <p>공급자가 검증한 이메일을 티켓에 서명해 담는다 — 2단계 가입에서 클라이언트가 임의 이메일을 넣어
+     * 타인 이메일을 선점/사칭하는 것을 막기 위함(이메일은 공급자 검증값만 사용). 공급자가 이메일을 주지
+     * 않은 경우(예: 카카오 이메일 미동의) null일 수 있으며, 그 처리는 가입 단계(OauthSignupService)가 결정.
+     *
      * @param provider 소셜 공급자
      * @param oauthId  공급자 사용자 식별자 (subject)
+     * @param email    공급자가 검증해 제공한 이메일 (없으면 null)
      */
-    public String issue(OauthProvider provider, String oauthId) {
+    public String issue(OauthProvider provider, String oauthId, String email) {
         Instant now = clock.instant();
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(oauthId)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(TICKET_TTL)))
                 .claim(CLAIM_TYPE, TYPE_OAUTH_SIGNUP)
-                .claim(CLAIM_PROVIDER, provider.name())
-                .signWith(signingKey)
-                .compact();
+                .claim(CLAIM_PROVIDER, provider.name());
+        if (email != null && !email.isBlank()) {
+            builder.claim(CLAIM_EMAIL, email);
+        }
+        return builder.signWith(signingKey).compact();
     }
 
     /**
@@ -90,8 +98,10 @@ public class OauthSignupTicketIssuer {
             if (providerValue == null || providerValue.isBlank() || oauthId == null || oauthId.isBlank()) {
                 throw new BusinessException(ErrorCode.OAUTH_SIGNUP_TICKET_INVALID);
             }
+            // 공급자 검증 이메일(없으면 null) — 2단계 가입에서 계정 이메일로 사용.
+            String email = claims.get(CLAIM_EMAIL, String.class);
             // 잘못된(enum에 없는) provider 문자열은 valueOf가 IllegalArgumentException → 아래 catch에서 401 변환.
-            return new OauthSignupTicket(OauthProvider.valueOf(providerValue), oauthId);
+            return new OauthSignupTicket(OauthProvider.valueOf(providerValue), oauthId, email);
         } catch (BusinessException e) {
             throw e;
         } catch (JwtException | IllegalArgumentException e) {

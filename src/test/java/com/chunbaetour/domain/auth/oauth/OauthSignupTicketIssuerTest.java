@@ -28,15 +28,28 @@ class OauthSignupTicketIssuerTest {
     private final OauthSignupTicketIssuer issuer = new OauthSignupTicketIssuer(props);
     private final SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
 
-    @DisplayName("정상 발급→검증 라운드트립")
+    @DisplayName("정상 발급→검증 라운드트립 (공급자 이메일 포함)")
     @Test
     void issueThenVerifyRoundTrip() {
-        String ticket = issuer.issue(OauthProvider.KAKAO, "oid-123");
+        String ticket = issuer.issue(OauthProvider.KAKAO, "oid-123", "verified@kakao.com");
 
         OauthSignupTicket parsed = issuer.verify(ticket);
 
         assertThat(parsed.provider()).isEqualTo(OauthProvider.KAKAO);
         assertThat(parsed.oauthId()).isEqualTo("oid-123");
+        assertThat(parsed.email()).isEqualTo("verified@kakao.com");
+    }
+
+    @DisplayName("공급자 이메일 없이 발급(null) → 검증 시 email=null (가입 단계가 거부 처리)")
+    @Test
+    void issueWithoutEmail() {
+        String ticket = issuer.issue(OauthProvider.NAVER, "oid-999", null);
+
+        OauthSignupTicket parsed = issuer.verify(ticket);
+
+        assertThat(parsed.provider()).isEqualTo(OauthProvider.NAVER);
+        assertThat(parsed.oauthId()).isEqualTo("oid-999");
+        assertThat(parsed.email()).isNull();
     }
 
     @DisplayName("provider 클레임 없는 티켓 → NPE 아닌 OAUTH_SIGNUP_TICKET_INVALID(401)")

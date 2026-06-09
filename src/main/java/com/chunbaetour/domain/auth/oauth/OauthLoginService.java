@@ -64,8 +64,9 @@ public class OauthLoginService {
                 .orElse(null);
 
         if (account == null) {
-            // 우리 계정 없음 → 추가정보 입력 단계로. provider+oauthId를 담은 단기 티켓 발급.
-            String ticket = ticketIssuer.issue(provider, info.oauthId());
+            // 우리 계정 없음 → 추가정보 입력 단계로. provider+oauthId+공급자검증이메일을 서명해 담은 단기 티켓.
+            // 이메일을 티켓에 박아 2단계에서 클라이언트가 임의 이메일을 넣어 선점하는 것을 차단한다.
+            String ticket = ticketIssuer.issue(provider, info.oauthId(), info.email());
             meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "needs_signup").increment();
             return OauthLoginResult.needSignup(ticket, info.email(), info.nickname());
         }

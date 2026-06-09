@@ -1,7 +1,6 @@
 package com.chunbaetour.domain.auth.dto;
 
 import com.chunbaetour.domain.auth.oauth.SocialNickname;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Past;
@@ -19,8 +18,10 @@ import java.time.LocalDate;
  * @param name      실명
  * @param phone     휴대전화번호 (하이픈 유무 무관 — 서버가 숫자만 추출해 저장/중복검사)
  * @param birthdate 생년월일 (과거 일자) — 저장만, 기능 제한 없음
- * @param email     이메일
  * @param nickname  닉네임 (한글 8자 / 영문·숫자 16자 폭, 특수문자·공백 불가)
+ *
+ * <p><b>이메일 미포함</b>: 계정 이메일은 클라이언트 입력이 아니라 1단계 티켓에 서명돼 온 <b>공급자 검증
+ * 이메일</b>을 사용한다(임의 이메일 선점 방지). 따라서 본 요청에 email은 받지 않는다.
  */
 public record OauthSignupRequest(
         @NotBlank
@@ -37,11 +38,6 @@ public record OauthSignupRequest(
         @NotNull
         @Past(message = "생년월일은 과거 날짜여야 합니다.")
         LocalDate birthdate,
-
-        @NotBlank
-        @Email
-        @Size(max = 255)
-        String email,
 
         @NotBlank
         @SocialNickname

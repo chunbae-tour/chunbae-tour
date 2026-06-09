@@ -55,7 +55,13 @@ public class OauthSignupService {
             throw new BusinessException(ErrorCode.OAUTH_ALREADY_REGISTERED);
         }
 
-        String email = request.email().toLowerCase(Locale.ROOT);
+        // 이메일은 공급자가 검증한 값(티켓에 서명돼 옴)만 사용한다 — 클라이언트가 보낸 이메일을 신뢰하면
+        // 타인 이메일을 임의로 넣어 선점/사칭할 수 있다(hyeonmin02 🔴 Critical). 공급자 미제공(예: 카카오
+        // 이메일 동의 안 함) 시 가입 불가 → 이메일 제공 동의가 필요함을 알린다.
+        if (ticket.email() == null || ticket.email().isBlank()) {
+            throw new BusinessException(ErrorCode.OAUTH_EMAIL_NOT_PROVIDED);
+        }
+        String email = ticket.email().toLowerCase(Locale.ROOT);
         String phone = normalizePhone(request.phone());
         String nickname = request.nickname();
 

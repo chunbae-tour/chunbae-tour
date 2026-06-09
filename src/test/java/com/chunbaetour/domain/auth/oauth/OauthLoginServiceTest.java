@@ -93,7 +93,7 @@ class OauthLoginServiceTest {
                 .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-2", "new@example.com", "newbie"));
         when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-2"))
                 .thenReturn(Optional.empty());
-        when(ticketIssuer.issue(OauthProvider.KAKAO, "oid-2")).thenReturn("signup-ticket");
+        when(ticketIssuer.issue(OauthProvider.KAKAO, "oid-2", "new@example.com")).thenReturn("signup-ticket");
 
         OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback");
 
