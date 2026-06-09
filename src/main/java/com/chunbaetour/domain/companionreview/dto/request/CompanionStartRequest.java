@@ -4,5 +4,5 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 public record CompanionStartRequest(
-        @NotNull List<Long> participantUserIds
+        @NotNull List<@NotNull Long> participantUserIds
 ) {}

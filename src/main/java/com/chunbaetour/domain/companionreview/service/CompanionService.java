@@ -17,7 +17,9 @@ import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.type.CompanionStatus;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,20 +54,32 @@ public class CompanionService {
             throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
         });
 
+        // 중복 제거 — 클라이언트 중복 전송 시 uq_companion_participant 위반 방지
+        List<Long> distinctParticipantIds = request.participantUserIds().stream()
+                .distinct()
+                .collect(Collectors.toList());
+
         List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-        for (Long participantId : request.participantUserIds()) {
+        for (Long participantId : distinctParticipantIds) {
             if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(roomId, participantId, activeStates)) {
                 throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
             }
         }
 
-        Companion companion = companionRepository.save(
-                Companion.builder().chatRoomId(roomId).build());
-
         // 방장 자동 포함 — 요청에 없으면 추가
-        List<Long> allParticipantIds = new ArrayList<>(request.participantUserIds());
+        List<Long> allParticipantIds = new ArrayList<>(distinctParticipantIds);
         if (!allParticipantIds.contains(ownerId)) {
             allParticipantIds.add(ownerId);
+        }
+
+        Companion companion;
+        try {
+            companion = companionRepository.save(
+                    Companion.builder().chatRoomId(roomId).build());
+        } catch (DataIntegrityViolationException e) {
+            // uq_companions_chat_room_id 위반 — TOCTOU 동시 요청이 앱 레벨 체크 통과한 경우
+            // status를 알 수 없으므로 CR_007(이미 진행 중)으로 반환
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
         }
 
         List<CompanionParticipant> participants = allParticipantIds.stream()
