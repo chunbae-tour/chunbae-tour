@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.store.service;
 
+import com.chunbaetour.domain.auth.jwt.IssuedItemQr;
 import com.chunbaetour.domain.auth.jwt.ItemQrClaims;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -73,9 +74,9 @@ public class UserItemService {
         validateOwner(item, userId);
         validateAvailable(item);
 
-        String token = tokenIssuer.issueItemQr(userId, itemId);
-        ItemQrClaims claims = tokenIssuer.verifyItemQr(token);
-        return new UserItemQrResponse(token, claims.expiresAt());
+        // 발급 토큰과 만료시각을 함께 받는다 — 발급 직후 재파싱(verifyItemQr) 없이 그대로 응답.
+        IssuedItemQr issued = tokenIssuer.issueItemQr(userId, itemId);
+        return new UserItemQrResponse(issued.token(), issued.expiresAt());
     }
 
     @Transactional
@@ -89,6 +90,8 @@ public class UserItemService {
         ItemQrClaims claims = verifyItemQr(token);
         UserItem item = userItemRepository.findByIdWithLock(claims.itemId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ITEM_NOT_FOUND));
+        // QR claim의 userId는 위변조 교차검증용 — itemId만으로 조회한 아이템의 실제 소유자와 토큰 발급 대상이
+        // 일치하는지 확인한다. 불일치면 토큰이 변조됐거나 다른 아이템에 재사용된 것이므로 무효 처리.
         if (!item.getUserId().equals(claims.userId())) {
             throw new BusinessException(ErrorCode.ITEM_QR_INVALID);
         }
@@ -141,6 +144,9 @@ public class UserItemService {
         if (item.getStatus() == UserItemStatus.USED) {
             throw new BusinessException(ErrorCode.ITEM_ALREADY_USED);
         }
+        // 만료 판단의 Source of Truth는 expiresAt(날짜)다. EXPIRED 상태값은 현재 프로덕션에서 쓰지 않으며
+        // (만료 전이 배치 미도입), 향후 배치로 EXPIRED를 미리 박아 빠른 필터링하려는 denormalization용 방어 분기다.
+        // 따라서 두 검사는 이원화가 아니라 "날짜=권위, 상태=옵션 캐시" 관계 — 배치 도입 전엔 expiresAt이 항상 최종 판단.
         if (item.getStatus() == UserItemStatus.EXPIRED) {
             throw new BusinessException(ErrorCode.ITEM_EXPIRED);
         }

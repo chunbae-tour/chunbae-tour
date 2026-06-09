@@ -73,16 +73,19 @@ public class TokenIssuer {
         return new TokenWithId(tokenId, token);
     }
 
-    public String issueItemQr(long userId, long itemId) {
+    public IssuedItemQr issueItemQr(long userId, long itemId) {
         Instant now = clock.instant();
-        return Jwts.builder()
+        Instant expiresAt = now.plus(ITEM_QR_TTL);
+        String token = Jwts.builder()
                 .subject(Long.toString(userId))
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(ITEM_QR_TTL)))
+                .expiration(Date.from(expiresAt))
                 .claim(CLAIM_TYPE, TYPE_ITEM_QR)
                 .claim(CLAIM_ITEM_ID, itemId)
                 .signWith(signingKey)
                 .compact();
+        // 발급 시점에 만료시각을 이미 계산했으므로 토큰과 함께 반환 — 호출부가 재파싱하지 않도록 한다.
+        return new IssuedItemQr(token, expiresAt);
     }
 
     public AccessClaims verifyAccess(String token) {

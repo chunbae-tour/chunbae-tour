@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
+import com.chunbaetour.domain.auth.jwt.IssuedItemQr;
 import com.chunbaetour.domain.auth.jwt.ItemQrClaims;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -56,8 +57,8 @@ class UserItemQrServiceTest {
         Instant expiresAt = NOW.plusSeconds(300);
         stubClock();
         given(userItemRepository.findById(ITEM_ID)).willReturn(Optional.of(item));
-        given(tokenIssuer.issueItemQr(USER_ID, ITEM_ID)).willReturn("qr-token");
-        given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, expiresAt));
+        // 발급 직후 재파싱 없이 issueItemQr이 토큰+만료시각을 함께 반환
+        given(tokenIssuer.issueItemQr(USER_ID, ITEM_ID)).willReturn(new IssuedItemQr("qr-token", expiresAt));
 
         UserItemQrResponse response = userItemService.issueQr(USER_ID, ITEM_ID);
 
