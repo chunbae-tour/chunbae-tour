@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.store.type.ProductStatus;
+import com.chunbaetour.domain.store.type.RedemptionScope;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -66,6 +67,15 @@ public class Product extends BaseEntity {
     /** 1인당 최대 구매 수량 — 이벤트·상품마다 다른 구매 한도 적용 */
     @Column(nullable = false)
     private int maxPerPerson;
+
+    /**
+     * 사용처(redemption) 범위 — QR 사용 처리 시 사용 가능한 검증자/가게를 제한하는 기준.
+     * 현재 모든 스토어 상품은 {@link RedemptionScope#GLOBAL}(전 가맹점 공통). 가게/파트너/행사 한정은
+     * 추후 redemption 도메인 확장에서 도입(hanes/미구현API.md 참조).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "redemption_scope", nullable = false, length = 20)
+    private RedemptionScope redemptionScope;
 
     /** 관리자 상품 등록 팩토리 메서드 — 초기 status = ON_SALE */
     public static Product create(String name, String description, String category,
@@ -153,7 +163,7 @@ public class Product extends BaseEntity {
     private Product(String name, String description, String category, long price,
                     Long originalPrice, int stock, int originalStock, String imageUrls,
                     String merchantName, Integer validityDays, ProductStatus status,
-                    int maxPerPerson) {
+                    int maxPerPerson, RedemptionScope redemptionScope) {
         this.name = name;
         this.description = description;
         this.category = category;
@@ -166,5 +176,7 @@ public class Product extends BaseEntity {
         this.validityDays = validityDays;
         this.status = status;
         this.maxPerPerson = maxPerPerson;
+        // 사용처 범위 기본값 GLOBAL — 빌더에서 미지정 시에도 NOT NULL 불변식 보장(현 스토어 상품은 전부 공통권).
+        this.redemptionScope = redemptionScope != null ? redemptionScope : RedemptionScope.GLOBAL;
     }
 }

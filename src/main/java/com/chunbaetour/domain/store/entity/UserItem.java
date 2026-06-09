@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.store.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -48,6 +51,12 @@ public class UserItem extends BaseEntity {
     @Column
     private LocalDate expiresAt;
 
+    @Column(name = "used_at")
+    private LocalDateTime usedAt;
+
+    @Column(name = "used_shop_id")
+    private Long usedShopId;
+
     @Builder
     private UserItem(Long userId, Long orderId, Long productId, String productName,
                      UserItemStatus status, LocalDate expiresAt) {
@@ -71,5 +80,26 @@ public class UserItem extends BaseEntity {
                         ? today.plusDays(product.getValidityDays())
                         : null)
                 .build();
+    }
+
+    public void use(LocalDateTime usedAt, Long usedShopId) {
+        // 사용 기록 필수값 방어 — null이면 USED인데 usedAt/usedShopId가 비는 깨진 상태가 되므로 엔티티 레벨에서 차단.
+        if (usedAt == null || usedShopId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        // AVAILABLE만 사용 가능 — 엔티티 불변식을 서비스 검증에 기대지 않고 자체적으로 명시한다.
+        // (향후 enum 확장/데이터 오염 대비, 서비스의 status != AVAILABLE → INVALID_REQUEST 정책과 정합)
+        if (this.status != UserItemStatus.AVAILABLE) {
+            if (this.status == UserItemStatus.USED) {
+                throw new BusinessException(ErrorCode.ITEM_ALREADY_USED);
+            }
+            if (this.status == UserItemStatus.EXPIRED) {
+                throw new BusinessException(ErrorCode.ITEM_EXPIRED);
+            }
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        this.status = UserItemStatus.USED;
+        this.usedAt = usedAt;
+        this.usedShopId = usedShopId;
     }
 }

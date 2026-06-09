@@ -22,8 +22,11 @@ public class TokenIssuer {
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_TOKEN_ID = "tid";
     private static final String CLAIM_TYPE = "typ";
+    private static final String CLAIM_ITEM_ID = "itemId";
     private static final String TYPE_ACCESS = "access";
     private static final String TYPE_REFRESH = "refresh";
+    private static final String TYPE_ITEM_QR = "item_qr";
+    private static final Duration ITEM_QR_TTL = Duration.ofMinutes(5);
 
     private final SecretKey signingKey;
     private final Duration accessTtl;
@@ -70,6 +73,21 @@ public class TokenIssuer {
         return new TokenWithId(tokenId, token);
     }
 
+    public IssuedItemQr issueItemQr(long userId, long itemId) {
+        Instant now = clock.instant();
+        Instant expiresAt = now.plus(ITEM_QR_TTL);
+        String token = Jwts.builder()
+                .subject(Long.toString(userId))
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(expiresAt))
+                .claim(CLAIM_TYPE, TYPE_ITEM_QR)
+                .claim(CLAIM_ITEM_ID, itemId)
+                .signWith(signingKey)
+                .compact();
+        // 발급 시점에 만료시각을 이미 계산했으므로 토큰과 함께 반환 — 호출부가 재파싱하지 않도록 한다.
+        return new IssuedItemQr(token, expiresAt);
+    }
+
     public AccessClaims verifyAccess(String token) {
         Claims claims = parse(token);
         requireType(claims, TYPE_ACCESS);
@@ -97,6 +115,23 @@ public class TokenIssuer {
             return new RefreshClaims(userId, tokenId);
         } catch (RuntimeException e) {
             throw new JwtException("토큰 클레임이 유효하지 않습니다.", e);
+        }
+    }
+
+    public ItemQrClaims verifyItemQr(String token) {
+        Claims claims = parse(token);
+        requireType(claims, TYPE_ITEM_QR);
+        try {
+            long userId = Long.parseLong(claims.getSubject());
+            Long itemId = claims.get(CLAIM_ITEM_ID, Long.class);
+            if (itemId == null) {
+                throw new JwtException("아이템 QR 토큰의 itemId 클레임이 누락되었습니다.");
+            }
+            return new ItemQrClaims(userId, itemId, claims.getExpiration().toInstant());
+        } catch (JwtException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new JwtException("아이템 QR 토큰 페이로드가 유효하지 않습니다.", e);
         }
     }
 
