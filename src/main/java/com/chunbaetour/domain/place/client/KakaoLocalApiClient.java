@@ -204,10 +204,15 @@ public class KakaoLocalApiClient {
      * @throws com.chunbaetour.domain.common.error.BusinessException API 호출 실패(4xx/5xx) 또는 네트워크 오류 시
      */
     public KakaoKeywordResponse searchByKeyword(String query, int size) {
+        if (query == null || query.isBlank()) {
+            throw new IllegalArgumentException("query must not be blank");
+        }
+        int normalizedSize = Math.max(1, Math.min(size, 15));
+
         try {
             String url = UriComponentsBuilder.fromUriString(keywordSearchUrl)
                     .queryParam("query", query)
-                    .queryParam("size", Math.min(size, 15))
+                    .queryParam("size", normalizedSize)
                     .encode()
                     .build()
                     .toUriString();
