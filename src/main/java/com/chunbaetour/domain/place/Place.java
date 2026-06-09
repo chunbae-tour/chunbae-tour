@@ -20,6 +20,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 
 import lombok.AccessLevel;
@@ -36,7 +37,9 @@ import lombok.NoArgsConstructor;
         // 기존 단일 idx_places_status는 본 복합의 leftmost prefix라 중복 → 제거(KAN-209 S07 리뷰 G).
         @Index(name = "idx_places_status_id", columnList = "status, id"),
         // 공간 인덱스는 JPA @Index로 정의할 수 없으므로 DB 마이그레이션(V202606041400)에서 직접 생성
-        @Index(name = "idx_places_name",     columnList = "name")
+        @Index(name = "idx_places_name",     columnList = "name"),
+        // 지역 기반 검색 필터용 복합 인덱스 (KAN-249, V202606091036)
+        @Index(name = "idx_places_region",   columnList = "sido, sigungu")
     }
 )
 @Getter
@@ -72,10 +75,10 @@ public class Place {
     @Column(name = "image_urls", columnDefinition = "JSON")
     private String imageUrls;
 
-    @Column(name = "operating_hours", length = 100)
+    @Column(name = "operating_hours", length = 500)
     private String operatingHours;
 
-    @Column(name = "closed_days", length = 100)
+    @Column(name = "closed_days", length = 500)
     private String closedDays;
 
     @Column(length = 20)
@@ -106,6 +109,34 @@ public class Place {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PlaceStatus status = PlaceStatus.ACTIVE;
+
+    /** 시도(행정구역). 지역 기반 검색용. 예: "서울특별시". 수집 시 채움. (KAN-249) */
+    @Column(length = 20)
+    private String sido;
+
+    /** 시군구(행정구역). 지역 기반 검색용. 예: "수원시". 수집 시 채움. (KAN-249) */
+    @Column(length = 30)
+    private String sigungu;
+
+    /** 외부 API 식별자(KorService2 contentid). 수동 등록 관광지는 null. (KAN-221) */
+    @Column(name = "external_id", length = 64, unique = true)
+    private String externalId;
+
+    /** 데이터 출처(MANUAL/API_FETCH). 기본은 수동 등록(MANUAL). (KAN-221) */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PlaceSource source = PlaceSource.MANUAL;
+
+    /** Tier-2 상세 수집 재시도 한도 — overview 빈 응답이 이 횟수에 도달하면 "설명 없음"으로 확정. (KAN-221) */
+    public static final int MAX_ENRICH_ATTEMPTS = 3;
+
+    /** Tier-2 상세 수집 시도 횟수(KAN-221). 성공 응답이지만 overview가 비어 누적된 횟수. */
+    @Column(name = "enrich_attempt_count", nullable = false)
+    private int enrichAttemptCount = 0;
+
+    /** 외부(KorService2) modifiedtime(yyyyMMddHHmmss). Tier-1 갱신 시 증가 여부로 재시도 한도 리셋을 판단. (KAN-221) */
+    @Column(name = "external_modified_time", length = 14)
+    private String externalModifiedTime;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -154,6 +185,109 @@ public class Place {
         this.admissionFee = admissionFee;
         this.tags = tags;
         this.status = PlaceStatus.ACTIVE;
+        this.source = PlaceSource.MANUAL;
+    }
+
+    // ── API 수집 팩토리 (KAN-221) ───────────────────────────────────────
+
+    /**
+     * 한국관광공사 KorService2(국문 관광정보) 목록 응답으로 관광지를 생성한다(Tier-1 배치).
+     * category=TOURIST_SPOT, source=API_FETCH 고정. 설명/운영시간 등 상세 필드는 Tier-2(상세 조회 시)에서 채운다.
+     * name·address·좌표가 비면 빌더가 IllegalArgumentException을 던지므로 호출부(배치)가 skip 처리한다.
+     */
+    public static Place createFromApi(String externalId, String name, String address,
+                                      BigDecimal lat, BigDecimal lng,
+                                      String thumbnailUrl, String phone,
+                                      String sido, String sigungu) {
+        Place place = Place.builder()
+                .name(name)
+                .category(PlaceCategory.TOURIST_SPOT)
+                .address(address)
+                .lat(lat)
+                .lng(lng)
+                .thumbnailUrl(thumbnailUrl)
+                .phone(phone)
+                .build();
+        place.externalId = externalId;
+        place.source = PlaceSource.API_FETCH;
+        place.sido = sido;
+        place.sigungu = sigungu;
+        return place;
+    }
+
+    /**
+     * API 수집 관광지의 목록성 필드를 최신 응답으로 갱신한다(Tier-1 재동기화).
+     * 좌표가 둘 다 있을 때만 위치를 교체한다. 지역(시도/시군구)도 non-blank일 때만 갱신(파싱 미스 시 기존값 보존).
+     * 상세(description/operatingHours 등)는 건드리지 않는다.
+     */
+    public void updateFromApi(String name, String address, BigDecimal lat, BigDecimal lng,
+                              String thumbnailUrl, String phone, String sido, String sigungu) {
+        if (name != null && !name.isBlank()) this.name = name;
+        if (address != null && !address.isBlank()) this.address = address;
+        if (lat != null && lng != null) {
+            Point updated = com.chunbaetour.domain.place.util.LocationUtils.createPoint(lat, lng);
+            if (updated != null) this.location = updated;
+        }
+        this.thumbnailUrl = thumbnailUrl;
+        this.phone = phone;
+        // 지역(시도/시군구)은 non-null·non-blank일 때만 갱신 — areacode 누락/비표준 주소로 파싱이 미스되면
+        // 최초 정상 채워진 지역값을 null로 덮어쓰지 않는다(증분 sync마다 idx_places_region 검색에서 silent 누락 방지).
+        if (sido != null && !sido.isBlank()) this.sido = sido;
+        if (sigungu != null && !sigungu.isBlank()) this.sigungu = sigungu;
+    }
+
+    /**
+     * Tier-2: 상세 API(detailCommon2/detailIntro2)로 설명·운영시간·휴무일을 채운다(KAN-221, overview가 존재할 때만 호출).
+     *
+     * <p>overview가 비어 있는 경우는 이 메서드를 호출하지 않고 {@link #recordEmptyEnrichAttempt()}로 시도 횟수만
+     * 누적한다(빈 값을 "수집 완료"로 굳혀 일시 누락이 영구화되는 것을 방지). 운영시간/휴무일은 컬럼 길이(500)를
+     * 넘으면 방어적으로 잘라 저장한다.
+     */
+    public void applyApiDetail(String description, String operatingHours, String closedDays) {
+        this.description = description;
+        if (operatingHours != null && !operatingHours.isBlank()) {
+            this.operatingHours = truncate(operatingHours, 500);
+        }
+        if (closedDays != null && !closedDays.isBlank()) {
+            this.closedDays = truncate(closedDays, 500);
+        }
+    }
+
+    /**
+     * Tier-2 상세 수집 대상 여부. API 수집 관광지(external_id 있음)이고 설명이 아직 비었으며
+     * 재시도 한도({@link #MAX_ENRICH_ATTEMPTS}) 미만일 때만 수집한다.
+     * 한도 도달 시 "설명 없는 관광지"로 확정하고 더 이상 외부 API를 호출하지 않는다.
+     */
+    public boolean needsDetailEnrichment() {
+        return source == PlaceSource.API_FETCH
+                && externalId != null
+                && description == null
+                && enrichAttemptCount < MAX_ENRICH_ATTEMPTS;
+    }
+
+    /** 상세 API는 성공했으나 overview가 비어 있을 때 호출 — 재시도 횟수를 1 누적한다. */
+    public void recordEmptyEnrichAttempt() {
+        this.enrichAttemptCount++;
+    }
+
+    /**
+     * Tier-1 동기화 시 외부 modifiedtime을 반영한다(KAN-221).
+     * 외부 modifiedtime이 이전보다 증가(데이터 갱신)했으면 상세 재시도 한도(enrichAttemptCount)를 리셋한다 —
+     * 처음엔 overview가 비었다가 뒤늦게 채워진 관광지가 한도 소진으로 영구 제외되는 것을 방지한다.
+     * 동일/과거 값(==boundary 재수집 포함)이면 리셋하지 않아 외부 API 반복 호출을 피한다.
+     */
+    public void syncExternalModifiedTime(String modifiedTime) {
+        if (modifiedTime == null || !modifiedTime.matches("\\d{14}")) {
+            return;
+        }
+        if (externalModifiedTime == null || modifiedTime.compareTo(externalModifiedTime) > 0) {
+            this.enrichAttemptCount = 0;
+            this.externalModifiedTime = modifiedTime;
+        }
+    }
+
+    private static String truncate(String value, int maxLength) {
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     // ── 도메인 메서드 ───────────────────────────────────────────────────
