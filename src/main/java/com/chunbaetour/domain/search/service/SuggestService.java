@@ -89,13 +89,15 @@ public class SuggestService {
         if (merged.size() < SUGGEST_MAX_SIZE) {
             int remainingForKakao = SUGGEST_MAX_SIZE - merged.size();
             KakaoKeywordResponse kakaoResponse = null;
+            java.util.concurrent.CompletableFuture<KakaoKeywordResponse> future = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> kakaoLocalApiClient.searchByKeyword(normalized, remainingForKakao),
+                    kakaoVirtualThreadExecutor
+            );
             try {
-                kakaoResponse = java.util.concurrent.CompletableFuture.supplyAsync(
-                        () -> kakaoLocalApiClient.searchByKeyword(normalized, remainingForKakao),
-                        kakaoVirtualThreadExecutor
-                ).get(300, java.util.concurrent.TimeUnit.MILLISECONDS);
+                kakaoResponse = future.get(300, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (Exception e) {
                 log.warn("[SuggestService] Kakao API Suggestion Timeout or Exception: {}", e.getMessage());
+                future.cancel(true);
                 kakaoDegraded = true;
             }
             

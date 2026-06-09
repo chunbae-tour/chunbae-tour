@@ -191,28 +191,27 @@ public class SearchController {
      * GET /search/suggest?q=경복
      * 200 OK
      * {
-     *   "data": [
-     *     { "keyword": "경복궁", "source": "DB" },
-     *     { "keyword": "경복궁역", "source": "KAKAO" },
-     *     { "keyword": "경복궁 야간개장", "source": "REDIS" }
-     *   ]
+     *   "data": ["경복궁", "경복궁역", "경복궁 야간개장"]
      * }
      * </pre>
      * </p>
      *
      * @param q prefix (필수, 1자 이상)
-     * @return 200 OK + 자동완성 후보 목록 (최대 5개)
+     * @return 200 OK + 자동완성 후보 키워드 목록 (최대 5개)
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 null/blank인 경우 PLACE_005
      * @throws com.chunbaetour.domain.common.error.BusinessException q가 50자를 초과하는 경우 PLACE_006
      */
     @SecurityRequirements
     @Operation(summary = "검색어 자동완성")
     @GetMapping("/suggest")
-    public ApiResponse<List<SuggestResponse>> suggest(
+    public ApiResponse<List<String>> suggest(
             @RequestParam(name = "q") String q
     ) {
         List<SuggestResponse> result = suggestService.suggest(q);
-        return ApiResponse.success(result);
+        List<String> keywords = result.stream()
+                .map(SuggestResponse::keyword)
+                .toList();
+        return ApiResponse.success(keywords);
     }
 
     /**

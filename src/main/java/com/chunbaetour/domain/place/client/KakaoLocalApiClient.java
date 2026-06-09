@@ -228,10 +228,10 @@ public class KakaoLocalApiClient {
             } else {
                 log.error("Kakao Keyword API Server Error (5xx): status={}", e.getStatusCode().value(), e);
             }
-            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.MAP_SERVICE_UNAVAILABLE);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Keyword API Network Error", e);
-            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.MAP_SERVICE_UNAVAILABLE);
+            throw new BusinessException(ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }
 }
