@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
@@ -20,9 +21,8 @@ import lombok.NoArgsConstructor;
         uniqueConstraints = @UniqueConstraint(
                 name = "uq_companion_participant",
                 columnNames = {"companion_id", "user_id"}
-        )
-        // idx_companion_participants_user_id 는 V202606091205 마이그레이션에서 정의 —
-        // @Index 선언 시 Hibernate ddl-auto:validate 가 getIndexInfo() 호출 → CI OOM 유발
+        ),
+        indexes = @Index(name = "idx_companion_participants_user_id", columnList = "user_id")
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
