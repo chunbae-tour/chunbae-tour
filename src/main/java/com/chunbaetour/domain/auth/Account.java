@@ -2,7 +2,9 @@ package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.converter.AccountNumberEncryptConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
@@ -52,12 +54,18 @@ public class Account {
     private String profileImageUrl;
 
     // ===== 소셜 로그인 + 추가 프로필 (KAN 소셜로그인) =====
-    // 소셜 가입 흐름에서만 채워진다(로컬 계정은 null). 전화번호는 중복가입 방지 UNIQUE 키(숫자만 정규화 저장).
+    // 소셜 가입 흐름에서만 채워진다(로컬 계정은 null).
     @Column(length = 50)
     private String name;
 
-    @Column(length = 20, unique = true)
+    // 전화번호 원문 — AES-GCM 암호화 저장(표시용). 랜덤 IV라 UNIQUE/동등비교 불가 → 중복판별은 phoneHash로.
+    @Convert(converter = AccountNumberEncryptConverter.class)
+    @Column(length = 255)
     private String phone;
+
+    // 전화번호 HMAC-SHA256 해시 — 중복가입 판별 UNIQUE 키(결정적). 원문 암호화와 분리.
+    @Column(name = "phone_hash", length = 64, unique = true)
+    private String phoneHash;
 
     private LocalDate birthdate;
 
@@ -104,7 +112,7 @@ public class Account {
 
     @Builder
     private Account(String email, String password, String nickname, Role role, AccountStatus status,
-                    String name, String phone, LocalDate birthdate,
+                    String name, String phone, String phoneHash, LocalDate birthdate,
                     OauthProvider oauthProvider, String oauthId) {
         this.email = email;
         this.password = password;
@@ -113,6 +121,7 @@ public class Account {
         this.status = status;
         this.name = name;
         this.phone = phone;
+        this.phoneHash = phoneHash;
         this.birthdate = birthdate;
         this.oauthProvider = oauthProvider;
         this.oauthId = oauthId;
@@ -141,12 +150,13 @@ public class Account {
      * @param email     이메일 (호출자가 lowercase 정규화)
      * @param nickname  닉네임
      * @param name      실명
-     * @param phone     전화번호 (호출자가 숫자만 정규화)
+     * @param phone     전화번호 원문 (호출자가 숫자만 정규화 — 저장 시 AES 암호화됨)
+     * @param phoneHash 전화번호 HMAC 해시 (호출자가 PhoneHasher로 산출 — 중복판별 UNIQUE 키)
      * @param birthdate 생년월일
      */
     public static Account registerOauthUser(
             OauthProvider provider, String oauthId, String email, String nickname,
-            String name, String phone, LocalDate birthdate) {
+            String name, String phone, String phoneHash, LocalDate birthdate) {
         return Account.builder()
                 .email(email)
                 .nickname(nickname)
@@ -156,6 +166,7 @@ public class Account {
                 .oauthId(oauthId)
                 .name(name)
                 .phone(phone)
+                .phoneHash(phoneHash)
                 .birthdate(birthdate)
                 .build();
     }

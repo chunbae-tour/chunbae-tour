@@ -42,6 +42,7 @@ public class OauthSignupService {
     private final JwtProperties jwtProperties;
     private final ApplicationEventPublisher eventPublisher;
     private final SecurityAuditLogger auditLogger;
+    private final PhoneHasher phoneHasher;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -63,6 +64,7 @@ public class OauthSignupService {
         }
         String email = ticket.email().toLowerCase(Locale.ROOT);
         String phone = normalizePhone(request.phone());
+        String phoneHash = phoneHasher.hash(phone);   // 중복판별은 해시로(원문은 암호화 저장이라 동등비교 불가)
         String nickname = request.nickname();
 
         if (accountRepository.countByEmailIncludingDeleted(email) > 0) {
@@ -71,13 +73,13 @@ public class OauthSignupService {
         if (accountRepository.countByNicknameIncludingDeleted(nickname) > 0) {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
-        if (accountRepository.countByPhoneIncludingDeleted(phone) > 0) {
+        if (accountRepository.countByPhoneHashIncludingDeleted(phoneHash) > 0) {
             throw new BusinessException(ErrorCode.DUPLICATE_PHONE);
         }
 
         Account account = Account.registerOauthUser(
                 ticket.provider(), ticket.oauthId(), email, nickname,
-                request.name(), phone, request.birthdate());
+                request.name(), phone, phoneHash, request.birthdate());
 
         Account saved;
         try {
@@ -89,13 +91,13 @@ public class OauthSignupService {
             if (accountRepository.countByEmailIncludingDeleted(email) > 0) {
                 throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
             }
-            if (accountRepository.existsByNickname(nickname)) {
+            // 사전 검사와 동일하게 탈퇴(soft-delete) row까지 보는 *IncludingDeleted로 재검사 — 파생 쿼리
+            // (existsBy…)/findByOauthProviderAndOauthId는 @SQLRestriction(deleted_at IS NULL)이라 탈퇴자가
+            // 점유한 UNIQUE 충돌을 못 봐 원래 예외가 500으로 새어나간다. nickname/phone_hash/email/oauth 모두 정합.
+            if (accountRepository.countByNicknameIncludingDeleted(nickname) > 0) {
                 throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
             }
-            // 사전 검사와 동일하게 탈퇴(soft-delete) row까지 보는 *IncludingDeleted로 재검사 — existsByPhone/
-            // findByOauthProviderAndOauthId는 @SQLRestriction(deleted_at IS NULL)이라 탈퇴자가 점유한 UNIQUE
-            // 충돌을 못 봐 원래 예외가 500으로 새어나갔다 (CR 반영).
-            if (accountRepository.countByPhoneIncludingDeleted(phone) > 0) {
+            if (accountRepository.countByPhoneHashIncludingDeleted(phoneHash) > 0) {
                 throw new BusinessException(ErrorCode.DUPLICATE_PHONE);
             }
             if (accountRepository.countByOauthIdentityIncludingDeleted(ticket.provider().name(), ticket.oauthId()) > 0) {

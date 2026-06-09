@@ -20,22 +20,18 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     /** 소셜 신원으로 계정 조회 — (oauth_provider, oauth_id)는 UNIQUE. */
     Optional<Account> findByOauthProviderAndOauthId(OauthProvider oauthProvider, String oauthId);
 
-    /** 전화번호 중복가입 방지 — 숫자 정규화된 phone 기준(호출자가 정규화 후 전달). */
-    boolean existsByPhone(String phone);
-
     /**
-     * 탈퇴(soft-delete) row 포함 전화번호 존재 검사 — DB UNIQUE(phone)와 검사 범위를 일치시킨다.
+     * 탈퇴(soft-delete) row 포함 전화번호 해시 존재 검사 — DB UNIQUE(phone_hash)와 검사 범위를 일치시킨다.
      *
-     * <p>{@link #existsByPhone}는 {@code @SQLRestriction("deleted_at IS NULL")}으로 탈퇴 계정을 못 봐서,
-     * "탈퇴자가 점유한 전화번호"로 신규 가입 시 사전검사는 통과하지만 INSERT가 DB UNIQUE 위반(500)으로
-     * 떨어진다. 본 native 쿼리로 탈퇴 row까지 봐 {@code DUPLICATE_PHONE}로 정확히 변환한다(이메일의
-     * {@link #countByEmailIncludingDeleted}와 동일 패턴, KAN-144 ADR §3 재가입 차단과 정합).
+     * <p>전화번호 원문(phone)은 AES 암호화 저장이라 동등비교 불가 → 중복판별은 결정적 해시(phone_hash)로 한다.
+     * 파생 쿼리(existsBy…)는 {@code @SQLRestriction("deleted_at IS NULL")}으로 탈퇴 계정을 못 봐서,
+     * "탈퇴자가 점유한 번호"로 가입 시 INSERT가 DB UNIQUE 위반(500)으로 떨어진다. 본 native 쿼리로 탈퇴
+     * row까지 봐 {@code DUPLICATE_PHONE}로 정확히 변환한다(email/nickname/oauth와 동일 패턴).
      *
-     * <p><b>테이블명 {@code users} 하드코딩</b>: {@code @SQLRestriction} 우회 목적의 native 쿼리라
-     * {@code Account}의 {@code @Table(name="users")} 변경 시 함께 갱신 필요.
+     * <p><b>테이블명 {@code users} 하드코딩</b>: native 쿼리라 {@code @Table(name="users")} 변경 시 함께 갱신.
      */
-    @Query(value = "SELECT COUNT(*) FROM users WHERE phone = :phone", nativeQuery = true)
-    long countByPhoneIncludingDeleted(@Param("phone") String phone);
+    @Query(value = "SELECT COUNT(*) FROM users WHERE phone_hash = :phoneHash", nativeQuery = true)
+    long countByPhoneHashIncludingDeleted(@Param("phoneHash") String phoneHash);
 
     /**
      * 탈퇴 row 포함 소셜 신원 존재 검사 — DB UNIQUE(oauth_provider, oauth_id)와 범위 일치.

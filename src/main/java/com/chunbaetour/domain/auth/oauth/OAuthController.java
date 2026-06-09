@@ -74,7 +74,9 @@ public class OAuthController {
     }
 
     @SecurityRequirements
-    @Operation(summary = "소셜 가입 (2단계)", description = "가입 티켓 + 추가정보(이름/전화/생년월일/이메일/닉네임)로 계정 생성.")
+    @Operation(summary = "소셜 가입 (2단계)",
+            description = "가입 티켓 + 추가정보(이름/전화/생년월일/닉네임)로 계정 생성. "
+                    + "이메일은 요청에 받지 않고 1단계 티켓에 서명돼 온 공급자 검증 이메일을 사용한다(선점 방지).")
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<OauthLoginResponse>> oauthSignup(
             @Valid @RequestBody OauthSignupRequest request
