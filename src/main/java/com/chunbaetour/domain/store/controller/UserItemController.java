@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,11 +44,14 @@ public class UserItemController {
 
     @Operation(summary = "보유 아이템 QR 발급")
     @GetMapping("/{itemId}/qr")
-    public ApiResponse<UserItemQrResponse> issueQr(
+    public ResponseEntity<ApiResponse<UserItemQrResponse>> issueQr(
             @AuthenticationPrincipal Long userId,
             @PathVariable Long itemId) {
         requireAuthenticated(userId);
-        return ApiResponse.success(userItemService.issueQr(userId, itemId));
+        // QR은 5분 TTL bearer성 토큰 — 프록시/브라우저/디버깅 도구 캐시에 남지 않도록 no-store 명시.
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(userItemService.issueQr(userId, itemId)));
     }
 
     private static void requireAuthenticated(Long userId) {

@@ -83,6 +83,10 @@ public class UserItem extends BaseEntity {
     }
 
     public void use(LocalDateTime usedAt, Long usedShopId) {
+        // 사용 기록 필수값 방어 — null이면 USED인데 usedAt/usedShopId가 비는 깨진 상태가 되므로 엔티티 레벨에서 차단.
+        if (usedAt == null || usedShopId == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         // AVAILABLE만 사용 가능 — 엔티티 불변식을 서비스 검증에 기대지 않고 자체적으로 명시한다.
         // (향후 enum 확장/데이터 오염 대비, 서비스의 status != AVAILABLE → INVALID_REQUEST 정책과 정합)
         if (this.status != UserItemStatus.AVAILABLE) {
