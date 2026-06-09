@@ -190,7 +190,13 @@ public class SearchController {
      * <pre>
      * GET /search/suggest?q=경복
      * 200 OK
-     * { "data": ["경복궁", "경복궁 야간개장", "경복궁 한복체험"] }
+     * {
+     *   "data": [
+     *     { "keyword": "경복궁", "source": "DB" },
+     *     { "keyword": "경복궁역", "source": "KAKAO" },
+     *     { "keyword": "경복궁 야간개장", "source": "REDIS" }
+     *   ]
+     * }
      * </pre>
      * </p>
      *

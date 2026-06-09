@@ -9,8 +9,8 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 
 /**
@@ -30,7 +30,7 @@ public class SuggestCacheRepository {
     private static final Duration TTL_EMPTY = Duration.ofSeconds(10);
     
     private final StringRedisTemplate stringRedisTemplate;
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     /**
      * 자동완성 결과 캐시 조회

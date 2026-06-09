@@ -30,6 +30,8 @@ class SuggestCacheRepositoryTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
+    @Mock
+    private tools.jackson.databind.ObjectMapper objectMapper;
 
     @InjectMocks
     private SuggestCacheRepository suggestCacheRepository;
