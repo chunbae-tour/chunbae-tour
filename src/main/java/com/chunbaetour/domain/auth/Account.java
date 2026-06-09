@@ -2,7 +2,9 @@ package com.chunbaetour.domain.auth;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.converter.AccountNumberEncryptConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
@@ -11,6 +13,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -22,7 +26,10 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Entity
-@Table(name = "users")
+// oauth 복합 UNIQUE는 @Column으로 표현 불가 → @Table에 명시(마이그레이션 uk_users_oauth_provider_id와 일치).
+// phone UNIQUE는 phone 필드의 @Column(unique=true)로 선언됨.
+@Table(name = "users", uniqueConstraints =
+        @UniqueConstraint(name = "uk_users_oauth_provider_id", columnNames = {"oauth_provider", "oauth_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @EntityListeners(AuditingEntityListener.class)
@@ -36,7 +43,8 @@ public class Account {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
-    @Column(nullable = false, length = 255)
+    // 소셜(카카오/네이버) 가입자는 비밀번호가 없어 nullable. 로컬(이메일/비번) 계정은 항상 값 보유.
+    @Column(length = 255)
     private String password;
 
     @Column(nullable = false, unique = true, length = 20)
@@ -44,6 +52,29 @@ public class Account {
 
     @Column(name = "profile_image_url", length = 500)
     private String profileImageUrl;
+
+    // ===== 소셜 로그인 + 추가 프로필 (KAN 소셜로그인) =====
+    // 소셜 가입 흐름에서만 채워진다(로컬 계정은 null).
+    @Column(length = 50)
+    private String name;
+
+    // 전화번호 원문 — AES-GCM 암호화 저장(표시용). 랜덤 IV라 UNIQUE/동등비교 불가 → 중복판별은 phoneHash로.
+    @Convert(converter = AccountNumberEncryptConverter.class)
+    @Column(length = 255)
+    private String phone;
+
+    // 전화번호 HMAC-SHA256 해시 — 중복가입 판별 UNIQUE 키(결정적). 원문 암호화와 분리.
+    @Column(name = "phone_hash", length = 64, unique = true)
+    private String phoneHash;
+
+    private LocalDate birthdate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "oauth_provider", length = 20)
+    private OauthProvider oauthProvider;
+
+    @Column(name = "oauth_id", length = 100)
+    private String oauthId;
 
     @Column(nullable = false, length = 10)
     private String language;
@@ -80,12 +111,20 @@ public class Account {
     private LocalDateTime deletedAt;
 
     @Builder
-    private Account(String email, String password, String nickname, Role role, AccountStatus status) {
+    private Account(String email, String password, String nickname, Role role, AccountStatus status,
+                    String name, String phone, String phoneHash, LocalDate birthdate,
+                    OauthProvider oauthProvider, String oauthId) {
         this.email = email;
         this.password = password;
         this.nickname = nickname;
         this.role = role;
         this.status = status;
+        this.name = name;
+        this.phone = phone;
+        this.phoneHash = phoneHash;
+        this.birthdate = birthdate;
+        this.oauthProvider = oauthProvider;
+        this.oauthId = oauthId;
         this.language = "ko";
         this.companionScore = 0f;
         this.companionReviewCount = 0;
@@ -98,6 +137,37 @@ public class Account {
                 .nickname(nickname)
                 .role(Role.USER)
                 .status(AccountStatus.ACTIVE)
+                .build();
+    }
+
+    /**
+     * 소셜(카카오/네이버) 신규 가입 — 비밀번호 없이 oauth 식별자 + 추가 프로필로 USER/ACTIVE 계정 생성.
+     *
+     * <p>중복 검증(이메일/닉네임/전화/oauth)은 호출자({@code OauthSignupService})가 책임진다.
+     *
+     * @param provider  소셜 공급자
+     * @param oauthId   공급자 사용자 식별자
+     * @param email     이메일 (호출자가 lowercase 정규화)
+     * @param nickname  닉네임
+     * @param name      실명
+     * @param phone     전화번호 원문 (호출자가 숫자만 정규화 — 저장 시 AES 암호화됨)
+     * @param phoneHash 전화번호 HMAC 해시 (호출자가 PhoneHasher로 산출 — 중복판별 UNIQUE 키)
+     * @param birthdate 생년월일
+     */
+    public static Account registerOauthUser(
+            OauthProvider provider, String oauthId, String email, String nickname,
+            String name, String phone, String phoneHash, LocalDate birthdate) {
+        return Account.builder()
+                .email(email)
+                .nickname(nickname)
+                .role(Role.USER)
+                .status(AccountStatus.ACTIVE)
+                .oauthProvider(provider)
+                .oauthId(oauthId)
+                .name(name)
+                .phone(phone)
+                .phoneHash(phoneHash)
+                .birthdate(birthdate)
                 .build();
     }
 
