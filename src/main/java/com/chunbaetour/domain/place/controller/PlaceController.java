@@ -22,7 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
 import com.chunbaetour.domain.place.type.NearbyCategory;
+import com.chunbaetour.domain.place.dto.request.MapMarkerRequest;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
+import com.chunbaetour.domain.place.dto.response.MapMarkerResponse;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyShopResponse;
@@ -71,6 +73,20 @@ public class PlaceController {
     @GetMapping
     public ApiResponse<PlaceListResponse> getPlaceList(@Valid @ModelAttribute PlaceListRequest request) {
         return ApiResponse.success(placeService.findList(request));
+    }
+
+    /**
+     * 지도 마커 일괄 조회 (PHASE 8-1)
+     * GET /api/v1/places/map-markers
+     *
+     * <p>현재 지도 화면의 남서쪽(SW)과 북동쪽(NE) 좌표를 받아 해당 영역(Bounding Box) 안의 관광지 마커들을 조회합니다.
+     * 클라이언트 사이드 클러스터링을 위해 최대 500개까지만 응답합니다.
+     */
+    @SecurityRequirements
+    @Operation(summary = "지도 마커 일괄 조회", description = "지도 뷰포트(Bounding Box) 내의 마커 리스트를 조회합니다.")
+    @GetMapping("/map-markers")
+    public ApiResponse<List<MapMarkerResponse>> getMapMarkers(@Valid @ModelAttribute MapMarkerRequest request) {
+        return ApiResponse.success(placeService.getMapMarkers(request));
     }
 
     @SecurityRequirements
