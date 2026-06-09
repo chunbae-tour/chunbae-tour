@@ -30,7 +30,7 @@ public class SuggestCacheRepository {
     private static final Duration TTL_EMPTY = Duration.ofSeconds(10);
     
     private final StringRedisTemplate stringRedisTemplate;
-    private final ObjectMapper objectMapper;
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 자동완성 결과 캐시 조회

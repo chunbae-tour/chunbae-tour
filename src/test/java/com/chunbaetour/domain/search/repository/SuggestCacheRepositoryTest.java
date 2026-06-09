@@ -30,8 +30,6 @@ class SuggestCacheRepositoryTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
-    @Mock
-    private ObjectMapper objectMapper;
 
     @InjectMocks
     private SuggestCacheRepository suggestCacheRepository;
