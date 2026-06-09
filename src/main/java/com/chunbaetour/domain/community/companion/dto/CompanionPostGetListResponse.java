@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 
 public record CompanionPostGetListResponse(
         Long postId,
+        Long chatRoomId,
         String title,
         String placeName,
         String region,
@@ -19,9 +20,10 @@ public record CompanionPostGetListResponse(
         WriterInfo writer,
         LocalDateTime createdAt
 ) {
-    public static CompanionPostGetListResponse of(CompanionPost post, Account author) {
+    public static CompanionPostGetListResponse of(CompanionPost post, Account author, Long chatRoomId) {
         return new CompanionPostGetListResponse(
                 post.getId(),
+                chatRoomId,
                 post.getTitle(),
                 post.getPlaceName(),
                 post.getRegion(),
