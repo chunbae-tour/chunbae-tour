@@ -2,7 +2,10 @@ package com.chunbaetour.domain.search.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
+import com.chunbaetour.domain.place.dto.KakaoKeywordResponse;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
+import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 import com.chunbaetour.domain.search.repository.SuggestCacheRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,8 +38,21 @@ class SuggestServiceTest {
     @Mock
     private PopularSearchService popularSearchService;
 
+    @Mock
+    private KakaoLocalApiClient kakaoLocalApiClient;
+
+    @org.mockito.Spy
+    private java.util.concurrent.ExecutorService kakaoVirtualThreadExecutor = java.util.concurrent.Executors.newSingleThreadExecutor();
+
     @InjectMocks
     private SuggestService suggestService;
+
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        if (kakaoVirtualThreadExecutor != null && !kakaoVirtualThreadExecutor.isShutdown()) {
+            kakaoVirtualThreadExecutor.shutdownNow();
+        }
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 입력 유효성 검증
@@ -68,74 +84,126 @@ class SuggestServiceTest {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // Redis 캐시 Hit / Miss
+    // 캐시 Hit / Miss 및 병합 검증
     // ──────────────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("Redis 캐시 Hit 시 DB 조회 없이 캐시 결과를 반환한다")
+    @DisplayName("Redis 캐시 Hit 시 외부 호출 없이 캐시 결과를 반환한다")
     void suggest_ReturnsCachedResult_WhenCacheHit() {
         String prefix = "경복";
-        List<String> cached = List.of("경복궁", "경복궁 야간개장");
+        List<SuggestResponse> cached = List.of(
+                new SuggestResponse("경복궁", SuggestResponse.SuggestSource.DB),
+                new SuggestResponse("경복궁 야간개장", SuggestResponse.SuggestSource.REDIS)
+        );
 
         when(suggestCacheRepository.get(prefix)).thenReturn(Optional.of(cached));
 
-        List<String> result = suggestService.suggest(prefix);
+        List<SuggestResponse> result = suggestService.suggest(prefix);
 
-        assertThat(result).containsExactly("경복궁", "경복궁 야간개장");
+        assertThat(result).hasSize(2)
+                .extracting(SuggestResponse::keyword)
+                .containsExactly("경복궁", "경복궁 야간개장");
         verify(placeQueryRepository, never()).suggestByPrefix(anyString(), anyInt());
+        verify(kakaoLocalApiClient, never()).searchByKeyword(anyString(), anyInt());
     }
 
     @Test
-    @DisplayName("캐시 Miss 시 DB 결과와 Redis ZSet 인기 검색어를 병합하여 반환하고 캐시에 저장한다")
-    void suggest_MergesDbAndRedisResults_WhenCacheMiss() {
+    @DisplayName("캐시 Miss 시 DB, Kakao, Redis를 병합하며 중복을 제거한다")
+    void suggest_MergesSources_WhenCacheMiss() {
         String prefix = "경복";
+        
         List<String> dbResults = List.of("경복궁", "경복로");
-        List<String> redisResults = List.of("경복궁 야간개장", "경복궁");
+        KakaoKeywordResponse kakaoResponse = new KakaoKeywordResponse(
+                List.of(
+                        new KakaoKeywordResponse.Document(null, "경복궁", null, null, null, null, null, null, null, null), 
+                        new KakaoKeywordResponse.Document(null, "경복궁역", null, null, null, null, null, null, null, null)
+                ),
+                null
+        );
+        List<String> redisResults = List.of("경복궁역", "경복궁 야간개장");
 
         when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
         when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
-        when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(redisResults);
+        when(kakaoLocalApiClient.searchByKeyword(prefix, 3)).thenReturn(kakaoResponse); // 5 - 2(db) = 3
+        when(popularSearchService.fetchPopularSuggestions(prefix, 2)).thenReturn(redisResults); // 5 - 3(db+kakao) = 2
 
-        List<String> result = suggestService.suggest(prefix);
+        List<SuggestResponse> result = suggestService.suggest(prefix);
 
-        // DB 우선, ZSet 보완 (중복 제거)
-        assertThat(result).hasSize(3);
-        assertThat(result).containsExactly("경복궁", "경복로", "경복궁 야간개장");
+        // DB(경복궁, 경복로) -> Kakao(경복궁(중복), 경복궁역) -> Redis(경복궁역(중복), 경복궁 야간개장)
+        assertThat(result).hasSize(4);
+        assertThat(result).extracting(SuggestResponse::keyword)
+                .containsExactly("경복궁", "경복로", "경복궁역", "경복궁 야간개장");
         
-        // 캐시 저장 검증 추가
+        assertThat(result.get(0).source()).isEqualTo(SuggestResponse.SuggestSource.DB); // 경복궁
+        assertThat(result.get(1).source()).isEqualTo(SuggestResponse.SuggestSource.DB); // 경복로
+        assertThat(result.get(2).source()).isEqualTo(SuggestResponse.SuggestSource.KAKAO); // 경복궁역
+        assertThat(result.get(3).source()).isEqualTo(SuggestResponse.SuggestSource.REDIS); // 경복궁 야간개장
+        
         verify(suggestCacheRepository).set(eq(prefix), eq(result));
     }
 
     @Test
-    @DisplayName("자동완성 결과는 최대 5개를 넘지 않는다")
-    void suggest_ReturnsAtMostFiveResults() {
+    @DisplayName("DB 결과만으로 5개가 채워지면 Kakao와 Redis는 호출되지 않는다")
+    void suggest_ShortCircuits_WhenDbIsFull() {
         String prefix = "관광";
-        List<String> dbResults = List.of("관광지1", "관광지2", "관광지3", "관광지4", "관광지5");
-        List<String> redisResults = List.of("관광지6");
+        List<String> dbResults = List.of("관광1", "관광2", "관광3", "관광4", "관광5");
 
         when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
         when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
-        when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(redisResults);
 
-        List<String> result = suggestService.suggest(prefix);
+        List<SuggestResponse> result = suggestService.suggest(prefix);
 
         assertThat(result).hasSize(5);
-        assertThat(result).doesNotContain("관광지6");
+        verify(kakaoLocalApiClient, never()).searchByKeyword(anyString(), anyInt());
+        verify(popularSearchService, never()).fetchPopularSuggestions(anyString(), anyInt());
     }
 
     @Test
-    @DisplayName("캐시 읽기 실패 시 예외가 발생하지 않고 빈 Optional 반환 후 DB/Redis 로직으로 Fallback 한다")
-    void suggest_FallbackToDb_WhenCacheThrowsException() {
-        // 이 테스트는 현재 SuggestService가 Optional을 반환받기 때문에 자연스럽게 해결됨.
-        // 실제 Repository 로직이 get() 시 빈 Optional을 던지는지 확인하기 위한 시나리오를 서비스에서 모의함.
-        String prefix = "경복";
-        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty()); // 캐시 조회 실패 시나리오
-        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(List.of("경복궁"));
-        when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(List.of());
+    @DisplayName("DB와 Kakao 결과만으로 5개가 채워지면 Redis는 호출되지 않는다")
+    void suggest_ShortCircuits_WhenDbAndKakaoAreFull() {
+        String prefix = "관광";
+        List<String> dbResults = List.of("관광1", "관광2", "관광3");
+        KakaoKeywordResponse kakaoResponse = new KakaoKeywordResponse(
+                List.of(
+                        new KakaoKeywordResponse.Document(null, "관광4", null, null, null, null, null, null, null, null), 
+                        new KakaoKeywordResponse.Document(null, "관광5", null, null, null, null, null, null, null, null)
+                ),
+                null
+        );
 
-        List<String> result = suggestService.suggest(prefix);
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
+        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
+        when(kakaoLocalApiClient.searchByKeyword(prefix, 2)).thenReturn(kakaoResponse); // 5 - 3 = 2
+
+        List<SuggestResponse> result = suggestService.suggest(prefix);
+
+        assertThat(result).hasSize(5);
+        verify(popularSearchService, never()).fetchPopularSuggestions(anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("Kakao API 호출 시 예외나 타임아웃이 발생하면 무시하고 Redis 보완 조회를 진행한다")
+    void suggest_ContinuesWithRedis_WhenKakaoThrowsException() {
+        String prefix = "경복";
+        List<String> dbResults = List.of("경복궁");
+        List<String> redisResults = List.of("경복궁 야간개장");
+
+        when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
+        when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
         
-        assertThat(result).containsExactly("경복궁");
-        verify(suggestCacheRepository).set(eq(prefix), eq(result));
+        // Kakao API 예외 발생 모킹
+        when(kakaoLocalApiClient.searchByKeyword(prefix, 4)).thenThrow(new RuntimeException("Kakao Timeout"));
+        
+        when(popularSearchService.fetchPopularSuggestions(prefix, 4)).thenReturn(redisResults);
+
+        List<SuggestResponse> result = suggestService.suggest(prefix);
+
+        // Kakao가 실패했어도 DB(1) + Redis(1) 결과가 정상 반환되어야 함
+        assertThat(result).hasSize(2)
+                .extracting(SuggestResponse::keyword)
+                .containsExactly("경복궁", "경복궁 야간개장");
+        
+        // Kakao 장애 시 불완전한 결과는 캐싱되지 않아야 함
+        verify(suggestCacheRepository, org.mockito.Mockito.never()).set(anyString(), org.mockito.ArgumentMatchers.anyList());
     }
 }
