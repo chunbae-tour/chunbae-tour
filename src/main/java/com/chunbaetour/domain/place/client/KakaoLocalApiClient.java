@@ -200,7 +200,8 @@ public class KakaoLocalApiClient {
 
     /**
      * 카카오 로컬 API - 키워드로 장소 검색.
-     * <p>자동완성 등에서 사용되며, API 호출 실패 시 자동완성 기능 자체가 마비되지 않도록 예외를 발생시키지 않고 빈 응답을 반환(Fallback)한다.</p>
+     * <p>자동완성 등에서 사용되며, API 호출 실패 시 MAP_SERVICE_UNAVAILABLE 예외를 발생시켜 호출자가 장애 상태를 감지하고 처리할 수 있도록 한다.</p>
+     * @throws com.chunbaetour.domain.common.error.BusinessException API 호출 실패(4xx/5xx) 또는 네트워크 오류 시
      */
     public KakaoKeywordResponse searchByKeyword(String query, int size) {
         try {
