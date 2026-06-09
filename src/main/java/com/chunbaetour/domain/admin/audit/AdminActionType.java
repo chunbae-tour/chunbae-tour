@@ -60,6 +60,9 @@ public enum AdminActionType {
     /** 공공데이터 전통시장 즉시 동기화 — 관리자 수동 트리거(POST /admin/traditional-markets/sync). */
     MARKET_SYNC,
 
+    /** 한국관광공사 KorService2 관광지 즉시 수집 — 관리자 수동 트리거(POST /admin/places/sync, KAN-221). */
+    PLACE_SYNC,
+
     /** S09 배너 등록 — Banner 신규 생성(KAN-216). */
     BANNER_CREATE,
 

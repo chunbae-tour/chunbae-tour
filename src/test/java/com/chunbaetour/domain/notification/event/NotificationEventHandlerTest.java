@@ -5,10 +5,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
+import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
@@ -20,11 +22,14 @@ import com.chunbaetour.domain.notification.service.NotificationRedisPubSubServic
 import com.chunbaetour.domain.notification.service.NotificationService;
 import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.user.SimpUser;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +41,9 @@ class NotificationEventHandlerTest {
     @Mock
     private NotificationRedisPubSubService notificationRedisPubSubService;
 
+    @Mock
+    private SimpUserRegistry simpUserRegistry;
+
     @InjectMocks
     private NotificationEventHandler handler;
 
@@ -46,6 +54,9 @@ class NotificationEventHandlerTest {
     private static final Long KICKED_USER_ID = 3L;
     private static final Long SUPPORT_ROOM_ID = 50L;
     private static final Long ROOM_OWNER_USER_ID = 4L;
+    private static final Long SENDER_USER_ID = 5L;
+    private static final Long RECIPIENT_USER_ID_1 = 6L;
+    private static final Long RECIPIENT_USER_ID_2 = 7L;
 
     // 참여 신청 생성 이벤트 — 방장에게 CHAT_JOIN_REQUEST 알림 저장 + Redis Push 검증
     @Test
@@ -153,6 +164,68 @@ class NotificationEventHandlerTest {
         verify(notificationRedisPubSubService).publish(
                 eq(KICKED_USER_ID),
                 any(NotificationResponse.class));
+    }
+
+    // 메시지 전송 이벤트 — 수신 대상 모두 미연결(오프라인) → 각각 CHAT_MESSAGE 알림 저장 + Redis Push 검증
+    @Test
+    void handleChatMessageSent_notifiesEachRecipient_andPushes() {
+        given(simpUserRegistry.getUser(any())).willReturn(null);
+        Notification notification1 = buildNotification(110L, RECIPIENT_USER_ID_1, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        Notification notification2 = buildNotification(111L, RECIPIENT_USER_ID_2, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_1), eq(NotificationType.CHAT_MESSAGE), eq("새 채팅 메시지"),
+                eq("채팅방에 새 메시지가 도착했어요."), eq(NotificationReferenceType.CHAT_ROOM), eq(CHAT_ROOM_ID)))
+                .willReturn(notification1);
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_2), eq(NotificationType.CHAT_MESSAGE), eq("새 채팅 메시지"),
+                eq("채팅방에 새 메시지가 도착했어요."), eq(NotificationReferenceType.CHAT_ROOM), eq(CHAT_ROOM_ID)))
+                .willReturn(notification2);
+
+        handler.handleChatMessageSent(new ChatMessageSentEvent(
+                CHAT_ROOM_ID, SENDER_USER_ID, List.of(RECIPIENT_USER_ID_1, RECIPIENT_USER_ID_2)));
+
+        verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_1), any(NotificationResponse.class));
+        verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_2), any(NotificationResponse.class));
+    }
+
+    // 연결 중(온라인) 수신자 — SimpUserRegistry에 등록돼 있으면 알림 생성/Push 모두 skip (정책 안B)
+    @Test
+    void handleChatMessageSent_onlineRecipient_isSkipped() {
+        SimpUser onlineUser = mock(SimpUser.class);
+        given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_1))).willReturn(onlineUser);
+        given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_2))).willReturn(null);
+        Notification notification2 = buildNotification(111L, RECIPIENT_USER_ID_2, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_2), eq(NotificationType.CHAT_MESSAGE), eq("새 채팅 메시지"),
+                eq("채팅방에 새 메시지가 도착했어요."), eq(NotificationReferenceType.CHAT_ROOM), eq(CHAT_ROOM_ID)))
+                .willReturn(notification2);
+
+        handler.handleChatMessageSent(new ChatMessageSentEvent(
+                CHAT_ROOM_ID, SENDER_USER_ID, List.of(RECIPIENT_USER_ID_1, RECIPIENT_USER_ID_2)));
+
+        verify(notificationService, never()).createNotification(eq(RECIPIENT_USER_ID_1), any(), any(), any(), any(), any());
+        verify(notificationRedisPubSubService, never()).publish(eq(RECIPIENT_USER_ID_1), any());
+        verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_2), any(NotificationResponse.class));
+    }
+
+    // 일부 수신자 알림 저장 실패 — 해당 수신자만 건너뛰고 나머지는 정상 처리 (둘 다 오프라인 가정)
+    @Test
+    void handleChatMessageSent_oneRecipientFails_othersStillNotified() {
+        given(simpUserRegistry.getUser(any())).willReturn(null);
+        Notification notification2 = buildNotification(111L, RECIPIENT_USER_ID_2, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_1), any(), any(), any(), any(), any()))
+                .willThrow(new RuntimeException("DB error"));
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_2), eq(NotificationType.CHAT_MESSAGE), eq("새 채팅 메시지"),
+                eq("채팅방에 새 메시지가 도착했어요."), eq(NotificationReferenceType.CHAT_ROOM), eq(CHAT_ROOM_ID)))
+                .willReturn(notification2);
+
+        handler.handleChatMessageSent(new ChatMessageSentEvent(
+                CHAT_ROOM_ID, SENDER_USER_ID, List.of(RECIPIENT_USER_ID_1, RECIPIENT_USER_ID_2)));
+
+        verify(notificationRedisPubSubService, never()).publish(eq(RECIPIENT_USER_ID_1), any());
+        verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_2), any(NotificationResponse.class));
     }
 
     // Redis Push 실패 시 예외 미전파 — 알림 저장 롤백 없음 보장

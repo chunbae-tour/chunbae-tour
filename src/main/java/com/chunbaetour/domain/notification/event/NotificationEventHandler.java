@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.notification.event;
 
 import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
+import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
@@ -14,6 +15,7 @@ import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,7 @@ public class NotificationEventHandler {
 
     private final NotificationService notificationService;
     private final NotificationRedisPubSubService notificationRedisPubSubService;
+    private final SimpUserRegistry simpUserRegistry;
 
     // 참여 신청 생성 — 방장에게 CHAT_JOIN_REQUEST 알림, 원본 트랜잭션 커밋 후 새 트랜잭션에서 저장
     // REQUIRES_NEW 트랜잭션 실패 시 원본 비즈니스 흐름 영향 없음 — log.error로 silent loss 추적
@@ -105,6 +108,31 @@ public class NotificationEventHandler {
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — chatRoomId={}, kickedUserId={}",
                     event.chatRoomId(), event.kickedUserId(), e);
+        }
+    }
+
+    // 채팅 메시지 전송 — 미연결(오프라인) 멤버에게만 CHAT_MESSAGE 알림, 한 명 실패해도 나머지 계속 처리
+    // 오프라인 판단: SimpUserRegistry.getUser(userId) != null → WebSocket 연결 중 → 알림 skip (정책 안B, 09_정책_결정_기록.md)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handleChatMessageSent(ChatMessageSentEvent event) {
+        for (Long recipientUserId : event.recipientUserIds()) {
+            if (simpUserRegistry.getUser(String.valueOf(recipientUserId)) != null) {
+                continue;
+            }
+            try {
+                Notification notification = notificationService.createNotification(
+                        recipientUserId,
+                        NotificationType.CHAT_MESSAGE,
+                        "새 채팅 메시지",
+                        "채팅방에 새 메시지가 도착했어요.",
+                        NotificationReferenceType.CHAT_ROOM,
+                        event.chatRoomId());
+                pushNotification(notification);
+            } catch (RuntimeException e) {
+                log.error("알림 저장 실패 — chatRoomId={}, senderId={}, recipientUserId={}",
+                        event.chatRoomId(), event.senderId(), recipientUserId, e);
+            }
         }
     }
 
