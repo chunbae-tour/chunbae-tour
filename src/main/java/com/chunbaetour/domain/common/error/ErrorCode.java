@@ -49,6 +49,20 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_015", "존재하지 않는 사용자입니다."),
     // AUTH_016: 탈퇴(soft-delete)된 계정에 운영자 정지/해제를 시도한 경우. 운영자 입력 오류이므로 400.
     USER_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "AUTH_016", "탈퇴한 계정입니다."),
+    // ===== 소셜 로그인 (카카오/네이버) =====
+    // AUTH_017: 가입 시 전화번호 중복 — 중복가입 방지 기준(전화번호 UNIQUE).
+    DUPLICATE_PHONE(HttpStatus.CONFLICT, "AUTH_017", "이미 사용 중인 전화번호입니다."),
+    // AUTH_018: 지원하지 않는 소셜 공급자(path가 kakao/naver 외).
+    OAUTH_PROVIDER_UNSUPPORTED(HttpStatus.BAD_REQUEST, "AUTH_018", "지원하지 않는 소셜 로그인입니다."),
+    // AUTH_019: 공급자 토큰 교환/사용자 조회 실패(키 미설정·코드 만료·외부 장애 등).
+    OAUTH_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "AUTH_019", "소셜 로그인 처리 중 오류가 발생했습니다."),
+    // AUTH_020: 가입 티켓 서명 오류/만료/타입 불일치.
+    OAUTH_SIGNUP_TICKET_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_020", "소셜 가입 정보가 유효하지 않습니다. 다시 시도해 주세요."),
+    // AUTH_021: 이미 가입된 소셜 계정으로 신규 가입 시도(동시 가입 등).
+    OAUTH_ALREADY_REGISTERED(HttpStatus.CONFLICT, "AUTH_021", "이미 가입된 소셜 계정입니다."),
+    // AUTH_022: 공급자가 이메일을 제공하지 않아(예: 카카오 이메일 동의 안 함) 소셜 가입 불가. 클라이언트 입력
+    // 이메일을 신뢰하지 않고 공급자 검증 이메일만 쓰므로(선점 방지), 이메일 동의가 없으면 가입을 진행하지 않는다.
+    OAUTH_EMAIL_NOT_PROVIDED(HttpStatus.BAD_REQUEST, "AUTH_022", "소셜 계정에서 이메일을 제공받지 못했습니다. 이메일 제공에 동의해 주세요."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),
@@ -83,8 +97,8 @@ public enum ErrorCode {
     // PLACE_015: 이미 soft delete(DELETED)된 관광지를 다시 삭제 시도 (운영자 멱등 가드, S07 리뷰 I)
     PLACE_ALREADY_DELETED(HttpStatus.CONFLICT,            "PLACE_015", "이미 삭제된 관광지입니다."),
     GEOCODING_RESULT_NOT_FOUND(HttpStatus.NOT_FOUND,      "PLACE_016", "API를 통한 위치/주소 변환 결과를 찾을 수 없습니다."),
-    // PLACE_016: 관광지 외부 API(KorService2) 수집이 이미 진행 중 (KAN-221 다중 인스턴스 가드)
-    PLACE_SYNC_IN_PROGRESS(HttpStatus.CONFLICT,          "PLACE_016", "관광지 데이터 수집이 진행 중입니다. 잠시 후 다시 시도해주세요."),
+    // PLACE_017: 관광지 외부 API(KorService2) 수집이 이미 진행 중 (KAN-221 다중 인스턴스 가드)
+    PLACE_SYNC_IN_PROGRESS(HttpStatus.CONFLICT,          "PLACE_017", "관광지 데이터 수집이 진행 중입니다. 잠시 후 다시 시도해주세요."),
 
     // ===== BANNER (담당: 정민교, Admin Epic KAN-177 S09) =====
     BANNER_NOT_FOUND(HttpStatus.NOT_FOUND,                 "BANNER_001", "존재하지 않는 배너입니다."),
@@ -128,6 +142,12 @@ public enum ErrorCode {
     PURCHASE_PROCESSING(HttpStatus.SERVICE_UNAVAILABLE,     "STORE_005", "구매 처리 중입니다. 잠시 후 다시 시도해주세요."),
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND,                   "STORE_006", "존재하지 않는 주문입니다."),
     ORDER_ALREADY_CANCELLED(HttpStatus.BAD_REQUEST,         "STORE_007", "이미 취소된 주문입니다."),
+    ITEM_NOT_FOUND(HttpStatus.NOT_FOUND,                    "STORE_008", "보유 아이템을 찾을 수 없습니다."),
+    ITEM_FORBIDDEN(HttpStatus.FORBIDDEN,                    "STORE_009", "본인 보유 아이템만 사용할 수 있습니다."),
+    ITEM_ALREADY_USED(HttpStatus.CONFLICT,                  "STORE_010", "이미 사용된 아이템입니다."),
+    ITEM_EXPIRED(HttpStatus.CONFLICT,                       "STORE_011", "만료된 아이템입니다."),
+    ITEM_QR_EXPIRED(HttpStatus.UNAUTHORIZED,                "STORE_012", "아이템 QR이 만료되었습니다."),
+    ITEM_QR_INVALID(HttpStatus.UNAUTHORIZED,                "STORE_013", "아이템 QR이 유효하지 않습니다."),
 
     // ===== MERCHANT (담당: 신현민) =====
     MERCHANT_CERT_ALREADY_PENDING(HttpStatus.CONFLICT,      "MERCHANT_001", "이미 상인 인증 신청이 진행 중입니다."),
