@@ -19,8 +19,11 @@ import com.chunbaetour.domain.auth.jwt.JwtProperties;
 import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.auth.jwt.TokenWithId;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -43,13 +46,17 @@ class OauthLoginServiceTest {
     @Mock private RefreshTokenStore refreshTokenStore;
     @Mock private JwtProperties jwtProperties;
     @Mock private OauthSignupTicketIssuer ticketIssuer;
+    @Mock private SecurityAuditLogger auditLogger;
 
+    // counter().increment() 실호출 위해 mock 대신 실제 레지스트리.
+    private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
     private OauthLoginService service;
 
     @BeforeEach
     void setUp() {
         service = new OauthLoginService(
-                List.of(kakaoClient), accountRepository, tokenIssuer, refreshTokenStore, jwtProperties, ticketIssuer);
+                List.of(kakaoClient), accountRepository, tokenIssuer, refreshTokenStore, jwtProperties, ticketIssuer,
+                meterRegistry, auditLogger);
         when(kakaoClient.provider()).thenReturn(OauthProvider.KAKAO);
     }
 
@@ -103,6 +110,8 @@ class OauthLoginServiceTest {
         when(kakaoClient.fetch(any(), any()))
                 .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-3", "susp@example.com", "susp"));
         Account account = mock(Account.class);
+        when(account.getId()).thenReturn(3L);
+        when(account.getRole()).thenReturn(Role.USER);   // role 경계 통과 후 suspended 분기 도달
         when(account.getStatus()).thenReturn(AccountStatus.SUSPENDED);
         when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-3"))
                 .thenReturn(Optional.of(account));
@@ -111,6 +120,26 @@ class OauthLoginServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
+    }
+
+    @DisplayName("USER 아닌 계정(MERCHANT/ADMIN) → ACCESS_DENIED (소셜 로그인은 USER 전용 진입점)")
+    @Test
+    void nonUserRoleRejected() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-4", "merchant@example.com", "merchant"));
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(4L);
+        when(account.getRole()).thenReturn(Role.MERCHANT);
+        when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-4"))
+                .thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        // role mismatch면 토큰 미발급
+        verify(tokenIssuer, never()).issueAccess(anyLong(), any(), any());
     }
 
     @DisplayName("미지원 공급자 → OAUTH_PROVIDER_UNSUPPORTED (등록된 클라이언트 없음)")

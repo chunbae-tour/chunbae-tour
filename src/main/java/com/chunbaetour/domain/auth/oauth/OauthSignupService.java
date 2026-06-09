@@ -9,11 +9,14 @@ import com.chunbaetour.domain.auth.jwt.RefreshTokenStore;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.jwt.TokenWithId;
+import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
+import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,6 +39,7 @@ public class OauthSignupService {
     private final RefreshTokenStore refreshTokenStore;
     private final JwtProperties jwtProperties;
     private final ApplicationEventPublisher eventPublisher;
+    private final SecurityAuditLogger auditLogger;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -91,6 +95,10 @@ public class OauthSignupService {
 
         eventPublisher.publishEvent(
                 new UserRegisteredEvent(saved.getId(), saved.getEmail(), saved.getNickname()));
+
+        // KAN-105: 소셜 가입 성공도 이메일 가입과 동일 체계로 감사 로그 — OAuth 흐름 관측 사각지대 제거.
+        auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, saved.getId(),
+                Map.of("method", "oauth", "provider", ticket.provider().name(), "role", saved.getRole().name()));
 
         String accessToken = tokenIssuer.issueAccess(saved.getId(), saved.getRole(), saved.getEmail());
         TokenWithId refresh = tokenIssuer.issueRefresh(saved.getId());
