@@ -12,7 +12,6 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
-import com.chunbaetour.domain.place.dto.response.PlaceSyncResult;
 import com.chunbaetour.domain.place.service.PlaceSyncService;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import io.swagger.v3.oas.annotations.Operation;
@@ -106,11 +105,15 @@ public class AdminPlaceController {
         adminPlaceService.deletePlace(placeId);
     }
 
-    @Operation(summary = "관광지 즉시 수집",
-            description = "[ADMIN 전용] 한국관광공사 KorService2(국문 관광정보)에서 전국 관광지를 즉시 수집·upsert (KAN-221 Tier-1).")
+    @Operation(summary = "관광지 동기화 시작 (비동기)",
+            description = "[ADMIN 전용] 한국관광공사 KorService2(국문 관광정보) 동기화를 백그라운드로 시작하고 즉시 응답한다. "
+                    + "수집은 페이지 단위로 즉시 upsert되며 진행 상황은 서버 로그로 확인한다 (KAN-262).")
     @PostMapping("/sync")
+    @ResponseStatus(HttpStatus.ACCEPTED)
     @LogAdminAction(actionType = AdminActionType.PLACE_SYNC, targetType = AdminTargetType.PLACE)
-    public ApiResponse<PlaceSyncResult> syncPlaces() {
-        return ApiResponse.success(placeSyncService.syncAllPlaces());
+    public ApiResponse<String> syncPlaces() {
+        // 작업을 시작만 시키고 즉시 반환 — 요청 스레드를 수집 완료까지 블로킹하지 않는다.
+        placeSyncService.startAsyncSync();
+        return ApiResponse.success("관광지 동기화를 시작했습니다. 진행 상황은 서버 로그를 확인하세요.");
     }
 }
