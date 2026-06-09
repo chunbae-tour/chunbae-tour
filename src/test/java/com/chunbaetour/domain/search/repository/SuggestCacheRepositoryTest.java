@@ -66,4 +66,65 @@ class SuggestCacheRepositoryTest {
         org.assertj.core.api.Assertions.assertThatCode(() -> suggestCacheRepository.set(prefix, suggestions))
                 .doesNotThrowAnyException();
     }
+
+    @Test
+    @DisplayName("캐싱된 문자열이 빈 배열 JSON 일 때 Optional.of(emptyList())를 반환한다")
+    void get_ReturnsEmptyList_WhenCachedIsEmptyJsonArray() throws Exception {
+        // given
+        String prefix = "없는검색어";
+        String cachedJson = "[]";
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(cachedJson);
+        
+        when(objectMapper.readValue(org.mockito.ArgumentMatchers.eq(cachedJson), org.mockito.ArgumentMatchers.<tools.jackson.core.type.TypeReference<List<SuggestResponse>>>any()))
+                .thenReturn(List.of());
+
+        // when
+        Optional<List<SuggestResponse>> result = suggestCacheRepository.get(prefix);
+
+        // then
+        assertThat(result).isPresent();
+        assertThat(result.get()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("캐싱된 문자열이 정상 JSON 일 때 역직렬화하여 반환한다")
+    void get_ReturnsList_WhenCachedIsNormalJsonArray() throws Exception {
+        // given
+        String prefix = "경복";
+        String cachedJson = "[{\"keyword\":\"경복궁\",\"source\":\"DB\"}]";
+        List<SuggestResponse> expectedResponses = List.of(new SuggestResponse("경복궁", SuggestResponse.SuggestSource.DB));
+        
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(anyString())).thenReturn(cachedJson);
+        
+        when(objectMapper.readValue(org.mockito.ArgumentMatchers.eq(cachedJson), org.mockito.ArgumentMatchers.<tools.jackson.core.type.TypeReference<List<SuggestResponse>>>any()))
+                .thenReturn(expectedResponses);
+
+        // when
+        Optional<List<SuggestResponse>> result = suggestCacheRepository.get(prefix);
+
+        // then
+        assertThat(result).isPresent();
+        assertThat(result.get()).hasSize(1);
+        assertThat(result.get().get(0).keyword()).isEqualTo("경복궁");
+    }
+
+    @Test
+    @DisplayName("빈 리스트 캐시 저장 시 JSON 직렬화 결과를 TTL_EMPTY와 함께 저장한다")
+    void set_SavesEmptyListWithEmptyTtl() throws Exception {
+        // given
+        String prefix = "없는검색어";
+        List<SuggestResponse> emptyList = List.of();
+        String json = "[]";
+        
+        when(objectMapper.writeValueAsString(emptyList)).thenReturn(json);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        // when
+        suggestCacheRepository.set(prefix, emptyList);
+
+        // then
+        verify(valueOperations).set(org.mockito.ArgumentMatchers.contains("search:suggest:"), org.mockito.ArgumentMatchers.eq(json), org.mockito.ArgumentMatchers.eq(java.time.Duration.ofSeconds(10)));
+    }
 }

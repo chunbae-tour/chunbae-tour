@@ -227,12 +227,10 @@ public class KakaoLocalApiClient {
             } else {
                 log.error("Kakao Keyword API Server Error (5xx): status={}", e.getStatusCode().value(), e);
             }
-            // Fallback for Suggestion
-            return new KakaoKeywordResponse(java.util.Collections.emptyList(), null);
+            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.MAP_SERVICE_UNAVAILABLE);
         } catch (RestClientException e) {
             log.error("Kakao Keyword API Network Error", e);
-            // Fallback for Suggestion
-            return new KakaoKeywordResponse(java.util.Collections.emptyList(), null);
+            throw new com.chunbaetour.domain.common.error.BusinessException(com.chunbaetour.domain.common.error.ErrorCode.MAP_SERVICE_UNAVAILABLE);
         }
     }
 }
