@@ -1,7 +1,9 @@
 package com.chunbaetour.domain.companionreview.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
@@ -36,6 +38,17 @@ public class CompanionController {
             @PathVariable @Positive Long roomId,
             @Valid @RequestBody CompanionStartRequest request) {
         CompanionStartResponse response = companionService.startCompanion(ownerId, roomId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
+    }
+
+    // POST /api/v1/chat/rooms/{roomId}/companion/participants — 동행 참여자 추가 (방장 전용)
+    @Operation(summary = "동행 참여자 추가")
+    @PostMapping("/api/v1/chat/rooms/{roomId}/companion/participants")
+    public ResponseEntity<ApiResponse<CompanionAddParticipantsResponse>> addParticipants(
+            @AuthenticationPrincipal Long ownerId,
+            @PathVariable @Positive Long roomId,
+            @Valid @RequestBody CompanionAddParticipantsRequest request) {
+        CompanionAddParticipantsResponse response = companionService.addParticipants(ownerId, roomId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 

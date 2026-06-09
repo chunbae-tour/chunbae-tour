@@ -7,7 +7,9 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
@@ -91,6 +93,52 @@ public class CompanionService {
         companionParticipantRepository.saveAll(participants);
 
         return CompanionStartResponse.of(companion, allParticipantIds);
+    }
+
+    // 동행 참여자 추가 — 방장 검증, ONGOING 확인(CR_006), ACTIVE 멤버 확인, 중복 시 CR_008
+    @Transactional
+    public CompanionAddParticipantsResponse addParticipants(Long ownerId, Long roomId,
+            CompanionAddParticipantsRequest request) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        if (!chatRoom.isOwnedBy(ownerId)) {
+            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+
+        Companion companion = companionRepository.findByChatRoomId(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+
+        if (companion.getStatus() == CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
+        }
+
+        List<Long> distinctUserIds = request.userIds().stream()
+                .distinct()
+                .collect(Collectors.toList());
+
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+        for (Long userId : distinctUserIds) {
+            if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(roomId, userId, activeStates)) {
+                throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+            }
+        }
+
+        List<CompanionParticipant> participants = distinctUserIds.stream()
+                .map(userId -> CompanionParticipant.builder()
+                        .companionId(companion.getId())
+                        .userId(userId)
+                        .build())
+                .toList();
+
+        try {
+            companionParticipantRepository.saveAll(participants);
+        } catch (DataIntegrityViolationException e) {
+            // uq_companion_participant 위반 — 이미 참여 중인 멤버 포함 시 CR_008
+            throw new BusinessException(ErrorCode.COMPANION_PARTICIPANT_ALREADY_EXISTS);
+        }
+
+        return new CompanionAddParticipantsResponse(companion.getId(), distinctUserIds);
     }
 
     // 동행 종료 — 방장 검증, 동행 존재 확인, ONGOING 상태 확인(CR_006)

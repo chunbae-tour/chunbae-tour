@@ -12,7 +12,9 @@ import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
@@ -21,6 +23,7 @@ import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -157,6 +160,140 @@ class CompanionServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_NOT_JOINED));
         verify(companionRepository, never()).save(any());
+    }
+
+    // ===== addParticipants =====
+
+    // 정상 추가 — DB 저장, 추가된 userId 목록 반환
+    @Test
+    void addParticipants_success_returnsAddedUserIds() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+        CompanionAddParticipantsRequest request = new CompanionAddParticipantsRequest(List.of(2L, 3L));
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
+                .willReturn(true);
+        given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
+
+        CompanionAddParticipantsResponse response = companionService.addParticipants(ownerId, roomId, request);
+
+        assertThat(response.companionId()).isEqualTo(100L);
+        assertThat(response.addedUserIds()).containsExactlyInAnyOrder(2L, 3L);
+    }
+
+    // 방 없음 → CHAT_001
+    @Test
+    void addParticipants_roomNotFound_throwsRoomNotFound() {
+        given(chatRoomRepository.findById(any())).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companionService.addParticipants(1L, 10L,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND));
+        verify(companionRepository, never()).save(any());
+    }
+
+    // 방장 아님 → CHAT_006
+    @Test
+    void addParticipants_notOwner_throwsForbidden() {
+        Long ownerId = 1L;
+        Long otherUser = 2L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+
+        assertThatThrownBy(() -> companionService.addParticipants(otherUser, 10L,
+                new CompanionAddParticipantsRequest(List.of(3L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN));
+        verify(companionParticipantRepository, never()).saveAll(any());
+    }
+
+    // 동행 없음 → CR_005
+    @Test
+    void addParticipants_companionNotFound_throwsNotFound() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_NOT_FOUND));
+        verify(companionParticipantRepository, never()).saveAll(any());
+    }
+
+    // ENDED 동행 → CR_006
+    @Test
+    void addParticipants_endedCompanion_throwsAlreadyEnded() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion endedCompanion = Companion.builder().chatRoomId(10L).build();
+        endedCompanion.end();
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(endedCompanion));
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_ALREADY_ENDED));
+        verify(companionParticipantRepository, never()).saveAll(any());
+    }
+
+    // 대상이 ACTIVE 멤버 아님 → CHAT_005
+    @Test
+    void addParticipants_participantNotMember_throwsNotJoined() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(10L).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
+                .willReturn(false);
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_NOT_JOINED));
+        verify(companionParticipantRepository, never()).saveAll(any());
+    }
+
+    // 이미 참여자 → CR_008
+    @Test
+    void addParticipants_duplicateParticipant_throwsAlreadyExists() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
+                .willReturn(true);
+        given(companionParticipantRepository.saveAll(any()))
+                .willThrow(new DataIntegrityViolationException("uq_companion_participant"));
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, roomId,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_PARTICIPANT_ALREADY_EXISTS));
     }
 
     // ===== endCompanion =====
