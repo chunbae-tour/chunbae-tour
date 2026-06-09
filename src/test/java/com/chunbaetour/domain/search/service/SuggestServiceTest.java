@@ -47,6 +47,13 @@ class SuggestServiceTest {
     @InjectMocks
     private SuggestService suggestService;
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        if (kakaoVirtualThreadExecutor != null && !kakaoVirtualThreadExecutor.isShutdown()) {
+            kakaoVirtualThreadExecutor.shutdownNow();
+        }
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 입력 유효성 검증
     // ──────────────────────────────────────────────────────────────────────────
