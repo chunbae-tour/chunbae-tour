@@ -24,6 +24,30 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     boolean existsByPhone(String phone);
 
     /**
+     * 탈퇴(soft-delete) row 포함 전화번호 존재 검사 — DB UNIQUE(phone)와 검사 범위를 일치시킨다.
+     *
+     * <p>{@link #existsByPhone}는 {@code @SQLRestriction("deleted_at IS NULL")}으로 탈퇴 계정을 못 봐서,
+     * "탈퇴자가 점유한 전화번호"로 신규 가입 시 사전검사는 통과하지만 INSERT가 DB UNIQUE 위반(500)으로
+     * 떨어진다. 본 native 쿼리로 탈퇴 row까지 봐 {@code DUPLICATE_PHONE}로 정확히 변환한다(이메일의
+     * {@link #countByEmailIncludingDeleted}와 동일 패턴, KAN-144 ADR §3 재가입 차단과 정합).
+     *
+     * <p><b>테이블명 {@code users} 하드코딩</b>: {@code @SQLRestriction} 우회 목적의 native 쿼리라
+     * {@code Account}의 {@code @Table(name="users")} 변경 시 함께 갱신 필요.
+     */
+    @Query(value = "SELECT COUNT(*) FROM users WHERE phone = :phone", nativeQuery = true)
+    long countByPhoneIncludingDeleted(@Param("phone") String phone);
+
+    /**
+     * 탈퇴 row 포함 소셜 신원 존재 검사 — DB UNIQUE(oauth_provider, oauth_id)와 범위 일치.
+     *
+     * <p>{@link #findByOauthProviderAndOauthId}는 탈퇴 계정을 못 봐서, 탈퇴자가 점유한 소셜 신원으로
+     * 재가입 시 INSERT가 DB UNIQUE 위반(500)으로 떨어진다. 본 쿼리로 {@code OAUTH_ALREADY_REGISTERED}로 변환.
+     */
+    @Query(value = "SELECT COUNT(*) FROM users WHERE oauth_provider = :provider AND oauth_id = :oauthId",
+            nativeQuery = true)
+    long countByOauthIdentityIncludingDeleted(@Param("provider") String provider, @Param("oauthId") String oauthId);
+
+    /**
      * 본인 외 닉네임 중복 체크 — PATCH /users/me (KAN-127 S2)에서 사용.
      *
      * <p>{@link #existsByNickname}을 그대로 쓰면 자기 자신 닉네임에도 true가 나와 변경 거부됨.

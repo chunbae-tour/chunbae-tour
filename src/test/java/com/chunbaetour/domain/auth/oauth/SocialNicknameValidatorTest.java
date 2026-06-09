@@ -31,6 +31,7 @@ class SocialNicknameValidatorTest {
     @ValueSource(strings = {
             "춘배투어가이드맵스",   // 한글 9자 (폭 18 > 16)
             "abcdefghijklmnopq",  // 영문 17자 (폭 17 > 16)
+            "춘배투어가이드guide",  // 혼합: 한글 6자(폭 12) + 영문 5자(폭 5) = 폭 17 > 16
             "춘배_투어",            // 언더스코어(특수문자)
             "춘배 투어",            // 공백
             "nick!name",          // 특수문자

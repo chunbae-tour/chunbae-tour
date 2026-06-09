@@ -45,7 +45,7 @@ public class OauthSignupService {
         OauthSignupTicket ticket = ticketIssuer.verify(request.ticket());
 
         // 티켓이 가리키는 소셜 계정이 이미 가입돼 있으면(동시 가입 등) 거부.
-        if (accountRepository.findByOauthProviderAndOauthId(ticket.provider(), ticket.oauthId()).isPresent()) {
+        if (accountRepository.countByOauthIdentityIncludingDeleted(ticket.provider().name(), ticket.oauthId()) > 0) {
             throw new BusinessException(ErrorCode.OAUTH_ALREADY_REGISTERED);
         }
 
@@ -59,7 +59,7 @@ public class OauthSignupService {
         if (accountRepository.existsByNickname(nickname)) {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
-        if (accountRepository.existsByPhone(phone)) {
+        if (accountRepository.countByPhoneIncludingDeleted(phone) > 0) {
             throw new BusinessException(ErrorCode.DUPLICATE_PHONE);
         }
 

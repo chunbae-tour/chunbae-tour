@@ -112,6 +112,18 @@ ratelimit:
       path: /api/v1/admin/auth/login
       limit: 5
       window: PT1M
+    # 소셜 로그인 — 외부 API(카카오/네이버) quota + 신규가입 스팸 방어. RateLimitFilter는 findFirst라
+    #   exact(signup)을 wildcard(login)보다 먼저 선언해 우선 매칭시킨다(/oauth/* 가 /oauth/signup도 매칭하므로).
+    - id: oauth-signup
+      method: POST
+      path: /api/v1/users/auth/oauth/signup
+      limit: 5
+      window: PT10M
+    - id: oauth-login
+      method: POST
+      path: /api/v1/users/auth/oauth/*
+      limit: 10
+      window: PT1M
     - id: translation
       method: POST
       path: /api/v1/translations
