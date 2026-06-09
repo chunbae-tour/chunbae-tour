@@ -84,6 +84,7 @@ public class SuggestService {
         if (kakaoResponse != null && kakaoResponse.documents() != null) {
             kakaoResults = kakaoResponse.documents().stream()
                     .map(KakaoKeywordResponse.Document::placeName)
+                    .filter(name -> name != null && !name.isBlank())
                     .toList();
         }
 

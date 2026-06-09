@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -34,6 +35,9 @@ class SuggestServiceTest {
 
     @Mock
     private PopularSearchService popularSearchService;
+
+    @Mock
+    private KakaoLocalApiClient kakaoLocalApiClient;
 
     @InjectMocks
     private SuggestService suggestService;
@@ -94,6 +98,7 @@ class SuggestServiceTest {
 
         when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
         when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
+        when(kakaoLocalApiClient.searchByKeyword(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(null);
         when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(redisResults);
 
         List<String> result = suggestService.suggest(prefix);
@@ -115,6 +120,7 @@ class SuggestServiceTest {
 
         when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty());
         when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(dbResults);
+        when(kakaoLocalApiClient.searchByKeyword(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(null);
         when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(redisResults);
 
         List<String> result = suggestService.suggest(prefix);
@@ -131,6 +137,7 @@ class SuggestServiceTest {
         String prefix = "경복";
         when(suggestCacheRepository.get(prefix)).thenReturn(Optional.empty()); // 캐시 조회 실패 시나리오
         when(placeQueryRepository.suggestByPrefix(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(List.of("경복궁"));
+        when(kakaoLocalApiClient.searchByKeyword(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(null);
         when(popularSearchService.fetchPopularSuggestions(prefix, SuggestService.SUGGEST_MAX_SIZE)).thenReturn(List.of());
 
         List<String> result = suggestService.suggest(prefix);

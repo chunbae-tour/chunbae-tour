@@ -219,12 +219,12 @@ public class KakaoLocalApiClient {
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().is4xxClientError()) {
                 if (e.getStatusCode().value() == 401) {
-                    log.error("Kakao Keyword API Unauthorized (401): API Key might be invalid or expired. error={}", e.getMessage(), e);
+                    log.error("Kakao Keyword API Unauthorized (401): API Key might be invalid or expired.", e);
                 } else {
                     log.warn("Kakao Keyword API Error (4xx): status={}", e.getStatusCode());
                 }
             } else {
-                log.error("Kakao Keyword API Server Error (5xx): status={}", e.getStatusCode(), e);
+                log.error("Kakao Keyword API Server Error (5xx): status={}", e.getStatusCode().value(), e);
             }
             // Fallback for Suggestion
             return new KakaoKeywordResponse(java.util.Collections.emptyList(), null);
