@@ -24,6 +24,7 @@ import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
 import com.chunbaetour.domain.place.type.NearbyCategory;
 import com.chunbaetour.domain.place.dto.request.MapMarkerRequest;
 import com.chunbaetour.domain.place.dto.request.NearbyPlaceRequest;
+import com.chunbaetour.domain.place.dto.response.MapMarkerPageResponse;
 import com.chunbaetour.domain.place.dto.response.MapMarkerResponse;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
@@ -85,7 +86,7 @@ public class PlaceController {
     @SecurityRequirements
     @Operation(summary = "지도 마커 일괄 조회", description = "지도 뷰포트(Bounding Box) 내의 마커 리스트를 조회합니다.")
     @GetMapping("/map-markers")
-    public ApiResponse<List<MapMarkerResponse>> getMapMarkers(@Valid @ModelAttribute MapMarkerRequest request) {
+    public ApiResponse<MapMarkerPageResponse> getMapMarkers(@Valid @ModelAttribute MapMarkerRequest request) {
         return ApiResponse.success(placeService.getMapMarkers(request));
     }
 

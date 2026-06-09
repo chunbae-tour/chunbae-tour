@@ -292,7 +292,7 @@ public class PlaceQueryRepository {
                         place.status.eq(PlaceStatus.ACTIVE)
                 )
                 .orderBy(place.id.desc())
-                .limit(500) // 최대 500개 안전 장치 (클라이언트 사이드 클러스터링을 위한 적정 개수)
+                .limit(501) // 501개를 조회하여 더 있는지(truncated) 여부 판단
                 .fetch();
     }
 }

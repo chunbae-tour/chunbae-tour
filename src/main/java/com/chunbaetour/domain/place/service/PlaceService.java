@@ -16,6 +16,7 @@ import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.Coord;
 import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
 import com.chunbaetour.domain.place.dto.request.MapMarkerRequest;
+import com.chunbaetour.domain.place.dto.response.MapMarkerPageResponse;
 import com.chunbaetour.domain.place.dto.response.MapMarkerResponse;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
@@ -351,11 +352,20 @@ public class PlaceService {
      * @return 마커 리스트
      */
     @Transactional(readOnly = true)
-    public List<MapMarkerResponse> getMapMarkers(MapMarkerRequest request) {
-        return placeQueryRepository.findMarkersInBoundingBox(
-                request.swLat(), request.swLng(),
-                request.neLat(), request.neLng()
+    public MapMarkerPageResponse getMapMarkers(MapMarkerRequest request) {
+        int limit = 500;
+        List<MapMarkerResponse> markers = placeQueryRepository.findMarkersInBoundingBox(
+                request.swLat().doubleValue(), request.swLng().doubleValue(),
+                request.neLat().doubleValue(), request.neLng().doubleValue()
         );
+
+        boolean truncated = false;
+        if (markers.size() > limit) {
+            truncated = true;
+            markers = markers.subList(0, limit);
+        }
+
+        return new MapMarkerPageResponse(markers, truncated, limit);
     }
 
     /**
