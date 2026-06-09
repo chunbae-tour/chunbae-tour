@@ -22,6 +22,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 소셜 로그인 2단계 — 가입 티켓 검증 후 추가정보(이름/전화/생년월일/이메일/닉네임)로 계정 생성 + JWT 발급.
@@ -84,10 +86,13 @@ public class OauthSignupService {
             if (accountRepository.existsByNickname(nickname)) {
                 throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
             }
-            if (accountRepository.existsByPhone(phone)) {
+            // 사전 검사와 동일하게 탈퇴(soft-delete) row까지 보는 *IncludingDeleted로 재검사 — existsByPhone/
+            // findByOauthProviderAndOauthId는 @SQLRestriction(deleted_at IS NULL)이라 탈퇴자가 점유한 UNIQUE
+            // 충돌을 못 봐 원래 예외가 500으로 새어나갔다 (CR 반영).
+            if (accountRepository.countByPhoneIncludingDeleted(phone) > 0) {
                 throw new BusinessException(ErrorCode.DUPLICATE_PHONE);
             }
-            if (accountRepository.findByOauthProviderAndOauthId(ticket.provider(), ticket.oauthId()).isPresent()) {
+            if (accountRepository.countByOauthIdentityIncludingDeleted(ticket.provider().name(), ticket.oauthId()) > 0) {
                 throw new BusinessException(ErrorCode.OAUTH_ALREADY_REGISTERED);
             }
             throw e;
@@ -97,8 +102,21 @@ public class OauthSignupService {
                 new UserRegisteredEvent(saved.getId(), saved.getEmail(), saved.getNickname()));
 
         // KAN-105: 소셜 가입 성공도 이메일 가입과 동일 체계로 감사 로그 — OAuth 흐름 관측 사각지대 제거.
-        auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, saved.getId(),
-                Map.of("method", "oauth", "provider", ticket.provider().name(), "role", saved.getRole().name()));
+        // 커밋 후에만 emit — refresh 저장/커밋/flush가 뒤에서 실패해 롤백되면 잘못된 success 로그가 남으므로
+        // afterCommit으로 미룬다 (email SignupService와 동일 패턴, CR 반영).
+        Long savedId = saved.getId();
+        Map<String, String> auditMetadata =
+                Map.of("method", "oauth", "provider", ticket.provider().name(), "role", saved.getRole().name());
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId, auditMetadata);
+                }
+            });
+        } else {
+            auditLogger.emitSuccess(SecurityAuditEventType.SIGNUP_SUCCESS, savedId, auditMetadata);
+        }
 
         String accessToken = tokenIssuer.issueAccess(saved.getId(), saved.getRole(), saved.getEmail());
         TokenWithId refresh = tokenIssuer.issueRefresh(saved.getId());

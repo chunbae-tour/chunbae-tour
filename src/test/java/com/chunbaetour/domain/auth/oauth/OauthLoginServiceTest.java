@@ -150,4 +150,19 @@ class OauthLoginServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.OAUTH_PROVIDER_UNSUPPORTED);
     }
+
+    @DisplayName("공급자 fetch 실패 → OAUTH_PROVIDER_ERROR 전파 (provider_error 기록, 계정 조회 미진입)")
+    @Test
+    void providerFetchFailurePropagates() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenThrow(new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR));
+
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "bad-code", "https://app/callback"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.OAUTH_PROVIDER_ERROR);
+
+        // fetch 실패면 계정 조회 단계로 진입하지 않음
+        verify(accountRepository, never()).findByOauthProviderAndOauthId(any(), any());
+    }
 }

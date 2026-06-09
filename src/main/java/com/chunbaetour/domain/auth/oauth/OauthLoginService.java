@@ -44,7 +44,20 @@ public class OauthLoginService {
     private final SecurityAuditLogger auditLogger;
 
     public OauthLoginResult login(OauthProvider provider, String code, String redirectUri) {
-        OauthUserInfo info = resolve(provider).fetch(code, redirectUri);
+        // resolve(미지원 provider) → OAUTH_PROVIDER_UNSUPPORTED, fetch(공급자 토큰/사용자 조회) → OAUTH_PROVIDER_ERROR.
+        OauthClient client = resolve(provider);
+
+        OauthUserInfo info;
+        try {
+            info = client.fetch(code, redirectUri);
+        } catch (BusinessException e) {
+            // 잘못된 code·redirectUri 불일치·공급자 장애·키 미설정 등 — OAuth 운영에서 가장 먼저 봐야 할 실패라
+            // 메트릭/감사로그에 provider_error로 분리 기록(미지원 provider와 구분) (CR 반영).
+            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "provider_error").increment();
+            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, null, e.getErrorCode().getCode(),
+                    Map.of("method", "oauth", "provider", provider.name(), "reasonDetail", "provider_fetch_failed"));
+            throw e;
+        }
 
         Account account = accountRepository
                 .findByOauthProviderAndOauthId(provider, info.oauthId())
