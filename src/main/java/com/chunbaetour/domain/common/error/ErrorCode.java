@@ -49,6 +49,17 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_015", "존재하지 않는 사용자입니다."),
     // AUTH_016: 탈퇴(soft-delete)된 계정에 운영자 정지/해제를 시도한 경우. 운영자 입력 오류이므로 400.
     USER_ALREADY_DELETED(HttpStatus.BAD_REQUEST, "AUTH_016", "탈퇴한 계정입니다."),
+    // ===== 소셜 로그인 (카카오/네이버) =====
+    // AUTH_017: 가입 시 전화번호 중복 — 중복가입 방지 기준(전화번호 UNIQUE).
+    DUPLICATE_PHONE(HttpStatus.CONFLICT, "AUTH_017", "이미 사용 중인 전화번호입니다."),
+    // AUTH_018: 지원하지 않는 소셜 공급자(path가 kakao/naver 외).
+    OAUTH_PROVIDER_UNSUPPORTED(HttpStatus.BAD_REQUEST, "AUTH_018", "지원하지 않는 소셜 로그인입니다."),
+    // AUTH_019: 공급자 토큰 교환/사용자 조회 실패(키 미설정·코드 만료·외부 장애 등).
+    OAUTH_PROVIDER_ERROR(HttpStatus.BAD_GATEWAY, "AUTH_019", "소셜 로그인 처리 중 오류가 발생했습니다."),
+    // AUTH_020: 가입 티켓 서명 오류/만료/타입 불일치.
+    OAUTH_SIGNUP_TICKET_INVALID(HttpStatus.UNAUTHORIZED, "AUTH_020", "소셜 가입 정보가 유효하지 않습니다. 다시 시도해 주세요."),
+    // AUTH_021: 이미 가입된 소셜 계정으로 신규 가입 시도(동시 가입 등).
+    OAUTH_ALREADY_REGISTERED(HttpStatus.CONFLICT, "AUTH_021", "이미 가입된 소셜 계정입니다."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),

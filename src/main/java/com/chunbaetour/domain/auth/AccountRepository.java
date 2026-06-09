@@ -17,6 +17,12 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     boolean existsByNickname(String nickname);
 
+    /** 소셜 신원으로 계정 조회 — (oauth_provider, oauth_id)는 UNIQUE. */
+    Optional<Account> findByOauthProviderAndOauthId(OauthProvider oauthProvider, String oauthId);
+
+    /** 전화번호 중복가입 방지 — 숫자 정규화된 phone 기준(호출자가 정규화 후 전달). */
+    boolean existsByPhone(String phone);
+
     /**
      * 본인 외 닉네임 중복 체크 — PATCH /users/me (KAN-127 S2)에서 사용.
      *

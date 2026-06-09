@@ -206,6 +206,24 @@ kakao:
     address-search-url: https://dapi.kakao.com/v2/local/search/address.json
     map-url: https://map.kakao.com/link/from
 
+# 소셜 로그인(카카오/네이버) OAuth.
+# client-id/secret 미설정(빈값)이어도 부팅은 정상 — 소셜 로그인 '호출' 시점에만 필요(SecretValidator 미강제).
+#   → 키 없는 환경(현 prod 등)도 부팅 영향 없음. 소셜 로그인 사용하려면 배포 env에 키 주입 + 공급자 콘솔에
+#     Redirect URI 등록 필수.
+# KAKAO_LOGIN_REST_API_KEY: 카카오 Developers 앱(카카오 로그인 활성화)의 REST API 키.
+#   지도와 같은 앱이면 KAKAO_MAP_API_KEY와 동일 값을 넣어도 됨.
+oauth:
+  kakao:
+    client-id: ${KAKAO_LOGIN_REST_API_KEY:}
+    client-secret: ${KAKAO_LOGIN_CLIENT_SECRET:}
+    token-url: https://kauth.kakao.com/oauth/token
+    user-info-url: https://kapi.kakao.com/v2/user/me
+  naver:
+    client-id: ${NAVER_CLIENT_ID:}
+    client-secret: ${NAVER_CLIENT_SECRET:}
+    token-url: https://nid.naver.com/oauth2.0/token
+    user-info-url: https://openapi.naver.com/v1/nid/me
+
 tour-api:
   service-key: ${TOUR_API_SERVICE_KEY:}
   base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
