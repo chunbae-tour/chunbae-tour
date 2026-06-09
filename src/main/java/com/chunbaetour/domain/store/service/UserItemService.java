@@ -12,8 +12,11 @@ import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.store.dto.response.UserItemQrResponse;
 import com.chunbaetour.domain.store.dto.response.UserItemResponse;
 import com.chunbaetour.domain.store.dto.response.UserItemUseResponse;
+import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.entity.UserItem;
+import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
+import com.chunbaetour.domain.store.type.RedemptionScope;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserItemService {
 
     private final UserItemRepository userItemRepository;
+    private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
     private final TokenIssuer tokenIssuer;
     private final Clock clock;
@@ -90,8 +94,31 @@ public class UserItemService {
         }
         validateAvailable(item);
 
+        // 사용처(scope) 검증 — 아이템 상품이 이 검증자/가게에서 사용 가능한지 확인
+        Product product = productRepository.findById(item.getProductId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        validateRedeemableAt(product, shop);
+
         item.use(LocalDateTime.now(clock), shop.getId());
         return UserItemUseResponse.from(item);
+    }
+
+    /**
+     * 사용처(redemption scope) 검증. 현재 스토어 상품은 전부 {@link RedemptionScope#GLOBAL}(전 가맹점 공통)이라
+     * ACTIVE 검증자면 통과한다.
+     *
+     * <p>TODO(redemption 도메인 확장, KAN-??-item-redemption-mode): 가게/파트너/행사/장소 한정 상품이 도입되면
+     * scope별 검증을 채운다 — 예: SHOP_ONLY는 product의 소속 shop == 스캔한 shop 일치 확인,
+     * PARTNER_ONLY/EVENT_ONLY/PLACE_ONLY는 item_redemption_permissions 매핑 조회. (hanes/미구현API.md 참조)
+     * 미충족 시 {@link ErrorCode#ITEM_FORBIDDEN}.
+     */
+    private void validateRedeemableAt(Product product, Shop shop) {
+        switch (product.getRedemptionScope()) {
+            case GLOBAL -> { /* 전 가맹점 공통 — 어디서나 사용 가능 */ }
+            // TODO: 아래 scope들은 redemption 도메인 확장에서 구현. 현재는 도달 불가(모든 상품 GLOBAL).
+            case SHOP_ONLY, PARTNER_ONLY, EVENT_ONLY, PLACE_ONLY ->
+                    throw new BusinessException(ErrorCode.ITEM_FORBIDDEN);
+        }
     }
 
     private ItemQrClaims verifyItemQr(String token) {

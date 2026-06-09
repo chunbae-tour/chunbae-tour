@@ -15,7 +15,9 @@ import com.chunbaetour.domain.store.dto.response.UserItemQrResponse;
 import com.chunbaetour.domain.store.dto.response.UserItemUseResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.entity.UserItem;
+import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
+import com.chunbaetour.domain.store.type.RedemptionScope;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import io.jsonwebtoken.ExpiredJwtException;
 import java.time.Clock;
@@ -41,6 +43,7 @@ class UserItemQrServiceTest {
     private static final Instant NOW = Instant.parse("2026-06-08T00:00:00Z");
 
     @Mock private UserItemRepository userItemRepository;
+    @Mock private ProductRepository productRepository;
     @Mock private ShopRepository shopRepository;
     @Mock private TokenIssuer tokenIssuer;
     @Mock private Clock clock;
@@ -92,6 +95,7 @@ class UserItemQrServiceTest {
         given(shopRepository.findByIdAndUserId(SHOP_ID, VERIFIER_ID)).willReturn(Optional.of(shop));
         given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, NOW.plusSeconds(300)));
         given(userItemRepository.findByIdWithLock(ITEM_ID)).willReturn(Optional.of(item));
+        given(productRepository.findById(100L)).willReturn(Optional.of(product(RedemptionScope.GLOBAL)));
         stubClock();
 
         UserItemUseResponse response = userItemService.useByQr(VERIFIER_ID, SHOP_ID, "qr-token");
@@ -140,11 +144,27 @@ class UserItemQrServiceTest {
         given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, NOW.plusSeconds(300)));
         given(userItemRepository.findByIdWithLock(ITEM_ID))
                 .willReturn(Optional.of(item(USER_ID, UserItemStatus.AVAILABLE, LocalDate.of(2026, 6, 8))));
+        given(productRepository.findById(100L)).willReturn(Optional.of(product(RedemptionScope.GLOBAL)));
         stubClock();
 
         UserItemUseResponse response = userItemService.useByQr(VERIFIER_ID, SHOP_ID, "qr-token");
 
         assertThat(response.status()).isEqualTo(UserItemStatus.USED);
+    }
+
+    @Test
+    @DisplayName("GLOBAL이 아닌 사용처 한정(SHOP_ONLY) 상품은 ITEM_FORBIDDEN으로 사용 거부된다 (향후 scope 검증)")
+    void useByQr_nonGlobalScope_forbidden() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, VERIFIER_ID)).willReturn(Optional.of(shop()));
+        given(tokenIssuer.verifyItemQr("qr-token")).willReturn(new ItemQrClaims(USER_ID, ITEM_ID, NOW.plusSeconds(300)));
+        given(userItemRepository.findByIdWithLock(ITEM_ID)).willReturn(Optional.of(item(USER_ID, UserItemStatus.AVAILABLE)));
+        given(productRepository.findById(100L)).willReturn(Optional.of(product(RedemptionScope.SHOP_ONLY)));
+        stubClock();
+
+        assertThatThrownBy(() -> userItemService.useByQr(VERIFIER_ID, SHOP_ID, "qr-token"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ITEM_FORBIDDEN);
     }
 
     @Test
@@ -175,6 +195,14 @@ class UserItemQrServiceTest {
         ReflectionTestUtils.setField(item, "id", ITEM_ID);
         ReflectionTestUtils.setField(item, "status", status);
         return item;
+    }
+
+    private Product product(RedemptionScope scope) {
+        Product product = Product.create("테스트 아이템", "설명", "쿠폰", 1000L,
+                null, 10, "[]", "테스트 상점", 30, 1);
+        ReflectionTestUtils.setField(product, "id", 100L);
+        ReflectionTestUtils.setField(product, "redemptionScope", scope);
+        return product;
     }
 
     private Shop shop() {
