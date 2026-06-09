@@ -1,9 +1,12 @@
 package com.chunbaetour.domain.store.repository;
 
 import com.chunbaetour.domain.store.entity.UserItem;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,4 +23,8 @@ public interface UserItemRepository extends JpaRepository<UserItem, Long> {
             @Param("userId") Long userId,
             @Param("cursorId") Long cursorId,
             Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT i FROM UserItem i WHERE i.id = :id")
+    Optional<UserItem> findByIdWithLock(@Param("id") Long id);
 }
