@@ -17,6 +17,42 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     boolean existsByNickname(String nickname);
 
+    /** 소셜 신원으로 계정 조회 — (oauth_provider, oauth_id)는 UNIQUE. */
+    Optional<Account> findByOauthProviderAndOauthId(OauthProvider oauthProvider, String oauthId);
+
+    /**
+     * 탈퇴(soft-delete) row 포함 전화번호 해시 존재 검사 — DB UNIQUE(phone_hash)와 검사 범위를 일치시킨다.
+     *
+     * <p>전화번호 원문(phone)은 AES 암호화 저장이라 동등비교 불가 → 중복판별은 결정적 해시(phone_hash)로 한다.
+     * 파생 쿼리(existsBy…)는 {@code @SQLRestriction("deleted_at IS NULL")}으로 탈퇴 계정을 못 봐서,
+     * "탈퇴자가 점유한 번호"로 가입 시 INSERT가 DB UNIQUE 위반(500)으로 떨어진다. 본 native 쿼리로 탈퇴
+     * row까지 봐 {@code DUPLICATE_PHONE}로 정확히 변환한다(email/nickname/oauth와 동일 패턴).
+     *
+     * <p><b>테이블명 {@code users} 하드코딩</b>: native 쿼리라 {@code @Table(name="users")} 변경 시 함께 갱신.
+     */
+    @Query(value = "SELECT COUNT(*) FROM users WHERE phone_hash = :phoneHash", nativeQuery = true)
+    long countByPhoneHashIncludingDeleted(@Param("phoneHash") String phoneHash);
+
+    /**
+     * 탈퇴 row 포함 소셜 신원 존재 검사 — DB UNIQUE(oauth_provider, oauth_id)와 범위 일치.
+     *
+     * <p>{@link #findByOauthProviderAndOauthId}는 탈퇴 계정을 못 봐서, 탈퇴자가 점유한 소셜 신원으로
+     * 재가입 시 INSERT가 DB UNIQUE 위반(500)으로 떨어진다. 본 쿼리로 {@code OAUTH_ALREADY_REGISTERED}로 변환.
+     */
+    @Query(value = "SELECT COUNT(*) FROM users WHERE oauth_provider = :provider AND oauth_id = :oauthId",
+            nativeQuery = true)
+    long countByOauthIdentityIncludingDeleted(@Param("provider") String provider, @Param("oauthId") String oauthId);
+
+    /**
+     * 탈퇴 row 포함 닉네임 존재 검사 — DB UNIQUE(nickname)와 범위 일치.
+     *
+     * <p>{@link #existsByNickname}은 {@code @SQLRestriction}으로 탈퇴 계정을 못 봐서, 탈퇴자가 점유한 닉네임으로
+     * 가입 시 INSERT가 DB UNIQUE 위반(500)으로 떨어진다(email/phone과 동일 부류). 가입 race recheck에서 본
+     * 쿼리로 탈퇴 row까지 봐 {@code DUPLICATE_NICKNAME}로 정확히 변환한다.
+     */
+    @Query(value = "SELECT COUNT(*) FROM users WHERE nickname = :nickname", nativeQuery = true)
+    long countByNicknameIncludingDeleted(@Param("nickname") String nickname);
+
     /**
      * 본인 외 닉네임 중복 체크 — PATCH /users/me (KAN-127 S2)에서 사용.
      *
