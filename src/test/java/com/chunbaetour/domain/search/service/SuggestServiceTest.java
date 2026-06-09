@@ -203,6 +203,7 @@ class SuggestServiceTest {
                 .extracting(SuggestResponse::keyword)
                 .containsExactly("경복궁", "경복궁 야간개장");
         
-        verify(suggestCacheRepository).set(eq(prefix), eq(result));
+        // Kakao 장애 시 불완전한 결과는 캐싱되지 않아야 함
+        verify(suggestCacheRepository, org.mockito.Mockito.never()).set(anyString(), org.mockito.ArgumentMatchers.anyList());
     }
 }
