@@ -5,18 +5,18 @@ import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import jakarta.persistence.EntityManager;
 
-@Transactional
+@SpringBootTest
 class PlaceQueryRepositorySearchIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
@@ -25,8 +25,10 @@ class PlaceQueryRepositorySearchIntegrationTest extends AbstractIntegrationTest 
     @Autowired
     private PlaceRepository placeRepository;
 
-    @Autowired
-    private EntityManager entityManager;
+    @AfterEach
+    void tearDown() {
+        placeRepository.deleteAll();
+    }
 
     @Test
     @DisplayName("MySQL FULLTEXT 인덱스(Boolean Mode) 검색 동작 검증")
@@ -37,10 +39,6 @@ class PlaceQueryRepositorySearchIntegrationTest extends AbstractIntegrationTest 
         Place place3 = createPlace("서울 카페", 37.0, 127.0);
         
         placeRepository.saveAll(List.of(place1, place2, place3));
-
-        // flush & clear (영속성 컨텍스트 비우고 DB에 인덱스 적용되게 하기 위함)
-        entityManager.flush();
-        entityManager.clear();
 
         // when 1: "제주" 검색 (부분 일치: "제주도"도 검색되어야 함)
         List<SearchPlaceResponse> result1 = placeQueryRepository.searchByKeyword("제주", null, null, null, 10);
