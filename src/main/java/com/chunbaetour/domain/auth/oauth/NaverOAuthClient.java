@@ -3,7 +3,6 @@ package com.chunbaetour.domain.auth.oauth;
 import com.chunbaetour.domain.auth.OauthProvider;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -92,7 +91,10 @@ public class NaverOAuthClient implements OauthClient {
             // (예: invalid_request=파라미터/redirect 문제, invalid_client=키 오류). 요청 비밀값은 echo되지 않음.
             String errorBody = e.getResponseBodyAsString();
             log.warn("[OAuth/Naver] 토큰 교환 거부: status={}, body={}", e.getStatusCode(), errorBody);
-            if (isInvalidAuthorization(errorBody)) {
+            // 인가코드 만료/무효(invalid_grant)만 4xx로. invalid_request는 redirect_uri 불일치·필수 파라미터
+            // 누락 등 "설정/요청 자체 오류"를 포함하므로(카카오의 redirect 불일치가 502로 남는 것과 일관되게)
+            // 매칭에서 제외 → 502 유지(lim-haeun 리뷰: 공급자 간 redirect 불일치 응답코드 일관성).
+            if (OauthResponses.containsAnyIgnoreCase(errorBody, "invalid_grant")) {
                 throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
             }
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
@@ -100,15 +102,6 @@ public class NaverOAuthClient implements OauthClient {
             log.warn("[OAuth/Naver] 토큰 교환 네트워크 오류: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         }
-    }
-
-    /** 인가코드 무효(클라이언트 재시도로 해소)면 true → 4xx. 그 외(키 오류 등)는 502. */
-    private static boolean isInvalidAuthorization(String errorBody) {
-        if (errorBody == null) {
-            return false;
-        }
-        String b = errorBody.toLowerCase(Locale.ROOT);
-        return b.contains("invalid_grant") || b.contains("invalid_request");
     }
 
     private OauthUserInfo requestUserInfo(String accessToken) {

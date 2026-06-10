@@ -3,7 +3,6 @@ package com.chunbaetour.domain.auth.oauth;
 import com.chunbaetour.domain.auth.OauthProvider;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -97,29 +96,17 @@ public class KakaoOAuthClient implements OauthClient {
             // 본문엔 client_secret/code 같은 요청 비밀값이 echo되지 않으므로 로깅해도 안전.
             String errorBody = e.getResponseBodyAsString();
             log.warn("[OAuth/Kakao] 토큰 교환 거부: status={}, body={}", e.getStatusCode(), errorBody);
-            if (isInvalidAuthorization(errorBody)) {
-                // 인가코드 만료/무효/redirect 불일치 — 사용자 재시도로 해소 가능 → 4xx.
+            // 인가코드 만료/무효(invalid_grant·KOE320) — 사용자 재시도로 해소 가능 → 4xx.
+            if (OauthResponses.containsAnyIgnoreCase(errorBody, "invalid_grant", "koe320")) {
                 throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
             }
-            // 그 외(앱키/시크릿 등 서버 설정 문제, 공급자 장애) → 502 유지(책임 소재가 서버/공급자).
+            // 그 외(앱키/시크릿 등 서버 설정 문제, redirect 불일치, 공급자 장애) → 502(책임 소재가 서버/공급자).
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         } catch (RestClientException e) {
             // 네트워크/타임아웃 등 응답 없는 실패 — 본문 없음, 예외 종류만.
             log.warn("[OAuth/Kakao] 토큰 교환 네트워크 오류: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         }
-    }
-
-    /**
-     * 토큰 교환 거부가 "인가코드 무효(클라이언트 재시도로 해소)"인지 판별.
-     * invalid_grant(OAuth 표준) 또는 KOE320(카카오 인가코드 만료/무효)면 true → 4xx로 매핑.
-     */
-    private static boolean isInvalidAuthorization(String errorBody) {
-        if (errorBody == null) {
-            return false;
-        }
-        String b = errorBody.toLowerCase(Locale.ROOT);
-        return b.contains("invalid_grant") || b.contains("koe320");
     }
 
     private OauthUserInfo requestUserInfo(String accessToken) {

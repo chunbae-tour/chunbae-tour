@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.auth.oauth;
 
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -27,5 +28,24 @@ final class OauthResponses {
             return (Map<String, Object>) map;
         }
         return null;
+    }
+
+    /**
+     * 토큰 에러 본문(공급자 {@code error}/{@code error_code} 등)에 주어진 키워드 중 하나라도
+     * 포함되는지 대소문자 무시로 판별. 인가코드 무효(invalid_grant/KOE320 등 — 사용자 재시도로 해소)인지
+     * 가려 4xx(OAUTH_INVALID_AUTHORIZATION)와 502(OAUTH_PROVIDER_ERROR)를 분기하는 데 쓴다.
+     * 카카오/네이버가 키워드만 다를 뿐 판별 로직이 동일해 공통화한다.
+     */
+    static boolean containsAnyIgnoreCase(String body, String... keywords) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase(Locale.ROOT);
+        for (String keyword : keywords) {
+            if (keyword != null && lower.contains(keyword.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 }
