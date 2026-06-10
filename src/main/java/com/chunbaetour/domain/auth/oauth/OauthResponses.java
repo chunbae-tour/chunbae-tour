@@ -37,12 +37,14 @@ final class OauthResponses {
      * 카카오/네이버가 키워드만 다를 뿐 판별 로직이 동일해 공통화한다.
      */
     static boolean containsAnyIgnoreCase(String body, String... keywords) {
-        if (body == null || body.isBlank()) {
+        if (body == null || body.isBlank() || keywords == null) {
             return false;
         }
         String lower = body.toLowerCase(Locale.ROOT);
         for (String keyword : keywords) {
-            if (keyword != null && lower.contains(keyword.toLowerCase(Locale.ROOT))) {
+            // blank 키워드는 모든 본문과 매치돼 오분류(전부 400)를 만들므로 건너뛴다.
+            if (keyword != null && !keyword.isBlank()
+                    && lower.contains(keyword.toLowerCase(Locale.ROOT))) {
                 return true;
             }
         }

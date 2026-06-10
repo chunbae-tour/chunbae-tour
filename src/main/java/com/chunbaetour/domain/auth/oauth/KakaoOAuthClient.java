@@ -91,16 +91,18 @@ public class KakaoOAuthClient implements OauthClient {
             }
             return token;
         } catch (RestClientResponseException e) {
-            // 카카오가 4xx/5xx로 거부 — 에러 응답 본문(error/error_code/error_description)은 비밀이 아니며
-            // 원인 진단에 필수다(예: KOE320=인가코드 만료/무효, KOE101=앱키 오류, redirect_uri 불일치).
-            // 본문엔 client_secret/code 같은 요청 비밀값이 echo되지 않으므로 로깅해도 안전.
+            // 진단용 필드(error/error_code/error_description)만 추출·길이 제한해 로깅 — 본문 원문 전체는
+            // 예기치 않은 민감 문자열·개행 로그 오염·볼륨 리스크가 있어 남기지 않는다. KOE 코드는 요약에
+            // 포함되므로 진단(KOE320=코드 만료, KOE101=앱키 오류, KOE303=redirect 불일치)에는 충분.
             String errorBody = e.getResponseBodyAsString();
-            log.warn("[OAuth/Kakao] 토큰 교환 거부: status={}, body={}", e.getStatusCode(), errorBody);
-            // 인가코드 만료/무효(invalid_grant·KOE320) — 사용자 재시도로 해소 가능 → 4xx.
-            if (OauthResponses.containsAnyIgnoreCase(errorBody, "invalid_grant", "koe320")) {
+            log.warn("[OAuth/Kakao] 토큰 교환 거부: status={}, {}",
+                    e.getStatusCode(), OauthErrorClassifier.summarizeForLog(errorBody));
+            // 인가코드 자체 문제(KOE320)만 400 — 매핑 정책은 OauthErrorClassifier 참고
+            // (invalid_grant 광역 매칭은 KOE303 redirect 불일치까지 400으로 보내 "설정 오류=502" 정책과 어긋남).
+            if (OauthErrorClassifier.isInvalidAuthorization(OauthProvider.KAKAO, errorBody)) {
                 throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
             }
-            // 그 외(앱키/시크릿 등 서버 설정 문제, redirect 불일치, 공급자 장애) → 502(책임 소재가 서버/공급자).
+            // 그 외(앱키/시크릿·redirect 등 서버 설정 문제, 공급자 장애) → 502(책임 소재가 서버/공급자).
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         } catch (RestClientException e) {
             // 네트워크/타임아웃 등 응답 없는 실패 — 본문 없음, 예외 종류만.

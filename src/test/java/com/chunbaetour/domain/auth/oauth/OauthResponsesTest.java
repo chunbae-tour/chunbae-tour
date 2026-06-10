@@ -6,8 +6,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link OauthResponses#containsAnyIgnoreCase} 단위 테스트 — OAuth 토큰 교환 에러의 4xx/502 분기 근거.
- * 인가코드 무효(invalid_grant/KOE320)는 400, 키/설정 오류·네이버 invalid_request는 502로 남아야 한다.
+ * {@link OauthResponses#containsAnyIgnoreCase} 단위 테스트 — 문자열 판별 유틸 자체의 계약(매칭/경계값).
+ * 공급자별 400/502 매핑 정책은 {@link OauthErrorClassifierTest}가 검증한다.
  */
 class OauthResponsesTest {
 
@@ -42,5 +42,16 @@ class OauthResponsesTest {
         assertThat(OauthResponses.containsAnyIgnoreCase(null, "invalid_grant")).isFalse();
         assertThat(OauthResponses.containsAnyIgnoreCase("", "invalid_grant")).isFalse();
         assertThat(OauthResponses.containsAnyIgnoreCase("   ", "invalid_grant")).isFalse();
+    }
+
+    @DisplayName("키워드 경계값 — null 배열은 NPE 없이 false, null/blank 키워드는 매치되지 않음")
+    @Test
+    void nullOrBlankKeywords() {
+        assertThat(OauthResponses.containsAnyIgnoreCase("{\"error\":\"x\"}", (String[]) null)).isFalse();
+        // blank 키워드가 모든 본문과 매치돼 전부 400으로 오분류되는 것 방지.
+        assertThat(OauthResponses.containsAnyIgnoreCase("{\"error\":\"x\"}", "", "  ")).isFalse();
+        assertThat(OauthResponses.containsAnyIgnoreCase("{\"error\":\"x\"}", (String) null)).isFalse();
+        // 유효 키워드가 섞여 있으면 그 키워드로는 정상 매치.
+        assertThat(OauthResponses.containsAnyIgnoreCase("{\"error\":\"invalid_grant\"}", "", "invalid_grant")).isTrue();
     }
 }

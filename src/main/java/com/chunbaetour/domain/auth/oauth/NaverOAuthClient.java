@@ -87,14 +87,14 @@ public class NaverOAuthClient implements OauthClient {
             }
             return token;
         } catch (RestClientResponseException e) {
-            // 네이버가 4xx/5xx로 거부 — 에러 본문(error/error_description)은 비밀이 아니며 원인 진단에 필수다
-            // (예: invalid_request=파라미터/redirect 문제, invalid_client=키 오류). 요청 비밀값은 echo되지 않음.
+            // 진단용 필드(error/error_description)만 추출·길이 제한해 로깅 — 본문 원문 전체는 예기치 않은
+            // 민감 문자열·개행 로그 오염·볼륨 리스크가 있어 남기지 않는다.
             String errorBody = e.getResponseBodyAsString();
-            log.warn("[OAuth/Naver] 토큰 교환 거부: status={}, body={}", e.getStatusCode(), errorBody);
-            // 인가코드 만료/무효(invalid_grant)만 4xx로. invalid_request는 redirect_uri 불일치·필수 파라미터
-            // 누락 등 "설정/요청 자체 오류"를 포함하므로(카카오의 redirect 불일치가 502로 남는 것과 일관되게)
-            // 매칭에서 제외 → 502 유지(lim-haeun 리뷰: 공급자 간 redirect 불일치 응답코드 일관성).
-            if (OauthResponses.containsAnyIgnoreCase(errorBody, "invalid_grant")) {
+            log.warn("[OAuth/Naver] 토큰 교환 거부: status={}, {}",
+                    e.getStatusCode(), OauthErrorClassifier.summarizeForLog(errorBody));
+            // 인가코드 자체 문제(invalid_grant)만 400 — 매핑 정책은 OauthErrorClassifier 참고
+            // (invalid_request는 redirect/파라미터 구성 오류 포함이라 502 유지, 카카오와 일관).
+            if (OauthErrorClassifier.isInvalidAuthorization(OauthProvider.NAVER, errorBody)) {
                 throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
             }
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
