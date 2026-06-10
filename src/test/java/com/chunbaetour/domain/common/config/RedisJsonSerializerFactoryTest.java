@@ -1,12 +1,14 @@
 package com.chunbaetour.domain.common.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.festival.dto.response.CalendarEventItem;
 import com.chunbaetour.domain.festival.dto.response.CalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.FestivalCacheData;
 import com.chunbaetour.domain.festival.dto.response.FestivalCacheList;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -78,5 +80,18 @@ class RedisJsonSerializerFactoryTest {
         assertThat(restored.markedDates()).containsExactly(day);
         assertThat(restored.events().get(day).get(0)).isInstanceOf(CalendarEventItem.class);
         assertThat(restored.events().get(day).get(0).festivalId()).isEqualTo(9204L);
+    }
+
+    @Test
+    @DisplayName("allowlist 밖 타입(@class=java.lang.ProcessBuilder)은 역직렬화 거부된다 (gadget 차단)")
+    void disallowedTypeIsRejected() {
+        // allowlist에 없는 java.lang.ProcessBuilder를 @class로 지정한 악성 페이로드 — Redis에 바이트 주입 시
+        // 캐시 READ에서 인스턴스화되면 RCE. PolymorphicTypeValidator가 인스턴스화 전에 거부해야 한다.
+        byte[] malicious =
+                "{\"@class\":\"java.lang.ProcessBuilder\",\"command\":[\"calc\"]}"
+                        .getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> serializer.deserialize(malicious))
+                .isInstanceOf(Exception.class);
     }
 }
