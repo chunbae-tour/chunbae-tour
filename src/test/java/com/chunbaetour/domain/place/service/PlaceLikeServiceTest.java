@@ -6,6 +6,7 @@ import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
@@ -38,6 +39,12 @@ class PlaceLikeServiceTest {
     @Mock
     private PlaceRepository placeRepository;
 
+    @Mock
+    private PlaceQueryRepository placeQueryRepository;
+
+    @Mock
+    private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
     @InjectMocks
     private PlaceLikeService placeLikeService;
 
@@ -48,17 +55,16 @@ class PlaceLikeServiceTest {
         Long userId = 1L;
         PageRequest pageRequest = PageRequest.of(0, 10);
         
-        Place mockPlace = mock(Place.class);
-        when(mockPlace.getId()).thenReturn(100L);
-        when(mockPlace.getName()).thenReturn("제주 바다");
-        when(mockPlace.getCategory()).thenReturn(PlaceCategory.TOURIST_SPOT);
-        when(mockPlace.getStatus()).thenReturn(PlaceStatus.ACTIVE);
+        UserLikedPlaceResponse mockResponse = UserLikedPlaceResponse.builder()
+                .placeId(100L)
+                .name("제주 바다")
+                .category(PlaceCategory.TOURIST_SPOT)
+                .build();
         
-        Page<Long> mockPage = new PageImpl<>(List.of(100L));
+        Page<UserLikedPlaceResponse> mockPage = new PageImpl<>(List.of(mockResponse));
         
-        when(userLikeService.getLikedTargetIds(eq(userId), eq(LikeTargetType.PLACE), eq(pageRequest)))
+        when(placeQueryRepository.findUserLikedPlaces(eq(userId), eq(pageRequest)))
                 .thenReturn(mockPage);
-        when(placeRepository.findAllById(List.of(100L))).thenReturn(List.of(mockPlace));
 
         // when
         Page<UserLikedPlaceResponse> result = placeLikeService.getUserLikedPlaces(userId, pageRequest);
@@ -68,8 +74,7 @@ class PlaceLikeServiceTest {
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).placeId()).isEqualTo(100L);
         assertThat(result.getContent().get(0).name()).isEqualTo("제주 바다");
-        verify(userLikeService).getLikedTargetIds(userId, LikeTargetType.PLACE, pageRequest);
-        verify(placeRepository).findAllById(List.of(100L));
+        verify(placeQueryRepository).findUserLikedPlaces(userId, pageRequest);
     }
 
     @Test
@@ -79,7 +84,7 @@ class PlaceLikeServiceTest {
         Long userId = 1L;
         PageRequest pageRequest = PageRequest.of(0, 10);
         
-        when(userLikeService.getLikedTargetIds(eq(userId), eq(LikeTargetType.PLACE), eq(pageRequest)))
+        when(placeQueryRepository.findUserLikedPlaces(eq(userId), eq(pageRequest)))
                 .thenReturn(new PageImpl<>(Collections.emptyList()));
 
         // when
