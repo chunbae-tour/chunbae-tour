@@ -348,14 +348,39 @@ class CompanionServiceTest {
         given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
                 .willReturn(1L);
+        var constraintEx = new ConstraintViolationException(
+                "dup", null, "uq_companion_participant");
         given(companionParticipantRepository.saveAll(any()))
-                .willThrow(new DataIntegrityViolationException("uq_companion_participant"));
+                .willThrow(new DataIntegrityViolationException("uq_companion_participant", constraintEx));
 
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, roomId,
                 new CompanionAddParticipantsRequest(List.of(2L))))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMPANION_PARTICIPANT_ALREADY_EXISTS));
+    }
+
+    // 다른 제약 위반 → 그대로 전파
+    @Test
+    void addParticipants_otherConstraintViolation_propagates() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
+        var otherConstraintEx = new ConstraintViolationException(
+                "fk violation", null, "fk_companion_participants_companion_id");
+        given(companionParticipantRepository.saveAll(any()))
+                .willThrow(new DataIntegrityViolationException("fk violation", otherConstraintEx));
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, roomId,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     // ===== endCompanion =====

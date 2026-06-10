@@ -142,11 +142,17 @@ public class CompanionService {
                         .build())
                 .toList();
 
+        // CompanionParticipant는 GenerationType.IDENTITY라 saveAll() 호출 시 즉시 INSERT됨 — saveAllAndFlush 불필요
         try {
             companionParticipantRepository.saveAll(participants);
         } catch (DataIntegrityViolationException e) {
-            // uq_companion_participant 위반 — 이미 참여 중인 멤버 포함 시 CR_008
-            throw new BusinessException(ErrorCode.COMPANION_PARTICIPANT_ALREADY_EXISTS);
+            // uq_companion_participant 위반일 때만 CR_008, 그 외 제약 위반은 그대로 전파
+            Throwable cause = e.getCause();
+            if (cause instanceof ConstraintViolationException cve
+                    && "uq_companion_participant".equals(cve.getConstraintName())) {
+                throw new BusinessException(ErrorCode.COMPANION_PARTICIPANT_ALREADY_EXISTS);
+            }
+            throw e;
         }
 
         return new CompanionAddParticipantsResponse(companion.getId(), distinctUserIds);
