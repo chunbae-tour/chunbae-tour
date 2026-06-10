@@ -10,6 +10,7 @@ import com.chunbaetour.domain.translation.repository.TranslationCacheRepository;
 import com.chunbaetour.domain.translation.type.LanguageCode;
 import com.chunbaetour.domain.translation.type.TranslationSourceType;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -30,7 +31,9 @@ public class TranslationService {
     private final GoogleTranslationClient googleTranslationClient;
     private final TranslationErrorLogWriter errorLogWriter;
     private final TranslationCacheRepository translationCacheRepository;
-    private final EntityManager entityManager;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Autowired @Lazy
     private TranslationService self;

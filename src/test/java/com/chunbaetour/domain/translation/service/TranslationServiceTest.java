@@ -52,6 +52,8 @@ class TranslationServiceTest {
     void setUp() {
         // self는 @Cacheable 프록시 없이 동일 인스턴스 직접 호출 — 캐시 적용은 통합 테스트에서 검증
         ReflectionTestUtils.setField(translationService, "self", translationService);
+        // entityManager는 @PersistenceContext 필드 — 생성자 주입 대상이 아니라 InjectMocks가 채우지 못해 수동 주입
+        ReflectionTestUtils.setField(translationService, "entityManager", entityManager);
     }
 
     // 동적 도메인(CHAT) 번역 성공 — 결과 반환, ErrorLog 저장 없음, 캐시 미사용
