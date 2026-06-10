@@ -44,6 +44,13 @@ public class AdminAdApplicationController {
         return ApiResponse.success(adminAdApplicationService.getApplications(cursor, size, status));
     }
 
+    /** GET /api/v1/admin/ads/{adId} — 광고 신청 단건 상세 조회 (KAN-269) */
+    @Operation(summary = "광고 신청 단건 상세 조회")
+    @GetMapping("/{adId}")
+    public ApiResponse<AdminAdApplicationResponse> getApplication(@PathVariable Long adId) {
+        return ApiResponse.success(adminAdApplicationService.getApplication(adId));
+    }
+
     /** PATCH /api/v1/admin/ads/{adId}/approve — 광고 승인 */
     @Operation(summary = "광고 승인")
     @PatchMapping("/{adId}/approve")
