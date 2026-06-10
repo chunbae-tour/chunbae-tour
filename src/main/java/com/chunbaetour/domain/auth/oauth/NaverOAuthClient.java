@@ -3,6 +3,7 @@ package com.chunbaetour.domain.auth.oauth;
 import com.chunbaetour.domain.auth.OauthProvider;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * 네이버 로그인 OAuth 클라이언트.
@@ -85,10 +87,28 @@ public class NaverOAuthClient implements OauthClient {
                 throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
             }
             return token;
+        } catch (RestClientResponseException e) {
+            // 네이버가 4xx/5xx로 거부 — 에러 본문(error/error_description)은 비밀이 아니며 원인 진단에 필수다
+            // (예: invalid_request=파라미터/redirect 문제, invalid_client=키 오류). 요청 비밀값은 echo되지 않음.
+            String errorBody = e.getResponseBodyAsString();
+            log.warn("[OAuth/Naver] 토큰 교환 거부: status={}, body={}", e.getStatusCode(), errorBody);
+            if (isInvalidAuthorization(errorBody)) {
+                throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
+            }
+            throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         } catch (RestClientException e) {
-            log.warn("[OAuth/Naver] 토큰 교환 실패: {}", e.getClass().getSimpleName());
+            log.warn("[OAuth/Naver] 토큰 교환 네트워크 오류: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         }
+    }
+
+    /** 인가코드 무효(클라이언트 재시도로 해소)면 true → 4xx. 그 외(키 오류 등)는 502. */
+    private static boolean isInvalidAuthorization(String errorBody) {
+        if (errorBody == null) {
+            return false;
+        }
+        String b = errorBody.toLowerCase(Locale.ROOT);
+        return b.contains("invalid_grant") || b.contains("invalid_request");
     }
 
     private OauthUserInfo requestUserInfo(String accessToken) {

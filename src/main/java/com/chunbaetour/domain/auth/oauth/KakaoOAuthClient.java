@@ -3,6 +3,7 @@ package com.chunbaetour.domain.auth.oauth;
 import com.chunbaetour.domain.auth.OauthProvider;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import java.util.Locale;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * 카카오 로그인 OAuth 클라이언트.
@@ -89,11 +91,35 @@ public class KakaoOAuthClient implements OauthClient {
                 throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
             }
             return token;
+        } catch (RestClientResponseException e) {
+            // 카카오가 4xx/5xx로 거부 — 에러 응답 본문(error/error_code/error_description)은 비밀이 아니며
+            // 원인 진단에 필수다(예: KOE320=인가코드 만료/무효, KOE101=앱키 오류, redirect_uri 불일치).
+            // 본문엔 client_secret/code 같은 요청 비밀값이 echo되지 않으므로 로깅해도 안전.
+            String errorBody = e.getResponseBodyAsString();
+            log.warn("[OAuth/Kakao] 토큰 교환 거부: status={}, body={}", e.getStatusCode(), errorBody);
+            if (isInvalidAuthorization(errorBody)) {
+                // 인가코드 만료/무효/redirect 불일치 — 사용자 재시도로 해소 가능 → 4xx.
+                throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
+            }
+            // 그 외(앱키/시크릿 등 서버 설정 문제, 공급자 장애) → 502 유지(책임 소재가 서버/공급자).
+            throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         } catch (RestClientException e) {
-            // 응답 바디(코드/토큰 등 민감값)는 로그에 남기지 않는다.
-            log.warn("[OAuth/Kakao] 토큰 교환 실패: {}", e.getClass().getSimpleName());
+            // 네트워크/타임아웃 등 응답 없는 실패 — 본문 없음, 예외 종류만.
+            log.warn("[OAuth/Kakao] 토큰 교환 네트워크 오류: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         }
+    }
+
+    /**
+     * 토큰 교환 거부가 "인가코드 무효(클라이언트 재시도로 해소)"인지 판별.
+     * invalid_grant(OAuth 표준) 또는 KOE320(카카오 인가코드 만료/무효)면 true → 4xx로 매핑.
+     */
+    private static boolean isInvalidAuthorization(String errorBody) {
+        if (errorBody == null) {
+            return false;
+        }
+        String b = errorBody.toLowerCase(Locale.ROOT);
+        return b.contains("invalid_grant") || b.contains("koe320");
     }
 
     private OauthUserInfo requestUserInfo(String accessToken) {
