@@ -3,6 +3,7 @@ package com.chunbaetour.domain.auth.dto;
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 
 /**
@@ -35,6 +36,7 @@ import java.time.LocalDateTime;
  */
 public record UserMeResponse(
         Long userId,
+        @Schema(nullable = true, description = "이메일 — 소셜 가입자는 공급자가 이메일을 제공하지 않은 경우 null")
         String email,
         String nickname,
         String profileImageUrl,
