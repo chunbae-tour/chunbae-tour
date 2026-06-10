@@ -188,6 +188,14 @@ public class Shop extends BaseEntity {
     }
 
     /**
+     * 관리자 전통시장 연결 (KAN-268). traditionalMarketId=null 허용 — 연결 해제.
+     * 검증(TraditionalMarket 존재 여부)은 서비스 레이어에서 처리.
+     */
+    public void linkTraditionalMarket(Long traditionalMarketId) {
+        this.traditionalMarketId = traditionalMarketId;
+    }
+
+    /**
      * 인증 마크 부여 (KAN-204, Admin S05). 운영자가 인증 신청을 승인할 때 서비스가 호출 —
      * {@code ShopCertification.approve()}와 같은 트랜잭션에서 cascade.
      */

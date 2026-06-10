@@ -2,10 +2,13 @@ package com.chunbaetour.domain.shop.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
+import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
+import com.chunbaetour.domain.shop.dto.response.AdminShopMarketResponse;
 import com.chunbaetour.domain.shop.dto.response.AdminShopPlaceResponse;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
@@ -41,6 +44,7 @@ public class ShopService {
     private final ShopWalletRepository shopWalletRepository;
     private final ObjectMapper objectMapper;
     private final PlaceRepository placeRepository;
+    private final TraditionalMarketRepository traditionalMarketRepository;
 
     /**
      * 내 가게 목록 조회.
@@ -191,6 +195,34 @@ public class ShopService {
 
         shop.linkPlace(placeId);
         return AdminShopPlaceResponse.linked(shopId, placeId, place.getName());
+    }
+
+    /**
+     * 관리자 가게-전통시장 수동 연결/해제 (KAN-268). 가게-장소 연결(KAN-217/254)의 전통시장 버전.
+     * traditionalMarketId=null 허용 — 기존 연결 해제.
+     * 상태 무관 연결/해제 허용 — SUSPENDED/CLOSED 가게도 관리자가 시장 연결 정비 가능해야 함 (의도적).
+     * 자동 매칭(B9) 미구현 상태의 보정 수단.
+     *
+     * @return 변경 결과(연결된 전통시장 id·명칭·연결여부). 보정 결과를 echo back 해 관리자가 재조회 없이 확인.
+     */
+    @Transactional
+    public AdminShopMarketResponse updateShopMarket(Long shopId, Long traditionalMarketId) {
+        // 가게 조회 — 없으면 SHOP_001
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // 해제 요청(null) — 즉시 연결 해제 후 해제 결과 반환
+        if (traditionalMarketId == null) {
+            shop.linkTraditionalMarket(null);
+            return AdminShopMarketResponse.unlinked(shopId);
+        }
+
+        // 연결 요청 — 전통시장 존재 검증 + 응답에 담을 시장명 확보
+        TraditionalMarket market = traditionalMarketRepository.findById(traditionalMarketId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MARKET_NOT_FOUND));
+
+        shop.linkTraditionalMarket(traditionalMarketId);
+        return AdminShopMarketResponse.linked(shopId, traditionalMarketId, market.getName());
     }
 
     /**
