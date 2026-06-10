@@ -126,6 +126,7 @@ public enum ErrorCode {
     REFUND_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PAY_018", "존재하지 않는 환불 요청입니다."),
     REFUND_CANCEL_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_019", "대기 중인 환불 요청만 취소할 수 있습니다."),
     REFUND_INVALID_STATUS_TRANSITION(HttpStatus.CONFLICT,  "PAY_020", "현재 상태에서는 해당 작업을 수행할 수 없습니다."),
+    PAYMENT_ORDER_NOT_CANCELLABLE(HttpStatus.CONFLICT,     "PAY_021", "대기 중인 결제만 취소할 수 있습니다."),
     DUPLICATE_QR_PAY_REQUEST(HttpStatus.CONFLICT,          "PAY_022", "이미 대기 중인 QR 결제 요청이 있습니다."),
     SELF_PAYMENT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,       "PAY_023", "본인 가게에는 결제할 수 없습니다."),
     ZERO_AMOUNT_NOT_ALLOWED(HttpStatus.BAD_REQUEST,        "PAY_024", "결제 금액은 0원보다 커야 합니다."),

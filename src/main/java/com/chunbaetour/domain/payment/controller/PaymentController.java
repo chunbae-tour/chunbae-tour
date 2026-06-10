@@ -65,6 +65,21 @@ public class PaymentController {
     }
 
     /**
+     * 충전 주문 사용자 직접 취소 (KAN-252).
+     * orderId = 충전 시 발급된 orderUid (UUID).
+     * 본인 소유 PENDING 충전 주문만 취소 가능 — 결제창 완료 전 대기 해제 후 즉시 재시도용.
+     */
+    @Operation(summary = "충전 주문 취소", description = "본인 소유 PENDING 충전 주문만 취소 (결제창 완료 전)")
+    @PostMapping("/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelCharge(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable String orderId
+    ) {
+        chargeService.cancelCharge(userId, orderId);
+    }
+
+    /**
      * 환불 요청 생성.
      * orderId = 충전 시 발급된 orderUid (UUID).
      * 환불 요청은 PENDING 상태로 생성되며 관리자 승인(STORY-07) 후 실 환불 처리.

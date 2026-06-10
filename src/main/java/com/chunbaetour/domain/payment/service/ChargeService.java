@@ -97,6 +97,39 @@ public class ChargeService {
     }
 
     /**
+     * 충전 주문 사용자 직접 취소 (KAN-252, USER 전용).
+     *
+     * <p>본인 소유 PENDING 충전 주문만 취소 가능. 결제창 완료 전 대기 상태를 해제하고 즉시 재시도할 수 있게 한다.
+     * 웹훅(COMPLETED/FAILED 전환)과 경합해도 {@code cancelIfPending} DB-level CAS로 직렬화 —
+     * 한쪽만 전환 성공, 0 반환 시 이미 종착 상태로 보고 PAYMENT_ORDER_NOT_CANCELLABLE.
+     *
+     * <p>멱등성 키는 취소 시 해제한다. DB의 idempotencyKey UNIQUE 제약은 영구이므로 <b>동일 키</b> 재충전은
+     * 여전히 PAY_007로 막히지만(의도 — 멱등성 유지), 프론트가 새 키로 재시도하는 흐름은 정상 동작한다.
+     * charge()가 멱등성 키를 Redis보다 DB(findByIdempotencyKey)로 먼저 판정하므로 키 해제 타이밍은 안전하다.
+     *
+     * @param orderId 충전 시 발급된 orderUid(UUID)
+     * @throws PaymentException PAYMENT_HISTORY_NOT_FOUND(타인/없음), PAYMENT_ORDER_NOT_CANCELLABLE(PENDING 아님)
+     */
+    @Transactional
+    public void cancelCharge(Long userId, String orderId) {
+        // 소유권 확인 — 타인/없는 주문은 존재를 숨겨 NOT_FOUND로 통일
+        PaymentOrder order = paymentOrderRepository.findByOrderUid(orderId)
+                .orElseThrow(() -> new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND));
+        if (!order.getUserId().equals(userId)) {
+            throw new PaymentException(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+        }
+
+        // PENDING → CANCELLED 조건부 CAS — 웹훅/경합 방어. 0이면 이미 완료/실패/취소된 주문
+        int cancelled = paymentOrderRepository.cancelIfPending(orderId);
+        if (cancelled == 0) {
+            throw new PaymentException(ErrorCode.PAYMENT_ORDER_NOT_CANCELLABLE);
+        }
+
+        // 멱등성 키 해제 — 재충전(새 키) 흐름 정상화
+        idempotencyService.unmark(order.getIdempotencyKey());
+    }
+
+    /**
      * 결제(충전) 내역 cursor 페이징 조회.
      * id DESC 기준. cursor 없으면 첫 페이지.
      *

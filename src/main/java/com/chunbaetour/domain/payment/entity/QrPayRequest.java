@@ -129,4 +129,16 @@ public class QrPayRequest extends BaseEntity {
         this.status = QrPayStatus.EXPIRED;
         this.pendingKey = null;
     }
+
+    /**
+     * 사용자 직접 취소 (KAN-252). PENDING 상태에서만 허용 — 완료/거절/만료/취소된 건은 상태 가드로 거절.
+     * pendingKey를 null로 초기화해 동일 사용자·가게 unique 제약을 해제 → 즉시 재결제 가능.
+     */
+    public void cancel() {
+        if (this.status != QrPayStatus.PENDING) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
+        this.status = QrPayStatus.CANCELLED;
+        this.pendingKey = null;
+    }
 }

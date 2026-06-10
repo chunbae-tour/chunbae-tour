@@ -748,6 +748,72 @@ class QrPayServiceTest {
         then(lock).should(never()).unlock(); // 락 미획득 시 unlock 호출 없음
     }
 
+    // ── POST /payments/qr/{payRequestId}/cancel (KAN-252) ──────────────────────
+
+    @Test
+    @DisplayName("QR 결제 요청 취소 — 본인 PENDING 취소 성공: CANCELLED 전환 + pendingKey 해제(재결제 가능)")
+    void cancelQrPayRequest_success() throws InterruptedException {
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+        given(qrPayRequestRepository.findByPayRequestIdWithLock(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+
+        qrPayService.cancelQrPayRequest(USER_ID, PAY_REQUEST_ID);
+
+        assertThat(req.getStatus()).isEqualTo(QrPayStatus.CANCELLED);
+        assertThat(req.getPendingKey()).isNull(); // unique 제약 해제 → 동일 사용자·가게 재결제 가능
+        then(lock).should().unlock();
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 취소 — 타인 요청: QR_PAY_REQUEST_NOT_FOUND (락 진입 전 차단)")
+    void cancelQrPayRequest_otherUser_notFound() {
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED); // 소유자 USER_ID(1L)
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+        Long otherUserId = 2L;
+
+        assertThatThrownBy(() -> qrPayService.cancelQrPayRequest(otherUserId, PAY_REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+        then(redissonClient).should(never()).getLock(anyString());
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 취소 — 없는 요청: QR_PAY_REQUEST_NOT_FOUND")
+    void cancelQrPayRequest_notFound() {
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> qrPayService.cancelQrPayRequest(USER_ID, PAY_REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 결제 요청 취소 — 완료/거절/만료된 건: QR_PAY_INVALID_STATUS_TRANSITION (락 후 상태 가드)")
+    void cancelQrPayRequest_notPending_throws() throws InterruptedException {
+        QrPayRequest req = createPendingRequest(NOT_EXPIRED);
+        ReflectionTestUtils.setField(req, "status", QrPayStatus.COMPLETED); // 이미 완료 (거절/만료/취소도 동일)
+        given(qrPayRequestRepository.findByPayRequestId(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+
+        RLock lock = mock(RLock.class);
+        given(redissonClient.getLock(anyString())).willReturn(lock);
+        given(lock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(true);
+        given(lock.isHeldByCurrentThread()).willReturn(true);
+        given(qrPayRequestRepository.findByPayRequestIdWithLock(PAY_REQUEST_ID)).willReturn(Optional.of(req));
+
+        assertThatThrownBy(() -> qrPayService.cancelQrPayRequest(USER_ID, PAY_REQUEST_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        then(lock).should().unlock();
+    }
+
     // ── getPendingQrPayments ──────────────────────────────────────────────────
 
     @Test
