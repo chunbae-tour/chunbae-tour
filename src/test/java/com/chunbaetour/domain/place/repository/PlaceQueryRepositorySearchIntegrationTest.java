@@ -80,6 +80,16 @@ class PlaceQueryRepositorySearchIntegrationTest extends AbstractIntegrationTest 
         List<SearchPlaceResponse> result5 = placeQueryRepository.searchByKeyword("제", null, null, null, 10);
         // then 5
         assertThat(result5).hasSize(2);
+
+        // when 6: %, _, \ 같은 LIKE 와일드카드/escape 문자만 입력한 케이스
+        List<SearchPlaceResponse> result6 = placeQueryRepository.searchByKeyword("%", null, null, null, 10);
+        List<SearchPlaceResponse> result7 = placeQueryRepository.searchByKeyword("_", null, null, null, 10);
+        List<SearchPlaceResponse> result8 = placeQueryRepository.searchByKeyword("\\", null, null, null, 10);
+        
+        // then 6
+        assertThat(result6).isEmpty();
+        assertThat(result7).isEmpty();
+        assertThat(result8).isEmpty();
     }
 
     private Place createPlace(String name, double lat, double lng) {

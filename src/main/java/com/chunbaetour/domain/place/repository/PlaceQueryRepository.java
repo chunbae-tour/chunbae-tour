@@ -125,9 +125,9 @@ public class PlaceQueryRepository {
 
         String formattedKeyword = formatForBooleanMode(keyword);
         
-        // 특수문자만 입력되어 필터링 결과가 비어있는 경우, 전체 조회가 되지 않도록 방어 (LIKE 우회)
+        // 특수문자만 입력되어 유효한 검색 토큰이 없는 경우, 결과를 반환하지 않음
         if (formattedKeyword == null) {
-            return place.name.contains(keyword.trim());
+            return Expressions.FALSE;
         }
 
         // MATCH(name) AGAINST(:formattedKeyword IN BOOLEAN MODE) > 0
