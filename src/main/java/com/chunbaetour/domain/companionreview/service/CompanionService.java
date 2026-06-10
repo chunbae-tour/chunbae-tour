@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,17 +62,18 @@ public class CompanionService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-        for (Long participantId : distinctParticipantIds) {
-            if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(roomId, participantId, activeStates)) {
-                throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
-            }
-        }
-
         // 방장 자동 포함 — 요청에 없으면 추가
         List<Long> allParticipantIds = new ArrayList<>(distinctParticipantIds);
         if (!allParticipantIds.contains(ownerId)) {
             allParticipantIds.add(ownerId);
+        }
+
+        // 방장+참여자 ACTIVE 멤버십 일괄 검증 — IN절 단일 쿼리로 N+1 방지
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+        long activeCount = chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(
+                roomId, allParticipantIds, activeStates);
+        if (activeCount != allParticipantIds.size()) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
         Companion companion;
@@ -80,8 +82,12 @@ public class CompanionService {
                     Companion.builder().chatRoomId(roomId).build());
         } catch (DataIntegrityViolationException e) {
             // uq_companions_chat_room_id 위반 — TOCTOU 동시 요청이 앱 레벨 체크 통과한 경우
-            // status를 알 수 없으므로 CR_007(이미 진행 중)으로 반환
-            throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
+            Throwable cause = e.getCause();
+            if (cause instanceof ConstraintViolationException cve
+                    && "uq_companions_chat_room_id".equals(cve.getConstraintName())) {
+                throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
+            }
+            throw e;
         }
 
         List<CompanionParticipant> participants = allParticipantIds.stream()
@@ -151,7 +157,8 @@ public class CompanionService {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
-        Companion companion = companionRepository.findByChatRoomId(roomId)
+        // PESSIMISTIC_WRITE — 동시 종료 요청 둘 다 ONGOING 읽고 end() 호출하는 경쟁 방어
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
 
         companion.end();

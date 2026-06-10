@@ -240,7 +240,7 @@ public enum ErrorCode {
     COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "해당 채팅방 참여자가 아니면 리뷰를 작성할 수 없습니다."),
     // CR_004~007: 동행(Companion) 시작/종료/참여자 관리 — 고도화 #5·#6에서 사용
     // 동행 시작 시 같은 방에 기존 동행 존재 → status로 분기: ENDED는 CR_004(재시작 불가), ONGOING은 CR_007(이미 진행 중)
-    COMPANION_ALREADY_EXISTS(HttpStatus.CONFLICT,           "CR_004", "이미 종료된 동행이 있어 재시작할 수 없습니다."),
+    COMPANION_ALREADY_EXISTS(HttpStatus.CONFLICT,           "CR_004", "동행을 재시작할 수 없습니다."),
     COMPANION_NOT_FOUND(HttpStatus.NOT_FOUND,               "CR_005", "존재하지 않는 동행입니다."),
     COMPANION_ALREADY_ENDED(HttpStatus.CONFLICT,            "CR_006", "이미 종료된 동행입니다."),
     COMPANION_ALREADY_STARTED(HttpStatus.CONFLICT,          "CR_007", "이미 진행 중인 동행이 있습니다."),
