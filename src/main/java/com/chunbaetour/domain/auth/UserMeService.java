@@ -8,7 +8,7 @@ import com.chunbaetour.domain.common.audit.SecurityAuditEventType;
 import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.place.repository.UserLikeRepository;
+import com.chunbaetour.domain.like.repository.UserLikeRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

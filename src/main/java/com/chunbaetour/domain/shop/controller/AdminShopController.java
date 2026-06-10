@@ -6,6 +6,7 @@ import com.chunbaetour.domain.admin.audit.LogAdminAction;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.request.AdminShopPlaceRequest;
 import com.chunbaetour.domain.shop.dto.request.AdminShopStatusRequest;
+import com.chunbaetour.domain.shop.dto.response.AdminShopPlaceResponse;
 import com.chunbaetour.domain.shop.service.ShopService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -55,10 +56,9 @@ public class AdminShopController {
     @PatchMapping("/{shopId}/place")
     @LogAdminAction(actionType = AdminActionType.SHOP_UPDATE,
             targetType = AdminTargetType.SHOP, targetIdVar = "shopId")
-    public ApiResponse<Void> updateShopPlace(
+    public ApiResponse<AdminShopPlaceResponse> updateShopPlace(
             @PathVariable @Positive Long shopId,
             @Valid @RequestBody AdminShopPlaceRequest request) {
-        shopService.updateShopPlace(shopId, request.placeId());
-        return ApiResponse.success(null);
+        return ApiResponse.success(shopService.updateShopPlace(shopId, request.placeId()));
     }
 }

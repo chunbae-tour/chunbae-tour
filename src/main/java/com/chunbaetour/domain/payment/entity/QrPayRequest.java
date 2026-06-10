@@ -56,7 +56,7 @@ public class QrPayRequest extends BaseEntity {
     @Column(nullable = false, length = 20)
     private QrPayStatus status;
 
-    // 상인이 결제 거절 시 남기는 사유 (STORY-14) — PENDING/COMPLETED/EXPIRED 상태에서는 null
+    // 상인이 결제 거절 시 남기는 사유 (STORY-14) — REJECTED 외 상태(PENDING/COMPLETED/EXPIRED/CANCELLED)에서는 null
     @Column(name = "reject_reason", columnDefinition = "TEXT")
     private String rejectReason;
 
@@ -127,6 +127,18 @@ public class QrPayRequest extends BaseEntity {
             throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
         }
         this.status = QrPayStatus.EXPIRED;
+        this.pendingKey = null;
+    }
+
+    /**
+     * 사용자 직접 취소 (KAN-252). PENDING 상태에서만 허용 — 완료/거절/만료/취소된 건은 상태 가드로 거절.
+     * pendingKey를 null로 초기화해 동일 사용자·가게 unique 제약을 해제 → 즉시 재결제 가능.
+     */
+    public void cancel() {
+        if (this.status != QrPayStatus.PENDING) {
+            throw new BusinessException(ErrorCode.QR_PAY_INVALID_STATUS_TRANSITION);
+        }
+        this.status = QrPayStatus.CANCELLED;
         this.pendingKey = null;
     }
 }
