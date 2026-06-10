@@ -15,6 +15,9 @@ import com.chunbaetour.domain.place.client.KakaoLocalApiClient;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.Coord;
 import com.chunbaetour.domain.place.dto.KakaoCategoryResponse;
+import com.chunbaetour.domain.place.dto.request.MapMarkerRequest;
+import com.chunbaetour.domain.place.dto.response.MapMarkerPageResponse;
+import com.chunbaetour.domain.place.dto.response.MapMarkerResponse;
 import com.chunbaetour.domain.place.dto.request.PlaceListRequest;
 import com.chunbaetour.domain.place.dto.response.NearbyCategoryPlacesResponse;
 import com.chunbaetour.domain.place.dto.response.NearbyPlacePageResponse;
@@ -337,6 +340,32 @@ public class PlaceService {
         }
 
         return new PlaceListResponse(items, hasNext, nextCursorId, nextCursorRating);
+    }
+
+    /**
+     * 지도 마커 일괄 조회 (PHASE 8-1)
+     *
+     * <p>현재 지도 뷰포트(Bounding Box)에 포함된 마커 목록을 반환합니다.
+     * Bounding Box 좌표 특성상 캐시 적중률이 매우 낮으므로 매번 DB를 조회합니다.
+     *
+     * @param request 남서/북동 좌표
+     * @return 마커 리스트
+     */
+    @Transactional(readOnly = true)
+    public MapMarkerPageResponse getMapMarkers(MapMarkerRequest request) {
+        int limit = 500;
+        List<MapMarkerResponse> markers = placeQueryRepository.findMarkersInBoundingBox(
+                request.swLat().doubleValue(), request.swLng().doubleValue(),
+                request.neLat().doubleValue(), request.neLng().doubleValue()
+        );
+
+        boolean truncated = false;
+        if (markers.size() > limit) {
+            truncated = true;
+            markers = markers.subList(0, limit);
+        }
+
+        return new MapMarkerPageResponse(markers, truncated, limit);
     }
 
     /**

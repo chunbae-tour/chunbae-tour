@@ -10,7 +10,6 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Spring Cache — Redis 기반 캐시 설정.
@@ -21,10 +20,10 @@ import tools.jackson.databind.ObjectMapper;
 public class CacheConfig {
 
     @Bean
-    public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory,
-            ObjectMapper objectMapper) {
+    public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
+        // 타입정보(@class) 보존 직렬화기 — 캐시 HIT 시 DTO가 LinkedHashMap으로 복원돼 ClassCastException 나는 것 방지 (KAN-264).
         GenericJacksonJsonRedisSerializer jsonSerializer =
-                new GenericJacksonJsonRedisSerializer(objectMapper);
+                RedisJsonSerializerFactory.typePreservingSerializer();
 
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofHours(1))
