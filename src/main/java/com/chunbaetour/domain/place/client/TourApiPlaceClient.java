@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,27 +49,41 @@ public class TourApiPlaceClient {
     }
 
     /**
-     * {@code lastModifiedTime}(yyyyMMddHHmmss) 이후 변경된 관광지만 수집한다.
-     * null이면 전수 수집(최초 동기화). 수정일 내림차순이라 경계 도달 시 조기 종료한다.
+     * {@code lastModifiedTime}(yyyyMMddHHmmss) 이후 변경된 관광지를 페이지 단위로 수집해 {@code pageConsumer}에
+     * 즉시 전달한다(KAN-262). 전 페이지를 메모리에 모은 뒤 저장하던 방식과 달리, 한 페이지를 받을 때마다 콜백을
+     * 호출해 저장이 fetch와 인터리빙되도록 한다 — 첫 페이지분이 수 초 내 저장되기 시작한다.
+     *
+     * <p>null이면 전수 수집(최초 동기화). 수정일 내림차순이라 경계 도달 시 조기 종료한다.
+     * 각 페이지 수집 시 INFO 로그를 남겨 진행 상황을 로그로 추적할 수 있다.
      */
-    public List<TourApiPlaceItem> fetchModifiedSince(String lastModifiedTime) {
-        List<TourApiPlaceItem> result = new ArrayList<>();
-
+    public void fetchModifiedSince(String lastModifiedTime, Consumer<List<TourApiPlaceItem>> pageConsumer) {
+        int totalCollected = 0;
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
             List<TourApiPlaceItem> items = fetchPage(pageNo).response().body().itemList();
             if (items.isEmpty()) {
                 break;
             }
+            List<TourApiPlaceItem> pageBatch = new ArrayList<>();
+            boolean boundaryReached = false;
             for (TourApiPlaceItem item : items) {
                 // 수정일 내림차순 — 경계보다 "엄격히" 과거(< )인 항목을 만나면 이후는 전부 이미 동기화됨 → 즉시 종료.
                 // 경계와 동일 초(==)는 종료시키지 않는다: 같은 modifiedtime 항목이 이전 run의 페이지 경계로
                 // 갈렸을 수 있어, ==에서 멈추면 다음 증분에서 영구 누락된다. 동일 초는 멱등 upsert로 재처리해도 안전.
                 if (lastModifiedTime != null && item.modifiedTime() != null
                         && item.modifiedTime().compareTo(lastModifiedTime) < 0) {
-                    log.info("KorService2 증분 수집 완료(경계 도달): collected={}", result.size());
-                    return result;
+                    boundaryReached = true;
+                    break;
                 }
-                result.add(item);
+                pageBatch.add(item);
+            }
+            if (!pageBatch.isEmpty()) {
+                totalCollected += pageBatch.size();
+                log.info("KorService2 페이지 수집: page={}, 건수={}, 누적={}", pageNo, pageBatch.size(), totalCollected);
+                pageConsumer.accept(pageBatch); // 페이지 단위 즉시 저장 위임
+            }
+            if (boundaryReached) {
+                log.info("KorService2 증분 수집 완료(경계 도달): collected={}", totalCollected);
+                return;
             }
             if (items.size() < PAGE_SIZE) {
                 break; // 가득 차지 않은 페이지 = 마지막 페이지
@@ -77,9 +92,7 @@ public class TourApiPlaceClient {
                 log.error("KorService2 최대 페이지 수({}) 초과 — 무한루프 방지로 중단", MAX_PAGES);
             }
         }
-
-        log.info("KorService2 관광지 수집 완료: collected={}", result.size());
-        return result;
+        log.info("KorService2 관광지 수집 완료: collected={}", totalCollected);
     }
 
     private KorServiceResponse fetchPage(int pageNo) {
