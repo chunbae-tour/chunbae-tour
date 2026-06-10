@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.auth.dto;
 
 import com.chunbaetour.domain.auth.Role;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 소셜 로그인 응답.
@@ -16,6 +17,7 @@ public record OauthLoginResponse(
         String accessToken,
         Role role,
         String signupTicket,
+        @Schema(nullable = true, description = "공급자 제공 이메일 prefill — 공급자가 이메일을 제공하지 않으면(카카오 이메일 미동의 등) null")
         String email,
         String nickname
 ) {

@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.companionreview.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.companionreview.type.CompanionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -46,6 +48,15 @@ public class Companion extends BaseEntity {
 
     @Column(name = "ended_at")
     private LocalDateTime endedAt;
+
+    // 동행 종료 — ENDED 상태에서 호출 시 CR_006
+    public void end() {
+        if (this.status == CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
+        }
+        this.status = CompanionStatus.ENDED;
+        this.endedAt = LocalDateTime.now();
+    }
 
     @Builder
     private Companion(Long chatRoomId) {

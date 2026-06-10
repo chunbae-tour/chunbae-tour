@@ -14,6 +14,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * 카카오 로그인 OAuth 클라이언트.
@@ -89,9 +90,23 @@ public class KakaoOAuthClient implements OauthClient {
                 throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
             }
             return token;
+        } catch (RestClientResponseException e) {
+            // 진단용 필드(error/error_code/error_description)만 추출·길이 제한해 로깅 — 본문 원문 전체는
+            // 예기치 않은 민감 문자열·개행 로그 오염·볼륨 리스크가 있어 남기지 않는다. KOE 코드는 요약에
+            // 포함되므로 진단(KOE320=코드 만료, KOE101=앱키 오류, KOE303=redirect 불일치)에는 충분.
+            String errorBody = e.getResponseBodyAsString();
+            log.warn("[OAuth/Kakao] 토큰 교환 거부: status={}, {}",
+                    e.getStatusCode(), OauthErrorClassifier.summarizeForLog(errorBody));
+            // 인가코드 자체 문제(KOE320)만 400 — 매핑 정책은 OauthErrorClassifier 참고
+            // (invalid_grant 광역 매칭은 KOE303 redirect 불일치까지 400으로 보내 "설정 오류=502" 정책과 어긋남).
+            if (OauthErrorClassifier.isInvalidAuthorization(OauthProvider.KAKAO, errorBody)) {
+                throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
+            }
+            // 그 외(앱키/시크릿·redirect 등 서버 설정 문제, 공급자 장애) → 502(책임 소재가 서버/공급자).
+            throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         } catch (RestClientException e) {
-            // 응답 바디(코드/토큰 등 민감값)는 로그에 남기지 않는다.
-            log.warn("[OAuth/Kakao] 토큰 교환 실패: {}", e.getClass().getSimpleName());
+            // 네트워크/타임아웃 등 응답 없는 실패 — 본문 없음, 예외 종류만.
+            log.warn("[OAuth/Kakao] 토큰 교환 네트워크 오류: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         }
     }
