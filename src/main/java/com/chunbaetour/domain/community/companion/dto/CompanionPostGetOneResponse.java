@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.community.companion.dto;
 
 import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.community.common.WriterInfo;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
@@ -9,6 +10,8 @@ import java.time.LocalDateTime;
 
 public record CompanionPostGetOneResponse(
         Long postId,
+        Long chatRoomId,
+        ChatRoomStatus chatRoomStatus,
         String title,
         String content,
         Long placeId,
@@ -22,9 +25,12 @@ public record CompanionPostGetOneResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static CompanionPostGetOneResponse of(CompanionPost post, Account author) {
+    public static CompanionPostGetOneResponse of(
+            CompanionPost post, Account author, Long chatRoomId, ChatRoomStatus chatRoomStatus) {
         return new CompanionPostGetOneResponse(
                 post.getId(),
+                chatRoomId,
+                chatRoomStatus,
                 post.getTitle(),
                 post.getContent(),
                 post.getPlaceId(),
