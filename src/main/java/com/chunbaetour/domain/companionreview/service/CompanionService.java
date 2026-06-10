@@ -101,7 +101,7 @@ public class CompanionService {
         return CompanionStartResponse.of(companion, allParticipantIds);
     }
 
-    // 동행 참여자 추가 — 방장 검증, ONGOING 확인(CR_006), ACTIVE 멤버 확인, 중복 시 CR_008
+    // 동행 참여자 추가 — 방장 검증, CLOSED 차단, ONGOING 확인(CR_006), ACTIVE 멤버 확인, 중복 시 CR_008
     @Transactional
     public CompanionAddParticipantsResponse addParticipants(Long ownerId, Long roomId,
             CompanionAddParticipantsRequest request) {
@@ -111,8 +111,12 @@ public class CompanionService {
         if (!chatRoom.isOwnedBy(ownerId)) {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
+        if (chatRoom.getStatus() == ChatRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
+        }
 
-        Companion companion = companionRepository.findByChatRoomId(roomId)
+        // PESSIMISTIC_WRITE — endCompanion과 동일 락으로 직렬화, ENDED 동행에 참여자 추가되는 race 방지
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
 
         if (companion.getStatus() == CompanionStatus.ENDED) {

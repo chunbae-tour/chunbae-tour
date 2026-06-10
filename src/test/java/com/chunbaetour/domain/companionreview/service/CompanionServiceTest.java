@@ -220,7 +220,7 @@ class CompanionServiceTest {
         CompanionAddParticipantsRequest request = new CompanionAddParticipantsRequest(List.of(2L, 3L));
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
                 .willReturn(2L);
         given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
@@ -261,6 +261,23 @@ class CompanionServiceTest {
         verify(companionParticipantRepository, never()).saveAll(any());
     }
 
+    // CLOSED 방 → CHAT_013
+    @Test
+    void addParticipants_closedRoom_throwsRoomClosed() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        chatRoom.close();
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_ROOM_CLOSED));
+        verify(companionParticipantRepository, never()).saveAll(any());
+    }
+
     // 동행 없음 → CR_005
     @Test
     void addParticipants_companionNotFound_throwsNotFound() {
@@ -268,7 +285,7 @@ class CompanionServiceTest {
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
                 new CompanionAddParticipantsRequest(List.of(2L))))
@@ -287,7 +304,7 @@ class CompanionServiceTest {
         endedCompanion.end();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(endedCompanion));
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.of(endedCompanion));
 
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
                 new CompanionAddParticipantsRequest(List.of(2L))))
@@ -306,7 +323,7 @@ class CompanionServiceTest {
         ReflectionTestUtils.setField(companion, "id", 100L);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.of(companion));
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
                 .willReturn(0L);
 
@@ -328,7 +345,7 @@ class CompanionServiceTest {
         ReflectionTestUtils.setField(companion, "id", 100L);
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
                 .willReturn(1L);
         given(companionParticipantRepository.saveAll(any()))

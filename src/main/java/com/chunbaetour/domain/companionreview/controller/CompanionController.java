@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "동행", description = "동행 시작/종료 (/api/v1/chat/rooms/{roomId}/companion)")
+@Tag(name = "동행", description = "동행 시작/종료/참여자 추가 (/api/v1/chat/rooms/{roomId}/companion)")
 @RestController
 @RequiredArgsConstructor
 @Validated
