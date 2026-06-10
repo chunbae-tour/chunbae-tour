@@ -7,7 +7,9 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
@@ -97,6 +99,63 @@ public class CompanionService {
         companionParticipantRepository.saveAll(participants);
 
         return CompanionStartResponse.of(companion, allParticipantIds);
+    }
+
+    // 동행 참여자 추가 — 방장 검증, CLOSED 차단, ONGOING 확인(CR_006), ACTIVE 멤버 확인, 중복 시 CR_008
+    @Transactional
+    public CompanionAddParticipantsResponse addParticipants(Long ownerId, Long roomId,
+            CompanionAddParticipantsRequest request) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        if (!chatRoom.isOwnedBy(ownerId)) {
+            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+        if (chatRoom.getStatus() == ChatRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
+        }
+
+        // PESSIMISTIC_WRITE — endCompanion과 동일 락으로 직렬화, ENDED 동행에 참여자 추가되는 race 방지
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+
+        if (companion.getStatus() == CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
+        }
+
+        List<Long> distinctUserIds = request.userIds().stream()
+                .distinct()
+                .collect(Collectors.toList());
+
+        // 추가 대상 ACTIVE 멤버십 일괄 검증 — IN절 단일 쿼리로 N+1 방지
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+        long activeCount = chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(
+                roomId, distinctUserIds, activeStates);
+        if (activeCount != distinctUserIds.size()) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
+
+        List<CompanionParticipant> participants = distinctUserIds.stream()
+                .map(userId -> CompanionParticipant.builder()
+                        .companionId(companion.getId())
+                        .userId(userId)
+                        .build())
+                .toList();
+
+        // CompanionParticipant는 GenerationType.IDENTITY라 saveAll() 호출 시 즉시 INSERT됨 — saveAllAndFlush 불필요
+        try {
+            companionParticipantRepository.saveAll(participants);
+        } catch (DataIntegrityViolationException e) {
+            // uq_companion_participant 위반일 때만 CR_008, 그 외 제약 위반은 그대로 전파
+            Throwable cause = e.getCause();
+            if (cause instanceof ConstraintViolationException cve
+                    && "uq_companion_participant".equals(cve.getConstraintName())) {
+                throw new BusinessException(ErrorCode.COMPANION_PARTICIPANT_ALREADY_EXISTS);
+            }
+            throw e;
+        }
+
+        return new CompanionAddParticipantsResponse(companion.getId(), distinctUserIds);
     }
 
     // 동행 종료 — 방장 검증, 동행 존재 확인, ONGOING 상태 확인(CR_006)
