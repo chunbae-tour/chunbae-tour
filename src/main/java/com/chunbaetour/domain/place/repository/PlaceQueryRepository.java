@@ -13,18 +13,69 @@ import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberTemplate;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
 
 import static com.chunbaetour.domain.place.QPlace.place;
+import static com.chunbaetour.domain.like.entity.QUserLike.userLike;
+import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.querydsl.jpa.impl.JPAQuery;
 
 @Repository
 @RequiredArgsConstructor
 public class PlaceQueryRepository {
 
     private final JPAQueryFactory queryFactory;
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 마이페이지 찜한 관광지 조회 (QueryDSL JOIN 최적화)
+    // ──────────────────────────────────────────────────────────────────────────
+    public Page<UserLikedPlaceResponse> findUserLikedPlaces(Long userId, Pageable pageable) {
+        List<com.querydsl.core.types.OrderSpecifier<?>> orderSpecifiers = new java.util.ArrayList<>();
+        for (org.springframework.data.domain.Sort.Order order : pageable.getSort()) {
+            com.querydsl.core.types.Order direction = order.isAscending() ? com.querydsl.core.types.Order.ASC : com.querydsl.core.types.Order.DESC;
+            if ("createdAt".equals(order.getProperty())) {
+                orderSpecifiers.add(new com.querydsl.core.types.OrderSpecifier<>(direction, userLike.createdAt));
+            } else if ("id".equals(order.getProperty())) {
+                orderSpecifiers.add(new com.querydsl.core.types.OrderSpecifier<>(direction, userLike.id));
+            }
+        }
+        // 안정적인 페이징을 위한 Tie-breaker (기본 정렬)
+        orderSpecifiers.add(userLike.createdAt.desc());
+        orderSpecifiers.add(userLike.id.desc());
+
+        List<com.querydsl.core.Tuple> tuples = queryFactory
+                .select(place, userLike.createdAt)
+                .from(userLike)
+                .join(place).on(userLike.targetId.eq(place.id))
+                .where(userLike.user.id.eq(userId),
+                       userLike.targetType.eq(LikeTargetType.PLACE),
+                       place.status.eq(PlaceStatus.ACTIVE))
+                .orderBy(orderSpecifiers.toArray(new com.querydsl.core.types.OrderSpecifier[0]))
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+
+        List<UserLikedPlaceResponse> content = tuples.stream()
+                .map(t -> UserLikedPlaceResponse.from(t.get(place), t.get(userLike.createdAt)))
+                .toList();
+
+        JPAQuery<Long> countQuery = queryFactory
+                .select(userLike.count())
+                .from(userLike)
+                .join(place).on(userLike.targetId.eq(place.id))
+                .where(userLike.user.id.eq(userId),
+                       userLike.targetType.eq(LikeTargetType.PLACE),
+                       place.status.eq(PlaceStatus.ACTIVE));
+
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 위치 기반 근처 관광지 (Nearby) 쿼리
@@ -82,12 +133,10 @@ public class PlaceQueryRepository {
      * 커서 기반 페이지네이션을 지원하며, 기본 정렬은 placeId 내림차순(최신순)을 사용한다.
      * </p>
      * <p>
-     * <b>[15년차 아키텍트 코멘트 - Tech Debt]</b><br>
-     * 현재 {@code place.name.contains(keyword)}는 내부적으로 {@code LIKE '%keyword%'} 쿼리를 발생시킨다.
-     * 이는 선행 와일드카드로 인해 MySQL의 B-Tree 인덱스를 타지 못하고 Full Table Scan을 유발한다.
-     * 데이터가 적은 현재는 요구사항(LIKE %keyword%)을 충족하지만,
-     * 향후 데이터 증가 시 커스텀 Dialect를 등록하여 {@code MATCH(name) AGAINST(:keyword IN BOOLEAN MODE)} 방식의
-     * FULLTEXT 검색으로 리팩터링해야 한다.
+     * <b>[15년차 아키텍트 코멘트]</b><br>
+     * 기존의 {@code place.name.contains(keyword)} (LIKE '%keyword%') 방식에서 발생하는 Full Table Scan 병목을 해결하기 위해,
+     * KAN-239를 통해 MySQL ngram 파서를 적용한 FULLTEXT 인덱스(Boolean Mode) 검색으로 리팩터링되었습니다.
+     * 1글자 검색 등 인덱스를 탈 수 없는 특정 예외 케이스에 대해서만 부분적으로 LIKE 검색으로 우회(Fallback)합니다.
      * </p>
      */
     public List<SearchPlaceResponse> searchByKeyword(String keyword, PlaceCategory category,
@@ -116,7 +165,45 @@ public class PlaceQueryRepository {
     }
 
     private BooleanExpression keywordContains(String keyword) {
-        return StringUtils.hasText(keyword) ? place.name.contains(keyword) : null;
+        if (!StringUtils.hasText(keyword)) {
+            return null;
+        }
+        
+        // ngram_token_size 기본값이 2이므로 1글자 검색은 인덱스를 타지 못함. LIKE 검색으로 우회 (Fallback)
+        if (keyword.trim().length() == 1) {
+            return place.name.contains(keyword.trim());
+        }
+
+        String formattedKeyword = formatForBooleanMode(keyword);
+        
+        // 특수문자만 입력되어 유효한 검색 토큰이 없는 경우, 결과를 반환하지 않음
+        if (formattedKeyword == null) {
+            return Expressions.FALSE;
+        }
+
+        // MATCH(name) AGAINST(:formattedKeyword IN BOOLEAN MODE) > 0
+        return Expressions.numberTemplate(Double.class, "function('match_against', {0}, {1})", place.name, formattedKeyword).gt(0.0);
+    }
+
+    /**
+     * 사용자의 검색어를 Boolean Mode 검색에 맞게 변환합니다.
+     * MySQL Boolean Mode 연산자(+, -, *, ", (, ) 등) 충돌을 방지하기 위해 정규식을 사용하여 안전한 문자만 남깁니다.
+     * ngram 파서를 사용하므로 와일드카드(*)는 무의미하여 제거합니다.
+     * 예: "제주 카페" -> "+제주 +카페"
+     */
+    protected String formatForBooleanMode(String keyword) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\p{L}\\p{N}]+").matcher(keyword);
+        java.util.List<String> tokens = new java.util.ArrayList<>();
+
+        while (matcher.find()) {
+            tokens.add("+" + matcher.group());
+        }
+
+        if (tokens.isEmpty()) {
+            return null;
+        }
+
+        return String.join(" ", tokens);
     }
 
     private BooleanExpression categoryEq(PlaceCategory category) {
