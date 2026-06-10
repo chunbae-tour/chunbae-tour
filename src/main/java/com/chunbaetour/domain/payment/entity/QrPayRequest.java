@@ -56,7 +56,7 @@ public class QrPayRequest extends BaseEntity {
     @Column(nullable = false, length = 20)
     private QrPayStatus status;
 
-    // 상인이 결제 거절 시 남기는 사유 (STORY-14) — PENDING/COMPLETED/EXPIRED 상태에서는 null
+    // 상인이 결제 거절 시 남기는 사유 (STORY-14) — REJECTED 외 상태(PENDING/COMPLETED/EXPIRED/CANCELLED)에서는 null
     @Column(name = "reject_reason", columnDefinition = "TEXT")
     private String rejectReason;
 

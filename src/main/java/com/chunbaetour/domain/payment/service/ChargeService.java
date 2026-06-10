@@ -22,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
@@ -105,7 +107,8 @@ public class ChargeService {
      *
      * <p>멱등성 키는 취소 시 해제한다. DB의 idempotencyKey UNIQUE 제약은 영구이므로 <b>동일 키</b> 재충전은
      * 여전히 PAY_007로 막히지만(의도 — 멱등성 유지), 프론트가 새 키로 재시도하는 흐름은 정상 동작한다.
-     * charge()가 멱등성 키를 Redis보다 DB(findByIdempotencyKey)로 먼저 판정하므로 키 해제 타이밍은 안전하다.
+     * 키 해제는 <b>커밋 이후</b>로 미룬다 — 트랜잭션 롤백 시 주문이 PENDING으로 복구되는데 Redis 키만 먼저
+     * 삭제되면 멱등 가드가 풀려 중복 주문 창이 열리므로(CallbackService.scheduleUnmark와 동일 정책).
      *
      * @param orderId 충전 시 발급된 orderUid(UUID)
      * @throws PaymentException PAYMENT_HISTORY_NOT_FOUND(타인/없음), PAYMENT_ORDER_NOT_CANCELLABLE(PENDING 아님)
@@ -125,8 +128,25 @@ public class ChargeService {
             throw new PaymentException(ErrorCode.PAYMENT_ORDER_NOT_CANCELLABLE);
         }
 
-        // 멱등성 키 해제 — 재충전(새 키) 흐름 정상화
-        idempotencyService.unmark(order.getIdempotencyKey());
+        // 멱등성 키 해제 — 재충전(새 키) 흐름 정상화. 커밋 후로 미뤄 롤백 시 키-DB 불일치 방지.
+        scheduleUnmarkOnCommit(order.getIdempotencyKey());
+    }
+
+    /**
+     * 멱등성 키 해제를 트랜잭션 커밋 이후로 예약한다. 커밋 실패(롤백) 시 키가 보존돼 멱등 가드가 유지된다.
+     * 트랜잭션 컨텍스트 밖(직접 호출·테스트 등)에서는 즉시 해제.
+     */
+    private void scheduleUnmarkOnCommit(String idempotencyKey) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    idempotencyService.unmark(idempotencyKey);
+                }
+            });
+        } else {
+            idempotencyService.unmark(idempotencyKey);
+        }
     }
 
     /**
