@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
+import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
@@ -142,18 +143,41 @@ class CompanionServiceTest {
         verify(companionRepository, never()).save(any());
     }
 
+    // 방장이 ACTIVE 멤버 아님(채팅방 나간 상태) → CHAT_005
+    @Test
+    void startCompanion_ownerNotActiveMember_throwsNotJoined() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(10L, ownerId, activeStates))
+                .willReturn(false);
+
+        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_NOT_JOINED));
+        verify(companionRepository, never()).save(any());
+    }
+
     // 참여자가 ACTIVE 멤버 아님 → CHAT_005
     @Test
     void startCompanion_participantNotMember_throwsNotJoined() {
         Long ownerId = 1L;
+        Long participantId = 2L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(10L, ownerId, activeStates))
+                .willReturn(true);
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(10L, participantId, activeStates))
                 .willReturn(false);
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(2L))))
+        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(participantId))))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_NOT_JOINED));
