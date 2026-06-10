@@ -37,6 +37,19 @@ public class PlaceQueryRepository {
     // 마이페이지 찜한 관광지 조회 (QueryDSL JOIN 최적화)
     // ──────────────────────────────────────────────────────────────────────────
     public Page<UserLikedPlaceResponse> findUserLikedPlaces(Long userId, Pageable pageable) {
+        List<com.querydsl.core.types.OrderSpecifier<?>> orderSpecifiers = new java.util.ArrayList<>();
+        for (org.springframework.data.domain.Sort.Order order : pageable.getSort()) {
+            com.querydsl.core.types.Order direction = order.isAscending() ? com.querydsl.core.types.Order.ASC : com.querydsl.core.types.Order.DESC;
+            if ("createdAt".equals(order.getProperty())) {
+                orderSpecifiers.add(new com.querydsl.core.types.OrderSpecifier<>(direction, userLike.createdAt));
+            } else if ("id".equals(order.getProperty())) {
+                orderSpecifiers.add(new com.querydsl.core.types.OrderSpecifier<>(direction, userLike.id));
+            }
+        }
+        // 안정적인 페이징을 위한 Tie-breaker (기본 정렬)
+        orderSpecifiers.add(userLike.createdAt.desc());
+        orderSpecifiers.add(userLike.id.desc());
+
         List<com.querydsl.core.Tuple> tuples = queryFactory
                 .select(place, userLike.createdAt)
                 .from(userLike)
@@ -44,7 +57,7 @@ public class PlaceQueryRepository {
                 .where(userLike.user.id.eq(userId),
                        userLike.targetType.eq(LikeTargetType.PLACE),
                        place.status.eq(PlaceStatus.ACTIVE))
-                .orderBy(userLike.createdAt.desc())
+                .orderBy(orderSpecifiers.toArray(new com.querydsl.core.types.OrderSpecifier[0]))
                 .offset(pageable.getOffset())
                 .limit(pageable.getPageSize())
                 .fetch();

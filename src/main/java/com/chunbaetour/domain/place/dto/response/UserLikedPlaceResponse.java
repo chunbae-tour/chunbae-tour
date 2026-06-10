@@ -6,8 +6,6 @@ import java.time.LocalDateTime;
 
 import lombok.Builder;
 
-import java.util.Objects;
-
 /**
  * 마이페이지 연동용 (PHASE 3-3)
  * 사용자가 찜한 관광지 목록 조회 응답 DTO
