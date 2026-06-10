@@ -34,12 +34,12 @@ public class LocationUtils {
      * Bounding Box 좌표를 바탕으로 MBR 폴리곤 문자열 생성 (PHASE 8-1)
      */
     public static String calculateMbrPolygon(double swLat, double swLng, double neLat, double neLng) {
-        return String.format(Locale.US, "POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
-                swLng, swLat,  // SW (최소 경도, 최소 위도)
-                swLng, neLat,  // NW (최소 경도, 최대 위도)
-                neLng, neLat,  // NE (최대 경도, 최대 위도)
-                neLng, swLat,  // SE (최대 경도, 최소 위도)
-                swLng, swLat   // 원점 회귀
+        return String.format(Locale.US, "POLYGON((%s %s, %s %s, %s %s, %s %s, %s %s))",
+                BigDecimal.valueOf(swLng).toPlainString(), BigDecimal.valueOf(swLat).toPlainString(),
+                BigDecimal.valueOf(swLng).toPlainString(), BigDecimal.valueOf(neLat).toPlainString(),
+                BigDecimal.valueOf(neLng).toPlainString(), BigDecimal.valueOf(neLat).toPlainString(),
+                BigDecimal.valueOf(neLng).toPlainString(), BigDecimal.valueOf(swLat).toPlainString(),
+                BigDecimal.valueOf(swLng).toPlainString(), BigDecimal.valueOf(swLat).toPlainString()
         );
     }
 
