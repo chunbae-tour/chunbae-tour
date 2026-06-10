@@ -11,7 +11,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class RedisConfig {
@@ -56,13 +55,14 @@ public class RedisConfig {
      *          JavaTimeModule 등록 불필요 — Jackson 3에서 Java 8 날짜/시간 타입 기본 내장
      */
     @Bean
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
+        // 타입정보(@class) 보존 직렬화기 — 캐시/템플릿 GET 시 DTO가 LinkedHashMap으로 복원되는 것 방지 (KAN-264).
         GenericJacksonJsonRedisSerializer jsonSerializer =
-                new GenericJacksonJsonRedisSerializer(objectMapper);
+                RedisJsonSerializerFactory.typePreservingSerializer();
 
         template.setKeySerializer(stringSerializer);
         template.setHashKeySerializer(stringSerializer);
