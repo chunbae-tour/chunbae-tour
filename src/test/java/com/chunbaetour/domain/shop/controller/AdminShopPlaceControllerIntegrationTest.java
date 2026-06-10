@@ -75,7 +75,11 @@ class AdminShopPlaceControllerIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"placeId\": " + place.getId() + "}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shopId").value(shop.getId()))
+                .andExpect(jsonPath("$.data.placeId").value(place.getId()))
+                .andExpect(jsonPath("$.data.placeName").value("광장시장"))
+                .andExpect(jsonPath("$.data.linked").value(true));
 
         Shop updated = shopRepository.findById(shop.getId()).orElseThrow();
         assertThat(updated.getPlaceId()).isEqualTo(place.getId());
@@ -100,7 +104,9 @@ class AdminShopPlaceControllerIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"placeId\": null}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shopId").value(shop.getId()))
+                .andExpect(jsonPath("$.data.linked").value(false));
 
         Shop updated = shopRepository.findById(shop.getId()).orElseThrow();
         assertThat(updated.getPlaceId()).isNull();

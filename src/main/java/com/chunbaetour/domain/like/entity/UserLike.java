@@ -1,9 +1,12 @@
-package com.chunbaetour.domain.place;
+package com.chunbaetour.domain.like.entity;
 
 import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.like.type.LikeTargetType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -25,11 +28,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @Table(
     name = "user_likes",
     uniqueConstraints = {
-        @UniqueConstraint(name = "uk_user_likes_user_place", columnNames = {"user_id", "place_id"})
+        @UniqueConstraint(name = "uk_user_likes_type_target", columnNames = {"user_id", "target_type", "target_id"})
     },
     indexes = {
         @Index(name = "idx_user_likes_user", columnList = "user_id"),
-        @Index(name = "idx_user_likes_place", columnList = "place_id")
+        @Index(name = "idx_user_likes_target", columnList = "target_type, target_id")
     }
 )
 @Getter
@@ -45,30 +48,38 @@ public class UserLike {
     @JoinColumn(name = "user_id", nullable = false)
     private Account user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "place_id", nullable = false)
-    private Place place;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_type", nullable = false, length = 50)
+    private LikeTargetType targetType;
+
+    @Column(name = "target_id", nullable = false)
+    private Long targetId;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Builder
-    private UserLike(Account user, Place place) {
+    private UserLike(Account user, LikeTargetType targetType, Long targetId) {
         if (user == null) {
             throw new IllegalArgumentException("사용자 정보는 필수입니다.");
         }
-        if (place == null) {
-            throw new IllegalArgumentException("관광지 정보는 필수입니다.");
+        if (targetType == null) {
+            throw new IllegalArgumentException("찜 대상 타입은 필수입니다.");
+        }
+        if (targetId == null) {
+            throw new IllegalArgumentException("찜 대상 ID는 필수입니다.");
         }
         this.user = user;
-        this.place = place;
+        this.targetType = targetType;
+        this.targetId = targetId;
     }
 
-    public static UserLike of(Account user, Place place) {
+    public static UserLike of(Account user, LikeTargetType targetType, Long targetId) {
         return UserLike.builder()
                 .user(user)
-                .place(place)
+                .targetType(targetType)
+                .targetId(targetId)
                 .build();
     }
 }
