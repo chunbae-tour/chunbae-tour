@@ -9,6 +9,7 @@ import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
 import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
 import com.chunbaetour.domain.place.service.PlaceLikeService;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -160,14 +162,21 @@ public class UserMeController {
     @GetMapping("/likes")
     public ApiResponse<Page<UserLikedPlaceResponse>> getLikedPlaces(
             @AuthenticationPrincipal Long userId,
+            @io.swagger.v3.oas.annotations.Parameter(description = "조회할 찜 타입. 현재는 PLACE만 지원합니다.")
+            @RequestParam(defaultValue = "PLACE") LikeTargetType type,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
         pageable.getSort().forEach(order -> {
             if (!ALLOWED_LIKES_SORT_FIELDS.contains(order.getProperty())) {
-                // 화이트리스트 외 필드(예: ?sort=password) — 의도치 않은 entity 내부 필드 정렬 차단
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
         });
+        
+        if (type != LikeTargetType.PLACE) {
+            // TODO: MARKET, FESTIVAL 도메인 찜 목록 조회 연동 예정
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        
         return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
     }
 

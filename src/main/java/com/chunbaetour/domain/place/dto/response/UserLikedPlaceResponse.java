@@ -1,13 +1,10 @@
 package com.chunbaetour.domain.place.dto.response;
 
 import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.UserLike;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import java.time.LocalDateTime;
 
 import lombok.Builder;
-
-import java.util.Objects;
 
 /**
  * 마이페이지 연동용 (PHASE 3-3)
@@ -25,8 +22,7 @@ public record UserLikedPlaceResponse(
         int likeCount,
         LocalDateTime likedAt
 ) {
-    public static UserLikedPlaceResponse from(UserLike userLike) {
-        Place place = Objects.requireNonNull(userLike.getPlace(), "UserLike.place must not be null");
+    public static UserLikedPlaceResponse from(Place place, LocalDateTime likedAt) {
         return UserLikedPlaceResponse.builder()
                 .placeId(place.getId())
                 .name(place.getName())
@@ -36,7 +32,7 @@ public record UserLikedPlaceResponse(
                 .rating(place.getDisplayRating())
                 .reviewCount(place.getReviewCount())
                 .likeCount(place.getLikeCount())
-                .likedAt(userLike.getCreatedAt())
+                .likedAt(likedAt)
                 .build();
     }
 }
