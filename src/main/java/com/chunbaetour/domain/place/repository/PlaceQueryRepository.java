@@ -13,18 +13,69 @@ import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberTemplate;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
 
 import static com.chunbaetour.domain.place.QPlace.place;
+import static com.chunbaetour.domain.like.entity.QUserLike.userLike;
+import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.querydsl.jpa.impl.JPAQuery;
 
 @Repository
 @RequiredArgsConstructor
 public class PlaceQueryRepository {
 
     private final JPAQueryFactory queryFactory;
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 마이페이지 찜한 관광지 조회 (QueryDSL JOIN 최적화)
+    // ──────────────────────────────────────────────────────────────────────────
+    public Page<UserLikedPlaceResponse> findUserLikedPlaces(Long userId, Pageable pageable) {
+        List<com.querydsl.core.types.OrderSpecifier<?>> orderSpecifiers = new java.util.ArrayList<>();
+        for (org.springframework.data.domain.Sort.Order order : pageable.getSort()) {
+            com.querydsl.core.types.Order direction = order.isAscending() ? com.querydsl.core.types.Order.ASC : com.querydsl.core.types.Order.DESC;
+            if ("createdAt".equals(order.getProperty())) {
+                orderSpecifiers.add(new com.querydsl.core.types.OrderSpecifier<>(direction, userLike.createdAt));
+            } else if ("id".equals(order.getProperty())) {
+                orderSpecifiers.add(new com.querydsl.core.types.OrderSpecifier<>(direction, userLike.id));
+            }
+        }
+        // 안정적인 페이징을 위한 Tie-breaker (기본 정렬)
+        orderSpecifiers.add(userLike.createdAt.desc());
+        orderSpecifiers.add(userLike.id.desc());
+
+        List<com.querydsl.core.Tuple> tuples = queryFactory
+                .select(place, userLike.createdAt)
+                .from(userLike)
+                .join(place).on(userLike.targetId.eq(place.id))
+                .where(userLike.user.id.eq(userId),
+                       userLike.targetType.eq(LikeTargetType.PLACE),
+                       place.status.eq(PlaceStatus.ACTIVE))
+                .orderBy(orderSpecifiers.toArray(new com.querydsl.core.types.OrderSpecifier[0]))
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+
+        List<UserLikedPlaceResponse> content = tuples.stream()
+                .map(t -> UserLikedPlaceResponse.from(t.get(place), t.get(userLike.createdAt)))
+                .toList();
+
+        JPAQuery<Long> countQuery = queryFactory
+                .select(userLike.count())
+                .from(userLike)
+                .join(place).on(userLike.targetId.eq(place.id))
+                .where(userLike.user.id.eq(userId),
+                       userLike.targetType.eq(LikeTargetType.PLACE),
+                       place.status.eq(PlaceStatus.ACTIVE));
+
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 위치 기반 근처 관광지 (Nearby) 쿼리

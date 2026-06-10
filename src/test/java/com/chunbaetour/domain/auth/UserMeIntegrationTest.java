@@ -9,10 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
+import com.chunbaetour.domain.like.entity.UserLike;
+import com.chunbaetour.domain.like.repository.UserLikeRepository;
+import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.UserLike;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.place.repository.UserLikeRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
@@ -416,7 +417,7 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                     .lat(new BigDecimal("37.5665"))
                     .lng(new BigDecimal("126.9780"))
                     .build());
-            userLikeRepository.save(UserLike.of(user, place));
+            userLikeRepository.save(UserLike.of(user, LikeTargetType.PLACE, place.getId()));
         }
 
         // 1페이지 — 10개 + 메타
