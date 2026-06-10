@@ -13,10 +13,13 @@ import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionScoreResponse;
 import com.chunbaetour.domain.companionreview.service.CompanionReviewService;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -114,6 +117,62 @@ class CompanionReviewControllerTest extends AbstractIntegrationTest {
                 .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/users/999/companion-score"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.USER_NOT_FOUND.getCode()));
+    }
+
+    // ===== GET /api/v1/users/{userId}/companion-reviews =====
+
+    // 미인증 → 401
+    @Test
+    @DisplayName("리뷰 목록 조회 미인증 → 401")
+    void getReviews_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/users/1/companion-reviews"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(companionReviewService);
+    }
+
+    // 정상 조회 → 200
+    @Test
+    @DisplayName("리뷰 목록 조회 → 200")
+    void getReviews_success_returns200() throws Exception {
+        CompanionReviewResponse review = new CompanionReviewResponse(10L, 2L, "닉네임", "https://example.com/profile.png", 5, "좋았어요", LocalDateTime.now());
+        CursorPageResponse<CompanionReviewResponse> response = new CursorPageResponse<>(List.of(review), null, false, 10);
+        given(companionReviewService.getReviews(eq(1L), eq((String) null), eq(10))).willReturn(response);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get("/api/v1/users/1/companion-reviews")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].reviewId").value(10L))
+                .andExpect(jsonPath("$.data.content[0].reviewerId").value(2L))
+                .andExpect(jsonPath("$.data.content[0].reviewerNickname").value("닉네임"))
+                .andExpect(jsonPath("$.data.content[0].reviewerProfileImageUrl").value("https://example.com/profile.png"))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+    }
+
+    // userId = 0 → 400 (@Positive)
+    @Test
+    @DisplayName("리뷰 목록 조회 userId = 0 → 400 (@Positive)")
+    void getReviews_invalidUserId_returns400() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get("/api/v1/users/0/companion-reviews")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(companionReviewService);
+    }
+
+    // 존재하지 않는 유저 → 404
+    @Test
+    @DisplayName("리뷰 목록 조회 존재하지 않는 유저 → 404")
+    void getReviews_userNotFound_returns404() throws Exception {
+        given(companionReviewService.getReviews(eq(999L), eq((String) null), eq(10)))
+                .willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get("/api/v1/users/999/companion-reviews")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(ErrorCode.USER_NOT_FOUND.getCode()));
     }

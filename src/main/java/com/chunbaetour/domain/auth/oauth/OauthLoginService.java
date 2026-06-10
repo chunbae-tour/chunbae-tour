@@ -51,11 +51,13 @@ public class OauthLoginService {
         try {
             info = client.fetch(code, redirectUri);
         } catch (BusinessException e) {
-            // 잘못된 code·redirectUri 불일치·공급자 장애·키 미설정 등 — OAuth 운영에서 가장 먼저 봐야 할 실패라
-            // 메트릭/감사로그에 provider_error로 분리 기록(미지원 provider와 구분) (CR 반영).
-            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "provider_error").increment();
+            // 인가코드 무효(400, 사용자 재시도)와 공급자 장애/설정 오류(502)를 메트릭/감사로그에서 분리한다 —
+            // 같은 버킷에 묶이면 "잘못된 코드"와 "공급자 장애/키 오류"의 운영 해석이 왜곡됨(CR 반영).
+            boolean invalidAuth = e.getErrorCode() == ErrorCode.OAUTH_INVALID_AUTHORIZATION;
+            String outcome = invalidAuth ? "invalid_authorization" : "provider_error";
+            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", outcome).increment();
             auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, null, e.getErrorCode().getCode(),
-                    Map.of("method", "oauth", "provider", provider.name(), "reasonDetail", "provider_fetch_failed"));
+                    Map.of("method", "oauth", "provider", provider.name(), "reasonDetail", outcome));
             throw e;
         }
 

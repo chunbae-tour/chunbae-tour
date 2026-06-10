@@ -63,6 +63,10 @@ public enum ErrorCode {
     // AUTH_022: 공급자가 이메일을 제공하지 않아(예: 카카오 이메일 동의 안 함) 소셜 가입 불가. 클라이언트 입력
     // 이메일을 신뢰하지 않고 공급자 검증 이메일만 쓰므로(선점 방지), 이메일 동의가 없으면 가입을 진행하지 않는다.
     OAUTH_EMAIL_NOT_PROVIDED(HttpStatus.BAD_REQUEST, "AUTH_022", "소셜 계정에서 이메일을 제공받지 못했습니다. 이메일 제공에 동의해 주세요."),
+    // AUTH_023: 인가코드 만료/재사용/무효 등 사용자 재로그인으로 해소 가능한 토큰 교환 실패(400).
+    // redirect_uri 불일치, 앱키/시크릿 오류 등 서버 설정 문제는 OAUTH_PROVIDER_ERROR(502)로 분리 —
+    // 판별 기준은 OauthErrorClassifier(카카오 error_code=KOE320 / 네이버 error=invalid_grant만 400).
+    OAUTH_INVALID_AUTHORIZATION(HttpStatus.BAD_REQUEST, "AUTH_023", "소셜 인가 정보가 유효하지 않습니다. 다시 시도해 주세요."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),
@@ -237,13 +241,16 @@ public enum ErrorCode {
     // ===== COMPANION / COMPANION REVIEW (담당: 임하은, CR 프리픽스 공유) =====
     COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),
     COMPANION_REVIEW_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "CR_002", "자기 자신에게 리뷰를 작성할 수 없습니다."),
-    COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "해당 채팅방 참여자가 아니면 리뷰를 작성할 수 없습니다."),
+    COMPANION_REVIEW_NOT_MEMBER(HttpStatus.FORBIDDEN,       "CR_003", "동행 참여자가 아니면 리뷰를 작성할 수 없습니다."),
     // CR_004~007: 동행(Companion) 시작/종료/참여자 관리 — 고도화 #5·#6에서 사용
     // 동행 시작 시 같은 방에 기존 동행 존재 → status로 분기: ENDED는 CR_004(재시작 불가), ONGOING은 CR_007(이미 진행 중)
-    COMPANION_ALREADY_EXISTS(HttpStatus.CONFLICT,           "CR_004", "이미 종료된 동행이 있어 재시작할 수 없습니다."),
+    COMPANION_ALREADY_EXISTS(HttpStatus.CONFLICT,           "CR_004", "동행을 재시작할 수 없습니다."),
     COMPANION_NOT_FOUND(HttpStatus.NOT_FOUND,               "CR_005", "존재하지 않는 동행입니다."),
     COMPANION_ALREADY_ENDED(HttpStatus.CONFLICT,            "CR_006", "이미 종료된 동행입니다."),
-    COMPANION_ALREADY_STARTED(HttpStatus.CONFLICT,          "CR_007", "이미 진행 중인 동행이 있습니다.");
+    COMPANION_ALREADY_STARTED(HttpStatus.CONFLICT,          "CR_007", "이미 진행 중인 동행이 있습니다."),
+    COMPANION_PARTICIPANT_ALREADY_EXISTS(HttpStatus.CONFLICT, "CR_008", "이미 동행에 참여 중인 멤버입니다."),
+    // 동행 ENDED 전에는 리뷰 작성 불가 — 고도화 #25
+    COMPANION_NOT_ENDED(HttpStatus.CONFLICT,                "CR_009", "동행 종료 후에만 리뷰를 작성할 수 있습니다.");
 
     private final HttpStatus status;
     private final String code;
