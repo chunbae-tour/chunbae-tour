@@ -14,6 +14,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * 네이버 로그인 OAuth 클라이언트.
@@ -85,8 +86,20 @@ public class NaverOAuthClient implements OauthClient {
                 throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
             }
             return token;
+        } catch (RestClientResponseException e) {
+            // 진단용 필드(error/error_description)만 추출·길이 제한해 로깅 — 본문 원문 전체는 예기치 않은
+            // 민감 문자열·개행 로그 오염·볼륨 리스크가 있어 남기지 않는다.
+            String errorBody = e.getResponseBodyAsString();
+            log.warn("[OAuth/Naver] 토큰 교환 거부: status={}, {}",
+                    e.getStatusCode(), OauthErrorClassifier.summarizeForLog(errorBody));
+            // 인가코드 자체 문제(invalid_grant)만 400 — 매핑 정책은 OauthErrorClassifier 참고
+            // (invalid_request는 redirect/파라미터 구성 오류 포함이라 502 유지, 카카오와 일관).
+            if (OauthErrorClassifier.isInvalidAuthorization(OauthProvider.NAVER, errorBody)) {
+                throw new BusinessException(ErrorCode.OAUTH_INVALID_AUTHORIZATION);
+            }
+            throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         } catch (RestClientException e) {
-            log.warn("[OAuth/Naver] 토큰 교환 실패: {}", e.getClass().getSimpleName());
+            log.warn("[OAuth/Naver] 토큰 교환 네트워크 오류: {}", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR);
         }
     }

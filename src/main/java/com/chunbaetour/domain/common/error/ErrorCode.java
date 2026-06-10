@@ -63,6 +63,10 @@ public enum ErrorCode {
     // AUTH_022: 공급자가 이메일을 제공하지 않아(예: 카카오 이메일 동의 안 함) 소셜 가입 불가. 클라이언트 입력
     // 이메일을 신뢰하지 않고 공급자 검증 이메일만 쓰므로(선점 방지), 이메일 동의가 없으면 가입을 진행하지 않는다.
     OAUTH_EMAIL_NOT_PROVIDED(HttpStatus.BAD_REQUEST, "AUTH_022", "소셜 계정에서 이메일을 제공받지 못했습니다. 이메일 제공에 동의해 주세요."),
+    // AUTH_023: 인가코드 만료/재사용/무효 등 사용자 재로그인으로 해소 가능한 토큰 교환 실패(400).
+    // redirect_uri 불일치, 앱키/시크릿 오류 등 서버 설정 문제는 OAUTH_PROVIDER_ERROR(502)로 분리 —
+    // 판별 기준은 OauthErrorClassifier(카카오 error_code=KOE320 / 네이버 error=invalid_grant만 400).
+    OAUTH_INVALID_AUTHORIZATION(HttpStatus.BAD_REQUEST, "AUTH_023", "소셜 인가 정보가 유효하지 않습니다. 다시 시도해 주세요."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),
