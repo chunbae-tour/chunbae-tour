@@ -57,4 +57,14 @@ public class QrPayController {
         qrPayService.confirmQrPayRequest(merchantUserId, payRequestId, request);
         return ApiResponse.success(null);
     }
+
+    @Operation(summary = "QR 결제 요청 취소 (USER)",
+            description = "본인 소유 PENDING 요청만 취소. 5분 자동 만료 전 즉시 해제·재결제 가능 (KAN-252)")
+    @PostMapping("/{payRequestId}/cancel")
+    public ApiResponse<Void> cancelQrPayRequest(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable String payRequestId) {
+        qrPayService.cancelQrPayRequest(userId, payRequestId);
+        return ApiResponse.success(null);
+    }
 }
