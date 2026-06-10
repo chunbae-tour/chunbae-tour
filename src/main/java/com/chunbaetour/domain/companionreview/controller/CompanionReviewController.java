@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "동행 리뷰", description = "동행 리뷰 등록 및 동행 점수 조회 (/api/v1/companion-reviews, /api/v1/users/{userId}/companion-score)")
+@Tag(name = "동행 리뷰", description = "동행 리뷰 등록·목록·점수 조회 (/api/v1/companion-reviews, /api/v1/users/{userId}/companion-score, /api/v1/users/{userId}/companion-reviews)")
 @RestController
 @RequiredArgsConstructor
 @Validated
