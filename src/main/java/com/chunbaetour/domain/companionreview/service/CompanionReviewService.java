@@ -14,6 +14,7 @@ import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRep
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
 import com.chunbaetour.domain.companionreview.repository.ScoreCountProjection;
+import com.chunbaetour.domain.companionreview.type.CompanionStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
@@ -41,14 +42,20 @@ public class CompanionReviewService {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_SELF_NOT_ALLOWED);
         }
 
+        // 동행 없는 chatRoomId도 비참여자에게는 NOT_MEMBER로 통일 — 동행 존재 여부 추론 방지
         Companion companion = companionRepository.findByChatRoomId(request.chatRoomId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER));
 
-        if (!companionParticipantRepository.existsByCompanionIdAndUserId(companion.getId(), reviewerId)) {
+        // reviewer/target 둘 다 참여자인지 IN절 단일 쿼리로 검증
+        long participantCount = companionParticipantRepository.countByCompanionIdAndUserIdIn(
+                companion.getId(), List.of(reviewerId, request.targetUserId()));
+        if (participantCount != 2) {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER);
         }
-        if (!companionParticipantRepository.existsByCompanionIdAndUserId(companion.getId(), request.targetUserId())) {
-            throw new BusinessException(ErrorCode.COMPANION_REVIEW_NOT_MEMBER);
+
+        // 동행 ENDED 후에만 리뷰 작성 가능
+        if (companion.getStatus() != CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_NOT_ENDED);
         }
 
         if (companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(

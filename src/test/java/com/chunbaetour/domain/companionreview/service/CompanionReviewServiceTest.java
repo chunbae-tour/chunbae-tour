@@ -53,16 +53,16 @@ class CompanionReviewServiceTest {
         verify(companionReviewRepository, never()).save(any());
     }
 
-    // 동행 없는 채팅방 → CR_005
+    // 동행 없는 채팅방 → CR_003 (동행 존재 여부 추론 방지를 위해 NOT_MEMBER로 통일)
     @Test
-    void createReview_noCompanion_throwsCompanionNotFound() {
+    void createReview_noCompanion_throwsNotMember() {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
-                        .isEqualTo(ErrorCode.COMPANION_NOT_FOUND));
+                        .isEqualTo(ErrorCode.COMPANION_REVIEW_NOT_MEMBER));
         verify(companionReviewRepository, never()).save(any());
     }
 
@@ -72,7 +72,7 @@ class CompanionReviewServiceTest {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
         Companion companion = buildCompanion(100L, 10L);
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 1L)).willReturn(false);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(1L);
 
         assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
                 .isInstanceOf(BusinessException.class)
@@ -87,8 +87,7 @@ class CompanionReviewServiceTest {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
         Companion companion = buildCompanion(100L, 10L);
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 1L)).willReturn(true);
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 2L)).willReturn(false);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(1L);
 
         assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
                 .isInstanceOf(BusinessException.class)
@@ -97,14 +96,29 @@ class CompanionReviewServiceTest {
         verify(companionReviewRepository, never()).save(any());
     }
 
+    // 동행 ONGOING 상태 → CR_009
+    @Test
+    void createReview_companionNotEnded_throwsNotEnded() {
+        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
+        Companion companion = buildCompanion(100L, 10L);
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
+
+        assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_NOT_ENDED));
+        verify(companionReviewRepository, never()).save(any());
+    }
+
     // 중복 리뷰 → CR_001
     @Test
     void createReview_duplicate_throwsAlreadyExists() {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
         Companion companion = buildCompanion(100L, 10L);
+        companion.end();
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 1L)).willReturn(true);
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 2L)).willReturn(true);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(true);
 
@@ -120,12 +134,12 @@ class CompanionReviewServiceTest {
     void createReview_success_savesAndUpdatesScore() {
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 4, "좋았어요");
         Companion companion = buildCompanion(100L, 10L);
+        companion.end();
         Account target = buildAccount(2L, 0.0, 0);
         CompanionReview saved = buildReview(1L, 1L, 2L, 10L, 4, "좋았어요");
 
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 1L)).willReturn(true);
-        given(companionParticipantRepository.existsByCompanionIdAndUserId(100L, 2L)).willReturn(true);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
         given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
