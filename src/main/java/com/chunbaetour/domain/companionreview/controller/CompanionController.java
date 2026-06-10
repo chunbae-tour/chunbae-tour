@@ -42,7 +42,10 @@ public class CompanionController {
     }
 
     // POST /api/v1/chat/rooms/{roomId}/companion/participants — 동행 참여자 추가 (방장 전용)
-    @Operation(summary = "동행 참여자 추가")
+    @Operation(
+            summary = "동행 참여자 추가",
+            description = "진행 중인 동행에 채팅방 ACTIVE 멤버를 참여자로 추가합니다. 방장 전용이며, ENDED 동행이거나 채팅방이 CLOSED면 거부됩니다."
+    )
     @PostMapping("/api/v1/chat/rooms/{roomId}/companion/participants")
     public ResponseEntity<ApiResponse<CompanionAddParticipantsResponse>> addParticipants(
             @AuthenticationPrincipal Long ownerId,
