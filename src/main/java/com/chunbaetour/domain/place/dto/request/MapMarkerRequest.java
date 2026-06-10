@@ -33,4 +33,17 @@ public record MapMarkerRequest(
                 && swLat.compareTo(neLat) <= 0
                 && swLng.compareTo(neLng) <= 0;
     }
+
+    private static final BigDecimal MAX_LAT_SPAN = new BigDecimal("2.0");
+    private static final BigDecimal MAX_LNG_SPAN = new BigDecimal("2.0");
+
+    @AssertTrue(message = "지도 조회 범위가 너무 넓습니다. 지도를 확대한 뒤 다시 조회해주세요.")
+    public boolean isViewportSpanAllowed() {
+        if (swLat == null || swLng == null || neLat == null || neLng == null) {
+            return true; // null 검증은 @NotNull이 처리
+        }
+
+        return neLat.subtract(swLat).compareTo(MAX_LAT_SPAN) <= 0
+                && neLng.subtract(swLng).compareTo(MAX_LNG_SPAN) <= 0;
+    }
 }

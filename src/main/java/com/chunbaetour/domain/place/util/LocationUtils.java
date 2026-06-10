@@ -41,7 +41,9 @@ public class LocationUtils {
                 neLng, swLat,  // SE (최대 경도, 최소 위도)
                 swLng, swLat   // 원점 회귀
         );
-    }/**
+    }
+
+    /**
      * 위도/경도를 SRID 4326의 JTS Point 객체로 변환합니다.
      */
     public static Point createPoint(BigDecimal lat, BigDecimal lng) {

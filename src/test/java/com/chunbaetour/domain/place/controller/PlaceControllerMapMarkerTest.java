@@ -102,4 +102,16 @@ class PlaceControllerMapMarkerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    @DisplayName("지도 뷰포트 범위(Span)가 2도를 초과할 경우 400 에러를 반환한다")
+    void getMapMarkers_TooLargeSpan() throws Exception {
+        mockMvc.perform(get("/api/v1/places/map-markers")
+                        .param("swLat", "33.0")
+                        .param("swLng", "125.0")
+                        .param("neLat", "36.0") // Span 3도 (> 2도)
+                        .param("neLng", "128.0") // Span 3도 (> 2도)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest());
+    }
 }
