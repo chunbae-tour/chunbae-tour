@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.place.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -106,4 +107,9 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      * 외부 API 식별자(KorService2 contentid)로 단건 조회 — KAN-221 배치 upsert dedup.
      */
     Optional<Place> findByExternalId(String externalId);
+
+    /**
+     * 외부 API 식별자 목록으로 일괄 조회 — KAN-262 청크 단위 upsert에서 기존 행을 한 번에 로드(단건 N회 조회 제거).
+     */
+    List<Place> findByExternalIdIn(Collection<String> externalIds);
 }

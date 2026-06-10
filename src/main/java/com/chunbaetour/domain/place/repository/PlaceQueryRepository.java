@@ -5,6 +5,8 @@ import com.chunbaetour.domain.place.dto.response.PlaceListResponse.PlaceListItem
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.place.util.LocationUtils;
+import com.chunbaetour.domain.place.dto.response.MapMarkerResponse;
 import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
@@ -41,8 +43,8 @@ public class PlaceQueryRepository {
                         place.name,
                         place.category,
                         place.thumbnailUrl,
-                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_Y({0})", place.location),
-                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_X({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_Y({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_X({0})", place.location),
                         place.rating, // rating은 내부적으로 int이지만 QueryDSL이 Projections로 매핑할 때 DTO 생성자를 탐색합니다.
                         place.reviewCount,
                         distanceExpression
@@ -249,5 +251,41 @@ public class PlaceQueryRepository {
         // (rating < cursorRating) OR (rating = cursorRating AND id < cursorId)
         return place.rating.lt(cursorRatingInt)
                 .or(place.rating.eq(cursorRatingInt).and(place.id.lt(cursorId)));
+    }
+    /**
+     * 지도 마커 일괄 조회 (PHASE 8-1)
+     * <p>
+     * 주어진 Bounding Box 영역(SW 좌표 ~ NE 좌표) 내에 포함된 활성 상태의 관광지 마커들을 조회합니다.
+     * MySQL의 MBRContains 함수와 ST_GeomFromText를 활용하여 공간 인덱스(R-Tree)를 태웁니다.
+     * 프론트엔드 렌더링 성능과 서버 OOM을 방지하기 위해 최대 500개로 제한합니다.
+     * </p>
+     *
+     * @param swLat 남서쪽 위도 (최소 Y)
+     * @param swLng 남서쪽 경도 (최소 X)
+     * @param neLat 북동쪽 위도 (최대 Y)
+     * @param neLng 북동쪽 경도 (최대 X)
+     * @return 뷰포트 내의 지도 마커 리스트 (최대 500개)
+     */
+    public List<MapMarkerResponse> findMarkersInBoundingBox(double swLat, double swLng, double neLat, double neLng) {
+        // MySQL ST_GeomFromText Polygon 생성 (LocationUtils 헬퍼 사용)
+        String mbrPolygon = LocationUtils.calculateMbrPolygon(swLat, swLng, neLat, neLng);
+
+        return queryFactory
+                .select(Projections.constructor(MapMarkerResponse.class,
+                        place.id,
+                        place.name,
+                        place.category,
+                        Expressions.numberTemplate(Double.class, "ST_Y({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_X({0})", place.location),
+                        place.thumbnailUrl
+                ))
+                .from(place)
+                .where(
+                        Expressions.numberTemplate(Integer.class, "MBRContains(ST_GeomFromText({0}, 4326, 'axis-order=long-lat'), {1})", mbrPolygon, place.location).eq(1),
+                        place.status.eq(PlaceStatus.ACTIVE)
+                )
+                .orderBy(place.id.desc())
+                .limit(501) // 501개를 조회하여 더 있는지(truncated) 여부 판단
+                .fetch();
     }
 }
