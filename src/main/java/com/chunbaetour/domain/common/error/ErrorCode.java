@@ -244,6 +244,7 @@ public enum ErrorCode {
     COMPANION_NOT_FOUND(HttpStatus.NOT_FOUND,               "CR_005", "존재하지 않는 동행입니다."),
     COMPANION_ALREADY_ENDED(HttpStatus.CONFLICT,            "CR_006", "이미 종료된 동행입니다."),
     COMPANION_ALREADY_STARTED(HttpStatus.CONFLICT,          "CR_007", "이미 진행 중인 동행이 있습니다."),
+    COMPANION_PARTICIPANT_ALREADY_EXISTS(HttpStatus.CONFLICT, "CR_008", "이미 동행에 참여 중인 멤버입니다."),
     // 동행 ENDED 전에는 리뷰 작성 불가 — 고도화 #25
     COMPANION_NOT_ENDED(HttpStatus.CONFLICT,                "CR_009", "동행 종료 후에만 리뷰를 작성할 수 있습니다.");
 
