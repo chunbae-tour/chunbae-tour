@@ -37,9 +37,14 @@ public class CacheConfig {
         RedisCacheConfiguration companionScoreConfig = config
                 .entryTtl(Duration.ofMinutes(10));
 
+        // 정적 도메인 번역 결과 — translation_cache(DB) read-through, hit율 높아 TTL 길게
+        RedisCacheConfiguration translationConfig = config
+                .entryTtl(Duration.ofHours(24));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
                 .withCacheConfiguration("companionScore", companionScoreConfig)
+                .withCacheConfiguration("translation", translationConfig)
                 .build();
     }
 }

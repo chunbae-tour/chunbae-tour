@@ -25,6 +25,7 @@ public class TranslationController {
     @Operation(summary = "텍스트 번역")
     @PostMapping
     public ApiResponse<TranslationResponse> translate(@RequestBody @Valid TranslationRequest request) {
-        return ApiResponse.success(translationService.translate(request.content(), request.targetLanguage()));
+        return ApiResponse.success(
+                translationService.translate(request.content(), request.targetLanguage(), request.sourceType()));
     }
 }
