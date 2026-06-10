@@ -1,7 +1,6 @@
 package com.chunbaetour.domain.place.dto.response;
 
 import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.UserLike;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import java.time.LocalDateTime;
 
@@ -25,8 +24,7 @@ public record UserLikedPlaceResponse(
         int likeCount,
         LocalDateTime likedAt
 ) {
-    public static UserLikedPlaceResponse from(UserLike userLike) {
-        Place place = Objects.requireNonNull(userLike.getPlace(), "UserLike.place must not be null");
+    public static UserLikedPlaceResponse from(Place place) {
         return UserLikedPlaceResponse.builder()
                 .placeId(place.getId())
                 .name(place.getName())
@@ -36,7 +34,6 @@ public record UserLikedPlaceResponse(
                 .rating(place.getDisplayRating())
                 .reviewCount(place.getReviewCount())
                 .likeCount(place.getLikeCount())
-                .likedAt(userLike.getCreatedAt())
                 .build();
     }
 }

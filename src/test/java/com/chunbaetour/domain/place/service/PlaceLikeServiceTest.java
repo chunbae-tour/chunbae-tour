@@ -1,12 +1,12 @@
 package com.chunbaetour.domain.place.service;
 
-import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.UserLike;
+import com.chunbaetour.domain.like.service.UserLikeService;
+import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
-import com.chunbaetour.domain.place.repository.UserLikeRepository;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -18,14 +18,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 
 import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -35,7 +33,10 @@ import static org.mockito.Mockito.when;
 class PlaceLikeServiceTest {
 
     @Mock
-    private UserLikeRepository userLikeRepository;
+    private UserLikeService userLikeService;
+    
+    @Mock
+    private PlaceRepository placeRepository;
 
     @InjectMocks
     private PlaceLikeService placeLikeService;
@@ -47,18 +48,17 @@ class PlaceLikeServiceTest {
         Long userId = 1L;
         PageRequest pageRequest = PageRequest.of(0, 10);
         
-        Account mockUser = mock(Account.class);
         Place mockPlace = mock(Place.class);
-        
         when(mockPlace.getId()).thenReturn(100L);
         when(mockPlace.getName()).thenReturn("제주 바다");
         when(mockPlace.getCategory()).thenReturn(PlaceCategory.TOURIST_SPOT);
+        when(mockPlace.getStatus()).thenReturn(PlaceStatus.ACTIVE);
         
-        UserLike userLike = UserLike.of(mockUser, mockPlace);
-        Page<UserLike> mockPage = new PageImpl<>(List.of(userLike));
+        Page<Long> mockPage = new PageImpl<>(List.of(100L));
         
-        when(userLikeRepository.findByUserIdAndPlace_Status(eq(userId), eq(PlaceStatus.ACTIVE), eq(pageRequest)))
+        when(userLikeService.getLikedTargetIds(eq(userId), eq(LikeTargetType.PLACE), eq(pageRequest)))
                 .thenReturn(mockPage);
+        when(placeRepository.findAllById(List.of(100L))).thenReturn(List.of(mockPlace));
 
         // when
         Page<UserLikedPlaceResponse> result = placeLikeService.getUserLikedPlaces(userId, pageRequest);
@@ -68,7 +68,8 @@ class PlaceLikeServiceTest {
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).placeId()).isEqualTo(100L);
         assertThat(result.getContent().get(0).name()).isEqualTo("제주 바다");
-        verify(userLikeRepository).findByUserIdAndPlace_Status(userId, PlaceStatus.ACTIVE, pageRequest);
+        verify(userLikeService).getLikedTargetIds(userId, LikeTargetType.PLACE, pageRequest);
+        verify(placeRepository).findAllById(List.of(100L));
     }
 
     @Test
@@ -78,7 +79,7 @@ class PlaceLikeServiceTest {
         Long userId = 1L;
         PageRequest pageRequest = PageRequest.of(0, 10);
         
-        when(userLikeRepository.findByUserIdAndPlace_Status(eq(userId), eq(PlaceStatus.ACTIVE), eq(pageRequest)))
+        when(userLikeService.getLikedTargetIds(eq(userId), eq(LikeTargetType.PLACE), eq(pageRequest)))
                 .thenReturn(new PageImpl<>(Collections.emptyList()));
 
         // when

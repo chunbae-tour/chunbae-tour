@@ -12,10 +12,11 @@ import ch.qos.logback.core.read.ListAppender;
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
+import com.chunbaetour.domain.like.entity.UserLike;
+import com.chunbaetour.domain.like.repository.UserLikeRepository;
+import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.place.Place;
-import com.chunbaetour.domain.place.UserLike;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
-import com.chunbaetour.domain.place.repository.UserLikeRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.math.BigDecimal;
@@ -129,8 +130,8 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
         // Place 2개 + UserLike 2개 시드 — 사용자가 탈퇴해도 places는 영향 없어야 한다.
         Place placeA = placeRepository.save(samplePlace("경복궁", new BigDecimal("37.5796"), new BigDecimal("126.9770")));
         Place placeB = placeRepository.save(samplePlace("창덕궁", new BigDecimal("37.5826"), new BigDecimal("126.9911")));
-        userLikeRepository.save(UserLike.of(account, placeA));
-        userLikeRepository.save(UserLike.of(account, placeB));
+        userLikeRepository.save(UserLike.of(account, LikeTargetType.PLACE, placeA.getId()));
+        userLikeRepository.save(UserLike.of(account, LikeTargetType.PLACE, placeB.getId()));
 
         Integer likesBefore = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user_likes WHERE user_id = ?", Integer.class, userId);
@@ -187,7 +188,7 @@ class AccountWithdrawalCascadeIntegrationTest extends AbstractIntegrationTest {
 
         // UserLike 1건 시드 → deletedLikes metadata = "1"
         Place place = placeRepository.save(samplePlace("석굴암", new BigDecimal("35.7950"), new BigDecimal("129.3500")));
-        userLikeRepository.save(UserLike.of(account, place));
+        userLikeRepository.save(UserLike.of(account, LikeTargetType.PLACE, place.getId()));
 
         String accessToken = loginAccessToken(EMAIL, PASSWORD);
         mockMvc.perform(delete("/api/v1/users/me")
