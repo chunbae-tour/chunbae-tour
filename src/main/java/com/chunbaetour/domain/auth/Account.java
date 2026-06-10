@@ -40,7 +40,9 @@ public class Account {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 255)
+    // 이메일은 nullable — 소셜(예: 카카오 이메일 미동의) 가입자는 이메일이 없을 수 있다(주 식별자는 oauth_id).
+    // 로컬(이메일/비번) 가입은 SignupService가 항상 값을 채운다. UNIQUE 유지(MySQL UNIQUE는 NULL 다중 허용).
+    @Column(unique = true, length = 255)
     private String email;
 
     // 소셜(카카오/네이버) 가입자는 비밀번호가 없어 nullable. 로컬(이메일/비번) 계정은 항상 값 보유.
