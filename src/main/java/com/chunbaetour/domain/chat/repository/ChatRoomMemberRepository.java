@@ -33,6 +33,9 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
     // CHAT_003 중복 참여 체크 — ACTIVE 상태만 확인 (LEFT 재참여 허용)
     boolean existsByChatRoomIdAndUserIdAndMemberStateIn(Long chatRoomId, Long userId, List<ChatMemberState> activeStates);
 
+    // 동행 시작 시 방장+참여자 ACTIVE 멤버십 일괄 검증 — N+1 방지, IN절 단일 쿼리
+    long countByChatRoomIdAndUserIdInAndMemberStateIn(Long chatRoomId, List<Long> userIds, List<ChatMemberState> activeStates);
+
     // CHAT_010 강퇴 재참여 차단 체크 — KICKED 상태만 확인
     boolean existsByChatRoomIdAndUserIdAndMemberState(Long chatRoomId, Long userId, ChatMemberState memberState);
 
