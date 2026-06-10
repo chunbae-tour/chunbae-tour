@@ -44,15 +44,24 @@ public class UserLikeService {
             return false;
         }
 
-        Account user = accountRepository.getReferenceById(userId);
+        Account user = accountRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
 
         try {
             // race condition 방어를 위해 flush를 강제하여 DataIntegrityViolationException을 즉시 유도
             userLikeRepository.saveAndFlush(UserLike.of(user, targetType, targetId));
             return true;
         } catch (DataIntegrityViolationException e) {
-            return false;
+            if (isDuplicateLikeViolation(e)) {
+                return false;
+            }
+            throw e;
         }
+    }
+
+    private boolean isDuplicateLikeViolation(DataIntegrityViolationException e) {
+        String message = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+        return message.contains("uk_user_likes_type_target") || message.contains("duplicate entry");
     }
 
     /**

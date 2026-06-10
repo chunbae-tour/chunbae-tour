@@ -162,7 +162,7 @@ public class UserMeController {
     @GetMapping("/likes")
     public ApiResponse<Page<UserLikedPlaceResponse>> getLikedPlaces(
             @AuthenticationPrincipal Long userId,
-            @io.swagger.v3.oas.annotations.Parameter(description = "조회할 찜 타입 (PLACE, MARKET, FESTIVAL 등)")
+            @io.swagger.v3.oas.annotations.Parameter(description = "조회할 찜 타입. 현재는 PLACE만 지원합니다.")
             @RequestParam(defaultValue = "PLACE") LikeTargetType type,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
