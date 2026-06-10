@@ -27,11 +27,14 @@ public record MapMarkerRequest(
         @DecimalMax(value = "180.0", message = "경도는 -180~180 사이여야 합니다.")
         BigDecimal neLng
 ) {
-    @AssertTrue(message = "남서쪽 좌표는 북동쪽 좌표보다 작거나 같아야 합니다.")
+    @AssertTrue(message = "남서쪽 좌표는 북동쪽 좌표보다 작아야 합니다.")
     public boolean isValidBoundingBox() {
-        return swLat != null && swLng != null && neLat != null && neLng != null
-                && swLat.compareTo(neLat) <= 0
-                && swLng.compareTo(neLng) <= 0;
+        if (swLat == null || swLng == null || neLat == null || neLng == null) {
+            return true;
+        }
+
+        return swLat.compareTo(neLat) < 0
+                && swLng.compareTo(neLng) < 0;
     }
 
     private static final BigDecimal MAX_LAT_SPAN = new BigDecimal("2.0");

@@ -104,6 +104,18 @@ class PlaceControllerMapMarkerTest {
     }
 
     @Test
+    @DisplayName("남서쪽 좌표와 북동쪽 좌표가 같아 면적이 0인 경우 400 에러를 반환한다")
+    void getMapMarkers_DegenerateBoundingBox() throws Exception {
+        mockMvc.perform(get("/api/v1/places/map-markers")
+                        .param("swLat", "33.0")
+                        .param("swLng", "126.0")
+                        .param("neLat", "33.0")
+                        .param("neLng", "127.0")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("지도 뷰포트 범위(Span)가 2도를 초과할 경우 400 에러를 반환한다")
     void getMapMarkers_TooLargeSpan() throws Exception {
         mockMvc.perform(get("/api/v1/places/map-markers")

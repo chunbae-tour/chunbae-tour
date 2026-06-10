@@ -84,7 +84,7 @@ public class PlaceController {
      * 클라이언트 사이드 클러스터링을 위해 최대 500개까지만 응답합니다.
      */
     @SecurityRequirements
-    @Operation(summary = "지도 마커 일괄 조회", description = "지도 뷰포트(Bounding Box) 내의 마커 리스트를 조회합니다.")
+    @Operation(summary = "지도 마커 일괄 조회", description = "지도 뷰포트(Bounding Box) 내의 마커 리스트를 조회합니다. (최대 span 2.0도, 결과 500개 초과 시 truncated=true 반환)")
     @GetMapping("/map-markers")
     public ApiResponse<MapMarkerPageResponse> getMapMarkers(@Valid @ModelAttribute MapMarkerRequest request) {
         return ApiResponse.success(placeService.getMapMarkers(request));
