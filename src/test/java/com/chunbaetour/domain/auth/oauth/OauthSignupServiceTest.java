@@ -42,18 +42,23 @@ class OauthSignupServiceTest {
                 LocalDate.of(1990, 1, 1), nickname);
     }
 
-    @DisplayName("공급자가 이메일 미제공(티켓 email=null) → OAUTH_EMAIL_NOT_PROVIDED (임의 이메일 선점 차단)")
+    @DisplayName("공급자 이메일 미제공(티켓 email=null) → 거부하지 않고 가입 진행(길 A) — email 게이트 통과 검증")
     @Test
-    void rejectsWhenProviderEmailMissing() {
-        // 티켓에 공급자 이메일이 없음(예: 카카오 이메일 미동의).
+    void allowsSignupWhenProviderEmailMissing() {
+        // 티켓에 공급자 이메일이 없음(예: 카카오 이메일 미동의) → AUTH_022로 막지 않는다.
+        // email null이면 email 중복검사 skip하고 진행 — 여기선 phone_hash 중복으로 떨어뜨려 "email 게이트는 통과했음"을 입증.
         when(ticketIssuer.verify("ticket"))
                 .thenReturn(new OauthSignupTicket(OauthProvider.KAKAO, "oid-1", null));
         when(accountRepository.countByOauthIdentityIncludingDeleted("KAKAO", "oid-1")).thenReturn(0L);
+        when(accountRepository.countByNicknameIncludingDeleted(anyString())).thenReturn(0L);
+        when(phoneHasher.hash("01012345678")).thenReturn("phone-hash");
+        when(accountRepository.countByPhoneHashIncludingDeleted("phone-hash")).thenReturn(1L);
 
+        // OAUTH_EMAIL_NOT_PROVIDED가 아니라 (email 게이트 통과 후) DUPLICATE_PHONE에 도달.
         assertThatThrownBy(() -> service.signup(request("닉네임")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.OAUTH_EMAIL_NOT_PROVIDED);
+                .isEqualTo(ErrorCode.DUPLICATE_PHONE);
     }
 
     @DisplayName("전화번호 해시 중복 → DUPLICATE_PHONE (원문 아닌 phone_hash로 판별)")

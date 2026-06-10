@@ -47,16 +47,19 @@ public class TokenIssuer {
 
     public String issueAccess(long userId, Role role, String email) {
         Instant now = clock.instant();
-        return Jwts.builder()
+        io.jsonwebtoken.JwtBuilder builder = Jwts.builder()
                 .subject(Long.toString(userId))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTtl)))
                 .claim(CLAIM_TYPE, TYPE_ACCESS)
                 .claim(CLAIM_ROLE, role.name())
-                .claim(CLAIM_EMAIL, email)
-                .claim(CLAIM_TOKEN_ID, UUID.randomUUID().toString())
-                .signWith(signingKey)
-                .compact();
+                .claim(CLAIM_TOKEN_ID, UUID.randomUUID().toString());
+        // email은 선택 클레임 — 소셜(이메일 미동의) 계정은 email이 null일 수 있다. 인증 principal/인가는
+        // userId·role만 쓰므로 email 부재가 인증을 깨지 않는다(verifyAccess도 email을 optional로 읽음).
+        if (email != null && !email.isBlank()) {
+            builder.claim(CLAIM_EMAIL, email);
+        }
+        return builder.signWith(signingKey).compact();
     }
 
     public TokenWithId issueRefresh(long userId) {
@@ -92,7 +95,8 @@ public class TokenIssuer {
         Claims claims = parse(token);
         requireType(claims, TYPE_ACCESS);
         String roleValue = requireStringClaim(claims, CLAIM_ROLE);
-        String email = requireStringClaim(claims, CLAIM_EMAIL);
+        // email은 선택 — 소셜(이메일 미동의) 계정은 토큰에 email claim이 없을 수 있다(없으면 null).
+        String email = claims.get(CLAIM_EMAIL, String.class);
         String tokenId = requireStringClaim(claims, CLAIM_TOKEN_ID);
         try {
             long userId = Long.parseLong(claims.getSubject());

@@ -93,16 +93,26 @@ class TokenIssuerTest {
 
     @Test
     void verifyAccess_with_missing_required_claim_throws_JwtException() {
+        // role/tokenId는 필수. email은 optional(소셜 이메일 미동의 계정)이라 여기서 제외.
         String missingRole = signedAccess("1", null, "x@y.z", "tid");
-        String missingEmail = signedAccess("1", Role.USER.name(), null, "tid");
         String missingTokenId = signedAccess("1", Role.USER.name(), "x@y.z", null);
 
         assertThatThrownBy(() -> issuer.verifyAccess(missingRole))
                 .isInstanceOf(JwtException.class);
-        assertThatThrownBy(() -> issuer.verifyAccess(missingEmail))
-                .isInstanceOf(JwtException.class);
         assertThatThrownBy(() -> issuer.verifyAccess(missingTokenId))
                 .isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void verifyAccess_without_email_claim_succeeds_with_null_email() {
+        // 소셜(이메일 미동의) 계정은 email claim 없이 토큰 발급 → 검증 통과 + email=null.
+        String accessToken = issuer.issueAccess(1L, Role.USER, null);
+
+        AccessClaims claims = issuer.verifyAccess(accessToken);
+
+        assertThat(claims.userId()).isEqualTo(1L);
+        assertThat(claims.role()).isEqualTo(Role.USER);
+        assertThat(claims.email()).isNull();
     }
 
     @Test
