@@ -5,6 +5,7 @@ import com.chunbaetour.domain.festival.dto.response.CalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.DailyCalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.DailyEventItem;
 import com.chunbaetour.domain.festival.dto.response.FestivalCacheData;
+import com.chunbaetour.domain.festival.dto.response.FestivalCacheList;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
 import java.time.LocalDate;
@@ -34,9 +35,10 @@ public class CalendarService {
     // ── 캐시 레이어 (progressStatus 없는 entity 캐시) ───────────────────────
 
     @Cacheable(value = "calendar:daily", key = "#date")
-    public List<FestivalCacheData> findCachedDailyFestivals(LocalDate date) {
-        return festivalQueryRepository.findActiveOnDate(date)
-                .stream().map(FestivalCacheData::from).toList();
+    public FestivalCacheList findCachedDailyFestivals(LocalDate date) {
+        // 캐시 루트를 객체로 만들기 위해 래퍼로 감싼다 — 루트 배열 타입정보 부재로 인한 ClassCastException 방지 (KAN-264).
+        return FestivalCacheList.of(festivalQueryRepository.findActiveOnDate(date)
+                .stream().map(FestivalCacheData::from).toList());
     }
 
     // ── KAN-96: 월별 캘린더 조회 ───────────────────────────────────────────
@@ -67,7 +69,7 @@ public class CalendarService {
 
     public DailyCalendarResponse getDailyCalendar(LocalDate date) {
         LocalDate today = LocalDate.now();
-        List<DailyEventItem> events = self.findCachedDailyFestivals(date).stream()
+        List<DailyEventItem> events = self.findCachedDailyFestivals(date).festivals().stream()
                 .map(d -> DailyEventItem.fromCache(d, today))
                 .toList();
         return new DailyCalendarResponse(date, events);
