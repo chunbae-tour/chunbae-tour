@@ -222,7 +222,9 @@ class CompanionReviewServiceTest {
         assertThat(response.nextCursor()).isNull();
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).reviewId()).isEqualTo(10L);
+        assertThat(response.content().get(0).reviewerId()).isEqualTo(2L);
         assertThat(response.content().get(0).reviewerNickname()).isEqualTo("nick");
+        assertThat(response.content().get(0).reviewerProfileImageUrl()).isEqualTo("https://example.com/profile.png");
     }
 
     // size+1건 조회 시 마지막 1건 제외, hasNext=true + nextCursor 인코딩
@@ -258,6 +260,8 @@ class CompanionReviewServiceTest {
         CursorPageResponse<CompanionReviewResponse> response = companionReviewService.getReviews(targetUserId, null, 10);
 
         assertThat(response.content().get(0).reviewerNickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(response.content().get(0).reviewerId()).isNull();
+        assertThat(response.content().get(0).reviewerProfileImageUrl()).isNull();
     }
 
     // 잘못된 cursor → INVALID_CURSOR
@@ -289,6 +293,9 @@ class CompanionReviewServiceTest {
             var idField = Account.class.getDeclaredField("id");
             idField.setAccessible(true);
             idField.set(account, id);
+            var profileImageField = Account.class.getDeclaredField("profileImageUrl");
+            profileImageField.setAccessible(true);
+            profileImageField.set(account, "https://example.com/profile.png");
             var scoreField = Account.class.getDeclaredField("companionScore");
             scoreField.setAccessible(true);
             scoreField.set(account, score);

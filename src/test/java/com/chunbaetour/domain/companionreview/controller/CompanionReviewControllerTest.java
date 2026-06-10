@@ -136,7 +136,7 @@ class CompanionReviewControllerTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("리뷰 목록 조회 → 200")
     void getReviews_success_returns200() throws Exception {
-        CompanionReviewResponse review = new CompanionReviewResponse(10L, "닉네임", 5, "좋았어요", LocalDateTime.now());
+        CompanionReviewResponse review = new CompanionReviewResponse(10L, 2L, "닉네임", "https://example.com/profile.png", 5, "좋았어요", LocalDateTime.now());
         CursorPageResponse<CompanionReviewResponse> response = new CursorPageResponse<>(List.of(review), null, false, 10);
         given(companionReviewService.getReviews(eq(1L), eq((String) null), eq(10))).willReturn(response);
         String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
@@ -145,7 +145,9 @@ class CompanionReviewControllerTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].reviewId").value(10L))
+                .andExpect(jsonPath("$.data.content[0].reviewerId").value(2L))
                 .andExpect(jsonPath("$.data.content[0].reviewerNickname").value("닉네임"))
+                .andExpect(jsonPath("$.data.content[0].reviewerProfileImageUrl").value("https://example.com/profile.png"))
                 .andExpect(jsonPath("$.data.hasNext").value(false));
     }
 
