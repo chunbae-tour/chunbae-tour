@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.service.PlaceSyncBatchService.ChunkResult;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.UpsertResult;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -183,5 +185,52 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
         Place found = placeRepository.findByExternalId("700").orElseThrow();
         assertThat(found.getStatus()).isEqualTo(PlaceStatus.HIDDEN);
         assertThat(found.getName()).isEqualTo("숨김관광지"); // 갱신 안 됨
+    }
+
+    @Test
+    @DisplayName("upsertChunk는 신규 생성과 기존 갱신을 한 번의 청크로 처리하고 집계를 반환한다")
+    void upsertChunkCreatesAndUpdates() {
+        // 기존 1건(910) 선저장 → 청크에서 갱신 대상
+        batchService.upsertItem(item("910", "옛이름", "127.1", "36.8"));
+
+        ChunkResult result = batchService.upsertChunk(List.of(
+                item("900", "신규관광지", "127.215", "36.785"),  // CREATE
+                item("910", "새이름", "127.2", "36.9")));        // UPDATE
+
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.updated()).isEqualTo(1);
+        assertThat(result.skipped()).isZero();
+        assertThat(placeRepository.findByExternalId("900")).isPresent();
+        assertThat(placeRepository.findByExternalId("910").orElseThrow().getName()).isEqualTo("새이름");
+    }
+
+    @Test
+    @DisplayName("upsertChunk는 좌표 없는 무효 item만 skip하고 정상 item은 저장한다")
+    void upsertChunkSkipsInvalidKeepsValid() {
+        ChunkResult result = batchService.upsertChunk(List.of(
+                item("920", "정상", "127.1", "36.8"),
+                item("921", "좌표없음", "", "")));   // 무효 → skip
+
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(placeRepository.findByExternalId("920")).isPresent();
+        assertThat(placeRepository.findByExternalId("921")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("upsertChunk는 운영자 숨김(HIDDEN) 기존 관광지를 skip으로 보존한다")
+    void upsertChunkPreservesNonActive() {
+        batchService.upsertItem(item("930", "숨김관광지", "127.1", "36.8"));
+        Place hidden = placeRepository.findByExternalId("930").orElseThrow();
+        hidden.hide();
+        placeRepository.saveAndFlush(hidden);
+
+        ChunkResult result = batchService.upsertChunk(List.of(item("930", "덮어쓰기시도", "127.2", "36.9")));
+
+        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.updated()).isZero();
+        Place found = placeRepository.findByExternalId("930").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.HIDDEN);
+        assertThat(found.getName()).isEqualTo("숨김관광지");
     }
 }
