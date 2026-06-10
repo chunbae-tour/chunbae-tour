@@ -33,6 +33,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class CompanionReviewServiceTest {
@@ -211,7 +212,7 @@ class CompanionReviewServiceTest {
         Account reviewer = buildAccount(2L, 0.0, 0);
 
         given(accountRepository.existsById(targetUserId)).willReturn(true);
-        given(companionReviewRepository.findByTargetUserIdWithCursor(eq(targetUserId), isNull(), any()))
+        given(companionReviewRepository.findByTargetUserIdWithCursor(eq(targetUserId), isNull(), eq(PageRequest.of(0, 11))))
                 .willReturn(List.of(review));
         given(accountRepository.findAllById(List.of(2L))).willReturn(List.of(reviewer));
 
@@ -232,7 +233,7 @@ class CompanionReviewServiceTest {
         CompanionReview r2 = buildReview(9L, 2L, targetUserId, 100L, 4, "b");
 
         given(accountRepository.existsById(targetUserId)).willReturn(true);
-        given(companionReviewRepository.findByTargetUserIdWithCursor(eq(targetUserId), isNull(), any()))
+        given(companionReviewRepository.findByTargetUserIdWithCursor(eq(targetUserId), isNull(), eq(PageRequest.of(0, 2))))
                 .willReturn(List.of(r1, r2));
         given(accountRepository.findAllById(any())).willReturn(List.of(buildAccount(2L, 0.0, 0)));
 
@@ -250,7 +251,7 @@ class CompanionReviewServiceTest {
         CompanionReview review = buildReview(10L, 999L, targetUserId, 100L, 5, "good");
 
         given(accountRepository.existsById(targetUserId)).willReturn(true);
-        given(companionReviewRepository.findByTargetUserIdWithCursor(eq(targetUserId), isNull(), any()))
+        given(companionReviewRepository.findByTargetUserIdWithCursor(eq(targetUserId), isNull(), eq(PageRequest.of(0, 11))))
                 .willReturn(List.of(review));
         given(accountRepository.findAllById(List.of(999L))).willReturn(List.of());
 
