@@ -116,7 +116,27 @@ public class PlaceQueryRepository {
     }
 
     private BooleanExpression keywordContains(String keyword) {
-        return StringUtils.hasText(keyword) ? place.name.contains(keyword) : null;
+        if (!StringUtils.hasText(keyword)) {
+            return null;
+        }
+        String formattedKeyword = formatForBooleanMode(keyword);
+        // MATCH(name) AGAINST(:formattedKeyword IN BOOLEAN MODE) > 0
+        return Expressions.numberTemplate(Double.class, "function('match_against', {0}, {1})", place.name, formattedKeyword).gt(0.0);
+    }
+
+    /**
+     * 사용자의 검색어를 Boolean Mode 검색에 맞게 변환합니다.
+     * 예: "제주 카페" -> "+제주* +카페*"
+     * 이 방식은 입력된 모든 단어가 포함된 결과를 우선 반환하며, 부분 일치도 허용합니다.
+     */
+    protected String formatForBooleanMode(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return keyword;
+        }
+        String[] tokens = keyword.trim().split("\\s+");
+        return java.util.Arrays.stream(tokens)
+                .map(token -> "+" + token + "*")
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 
     private BooleanExpression categoryEq(PlaceCategory category) {
