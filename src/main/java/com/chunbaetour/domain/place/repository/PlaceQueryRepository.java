@@ -82,12 +82,10 @@ public class PlaceQueryRepository {
      * 커서 기반 페이지네이션을 지원하며, 기본 정렬은 placeId 내림차순(최신순)을 사용한다.
      * </p>
      * <p>
-     * <b>[15년차 아키텍트 코멘트 - Tech Debt]</b><br>
-     * 현재 {@code place.name.contains(keyword)}는 내부적으로 {@code LIKE '%keyword%'} 쿼리를 발생시킨다.
-     * 이는 선행 와일드카드로 인해 MySQL의 B-Tree 인덱스를 타지 못하고 Full Table Scan을 유발한다.
-     * 데이터가 적은 현재는 요구사항(LIKE %keyword%)을 충족하지만,
-     * 향후 데이터 증가 시 커스텀 Dialect를 등록하여 {@code MATCH(name) AGAINST(:keyword IN BOOLEAN MODE)} 방식의
-     * FULLTEXT 검색으로 리팩터링해야 한다.
+     * <b>[15년차 아키텍트 코멘트]</b><br>
+     * 기존의 {@code place.name.contains(keyword)} (LIKE '%keyword%') 방식에서 발생하는 Full Table Scan 병목을 해결하기 위해,
+     * KAN-239를 통해 MySQL ngram 파서를 적용한 FULLTEXT 인덱스(Boolean Mode) 검색으로 리팩터링되었습니다.
+     * 1글자 검색 등 인덱스를 탈 수 없는 특정 예외 케이스에 대해서만 부분적으로 LIKE 검색으로 우회(Fallback)합니다.
      * </p>
      */
     public List<SearchPlaceResponse> searchByKeyword(String keyword, PlaceCategory category,
@@ -119,24 +117,42 @@ public class PlaceQueryRepository {
         if (!StringUtils.hasText(keyword)) {
             return null;
         }
+        
+        // ngram_token_size 기본값이 2이므로 1글자 검색은 인덱스를 타지 못함. LIKE 검색으로 우회 (Fallback)
+        if (keyword.trim().length() == 1) {
+            return place.name.contains(keyword.trim());
+        }
+
         String formattedKeyword = formatForBooleanMode(keyword);
+        
+        // 특수문자만 입력되어 필터링 결과가 비어있는 경우, 전체 조회가 되지 않도록 방어 (LIKE 우회)
+        if (formattedKeyword == null) {
+            return place.name.contains(keyword.trim());
+        }
+
         // MATCH(name) AGAINST(:formattedKeyword IN BOOLEAN MODE) > 0
         return Expressions.numberTemplate(Double.class, "function('match_against', {0}, {1})", place.name, formattedKeyword).gt(0.0);
     }
 
     /**
      * 사용자의 검색어를 Boolean Mode 검색에 맞게 변환합니다.
-     * 예: "제주 카페" -> "+제주* +카페*"
-     * 이 방식은 입력된 모든 단어가 포함된 결과를 우선 반환하며, 부분 일치도 허용합니다.
+     * MySQL Boolean Mode 연산자(+, -, *, ", (, ) 등) 충돌을 방지하기 위해 정규식을 사용하여 안전한 문자만 남깁니다.
+     * ngram 파서를 사용하므로 와일드카드(*)는 무의미하여 제거합니다.
+     * 예: "제주 카페" -> "+제주 +카페"
      */
     protected String formatForBooleanMode(String keyword) {
-        if (!StringUtils.hasText(keyword)) {
-            return keyword;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("[\\p{L}\\p{N}]+").matcher(keyword);
+        java.util.List<String> tokens = new java.util.ArrayList<>();
+
+        while (matcher.find()) {
+            tokens.add("+" + matcher.group());
         }
-        String[] tokens = keyword.trim().split("\\s+");
-        return java.util.Arrays.stream(tokens)
-                .map(token -> "+" + token + "*")
-                .collect(java.util.stream.Collectors.joining(" "));
+
+        if (tokens.isEmpty()) {
+            return null;
+        }
+
+        return String.join(" ", tokens);
     }
 
     private BooleanExpression categoryEq(PlaceCategory category) {
