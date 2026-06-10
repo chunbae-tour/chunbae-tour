@@ -14,10 +14,14 @@ import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateResponse;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.chat.entity.ChatRoom;
+import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
+import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -33,6 +37,7 @@ public class CompanionPostService {
 
     private final CompanionPostRepository postRepository;
     private final AccountRepository accountRepository;
+    private final ChatRoomRepository chatRoomRepository;
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
@@ -53,7 +58,10 @@ public class CompanionPostService {
     public CompanionPostGetOneResponse findById(Long postId) {
         CompanionPost post = findActivePost(postId);
         Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
-        return CompanionPostGetOneResponse.of(post, author);
+        Optional<ChatRoom> chatRoom = chatRoomRepository.findByPostId(post.getId());
+        Long chatRoomId = chatRoom.map(ChatRoom::getId).orElse(null);
+        ChatRoomStatus chatRoomStatus = chatRoom.map(ChatRoom::getStatus).orElse(null);
+        return CompanionPostGetOneResponse.of(post, author, chatRoomId, chatRoomStatus);
     }
 
     public CursorPageResponse<CompanionPostGetListResponse> findAll(
@@ -73,8 +81,15 @@ public class CompanionPostService {
         Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
+        Set<Long> postIds = content.stream().map(CompanionPost::getId).collect(Collectors.toSet());
+        Map<Long, Long> chatRoomIdByPostId = postIds.isEmpty()
+                ? Map.of()
+                : chatRoomRepository.findAllByPostIdIn(postIds).stream()
+                        .collect(Collectors.toMap(ChatRoom::getPostId, ChatRoom::getId));
+
         List<CompanionPostGetListResponse> items = content.stream()
-                .map(post -> CompanionPostGetListResponse.of(post, authors.get(post.getAuthorId())))
+                .map(post -> CompanionPostGetListResponse.of(
+                        post, authors.get(post.getAuthorId()), chatRoomIdByPostId.get(post.getId())))
                 .toList();
 
         return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
