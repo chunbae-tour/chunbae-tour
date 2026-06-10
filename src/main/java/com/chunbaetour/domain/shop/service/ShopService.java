@@ -107,6 +107,27 @@ public class ShopService {
     }
 
     /**
+     * 내 가게 QR 재발급 (KAN-253). 분실·도용 의심 시 nonce를 새 UUID로 교체 → 옛 QR 무효화.
+     * ACTIVE 가게만 재발급 가능 — SUSPENDED(관리자 정지)/CLOSED(폐업)는 SHOP_INACTIVE.
+     * 재발급된 새 payload(YEOPJEON_PAY:SHOP:{shopId}:{nonce})를 응답으로 반환.
+     */
+    @Transactional
+    public QrCodeResponse reissueMyQrCode(Long userId, Long shopId) {
+        // shopId + userId 조합으로 본인 가게 조회 — 타인 가게 재발급 차단
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // ACTIVE 가드 — 정지/폐업 가게는 QR 재발급 불가 (SHOP_005)
+        if (shop.getStatus() != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+
+        // nonce 회전 — 기존 QR payload는 더 이상 결제에 사용 불가
+        shop.reissueQr();
+        return QrCodeResponse.from(shop);
+    }
+
+    /**
      * 가게 수익 지갑 조회.
      * 본인 가게 소유권 확인 후 ShopWallet 잔액 반환.
      */

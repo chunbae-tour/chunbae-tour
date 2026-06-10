@@ -180,7 +180,8 @@ class ShopServiceTest {
 
         assertThat(response.shopId()).isEqualTo(SHOP_ID);
         assertThat(response.shopName()).isEqualTo("광화문 떡볶이");
-        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
+        // payload에 가게 nonce 포함 (KAN-253)
+        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID + ":" + shop.getQrNonce());
     }
 
     @Test
@@ -200,11 +201,53 @@ class ShopServiceTest {
         Shop shop = mock(Shop.class);
         given(shop.getId()).willReturn(SHOP_ID);
         given(shop.getShopName()).willReturn("광화문 떡볶이");
+        given(shop.getQrNonce()).willReturn("nonce-suspended");
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
         QrCodeResponse response = shopService.getMyQrCode(USER_ID, SHOP_ID);
 
-        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID);
+        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID + ":nonce-suspended");
+    }
+
+    // ── POST /shops/{shopId}/qr/reissue (KAN-253) ──────────────────────────
+
+    @Test
+    @DisplayName("QR 재발급 — 성공: nonce 회전 + 새 payload 반환")
+    void reissueMyQrCode_success() {
+        Shop shop = createShop(); // ACTIVE
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        String oldNonce = shop.getQrNonce();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        QrCodeResponse response = shopService.reissueMyQrCode(USER_ID, SHOP_ID);
+
+        assertThat(shop.getQrNonce()).isNotEqualTo(oldNonce); // nonce 교체됨 → 옛 QR 무효
+        assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID + ":" + shop.getQrNonce());
+    }
+
+    @Test
+    @DisplayName("QR 재발급 — 타인 가게: SHOP_NOT_FOUND")
+    void reissueMyQrCode_notOwner_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> shopService.reissueMyQrCode(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("QR 재발급 — SUSPENDED 가게: SHOP_INACTIVE (정지/폐업 차단 정책)")
+    void reissueMyQrCode_suspended_throws() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.SUSPENDED);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.reissueMyQrCode(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
     }
 
     // ── GET /shops/{shopId}/qr-info ────────────────────────────────────────

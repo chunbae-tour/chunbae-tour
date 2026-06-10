@@ -93,6 +93,11 @@ public class QrPayService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
         validateShop(shop, userId);
 
+        // QR nonce 검증 — 재발급으로 무효화된 옛 QR payload로 결제 시도 시 거절 (KAN-253)
+        if (!shop.getQrNonce().equals(request.qrNonce())) {
+            throw new BusinessException(ErrorCode.QR_PAY_NONCE_MISMATCH);
+        }
+
         LocalDateTime now = LocalDateTime.now(clock);
 
         // 스케줄러 지연으로 pending_key unique 제약에 만료 건이 남아있을 수 있어 선제 정리
