@@ -59,13 +59,10 @@ class TranslationControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.targetLanguage").value("EN"));
     }
 
-    // 정적 도메인(sourceType=FAQ) 요청 → sourceType 그대로 service에 전달, 200
+    // 캐시 적용 도메인(sourceType=FAQ) 요청 → 400 COMMON_002, service 미호출 (entity-ID 기반 endpoint 전용)
     @Test
-    @DisplayName("정적 도메인(sourceType=FAQ) 요청 → 200")
-    void translate_whenStaticSourceType_returns200() throws Exception {
-        given(translationService.translate("운영시간이 어떻게 되나요?", LanguageCode.EN, TranslationSourceType.FAQ))
-                .willReturn(new TranslationResponse("What are the business hours?", LanguageCode.EN));
-
+    @DisplayName("sourceType=FAQ 요청 → 400 COMMON_002 (entity-ID 기반 endpoint 전용)")
+    void translate_whenSourceTypeFaq_returns400() throws Exception {
         String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
 
         mockMvc.perform(post(URL)
@@ -74,8 +71,10 @@ class TranslationControllerTest extends AbstractIntegrationTest {
                         .content("""
                                 {"content": "운영시간이 어떻게 되나요?", "targetLanguage": "EN", "sourceType": "FAQ"}
                                 """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.translatedContent").value("What are the business hours?"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+
+        verifyNoInteractions(translationService);
     }
 
     // 미인증 → 401 AUTH_006, service 미호출

@@ -45,13 +45,18 @@ class TranslationCacheIntegrationTest extends AbstractIntegrationTest {
 
         TranslationResponse first =
                 translationService.translate("운영시간이 어떻게 되나요?", LanguageCode.EN, TranslationSourceType.FAQ);
+        assertThat(first.translatedContent()).isEqualTo("What are the business hours?");
+        assertThat(translationCacheRepository.findAll()).hasSize(1);
+
+        // DB를 비워도 Redis 캐시로 응답해야 진짜 Redis 히트 검증됨 (DB read-through와 구분)
+        translationCacheRepository.deleteAll();
+
         TranslationResponse second =
                 translationService.translate("운영시간이 어떻게 되나요?", LanguageCode.EN, TranslationSourceType.FAQ);
 
-        assertThat(first.translatedContent()).isEqualTo("What are the business hours?");
         assertThat(second.translatedContent()).isEqualTo("What are the business hours?");
         verify(googleTranslationClient, times(1)).translate("운영시간이 어떻게 되나요?", LanguageCode.EN);
-        assertThat(translationCacheRepository.findAll()).hasSize(1);
+        assertThat(translationCacheRepository.findAll()).isEmpty();
     }
 
     // 동적 도메인(CHAT) — 동일 텍스트 2번 요청해도 매번 Google API 호출, DB 저장 없음

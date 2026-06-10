@@ -14,6 +14,7 @@ import jakarta.persistence.PersistenceContext;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.text.Normalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -86,10 +87,12 @@ public class TranslationService {
         }
     }
 
+    // NFC 정규화 + trim 후 해시 — 동일 문자열의 다른 유니코드 표현(NFC/NFD)이 다른 해시로 캐시 미스되는 것 방지
     private static String hash(String content) {
         try {
+            String normalized = Normalizer.normalize(content, Normalizer.Form.NFC).trim();
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            byte[] bytes = digest.digest(normalized.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(bytes.length * 2);
             for (byte b : bytes) {
                 sb.append(String.format("%02x", b));

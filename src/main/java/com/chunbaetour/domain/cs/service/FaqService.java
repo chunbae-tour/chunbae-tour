@@ -7,8 +7,12 @@ import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.cs.dto.request.FaqCreateRequest;
 import com.chunbaetour.domain.cs.dto.request.FaqUpdateRequest;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
+import com.chunbaetour.domain.cs.dto.response.FaqTranslationResponse;
 import com.chunbaetour.domain.cs.entity.Faq;
 import com.chunbaetour.domain.cs.repository.FaqRepository;
+import com.chunbaetour.domain.translation.service.TranslationService;
+import com.chunbaetour.domain.translation.type.LanguageCode;
+import com.chunbaetour.domain.translation.type.TranslationSourceType;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -21,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FaqService {
 
     private final FaqRepository faqRepository;
+    private final TranslationService translationService;
 
     // ADMIN: FAQ 목록 커서 페이징 (활성/비활성 포함)
     public CursorPageResponse<FaqResponse> getAll(String cursor, int size) {
@@ -51,6 +56,23 @@ public class FaqService {
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).faqId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+    }
+
+    // USER: 활성 FAQ 단건 번역 — entity-ID 기반, question/answer를 targetLanguage로 번역 (FAQ 캐시 경유)
+    @Transactional
+    public FaqTranslationResponse getFaqTranslation(Long faqId, LanguageCode targetLanguage) {
+        Faq faq = faqRepository.findById(faqId)
+                .filter(Faq::isActive)
+                .orElseThrow(() -> new BusinessException(ErrorCode.FAQ_NOT_FOUND));
+
+        String translatedQuestion = translationService
+                .translate(faq.getQuestion(), targetLanguage, TranslationSourceType.FAQ)
+                .translatedContent();
+        String translatedAnswer = translationService
+                .translate(faq.getAnswer(), targetLanguage, TranslationSourceType.FAQ)
+                .translatedContent();
+
+        return new FaqTranslationResponse(faq.getId(), translatedQuestion, translatedAnswer, targetLanguage);
     }
 
     // ADMIN: FAQ 등록
