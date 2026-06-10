@@ -24,7 +24,7 @@ public record UserLikedPlaceResponse(
         int likeCount,
         LocalDateTime likedAt
 ) {
-    public static UserLikedPlaceResponse from(Place place) {
+    public static UserLikedPlaceResponse from(Place place, LocalDateTime likedAt) {
         return UserLikedPlaceResponse.builder()
                 .placeId(place.getId())
                 .name(place.getName())
@@ -34,6 +34,7 @@ public record UserLikedPlaceResponse(
                 .rating(place.getDisplayRating())
                 .reviewCount(place.getReviewCount())
                 .likeCount(place.getLikeCount())
+                .likedAt(likedAt)
                 .build();
     }
 }

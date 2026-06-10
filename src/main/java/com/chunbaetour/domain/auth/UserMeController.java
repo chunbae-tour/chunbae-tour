@@ -160,8 +160,9 @@ public class UserMeController {
      */
     @Operation(summary = "내 찜 목록 조회")
     @GetMapping("/likes")
-    public ApiResponse<?> getLikedPlaces(
+    public ApiResponse<Page<UserLikedPlaceResponse>> getLikedPlaces(
             @AuthenticationPrincipal Long userId,
+            @io.swagger.v3.oas.annotations.Parameter(description = "조회할 찜 타입 (PLACE, MARKET, FESTIVAL 등)")
             @RequestParam(defaultValue = "PLACE") LikeTargetType type,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
@@ -171,12 +172,12 @@ public class UserMeController {
             }
         });
         
-        if (type == LikeTargetType.PLACE) {
-            return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
+        if (type != LikeTargetType.PLACE) {
+            // TODO: MARKET, FESTIVAL 도메인 찜 목록 조회 연동 예정
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         
-        // TODO: MARKET, FESTIVAL 도메인 찜 목록 조회 연동 예정
-        return ApiResponse.success(Page.empty(pageable));
+        return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
     }
 
     /**

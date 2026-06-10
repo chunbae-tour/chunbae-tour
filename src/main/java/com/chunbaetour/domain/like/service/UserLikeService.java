@@ -2,6 +2,8 @@ package com.chunbaetour.domain.like.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.like.entity.UserLike;
 import com.chunbaetour.domain.like.repository.UserLikeRepository;
 import com.chunbaetour.domain.like.type.LikeTargetType;
@@ -12,12 +14,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class UserLikeService {
 
     private final UserLikeRepository userLikeRepository;
     private final AccountRepository accountRepository;
+    private final List<LikeTargetValidator> targetValidators;
 
     /**
      * 찜 추가 (DB 저장 로직)
@@ -26,6 +31,15 @@ public class UserLikeService {
      */
     @Transactional
     public boolean addLike(Long userId, LikeTargetType targetType, Long targetId) {
+        // 애플리케이션 레벨 target validator를 통해 대상 존재 및 노출 상태 검증
+        targetValidators.stream()
+                .filter(v -> v.supports(targetType))
+                .findFirst()
+                .ifPresentOrElse(
+                        v -> v.validateTarget(targetId),
+                        () -> { throw new BusinessException(ErrorCode.INVALID_REQUEST); }
+                );
+
         if (userLikeRepository.existsByUserIdAndTargetTypeAndTargetId(userId, targetType, targetId)) {
             return false;
         }
@@ -33,7 +47,8 @@ public class UserLikeService {
         Account user = accountRepository.getReferenceById(userId);
 
         try {
-            userLikeRepository.save(UserLike.of(user, targetType, targetId));
+            // race condition 방어를 위해 flush를 강제하여 DataIntegrityViolationException을 즉시 유도
+            userLikeRepository.saveAndFlush(UserLike.of(user, targetType, targetId));
             return true;
         } catch (DataIntegrityViolationException e) {
             return false;

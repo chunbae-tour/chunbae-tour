@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.like.service.UserLikeService;
@@ -37,6 +38,7 @@ public class PlaceLikeService {
 
     private final UserLikeService userLikeService;
     private final PlaceRepository placeRepository;
+    private final PlaceQueryRepository placeQueryRepository;
     private final StringRedisTemplate stringRedisTemplate;
 
     private static final String SEED_AND_INCR_SCRIPT = 
@@ -119,29 +121,7 @@ public class PlaceLikeService {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
-        // 1. target_id 목록 페이징 조회 (정렬 포함)
-        Page<Long> placeIdsPage = userLikeService.getLikedTargetIds(userId, LikeTargetType.PLACE, pageable);
-
-        if (placeIdsPage.isEmpty()) {
-            return Page.empty(pageable);
-        }
-
-        // 2. target_id로 Place 엔티티 IN 벌크 조회
-        List<Place> places = placeRepository.findAllById(placeIdsPage.getContent());
-
-        // 3. 상태 필터링 및 Map 변환 (O(1) 매핑용)
-        Map<Long, Place> placeMap = places.stream()
-                .filter(p -> p.getStatus() == PlaceStatus.ACTIVE)
-                .collect(Collectors.toMap(Place::getId, Function.identity()));
-
-        // 4. 원본 페이징 순서 유지하며 DTO 매핑
-        return placeIdsPage.map(placeId -> {
-            Place place = placeMap.get(placeId);
-            if (place == null) {
-                return null;
-            }
-            return UserLikedPlaceResponse.from(place);
-        }).map(p -> p); // filter 널 방지 (프론트에서 null 처리 필요하거나 필터 필요)
+        return placeQueryRepository.findUserLikedPlaces(userId, pageable);
     }
 
     // ── Redis 헬퍼 ────────────────────────────────────────────────────
