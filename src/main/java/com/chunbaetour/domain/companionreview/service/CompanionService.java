@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,7 +85,7 @@ public class CompanionService {
         } catch (DataIntegrityViolationException e) {
             // uq_companions_chat_room_id 위반 — TOCTOU 동시 요청이 앱 레벨 체크 통과한 경우
             Throwable cause = e.getCause();
-            if (cause instanceof org.hibernate.exception.ConstraintViolationException cve
+            if (cause instanceof ConstraintViolationException cve
                     && "uq_companions_chat_room_id".equals(cve.getConstraintName())) {
                 throw new BusinessException(ErrorCode.COMPANION_ALREADY_STARTED);
             }

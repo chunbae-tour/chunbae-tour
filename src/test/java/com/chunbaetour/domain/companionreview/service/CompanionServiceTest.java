@@ -21,6 +21,7 @@ import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRep
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import java.util.List;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
