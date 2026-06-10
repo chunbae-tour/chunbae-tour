@@ -12,25 +12,36 @@ import java.util.regex.Pattern;
  * 누락은 서버/설정 책임이므로 502({@code OAUTH_PROVIDER_ERROR})로 남겨, 설정 문제를 "사용자가 재시도하면
  * 되는 문제"처럼 숨기지 않는다(hyeonmin02·lim-haeun 리뷰 — 공급자 간 일관 정책).
  *
+ * <p>판별은 본문 substring 검색이 아니라 <b>추출한 필드값 비교</b>로 한다 — {@code error_description} 등
+ * 다른 필드에 같은 문자열이 우연히 들어가도 오분류되지 않는다.
  * <ul>
- *   <li>KAKAO: {@code error_code=KOE320}(인가코드 만료/재사용)만 400. {@code invalid_grant} 광역 매칭은
- *       KOE303(redirect_uri 불일치)도 invalid_grant로 내려와 400으로 오분류하므로 쓰지 않는다.</li>
- *   <li>NAVER: {@code error=invalid_grant}(인가코드 만료/무효)만 400. {@code invalid_request}는
- *       redirect/파라미터 구성 오류를 포함하므로 제외.</li>
+ *   <li>KAKAO: {@code error_code == "KOE320"}(인가코드 만료/재사용)만 400. KOE303(redirect_uri 불일치)은
+ *       {@code error=invalid_grant}로 내려오지만 설정 문제이므로 502.</li>
+ *   <li>NAVER: {@code error == "invalid_grant"}(인가코드 만료/무효)만 400. {@code invalid_request}는
+ *       redirect/파라미터 구성 오류를 포함하므로 502.</li>
  * </ul>
  *
- * <p>공급자 추가(Google/Apple 등) 시 여기에 키워드만 늘린다 — 클라이언트는 분류를 모른다.
+ * <p>공급자 추가(Google/Apple 등) 시 여기에 비교만 늘린다 — 클라이언트는 분류를 모른다.
  */
 final class OauthErrorClassifier {
 
     /** 로그 요약 최대 길이 — 과도한 본문(공급자 응답 변경/긴 description)으로 인한 로그 볼륨 폭주 방지. */
     private static final int MAX_LOG_LENGTH = 300;
 
-    /** 토큰 에러 JSON에서 진단에 필요한 필드만 추출 — error / error_code / error_description. */
+    /**
+     * 토큰 에러 JSON에서 진단/판별에 쓰는 필드만 추출 — error / error_code / error_description.
+     * 한계: value 안의 이스케이프 따옴표(\")에서 매치가 끊겨 부분 추출될 수 있다 — 판별 대상인
+     * error/error_code는 코드값(따옴표 미포함)이라 무영향, description은 로그 진단용 요약이라 허용
+     * (과소 노출 방향이므로 보안상 안전).
+     */
     private static final Pattern ERROR_FIELDS =
             Pattern.compile("\"(error|error_code|error_description)\"\\s*:\\s*\"([^\"]*)\"");
 
     private OauthErrorClassifier() {
+    }
+
+    /** 토큰 에러 본문에서 추출한 표준 필드. 미존재 필드는 null. */
+    record ErrorFields(String error, String errorCode, String errorDescription) {
     }
 
     /**
@@ -38,36 +49,64 @@ final class OauthErrorClassifier {
      * true → 400 {@code OAUTH_INVALID_AUTHORIZATION}, false → 502 {@code OAUTH_PROVIDER_ERROR}.
      */
     static boolean isInvalidAuthorization(OauthProvider provider, String errorBody) {
+        ErrorFields fields = parse(errorBody);
         return switch (provider) {
-            case KAKAO -> OauthResponses.containsAnyIgnoreCase(errorBody, "koe320");
-            case NAVER -> OauthResponses.containsAnyIgnoreCase(errorBody, "invalid_grant");
+            case KAKAO -> "KOE320".equalsIgnoreCase(fields.errorCode());
+            case NAVER -> "invalid_grant".equalsIgnoreCase(fields.error());
         };
     }
 
     /**
-     * 에러 본문을 로그 안전 형태로 요약 — {@code error}/{@code error_code}/{@code error_description}만
-     * 추출하고 개행·제어문자 제거 + 길이 제한. 본문 원문 전체를 로깅하면 예기치 않은 민감 문자열,
-     * 개행 기반 로그 오염, 로그 볼륨 문제가 생길 수 있다(hyeonmin02·CodeRabbit 리뷰).
-     *
-     * <p>JSON 파서 대신 정규식을 쓴다 — 추출 대상이 고정 3필드뿐이고, malformed 본문(HTML 에러 페이지 등)
-     * 에도 예외 없이 동작해야 한다. 필드를 하나도 못 찾으면 새니타이즈한 앞부분만 남긴다.
+     * 에러 본문을 로그 안전 형태로 요약 — 추출된 {@code error}/{@code error_code}/{@code error_description}만
+     * 남기고 개행·제어문자 제거 + 길이 제한. 필드를 하나도 못 찾으면(HTML/WAF/프록시 오류 페이지, 스키마 변경 등)
+     * <b>본문은 일절 남기지 않고</b> 고정 문구 + 길이만 기록한다 — 인증 플로우 로그에 외부 응답 원문이
+     * 일부라도 적재되는 것을 차단(hyeonmin02 리뷰). 상세 원인이 필요하면 status + 길이로 재현 조사한다.
      */
     static String summarizeForLog(String errorBody) {
         if (errorBody == null || errorBody.isBlank()) {
             return "(empty)";
         }
+        ErrorFields fields = parse(errorBody);
         StringBuilder summary = new StringBuilder();
-        Matcher matcher = ERROR_FIELDS.matcher(errorBody);
-        while (matcher.find()) {
-            if (summary.length() > 0) {
-                summary.append(", ");
-            }
-            summary.append(matcher.group(1)).append('=').append(matcher.group(2));
+        appendField(summary, "error", fields.error());
+        appendField(summary, "error_code", fields.errorCode());
+        appendField(summary, "error_description", fields.errorDescription());
+        if (summary.length() == 0) {
+            return "unparsable_error_body(length=" + errorBody.length() + ")";
         }
-        String result = summary.length() > 0 ? summary.toString() : errorBody;
-        result = result.replaceAll("[\\r\\n\\t\\p{Cntrl}]", " ");
+        String result = summary.toString().replaceAll("[\\r\\n\\t\\p{Cntrl}]", " ");
         return result.length() > MAX_LOG_LENGTH
                 ? result.substring(0, MAX_LOG_LENGTH) + "...(truncated)"
                 : result;
+    }
+
+    /** 본문에서 표준 에러 필드를 추출 — 키별 첫 매치만. JSON 파서 대신 정규식(고정 3필드 + malformed 강건). */
+    private static ErrorFields parse(String errorBody) {
+        String error = null;
+        String errorCode = null;
+        String errorDescription = null;
+        if (errorBody != null) {
+            Matcher matcher = ERROR_FIELDS.matcher(errorBody);
+            while (matcher.find()) {
+                switch (matcher.group(1)) {
+                    case "error" -> error = error == null ? matcher.group(2) : error;
+                    case "error_code" -> errorCode = errorCode == null ? matcher.group(2) : errorCode;
+                    case "error_description" ->
+                            errorDescription = errorDescription == null ? matcher.group(2) : errorDescription;
+                    default -> { }
+                }
+            }
+        }
+        return new ErrorFields(error, errorCode, errorDescription);
+    }
+
+    private static void appendField(StringBuilder summary, String name, String value) {
+        if (value == null) {
+            return;
+        }
+        if (summary.length() > 0) {
+            summary.append(", ");
+        }
+        summary.append(name).append('=').append(value);
     }
 }
