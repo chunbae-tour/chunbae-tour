@@ -24,6 +24,11 @@ public class AsyncConfig {
         executor.setMaxPoolSize(2);
         executor.setQueueCapacity(10);
         executor.setThreadNamePrefix("place-sync-");
+        // Graceful shutdown — 컨텍스트 종료(SIGTERM) 시 진행 중인 청크 작업을 끝까지 마치고 풀을 닫는다.
+        // 청크 단위 커밋이라 강제 중단돼도 데이터는 안전하지만, 진행 중 API 호출/DB 커넥션 강제 종료로 인한
+        // 불필요한 InterruptedException 로그를 막는다. awaitTermination으로 무한 대기는 방지(최대 30초).
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
         executor.initialize();
         return executor;
     }

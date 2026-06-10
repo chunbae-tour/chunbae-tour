@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.core.LockConfiguration;
@@ -112,17 +113,25 @@ public class PlaceSyncService {
             throw new BusinessException(ErrorCode.PLACE_SYNC_IN_PROGRESS);
         }
         // 락 보유 상태로 백그라운드 위임 — 완료 시 unlock.
-        placeSyncExecutor.execute(() -> {
-            try {
-                PlaceSyncResult result = doSync();
-                log.info("관광지 수동 동기화 완료: fetched={}, created={}, updated={}, deleted={}, skipped={}",
-                        result.fetched(), result.created(), result.updated(), result.deleted(), result.skipped());
-            } catch (Exception e) {
-                log.error("관광지 수동 동기화 실패", e);
-            } finally {
-                lock.get().unlock();
-            }
-        });
+        try {
+            placeSyncExecutor.execute(() -> {
+                try {
+                    PlaceSyncResult result = doSync();
+                    log.info("관광지 수동 동기화 완료: fetched={}, created={}, updated={}, deleted={}, skipped={}",
+                            result.fetched(), result.created(), result.updated(), result.deleted(), result.skipped());
+                } catch (Exception e) {
+                    log.error("관광지 수동 동기화 실패", e);
+                } finally {
+                    lock.get().unlock();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            // 제출 거절(셧다운/큐 포화 등 극단 케이스) — 워커 finally가 실행되지 않으므로 요청 스레드에서
+            // 획득한 락을 즉시 해제한다(LOCK_AT_MOST_FOR 만료를 기다리지 않고 self-heal). 거절은 호출자로 전파.
+            lock.get().unlock();
+            log.error("관광지 수동 동기화 제출 거절 — 락 해제 후 전파", e);
+            throw e;
+        }
     }
 
     private PlaceSyncResult doSync() {
