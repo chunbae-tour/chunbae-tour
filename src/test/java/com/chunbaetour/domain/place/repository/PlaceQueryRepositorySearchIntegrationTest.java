@@ -6,10 +6,12 @@ import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -24,6 +26,18 @@ class PlaceQueryRepositorySearchIntegrationTest extends AbstractIntegrationTest 
 
     @Autowired
     private PlaceRepository placeRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void setUpIndex() {
+        try {
+            jdbcTemplate.execute("CREATE FULLTEXT INDEX idx_places_name_fulltext ON places(name) WITH PARSER ngram");
+        } catch (Exception e) {
+            // 인덱스가 이미 존재하는 경우 무시
+        }
+    }
 
     @AfterEach
     void tearDown() {
