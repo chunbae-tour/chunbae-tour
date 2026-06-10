@@ -56,18 +56,19 @@ public class OauthSignupService {
             throw new BusinessException(ErrorCode.OAUTH_ALREADY_REGISTERED);
         }
 
-        // 이메일은 공급자가 검증한 값(티켓에 서명돼 옴)만 사용한다 — 클라이언트가 보낸 이메일을 신뢰하면
-        // 타인 이메일을 임의로 넣어 선점/사칭할 수 있다(hyeonmin02 🔴 Critical). 공급자 미제공(예: 카카오
-        // 이메일 동의 안 함) 시 가입 불가 → 이메일 제공 동의가 필요함을 알린다.
-        if (ticket.email() == null || ticket.email().isBlank()) {
-            throw new BusinessException(ErrorCode.OAUTH_EMAIL_NOT_PROVIDED);
-        }
-        String email = ticket.email().toLowerCase(Locale.ROOT);
+        // 이메일은 공급자가 검증한 값(티켓에 서명돼 옴)만 사용한다 — 클라이언트가 보낸 이메일을 신뢰하면 타인
+        // 이메일을 임의로 넣어 선점/사칭할 수 있다(여전히 request에 email은 받지 않음). 길 A: 공급자가 이메일을
+        // 안 준 경우(예: 카카오 이메일 미동의)는 null로 두고 가입을 진행한다 — 주 식별자는 oauth_id.
+        // 정규화는 trim → lower 순서 — 공급자 응답에 앞뒤 공백이 섞여도 저장/중복검사가 어긋나지 않게.
+        String rawEmail = ticket.email();
+        String email = (rawEmail == null || rawEmail.isBlank())
+                ? null : rawEmail.trim().toLowerCase(Locale.ROOT);
         String phone = normalizePhone(request.phone());
         String phoneHash = phoneHasher.hash(phone);   // 중복판별은 해시로(원문은 암호화 저장이라 동등비교 불가)
         String nickname = request.nickname();
 
-        if (accountRepository.countByEmailIncludingDeleted(email) > 0) {
+        // 이메일이 있을 때만 중복 검사 — 없으면(null) 중복/식별은 oauth_id·phone_hash 기준.
+        if (email != null && accountRepository.countByEmailIncludingDeleted(email) > 0) {
             throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
         }
         if (accountRepository.countByNicknameIncludingDeleted(nickname) > 0) {
@@ -88,7 +89,7 @@ public class OauthSignupService {
         } catch (DataIntegrityViolationException e) {
             // flush 실패한 엔티티를 세션에서 분리(후속 query auto-flush 시 AssertionFailure 회피) — SignupService와 동일.
             entityManager.clear();
-            if (accountRepository.countByEmailIncludingDeleted(email) > 0) {
+            if (email != null && accountRepository.countByEmailIncludingDeleted(email) > 0) {
                 throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
             }
             // 사전 검사와 동일하게 탈퇴(soft-delete) row까지 보는 *IncludingDeleted로 재검사 — 파생 쿼리
