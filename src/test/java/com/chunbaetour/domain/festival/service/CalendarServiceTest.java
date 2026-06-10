@@ -7,6 +7,7 @@ import com.chunbaetour.domain.festival.dto.response.CalendarEventItem;
 import com.chunbaetour.domain.festival.dto.response.CalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.DailyCalendarResponse;
 import com.chunbaetour.domain.festival.dto.response.FestivalCacheData;
+import com.chunbaetour.domain.festival.dto.response.FestivalCacheList;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
@@ -137,7 +138,7 @@ class CalendarServiceTest {
         // 실행 시점에 따라 달라지므로 asserting 제외.
         FestivalCacheData cacheData = buildCacheData(1L,
                 LocalDate.of(2026, 6, 18), LocalDate.of(2026, 6, 23));
-        given(self.findCachedDailyFestivals(date)).willReturn(List.of(cacheData));
+        given(self.findCachedDailyFestivals(date)).willReturn(FestivalCacheList.of(List.of(cacheData)));
 
         DailyCalendarResponse response = calendarService.getDailyCalendar(date);
 
@@ -152,7 +153,7 @@ class CalendarServiceTest {
     @DisplayName("getDailyCalendar — 해당 날짜 축제 없으면 빈 events 반환")
     void getDailyCalendar_빈_결과() {
         LocalDate date = LocalDate.of(2026, 6, 20);
-        given(self.findCachedDailyFestivals(date)).willReturn(List.of());
+        given(self.findCachedDailyFestivals(date)).willReturn(FestivalCacheList.of(List.of()));
 
         DailyCalendarResponse response = calendarService.getDailyCalendar(date);
 

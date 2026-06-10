@@ -8,6 +8,7 @@ import com.chunbaetour.domain.festival.dto.request.FestivalCreateRequest;
 import com.chunbaetour.domain.festival.dto.request.FestivalUpdateRequest;
 import com.chunbaetour.domain.festival.dto.response.FestivalAdminMutateResponse;
 import com.chunbaetour.domain.festival.dto.response.FestivalCacheData;
+import com.chunbaetour.domain.festival.dto.response.FestivalCacheList;
 import com.chunbaetour.domain.festival.dto.response.FestivalResponse;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalQueryRepository;
@@ -47,10 +48,13 @@ public class FestivalService {
 
     @Cacheable(value = "festivals:list",
             key = "#date + ':' + #region + ':' + #cursorId + ':' + #size")
-    public List<FestivalCacheData> findCachedFestivalList(
+    public FestivalCacheList findCachedFestivalList(
             LocalDate date, String region, Long cursorId, int size) {
-        return festivalQueryRepository.findActiveByFilter(date, region, cursorId, size + 1)
-                .stream().map(FestivalCacheData::from).toList();
+        // 캐시 value의 루트를 배열이 아닌 객체로 만들기 위해 래퍼로 감싼다 — 루트 배열엔 타입정보(@class)를
+        // 부착할 수 없어 캐시 HIT 시 LinkedHashMap으로 복원돼 ClassCastException이 나던 문제를 막는다 (KAN-264).
+        return FestivalCacheList.of(
+                festivalQueryRepository.findActiveByFilter(date, region, cursorId, size + 1)
+                        .stream().map(FestivalCacheData::from).toList());
     }
 
     // ── KAN-97: 사용자 축제 목록 조회 ──────────────────────────────────────
@@ -59,7 +63,7 @@ public class FestivalService {
             LocalDate date, String region, String cursor, int size) {
         String normalizedRegion = StringUtils.hasText(region) ? region.trim() : null;
         Long cursorId = CursorUtils.decodeSafe(StringUtils.hasText(cursor) ? cursor : null);
-        List<FestivalCacheData> rows = self.findCachedFestivalList(date, normalizedRegion, cursorId, size);
+        List<FestivalCacheData> rows = self.findCachedFestivalList(date, normalizedRegion, cursorId, size).festivals();
 
         boolean hasNext = rows.size() > size;
         List<FestivalCacheData> content = hasNext ? rows.subList(0, size) : rows;
