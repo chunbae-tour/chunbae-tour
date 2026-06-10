@@ -3,11 +3,14 @@ package com.chunbaetour.domain.shop.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
+import com.chunbaetour.domain.shop.dto.response.AdminShopPlaceResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
@@ -24,7 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * ShopService.updateShopPlace() 단위 테스트 (KAN-217).
+ * ShopService.updateShopPlace() 단위 테스트 (KAN-217, 응답 DTO 보강 KAN-254).
  */
 @ExtendWith(MockitoExtension.class)
 class ShopPlaceServiceTest {
@@ -49,40 +52,76 @@ class ShopPlaceServiceTest {
         return shop;
     }
 
+    /** 연결 검증·응답에 쓰는 Place mock (status/name만 stub). */
+    private Place placeMock(PlaceStatus status, String name) {
+        Place place = mock(Place.class);
+        given(place.getStatus()).willReturn(status);
+        if (name != null) {
+            given(place.getName()).willReturn(name);
+        }
+        return place;
+    }
+
     @Nested
     @DisplayName("updateShopPlace()")
     class UpdateShopPlace {
 
         @Test
-        @DisplayName("placeId 연결 성공")
+        @DisplayName("placeId 연결 성공 — 연결 결과 DTO 반환")
         void linkPlace_success() {
             Shop shop = createShop();
+            Place place = placeMock(PlaceStatus.ACTIVE, "천안삼거리공원");
             given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-            given(placeRepository.existsByIdAndStatusNot(PLACE_ID, PlaceStatus.DELETED)).willReturn(true);
+            given(placeRepository.findById(PLACE_ID)).willReturn(Optional.of(place));
 
-            shopService.updateShopPlace(SHOP_ID, PLACE_ID);
+            AdminShopPlaceResponse res = shopService.updateShopPlace(SHOP_ID, PLACE_ID);
 
             assertThat(shop.getPlaceId()).isEqualTo(PLACE_ID);
+            assertThat(res.shopId()).isEqualTo(SHOP_ID);
+            assertThat(res.placeId()).isEqualTo(PLACE_ID);
+            assertThat(res.placeName()).isEqualTo("천안삼거리공원");
+            assertThat(res.linked()).isTrue();
         }
 
         @Test
-        @DisplayName("placeId=null — 연결 해제")
+        @DisplayName("placeId=null — 연결 해제, 해제 결과 DTO 반환")
         void unlinkPlace_success() {
             Shop shop = createShop();
             ReflectionTestUtils.setField(shop, "placeId", PLACE_ID);
             given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
 
-            shopService.updateShopPlace(SHOP_ID, null);
+            AdminShopPlaceResponse res = shopService.updateShopPlace(SHOP_ID, null);
 
             assertThat(shop.getPlaceId()).isNull();
+            assertThat(res.shopId()).isEqualTo(SHOP_ID);
+            assertThat(res.placeId()).isNull();
+            assertThat(res.placeName()).isNull();
+            assertThat(res.linked()).isFalse();
+        }
+
+        @Test
+        @DisplayName("기존 연결 가게를 다른 Place로 변경 — placeId 교체 + 새 결과 DTO")
+        void relinkPlace_success() {
+            Long newPlaceId = 200L;
+            Shop shop = createShop();
+            ReflectionTestUtils.setField(shop, "placeId", PLACE_ID); // 기존 연결 존재
+            Place place = placeMock(PlaceStatus.ACTIVE, "새 장소");
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+            given(placeRepository.findById(newPlaceId)).willReturn(Optional.of(place));
+
+            AdminShopPlaceResponse res = shopService.updateShopPlace(SHOP_ID, newPlaceId);
+
+            assertThat(shop.getPlaceId()).isEqualTo(newPlaceId);
+            assertThat(res.placeId()).isEqualTo(newPlaceId);
+            assertThat(res.placeName()).isEqualTo("새 장소");
+            assertThat(res.linked()).isTrue();
         }
 
         @Test
         @DisplayName("존재하지 않는 Place — PLACE_NOT_FOUND")
         void linkPlace_placeNotFound() {
-            Shop shop = createShop();
-            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-            given(placeRepository.existsByIdAndStatusNot(PLACE_ID, PlaceStatus.DELETED)).willReturn(false);
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createShop()));
+            given(placeRepository.findById(PLACE_ID)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> shopService.updateShopPlace(SHOP_ID, PLACE_ID))
                     .isInstanceOf(BusinessException.class)
@@ -93,10 +132,9 @@ class ShopPlaceServiceTest {
         @Test
         @DisplayName("DELETED 상태 Place — PLACE_NOT_FOUND (soft delete 장소 연결 차단)")
         void linkPlace_deletedPlace() {
-            Shop shop = createShop();
-            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-            // existsByIdAndStatusNot(DELETED)는 DELETED 장소를 false로 반환
-            given(placeRepository.existsByIdAndStatusNot(PLACE_ID, PlaceStatus.DELETED)).willReturn(false);
+            Place deleted = placeMock(PlaceStatus.DELETED, null);
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createShop()));
+            given(placeRepository.findById(PLACE_ID)).willReturn(Optional.of(deleted));
 
             assertThatThrownBy(() -> shopService.updateShopPlace(SHOP_ID, PLACE_ID))
                     .isInstanceOf(BusinessException.class)

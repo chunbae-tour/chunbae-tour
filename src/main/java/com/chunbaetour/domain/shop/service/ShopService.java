@@ -2,9 +2,11 @@ package com.chunbaetour.domain.shop.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
+import com.chunbaetour.domain.shop.dto.response.AdminShopPlaceResponse;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
@@ -184,24 +186,32 @@ public class ShopService {
     }
 
     /**
-     * 관리자 가게-장소 수동 연결 (KAN-217).
+     * 관리자 가게-장소 수동 연결/해제 (KAN-217, 응답 DTO 보강 KAN-254).
      * placeId=null 허용 — 기존 연결 해제.
      * placeId 전달 시 Place 존재 여부 검증.
      * 상태 무관 연결/해제 허용 — SUSPENDED/CLOSED 가게도 관리자가 장소 정비 가능해야 함 (의도적).
+     *
+     * @return 변경 결과(연결된 장소 id·명칭·연결여부). 보정 결과를 echo back 해 관리자가 재조회 없이 확인.
      */
     @Transactional
-    public void updateShopPlace(Long shopId, Long placeId) {
+    public AdminShopPlaceResponse updateShopPlace(Long shopId, Long placeId) {
         // 가게 조회 — 없으면 SHOP_001
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // placeId 전달 시 DELETED 아닌 Place 존재 여부 검증 — soft delete 장소 연결 차단
-        if (placeId != null && !placeRepository.existsByIdAndStatusNot(placeId, PlaceStatus.DELETED)) {
-            throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
+        // 해제 요청(placeId=null) — 즉시 연결 해제 후 해제 결과 반환
+        if (placeId == null) {
+            shop.linkPlace(null);
+            return AdminShopPlaceResponse.unlinked(shopId);
         }
 
-        // 장소 연결 (null이면 해제)
+        // 연결 요청 — DELETED 아닌 Place 조회(soft delete 장소 연결 차단) + 응답에 담을 장소명 확보
+        Place place = placeRepository.findById(placeId)
+                .filter(p -> p.getStatus() != PlaceStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+
         shop.linkPlace(placeId);
+        return AdminShopPlaceResponse.linked(shopId, placeId, place.getName());
     }
 
     /**

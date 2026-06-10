@@ -93,4 +93,20 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
             + "WHERE p.orderUid = :orderUid "
             + "  AND p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING")
     int failIfPending(@Param("orderUid") String orderUid);
+
+    /**
+     * PENDING 상태인 경우에만 CANCELLED로 전환하는 DB-level 조건부 UPDATE (KAN-252, 사용자 직접 취소).
+     *
+     * <p>웹훅(COMPLETED/FAILED 전환)·자동 만료와의 경합 방어용. 사용자 취소 요청과 웹훅이 동시에 와도
+     * InnoDB row lock으로 직렬화 → 한쪽만 1 반환. 이미 COMPLETED/FAILED/CANCELLED/REFUNDED 등 PENDING이
+     * 아니면 0 반환 → 상태 전이 거절(PAYMENT_ORDER_NOT_CANCELLABLE).
+     *
+     * @return 영향받은 row 수 (1 = 본 호출이 CANCELLED 전환 성공, 0 = PENDING 아님 또는 row 없음)
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE PaymentOrder p "
+            + "SET p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.CANCELLED "
+            + "WHERE p.orderUid = :orderUid "
+            + "  AND p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING")
+    int cancelIfPending(@Param("orderUid") String orderUid);
 }
