@@ -225,6 +225,65 @@ class ChargeServiceTest {
                 .isEqualTo(ErrorCode.CHARGE_AMOUNT_EXCEEDED);
     }
 
+    // ── cancelCharge (KAN-252) ────────────────────────────────────────────────
+
+    private PaymentOrder pendingOrder(Long userId) {
+        return PaymentOrder.create("order-cancel", userId, 10_000L, "idem-cancel", PaymentMethod.CARD, "pg-cancel");
+    }
+
+    @Test
+    @DisplayName("본인 PENDING 충전 주문 취소 성공 — CANCELLED 전환 + 멱등성 키 해제")
+    void cancelCharge_pending_success() {
+        PaymentOrder order = pendingOrder(1L);
+        given(paymentOrderRepository.findByOrderUid("order-cancel")).willReturn(Optional.of(order));
+        given(paymentOrderRepository.cancelIfPending("order-cancel")).willReturn(1);
+
+        chargeService.cancelCharge(1L, "order-cancel");
+
+        verify(paymentOrderRepository).cancelIfPending("order-cancel");
+        verify(idempotencyService).unmark("idem-cancel"); // 재충전(새 키) 흐름 정상화
+    }
+
+    @Test
+    @DisplayName("타인 충전 주문 취소 시 PAYMENT_HISTORY_NOT_FOUND (존재 숨김) — CAS·키해제 미수행")
+    void cancelCharge_otherUser_notFound() {
+        PaymentOrder order = pendingOrder(2L); // 주문 소유자 2L, 호출자 1L
+        given(paymentOrderRepository.findByOrderUid("order-cancel")).willReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> chargeService.cancelCharge(1L, "order-cancel"))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+        verify(paymentOrderRepository, never()).cancelIfPending(anyString());
+        verify(idempotencyService, never()).unmark(anyString());
+    }
+
+    @Test
+    @DisplayName("없는 충전 주문 취소 시 PAYMENT_HISTORY_NOT_FOUND")
+    void cancelCharge_notFound() {
+        given(paymentOrderRepository.findByOrderUid("nope")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chargeService.cancelCharge(1L, "nope"))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_HISTORY_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("완료/실패/취소된 주문 또는 웹훅 경합 — cancelIfPending=0 → PAYMENT_ORDER_NOT_CANCELLABLE, 키 미해제")
+    void cancelCharge_notPending_throws() {
+        // 소유권은 통과하지만 CAS UPDATE가 0 반환 — 이미 종착 상태이거나 웹훅이 먼저 COMPLETED/FAILED 전환
+        PaymentOrder order = pendingOrder(1L);
+        given(paymentOrderRepository.findByOrderUid("order-cancel")).willReturn(Optional.of(order));
+        given(paymentOrderRepository.cancelIfPending("order-cancel")).willReturn(0);
+
+        assertThatThrownBy(() -> chargeService.cancelCharge(1L, "order-cancel"))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_ORDER_NOT_CANCELLABLE);
+        verify(idempotencyService, never()).unmark(anyString());
+    }
+
     // ── getPaymentHistory ────────────────────────────────────────────────────
 
     private PaymentOrder createOrder(Long id, Long amount) {

@@ -315,6 +315,49 @@ public class QrPayService {
     }
 
     /**
+     * QR 결제 요청 사용자 직접 취소 (KAN-252, USER 전용).
+     *
+     * <p>본인 소유 PENDING 요청만 취소 가능. 상인 승인/거절(confirm)·자동 만료(scheduler)와의 경합을 막기 위해
+     * confirm과 동일한 분산 락(qr:lock:{shopId}:{userId})으로 직렬화하고, 락 획득 후 row lock으로 재조회해
+     * 상태를 재검증한다. 취소 시 pendingKey가 null로 풀려 동일 사용자·가게 즉시 재결제가 가능하다.
+     *
+     * @throws BusinessException QR_PAY_REQUEST_NOT_FOUND(타인/없음), QR_PAY_INVALID_STATUS_TRANSITION(PENDING 아님)
+     */
+    @Transactional
+    public void cancelQrPayRequest(Long userId, String payRequestId) {
+        // 소유권 사전 확인 — 타인 요청은 존재 자체를 숨겨 NOT_FOUND로 통일 (getQrPayStatus와 동일 정책)
+        QrPayRequest qrPayRequest = qrPayRequestRepository.findByPayRequestId(payRequestId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
+        if (!qrPayRequest.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND);
+        }
+
+        // confirm과 동일 락 — 승인/거절 동시 진행 시 직렬화. watchdog 모드(자동 갱신·종료 시 해제)
+        RLock lock = redissonClient.getLock(
+                QR_LOCK_KEY.formatted(qrPayRequest.getShopId(), qrPayRequest.getUserId()));
+        try {
+            if (!lock.tryLock(LOCK_WAIT_SECONDS, TimeUnit.SECONDS)) {
+                throw new BusinessException(ErrorCode.PAYMENT_PROCESSING);
+            }
+
+            // 락 획득 후 row lock 재조회 — 대기 중 상인 승인/거절·만료로 상태가 바뀌었을 수 있음
+            QrPayRequest lockedRequest = qrPayRequestRepository.findByPayRequestIdWithLock(payRequestId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.QR_PAY_REQUEST_NOT_FOUND));
+
+            // PENDING 가드 — 완료/거절/만료/취소된 건은 도메인 메서드에서 QR_PAY_INVALID_STATUS_TRANSITION
+            lockedRequest.cancel();
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.PAYMENT_PROCESSING);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /**
      * QR 결제 상태 폴링 (STORY-13, USER 전용).
      * 푸시 알림 미도달 시 사용자가 결제 완료 여부를 확인하는 수단.
      * 본인 요청만 조회 가능 — 타인 payRequestId로 조회 시 NOT_FOUND 처리.
