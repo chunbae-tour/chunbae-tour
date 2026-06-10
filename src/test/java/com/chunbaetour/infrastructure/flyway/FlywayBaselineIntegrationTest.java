@@ -137,7 +137,7 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbc, "faqs");
         // V202606041110이 추가한 companion_reviews 테이블도 검증 (KAN-211 회귀 가드)
         assertTableExists(jdbc, "companion_reviews");
-        // V202606091205이 추가한 companions/companion_participants 테이블도 검증 (KAN-256 회귀 가드)
+        // V202606092100이 추가한 companions/companion_participants 테이블도 검증 (KAN-256 회귀 가드)
         assertTableExists(jdbc, "companions");
         assertTableExists(jdbc, "companion_participants");
     }
@@ -200,7 +200,7 @@ class FlywayBaselineIntegrationTest {
         assertTableExists(jdbc, "faqs");
         // V202606041110도 실 실행되어 companion_reviews 테이블 존재해야 함 (KAN-211 회귀 가드)
         assertTableExists(jdbc, "companion_reviews");
-        // V202606091205도 실 실행되어 companions/companion_participants 테이블 존재해야 함 (KAN-256 회귀 가드)
+        // V202606092100도 실 실행되어 companions/companion_participants 테이블 존재해야 함 (KAN-256 회귀 가드)
         assertTableExists(jdbc, "companions");
         assertTableExists(jdbc, "companion_participants");
     }
