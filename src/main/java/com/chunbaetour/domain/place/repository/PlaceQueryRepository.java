@@ -43,8 +43,8 @@ public class PlaceQueryRepository {
                         place.name,
                         place.category,
                         place.thumbnailUrl,
-                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_Y({0})", place.location),
-                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_X({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_Y({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_X({0})", place.location),
                         place.rating, // rating은 내부적으로 int이지만 QueryDSL이 Projections로 매핑할 때 DTO 생성자를 탐색합니다.
                         place.reviewCount,
                         distanceExpression
@@ -275,8 +275,8 @@ public class PlaceQueryRepository {
                         place.id,
                         place.name,
                         place.category,
-                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_Y({0})", place.location),
-                        Expressions.numberTemplate(java.math.BigDecimal.class, "ST_X({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_Y({0})", place.location),
+                        Expressions.numberTemplate(Double.class, "ST_X({0})", place.location),
                         place.thumbnailUrl
                 ))
                 .from(place)

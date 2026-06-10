@@ -9,6 +9,9 @@ public record MapMarkerResponse(
         PlaceCategory category,
         BigDecimal lat,
         BigDecimal lng,
-        String thumbnailUrl
+    String thumbnailUrl
 ) {
+    public MapMarkerResponse(Long id, String name, PlaceCategory category, Double lat, Double lng, String thumbnailUrl) {
+        this(id, name, category, BigDecimal.valueOf(lat), BigDecimal.valueOf(lng), thumbnailUrl);
+    }
 }

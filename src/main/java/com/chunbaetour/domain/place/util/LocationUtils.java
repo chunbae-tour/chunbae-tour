@@ -21,12 +21,12 @@ public class LocationUtils {
         double lngDegree = radiusMeters / (111000.0 * cosLat);
 
         // DB 마이그레이션이 축-순서 POINT(lng lat) 순서로 적용, WKT 파싱 오류 방지를 위해 Locale.US 명시
-        return String.format(Locale.US, "POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
-                lng - lngDegree, lat - latDegree,
-                lng + lngDegree, lat - latDegree,
-                lng + lngDegree, lat + latDegree,
-                lng - lngDegree, lat + latDegree,
-                lng - lngDegree, lat - latDegree
+        return String.format(Locale.US, "POLYGON((%s %s, %s %s, %s %s, %s %s, %s %s))",
+                BigDecimal.valueOf(lng - lngDegree).toPlainString(), BigDecimal.valueOf(lat - latDegree).toPlainString(),
+                BigDecimal.valueOf(lng + lngDegree).toPlainString(), BigDecimal.valueOf(lat - latDegree).toPlainString(),
+                BigDecimal.valueOf(lng + lngDegree).toPlainString(), BigDecimal.valueOf(lat + latDegree).toPlainString(),
+                BigDecimal.valueOf(lng - lngDegree).toPlainString(), BigDecimal.valueOf(lat + latDegree).toPlainString(),
+                BigDecimal.valueOf(lng - lngDegree).toPlainString(), BigDecimal.valueOf(lat - latDegree).toPlainString()
         );
     }
 
