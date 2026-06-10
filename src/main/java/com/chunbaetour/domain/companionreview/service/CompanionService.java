@@ -60,22 +60,18 @@ public class CompanionService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        // 방장 ACTIVE 멤버십 검증 — 방장이 채팅방을 나간 상태로 동행 시작 시도하는 데이터 정합성 깨짐 방어
-        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(roomId, ownerId, activeStates)) {
-            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
-        }
-
-        for (Long participantId : distinctParticipantIds) {
-            if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(roomId, participantId, activeStates)) {
-                throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
-            }
-        }
-
         // 방장 자동 포함 — 요청에 없으면 추가
         List<Long> allParticipantIds = new ArrayList<>(distinctParticipantIds);
         if (!allParticipantIds.contains(ownerId)) {
             allParticipantIds.add(ownerId);
+        }
+
+        // 방장+참여자 ACTIVE 멤버십 일괄 검증 — IN절 단일 쿼리로 N+1 방지
+        List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
+        long activeCount = chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(
+                roomId, allParticipantIds, activeStates);
+        if (activeCount != allParticipantIds.size()) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
         Companion companion;

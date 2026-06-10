@@ -54,8 +54,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
-                .willReturn(true);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(2L);
         given(companionRepository.save(any())).willReturn(companion);
         given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
 
@@ -153,8 +153,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(10L, ownerId, activeStates))
-                .willReturn(false);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(10L, List.of(2L, ownerId), activeStates))
+                .willReturn(1L);
 
         assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(2L))))
                 .isInstanceOf(BusinessException.class)
@@ -173,10 +173,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.empty());
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(10L, ownerId, activeStates))
-                .willReturn(true);
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(10L, participantId, activeStates))
-                .willReturn(false);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(10L, List.of(participantId, ownerId), activeStates))
+                .willReturn(1L);
 
         assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(participantId))))
                 .isInstanceOf(BusinessException.class)
@@ -197,8 +195,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
-                .willReturn(true);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(2L);
         given(companionRepository.save(any())).willThrow(dataEx);
 
         assertThatThrownBy(() -> companionService.startCompanion(ownerId, roomId, new CompanionStartRequest(List.of(2L))))
