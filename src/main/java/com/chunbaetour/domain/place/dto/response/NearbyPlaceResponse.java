@@ -18,5 +18,9 @@ public record NearbyPlaceResponse(
     public NearbyPlaceResponse(Long placeId, String name, PlaceCategory category, String imageUrl, BigDecimal latitude, BigDecimal longitude, int storedRating, int reviewCount, double distanceMeters) {
         this(placeId, name, category, imageUrl, latitude, longitude, storedRating / 10.0f, reviewCount, distanceMeters);
     }
+
+    public NearbyPlaceResponse(Long placeId, String name, PlaceCategory category, String imageUrl, Double latitude, Double longitude, int storedRating, int reviewCount, double distanceMeters) {
+        this(placeId, name, category, imageUrl, BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude), storedRating, reviewCount, distanceMeters);
+    }
 }
 
