@@ -6,18 +6,25 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionReviewCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewCreateResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionScoreResponse;
 import com.chunbaetour.domain.companionreview.entity.CompanionReview;
 import com.chunbaetour.domain.companionreview.event.CompanionScoreCacheEvictEvent;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
 import com.chunbaetour.domain.companionreview.repository.ScoreCountProjection;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,5 +94,38 @@ public class CompanionReviewService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         List<ScoreCountProjection> distribution = companionReviewRepository.countByScoreForTargetUser(userId);
         return CompanionScoreResponse.of(account, distribution);
+    }
+
+    // 동행 리뷰 목록 조회 — id DESC 커서 페이징, N+1 방지: reviewerId 일괄 조회 후 Account Map
+    public CursorPageResponse<CompanionReviewResponse> getReviews(Long targetUserId, String cursor, int size) {
+        if (!accountRepository.existsById(targetUserId)) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+
+        List<CompanionReview> reviews = companionReviewRepository.findByTargetUserIdWithCursor(
+                targetUserId, cursorId, PageRequest.of(0, size + 1));
+
+        boolean hasNext = reviews.size() > size;
+        List<CompanionReview> page = hasNext ? reviews.subList(0, size) : reviews;
+
+        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
+
+        List<Long> reviewerIds = page.stream()
+                .map(CompanionReview::getReviewerId)
+                .distinct()
+                .toList();
+        Map<Long, Account> accountMap = accountRepository.findAllById(reviewerIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+        return new CursorPageResponse<>(
+                page.stream()
+                        .map(r -> CompanionReviewResponse.of(r, accountMap.get(r.getReviewerId())))
+                        .toList(),
+                nextCursor,
+                hasNext,
+                size
+        );
     }
 }
