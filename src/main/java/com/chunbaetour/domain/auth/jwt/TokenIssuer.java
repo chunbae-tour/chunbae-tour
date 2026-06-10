@@ -2,6 +2,7 @@ package com.chunbaetour.domain.auth.jwt;
 
 import com.chunbaetour.domain.auth.Role;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -47,7 +48,7 @@ public class TokenIssuer {
 
     public String issueAccess(long userId, Role role, String email) {
         Instant now = clock.instant();
-        io.jsonwebtoken.JwtBuilder builder = Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .subject(Long.toString(userId))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTtl)))
