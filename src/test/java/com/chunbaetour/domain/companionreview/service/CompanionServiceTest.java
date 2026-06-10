@@ -221,8 +221,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
-                .willReturn(true);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(2L);
         given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
 
         CompanionAddParticipantsResponse response = companionService.addParticipants(ownerId, roomId, request);
@@ -307,8 +307,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
-                .willReturn(false);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(0L);
 
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
                 new CompanionAddParticipantsRequest(List.of(2L))))
@@ -329,8 +329,8 @@ class CompanionServiceTest {
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
-        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(any(), any(), any()))
-                .willReturn(true);
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
         given(companionParticipantRepository.saveAll(any()))
                 .willThrow(new DataIntegrityViolationException("uq_companion_participant"));
 

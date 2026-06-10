@@ -123,11 +123,12 @@ public class CompanionService {
                 .distinct()
                 .collect(Collectors.toList());
 
+        // 추가 대상 ACTIVE 멤버십 일괄 검증 — IN절 단일 쿼리로 N+1 방지
         List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
-        for (Long userId : distinctUserIds) {
-            if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(roomId, userId, activeStates)) {
-                throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
-            }
+        long activeCount = chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(
+                roomId, distinctUserIds, activeStates);
+        if (activeCount != distinctUserIds.size()) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
         List<CompanionParticipant> participants = distinctUserIds.stream()
