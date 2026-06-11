@@ -201,7 +201,7 @@ public class ChatRoomService {
         }
 
         // userId를 함께 전달해 응답에 요청자 본인의 memberState(방장 여부 포함) 포함
-        return ChatRoomDetailResponse.from(chatRoom, activeMembers, userId);
+        return ChatRoomDetailResponse.from(chatRoom, activeMembers, userId, fetchAccountMap(activeMembers));
     }
 
     // 참여자 목록 — ACTIVE 멤버만 반환, N+1 방지: userId 추출 후 Account 일괄 조회
@@ -225,15 +225,17 @@ public class ChatRoomService {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
-        // 멤버 userId 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
-        List<Long> userIds = activeMembers.stream().map(ChatRoomMember::getUserId).toList();
-        Map<Long, Account> accountMap = accountRepository.findAllById(userIds).stream()
-                .collect(Collectors.toMap(Account::getId, Function.identity()));
-
         // accountMap에 없는 userId — 탈퇴 계정, from()에서 fallback 처리
+        Map<Long, Account> accountMap = fetchAccountMap(activeMembers);
         return activeMembers.stream()
                 .map(m -> ChatRoomMemberResponse.from(m, accountMap.get(m.getUserId())))
                 .toList();
     }
 
+    // 멤버 userId 일괄 조회 — 개별 조회 시 N+1 발생하므로 IN 쿼리로 한 번에 로드
+    private Map<Long, Account> fetchAccountMap(List<ChatRoomMember> members) {
+        List<Long> userIds = members.stream().map(ChatRoomMember::getUserId).toList();
+        return accountRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+    }
 }
