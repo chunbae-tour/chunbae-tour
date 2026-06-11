@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.shop.dto.response;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.entity.Shop;
 
 /**
@@ -10,10 +12,13 @@ import com.chunbaetour.domain.shop.entity.Shop;
 public record QrCodeResponse(Long shopId, String shopName, String qrPayload) {
 
     public static QrCodeResponse from(Shop shop) {
+        if (shop.getQrNonce() == null) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
         return new QrCodeResponse(
                 shop.getId(),
                 shop.getShopName(),
-                "YEOPJEON_PAY:SHOP:" + shop.getId() + ":" + java.util.Objects.requireNonNull(shop.getQrNonce(), "qrNonce must not be null")
+                "YEOPJEON_PAY:SHOP:" + shop.getId() + ":" + shop.getQrNonce()
         );
     }
 }

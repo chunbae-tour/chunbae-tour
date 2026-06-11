@@ -21,18 +21,20 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
+import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
-import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
 
 @ExtendWith(MockitoExtension.class)
 class PlaceLikeServiceTest {
@@ -123,13 +125,17 @@ class PlaceLikeServiceTest {
         Long placeId = 100L;
         Place mockPlace = mock(Place.class);
         when(placeRepository.findById(placeId)).thenReturn(Optional.of(mockPlace));
+        when(mockPlace.getStatus()).thenReturn(PlaceStatus.ACTIVE);
+        when(mockPlace.getLikeCount()).thenReturn(0);
+        when(userLikeService.addLike(userId, LikeTargetType.PLACE, placeId)).thenReturn(true);
 
         // when
         placeLikeService.addLike(userId, placeId);
 
         // then
         verify(userLikeService).addLike(userId, LikeTargetType.PLACE, placeId);
-        verify(eventPublisher).publishEvent(any(PlaceLikeChangedEvent.class));
+        verify(eventPublisher).publishEvent(argThat(
+                (PlaceLikeChangedEvent event) -> event.userId().equals(userId)));
     }
 
     @Test
@@ -140,12 +146,16 @@ class PlaceLikeServiceTest {
         Long placeId = 100L;
         Place mockPlace = mock(Place.class);
         when(placeRepository.findById(placeId)).thenReturn(Optional.of(mockPlace));
+        when(mockPlace.getStatus()).thenReturn(PlaceStatus.ACTIVE);
+        when(mockPlace.getLikeCount()).thenReturn(1);
+        when(userLikeService.removeLike(userId, LikeTargetType.PLACE, placeId)).thenReturn(true);
 
         // when
         placeLikeService.removeLike(userId, placeId);
 
         // then
         verify(userLikeService).removeLike(userId, LikeTargetType.PLACE, placeId);
-        verify(eventPublisher).publishEvent(any(PlaceLikeChangedEvent.class));
+        verify(eventPublisher).publishEvent(argThat(
+                (PlaceLikeChangedEvent event) -> event.userId().equals(userId)));
     }
 }
