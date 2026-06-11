@@ -7,6 +7,7 @@ import com.chunbaetour.domain.search.dto.request.RecentSearchRequest;
 import com.chunbaetour.domain.search.dto.response.PopularSearchResponse;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalV1Response;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.RecentSearchService;
 import com.chunbaetour.domain.search.service.SearchService;
@@ -127,12 +128,12 @@ public class SearchController {
      * @param cursor   이전 응답의 nextCursor 값. 응답 목록의 마지막 placeId를 직접 계산해 전달하면 안 됩니다.
      * @param size     페이지 사이즈 (기본값 10)
      * @param source   검색 출처 (동행/커뮤니티 장소 선택용 비집계 시 값 전달)
-     * @return 200 OK + 커서 페이지네이션이 적용된 관광지 목록 (로그인 시 선호 카테고리 우선 노출)
+     * @return 200 OK + 관광지 검색 결과 ({@code didYouMean} 포함 시 오타 교정됨)
      */
     @SecurityRequirements
-    @Operation(summary = "관광지 검색 (로그인 시 선호 카테고리 우선 노출)")
+    @Operation(summary = "관광지 검색 (로그인 시 선호 카테고리 우선 노출, 오타 교정 지원)")
     @GetMapping("/places")
-    public ApiResponse<CursorPageResponse<SearchPlaceResponse>> searchPlaces(
+    public ApiResponse<TypoCorrectedSearchResponse<SearchPlaceResponse>> searchPlaces(
             @RequestParam(name = "q", required = false) String q,
             @RequestParam(name = "category", required = false) PlaceCategory category,
             @RequestParam(name = "region", required = false) String region,
@@ -145,8 +146,7 @@ public class SearchController {
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp, source, userId);
-        return ApiResponse.success(response);
+        return ApiResponse.success(searchService.searchPlaces(q, category, region, cursor, size, clientIp, source, userId));
     }
 
     /**
@@ -162,14 +162,14 @@ public class SearchController {
      * @param startDate 시작일 필터 (옵션)
      * @param endDate   종료일 필터 (옵션)
      * @param region    지역 (옵션)
-     * @param cursor    커서 아이디 (옵션, 이전 페이지의 마지막 festivalId)
+     * @param cursor    이전 응답의 nextCursor 값
      * @param size      페이지 사이즈 (기본값 10)
-     * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록
+     * @return 200 OK + 커서 페이지네이션이 적용된 축제 목록 ({@code didYouMean} 포함 시 오타 교정됨)
      */
     @SecurityRequirements
-    @Operation(summary = "축제 검색 v1 (location/thumbnailUrl)")
+    @Operation(summary = "축제 검색 v1 (location/thumbnailUrl, 오타 교정 지원)")
     @GetMapping("/festivals")
-    public ApiResponse<CursorPageResponse<SearchFestivalV1Response>> searchFestivals(
+    public ApiResponse<TypoCorrectedSearchResponse<SearchFestivalV1Response>> searchFestivals(
             @RequestParam(name = "q", required = false) String q,
             @RequestParam(name = "startDate", required = false) LocalDate startDate,
             @RequestParam(name = "endDate", required = false) LocalDate endDate,
