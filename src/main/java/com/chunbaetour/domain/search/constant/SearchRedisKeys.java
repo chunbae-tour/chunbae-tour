@@ -24,5 +24,18 @@ public final class SearchRedisKeys {
      * <br>사용: PopularSearchService (전날 순위 비교용)
      */
     public static final String POPULAR_RANKING_PREV_KEY = "search:ranking:prev";
+    /** 
+     * 오타 교정 — 관광지명 2-gram 역인덱스 키 prefix.
+     * <br>Key 형식: {@code search:typo:places:gram:{gram}} → Value: Redis Set (해당 2-gram을 포함하는 장소명 목록)
+     * <br>사용: TypoCorrectionService (사전 초기화/오타 후보 조회)
+     */
+    public static final String TYPO_GRAM_PREFIX_PLACES = "search:typo:places:gram:";
+
+    /**
+     * 오타 교정 — 축제명 2-gram 역인덱스 키 prefix.
+     * <br>Key 형식: {@code search:typo:festivals:gram:{gram}} → Value: Redis Set (해당 2-gram을 포함하는 축제명 목록)
+     * <br>사용: TypoCorrectionService (사전 초기화/오타 후보 조회)
+     */
+    public static final String TYPO_GRAM_PREFIX_FESTIVALS = "search:typo:festivals:gram:";
 
 }
