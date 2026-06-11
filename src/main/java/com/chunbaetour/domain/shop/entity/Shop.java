@@ -17,6 +17,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import java.math.BigDecimal;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -110,6 +111,11 @@ public class Shop extends BaseEntity {
     @Version
     private Long version;
 
+    // QR 결제 payload에 포함되는 회전 nonce (KAN-253). 재발급 시 새 UUID로 교체 → 옛 QR 무효화.
+    // QR 결제 요청 생성 시 payload의 nonce가 현재 값과 일치해야 결제 가능.
+    @Column(name = "qr_nonce", nullable = false, length = 36)
+    private String qrNonce;
+
     @Builder
     private Shop(Long userId, Long applicationId, String shopName, String category,
             String address, BigDecimal lat, BigDecimal lng, String phone, String description,
@@ -126,6 +132,8 @@ public class Shop extends BaseEntity {
         this.placeId = placeId;
         this.traditionalMarketId = traditionalMarketId;
         this.status = ShopStatus.ACTIVE;
+        // 가게 생성 시 QR nonce 초기 발급 — 이후 reissueQr()로 회전
+        this.qrNonce = UUID.randomUUID().toString();
     }
 
     /** 관리자 상인 승인 시 MerchantApplication + placeId로 가게 생성 (STORY-09, KAN-217). */
@@ -193,6 +201,14 @@ public class Shop extends BaseEntity {
      */
     public void linkTraditionalMarket(Long traditionalMarketId) {
         this.traditionalMarketId = traditionalMarketId;
+    }
+
+    /**
+     * QR 재발급 (KAN-253). nonce를 새 UUID로 교체 → 기존 QR payload의 nonce가 더 이상 일치하지 않아
+     * 옛 QR로는 결제 요청이 거절된다. 분실·도용 의심 시 상인이 호출.
+     */
+    public void reissueQr() {
+        this.qrNonce = UUID.randomUUID().toString();
     }
 
     /**

@@ -89,9 +89,16 @@ public class QrPayService {
      */
     @Transactional
     public QrPayCreateResponse createQrPayRequest(Long userId, QrPayCreateRequest request) {
-        Shop shop = shopRepository.findById(request.shopId())
+        // row lock: QR 재발급(ShopService.reissueMyQrCode)과 동일 행을 잠가 직렬화 →
+        // nonce 회전과 아래 nonce 검증이 ms 단위로 겹쳐 옛 nonce가 통과하는 race 차단 (KAN-253 리뷰)
+        Shop shop = shopRepository.findByIdWithLock(request.shopId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
         validateShop(shop, userId);
+
+        // QR nonce 검증 — 재발급으로 무효화된 옛 QR payload로 결제 시도 시 거절 (KAN-253)
+        if (!shop.getQrNonce().equals(request.qrNonce())) {
+            throw new BusinessException(ErrorCode.QR_PAY_NONCE_MISMATCH);
+        }
 
         LocalDateTime now = LocalDateTime.now(clock);
 

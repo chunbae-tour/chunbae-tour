@@ -40,6 +40,17 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
     Optional<Shop> findByIdWithLock(@Param("id") Long id);
 
     /**
+     * 본인 가게 직렬화 락 (KAN-253 재발급-결제요청 nonce race 방어).
+     * shopId + userId로 본인 가게 행을 SELECT FOR UPDATE로 잠금.
+     * QR 재발급(nonce 회전)과 결제요청 nonce 검증(findByIdWithLock)이 동일 행을 잠가
+     * ms 단위로 겹치는 경우에도 옛 nonce 요청이 통과하지 못하도록 직렬화.
+     * userId 불일치(타인 가게) 시 빈 결과 → 호출부에서 SHOP_NOT_FOUND.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Shop s WHERE s.id = :id AND s.userId = :userId")
+    Optional<Shop> findByIdAndUserIdWithLock(@Param("id") Long id, @Param("userId") Long userId);
+
+    /**
      * 특정 관광지 기반 주변 상점 조회 (Bounding Box + Haversine 최적화)
      * 파라미터: 1=lat, 2=lng, 3=radiusKm, 4=limit
      * Bounding box 근사치: 위도 1도는 약 111km, 경도는 대략 111km * cos(lat)
