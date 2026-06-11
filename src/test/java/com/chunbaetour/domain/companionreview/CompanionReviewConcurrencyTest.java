@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,8 +36,6 @@ import org.springframework.boot.test.context.SpringBootTest;
  */
 @SpringBootTest
 class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
-
-    private static final Long CHAT_ROOM_ID = 77000L;
 
     @Autowired private CompanionReviewService companionReviewService;
     @Autowired private CompanionRepository companionRepository;
@@ -57,13 +56,16 @@ class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("동일 (reviewer, target, chatRoom) 동시 리뷰 10건 → 1건만 성공, 나머지 CR_001(ALREADY_EXISTS)")
     void concurrentCreateReview_sameTarget_onlyOneSucceeds() throws Exception {
+        // 다른 테스트와의 chat_room_id UNIQUE 제약(uq_companions_chat_room_id) 충돌 방지용 랜덤 ID
+        long chatRoomId = ThreadLocalRandom.current().nextLong(1_000_000L, 2_000_000L);
+
         Account reviewer = accountRepository.saveAndFlush(
                 Account.registerUser("cr-reviewer@test.com", "hashedPw", "리뷰어"));
         Account target = accountRepository.saveAndFlush(
                 Account.registerUser("cr-target@test.com", "hashedPw", "대상자"));
 
         // ENDED 동행 — 리뷰 작성 가능 상태
-        Companion companion = Companion.builder().chatRoomId(CHAT_ROOM_ID).build();
+        Companion companion = Companion.builder().chatRoomId(chatRoomId).build();
         companion.end();
         companionRepository.saveAndFlush(companion);
 
@@ -72,7 +74,7 @@ class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
         companionParticipantRepository.saveAndFlush(
                 CompanionParticipant.builder().companionId(companion.getId()).userId(target.getId()).build());
 
-        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(CHAT_ROOM_ID, target.getId(), 5, "동시성 테스트 리뷰");
+        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(chatRoomId, target.getId(), 5, "동시성 테스트 리뷰");
 
         int threadCount = 10;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
@@ -81,6 +83,7 @@ class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
         List<CompletableFuture<Boolean>> futures = new ArrayList<>();
         List<ErrorCode> failedCodes = Collections.synchronizedList(new ArrayList<>());
 
+        boolean isReady = false;
         try {
             for (int i = 0; i < threadCount; i++) {
                 futures.add(CompletableFuture.supplyAsync(() -> {
@@ -97,13 +100,19 @@ class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
                     }
                 }, executor));
             }
-            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            isReady = ready.await(5, TimeUnit.SECONDS);
+            assertThat(isReady).isTrue();
             start.countDown();
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(15, TimeUnit.SECONDS);
         } finally {
-            start.countDown();
-            executor.shutdownNow();
-            executor.awaitTermination(5, TimeUnit.SECONDS);
+            // ready 통과 못 했으면 start 미해제 — 대기 중이던 풀 스레드가 뒤늦게 createReview() 실행해 DB 오염하는 것 방지
+            if (isReady) {
+                start.countDown();
+            }
+            executor.shutdown();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
         }
 
         long successCount = futures.stream().map(CompletableFuture::join).filter(Boolean::booleanValue).count();
