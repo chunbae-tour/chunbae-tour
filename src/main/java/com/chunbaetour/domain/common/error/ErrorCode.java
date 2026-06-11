@@ -38,6 +38,8 @@ public enum ErrorCode {
     INVALID_PASSWORD_FORMAT(HttpStatus.BAD_REQUEST, "AUTH_010", "비밀번호 형식이 올바르지 않습니다."),
     INVALID_EMAIL_FORMAT(HttpStatus.BAD_REQUEST, "AUTH_011", "이메일 형식이 올바르지 않습니다."),
     ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_012", "정지된 계정입니다."),
+    // AUTH_024: 도메인별 제재(POST/COMMENT 쓰기 차단) — 계정 전체 정지(AUTH_012)와 구분.
+    DOMAIN_SANCTIONED(HttpStatus.FORBIDDEN, "AUTH_024", "해당 도메인에서 활동이 제한된 계정입니다."),
     // AUTH_013: 로그아웃 시 Access Token이 블랙리스트에 등록되며, 이후 같은 토큰으로 요청하면 거부된다.
     //           남은 만료 시간 동안만 블랙리스트에 머무르므로 자연 만료 후에는 같은 tokenId가 새로 발급될 가능성도 사라진다 (UUID).
     BLACKLISTED_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH_013", "로그아웃된 토큰입니다."),

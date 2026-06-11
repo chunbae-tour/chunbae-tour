@@ -342,6 +342,12 @@ public class Account {
                 && !this.sanctionEndAt.isAfter(now);
     }
 
+    /** 시스템 제재가 현재 활성 상태인지 — PERMANENT(null)이거나 sanctionEndAt 이 now 이후면 true. */
+    public boolean isCurrentlySanctioned(LocalDateTime now) {
+        return this.sanctionType != null
+                && (this.sanctionEndAt == null || this.sanctionEndAt.isAfter(now));
+    }
+
     /**
      * 상인 인증 취소 (KAN-92 신고 처리 REVOKE_MERCHANT 액션).
      * MERCHANT → USER 권한 하향.

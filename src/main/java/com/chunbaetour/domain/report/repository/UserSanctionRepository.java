@@ -43,6 +43,20 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
             @Param("now") LocalDateTime now);
 
     /**
+     * 유저·도메인별 활성 제재 — 인터셉터 도메인별 쓰기 차단 판정용.
+     * WARNING 제외: ended_at = started_at 이므로 자동 제외됨 (경고는 차단하지 않음).
+     */
+    @Query("SELECT s FROM UserSanction s "
+            + "WHERE s.userId = :userId "
+            + "AND s.targetType = :targetType "
+            + "AND s.releasedAt IS NULL "
+            + "AND (s.endedAt IS NULL OR s.endedAt > :now)")
+    List<UserSanction> findActiveSanctionsByUserIdAndTargetType(
+            @Param("userId") Long userId,
+            @Param("targetType") ReportTargetType targetType,
+            @Param("now") LocalDateTime now);
+
+    /**
      * 만료됐지만 아직 release 처리되지 않은 제재 — 스케줄러 일괄 해제용.
      * PERMANENT(ended_at IS NULL)는 제외.
      * WARNING 제재는 ended_at = started_at이므로 생성 직후 이 쿼리에 포함되어 즉시 release 처리됨.
