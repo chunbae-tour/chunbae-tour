@@ -36,7 +36,7 @@ public class TranslationCacheService {
     }
 
     // Redis(@Cacheable, TTL 24h) 적재 → miss 시 DB(translation_cache) 조회 → DB도 miss면 apiCall 실행 후 DB 저장
-    @Cacheable(value = "translation", key = "#contentHash + '_' + #targetLanguage")
+    @Cacheable(value = "translation", key = "#contentHash + '_' + #targetLanguage.name()")
     public TranslationResponse translateCached(
             String contentHash, LanguageCode targetLanguage, Supplier<TranslationResponse> apiCall) {
         return translationCacheRepository.findByContentHashAndTargetLanguage(contentHash, targetLanguage)
@@ -64,6 +64,7 @@ public class TranslationCacheService {
                         .translatedContent(translatedContent)
                         .build());
             } catch (DataIntegrityViolationException e) {
+                log.debug("동시 요청으로 캐시 항목 이미 저장됨. content_hash={}, targetLanguage={}", contentHash, targetLanguage);
                 entityManager.clear();
             }
         });
