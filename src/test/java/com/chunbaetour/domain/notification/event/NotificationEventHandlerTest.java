@@ -228,6 +228,24 @@ class NotificationEventHandlerTest {
         verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_1), any(NotificationResponse.class));
     }
 
+    // 다른 채팅방 토픽 구독 중인 수신자 — 해당 방(CHAT_ROOM_ID) 미구독이므로 CHAT_MESSAGE 알림 발송 (prefix 매칭 회귀 가드)
+    @Test
+    void handleChatMessageSent_recipientViewingOtherRoom_isNotified() {
+        Long otherChatRoomId = CHAT_ROOM_ID + 1;
+        SimpUser viewingOtherRoomUser = mockSubscribedUser("/sub/chat/rooms/" + otherChatRoomId);
+        given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_1))).willReturn(viewingOtherRoomUser);
+        Notification notification1 = buildNotification(112L, RECIPIENT_USER_ID_1, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_1), eq(NotificationType.CHAT_MESSAGE), eq("새 채팅 메시지"),
+                eq("채팅방에 새 메시지가 도착했어요."), eq(NotificationReferenceType.CHAT_ROOM), eq(CHAT_ROOM_ID)))
+                .willReturn(notification1);
+
+        handler.handleChatMessageSent(new ChatMessageSentEvent(
+                CHAT_ROOM_ID, SENDER_USER_ID, List.of(RECIPIENT_USER_ID_1)));
+
+        verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_1), any(NotificationResponse.class));
+    }
+
     // 일부 수신자 알림 저장 실패 — 해당 수신자만 건너뛰고 나머지는 정상 처리 (둘 다 오프라인 가정)
     @Test
     void handleChatMessageSent_oneRecipientFails_othersStillNotified() {
