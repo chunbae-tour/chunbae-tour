@@ -4,8 +4,6 @@ import com.chunbaetour.domain.translation.dto.response.TranslationResponse;
 import com.chunbaetour.domain.translation.entity.TranslationCache;
 import com.chunbaetour.domain.translation.repository.TranslationCacheRepository;
 import com.chunbaetour.domain.translation.type.LanguageCode;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,9 +22,6 @@ public class TranslationCacheService {
 
     private final TranslationCacheRepository translationCacheRepository;
     private final TransactionTemplate requiresNewTransactionTemplate;
-
-    @PersistenceContext
-    private EntityManager entityManager;
 
     public TranslationCacheService(
             TranslationCacheRepository translationCacheRepository, PlatformTransactionManager transactionManager) {
@@ -65,7 +60,6 @@ public class TranslationCacheService {
                         .build());
             } catch (DataIntegrityViolationException e) {
                 log.debug("동시 요청으로 캐시 항목 이미 저장됨. content_hash={}, targetLanguage={}", contentHash, targetLanguage);
-                entityManager.clear();
             }
         });
     }
