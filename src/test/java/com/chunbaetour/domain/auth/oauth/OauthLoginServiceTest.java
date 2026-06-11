@@ -24,7 +24,10 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,13 +53,14 @@ class OauthLoginServiceTest {
 
     // counter().increment() 실호출 위해 mock 대신 실제 레지스트리.
     private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final Clock clock = Clock.fixed(Instant.parse("2026-06-11T12:00:00Z"), ZoneOffset.UTC);
     private OauthLoginService service;
 
     @BeforeEach
     void setUp() {
         service = new OauthLoginService(
                 List.of(kakaoClient), accountRepository, tokenIssuer, refreshTokenStore, jwtProperties, ticketIssuer,
-                meterRegistry, auditLogger);
+                meterRegistry, auditLogger, clock);
         when(kakaoClient.provider()).thenReturn(OauthProvider.KAKAO);
     }
 

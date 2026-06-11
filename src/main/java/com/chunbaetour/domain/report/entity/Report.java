@@ -73,6 +73,10 @@ public class Report extends BaseEntity {
     @Column(name = "resolved_at")
     private LocalDateTime resolvedAt;
 
+    /** 신고 대상 사용자 ID — 도메인별 제재 누적 집계용 (PR1+PR2). 콘텐츠 신고 시 작성자 ID. */
+    @Column(name = "reported_user_id")
+    private Long reportedUserId;
+
     public static Report create(Long reporterId, ReportTargetType targetType, Long targetId,
                                 ReportReason reason, String description) {
         Report report = new Report();

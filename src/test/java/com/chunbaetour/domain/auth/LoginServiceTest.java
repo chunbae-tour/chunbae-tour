@@ -18,10 +18,15 @@ import com.chunbaetour.domain.auth.jwt.TokenWithId;
 import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.report.entity.SanctionType;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Field;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,6 +80,10 @@ class LoginServiceTest {
     /** KAN-105 감사 로그 mock — emit 호출 자체만 별도 verify 가능. 출력 검증은 통합 테스트에서. */
     @Mock
     private SecurityAuditLogger auditLogger;
+
+    /** 시스템 제재 만료 체크(isSystemSanctionExpired)에 LocalDateTime.now(clock) 사용 — 고정 시각 주입. */
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-06-11T12:00:00Z"), ZoneOffset.UTC);
 
     @InjectMocks
     private LoginService loginService;
@@ -209,6 +218,48 @@ class LoginServiceTest {
                 .isEqualTo(1.0);
         assertThat(meterRegistry.counter("auth.login.attempt.total", "outcome", "suspended").count())
                 .isEqualTo(0.0);
+    }
+
+    // ===== PR1+PR2 — 시스템 제재 만료 체크 =====
+
+    @Test
+    void login_with_expired_system_sanction_clears_sanction_and_succeeds() {
+        // sanctionEndAt = 1시간 전 (고정 clock 기준 만료)
+        LocalDateTime expiredEndAt = LocalDateTime.of(2026, 6, 11, 11, 0, 0);
+        Account suspendedWithExpiredSanction = accountWith(5L, Role.USER, AccountStatus.SUSPENDED);
+        suspendedWithExpiredSanction.applySystemSanction(SanctionType.SUSPEND_7D, expiredEndAt);
+
+        given(accountRepository.findByEmail(EMAIL)).willReturn(Optional.of(suspendedWithExpiredSanction));
+        given(passwordHasher.matches(RAW_PASSWORD, HASHED_PASSWORD)).willReturn(true);
+        given(tokenIssuer.issueAccess(eq(5L), eq(Role.USER), eq(EMAIL))).willReturn("access");
+        given(tokenIssuer.issueRefresh(5L)).willReturn(new TokenWithId("rid", "refresh"));
+        given(jwtProperties.refreshTokenTtl()).willReturn(REFRESH_TTL);
+
+        // 만료된 제재 → 로그인 성공
+        TokenPair pair = loginService.login(EMAIL, RAW_PASSWORD, Role.USER);
+
+        assertThat(pair.accessToken()).isEqualTo("access");
+        // clearSystemSanction() 호출됐는지: status가 ACTIVE로 복구됨
+        assertThat(suspendedWithExpiredSanction.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(suspendedWithExpiredSanction.getSanctionType()).isNull();
+    }
+
+    @Test
+    void login_with_active_system_sanction_throws_AUTH_012() {
+        // sanctionEndAt = 1시간 후 (아직 활성)
+        LocalDateTime activeEndAt = LocalDateTime.of(2026, 6, 11, 13, 0, 0);
+        Account suspendedWithActiveSanction = accountWith(6L, Role.USER, AccountStatus.SUSPENDED);
+        suspendedWithActiveSanction.applySystemSanction(SanctionType.SUSPEND_7D, activeEndAt);
+
+        given(accountRepository.findByEmail(EMAIL)).willReturn(Optional.of(suspendedWithActiveSanction));
+        given(passwordHasher.matches(RAW_PASSWORD, HASHED_PASSWORD)).willReturn(true);
+
+        assertThatThrownBy(() -> loginService.login(EMAIL, RAW_PASSWORD, Role.USER))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
+
+        verifyRefreshWasNotSaved();
     }
 
     private void verifyRefreshWasNotSaved() {
