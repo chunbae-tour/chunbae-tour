@@ -170,6 +170,11 @@ public class SearchService {
                             correctedResult = modifiableList;
                         }
 
+                        // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
+                        if (searchSource.isTrackable() && !correctedResult.isEmpty()) {
+                            popularSearchService.incrementSearchCount(correction, clientIp);
+                        }
+
                         return TypoCorrectedSearchResponse.corrected(
                                 new CursorPageResponse<>(correctedResult,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
@@ -269,6 +274,11 @@ public class SearchService {
                                 .map(item -> SearchFestivalResponse.from(item,
                                         FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                                 .toList();
+                        // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
+                        if (searchSource.isTrackable() && !correctedResult.isEmpty()) {
+                            popularSearchService.incrementSearchCount(correction, clientIp);
+                        }
+
                         return TypoCorrectedSearchResponse.corrected(
                                 new CursorPageResponse<>(correctedItems,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
@@ -343,6 +353,11 @@ public class SearchService {
                                 .map(item -> SearchFestivalV1Response.from(item,
                                         FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), correctionToday)))
                                 .toList();
+                        // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
+                        if (searchSource.isTrackable() && !correctedResult.isEmpty()) {
+                            popularSearchService.incrementSearchCount(correction, clientIp);
+                        }
+
                         return TypoCorrectedSearchResponse.corrected(
                                 new CursorPageResponse<>(correctedItems,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,

@@ -180,7 +180,7 @@ public class TypoCorrectionService {
 
             return Optional.ofNullable(best);
         } catch (Exception e) {
-            log.warn("[TypoCorrection] 오타 교정 실패 — 교정 없이 진행. keyword={}", keyword, e);
+            log.warn("[TypoCorrection] 오타 교정 실패 — 교정 없이 진행. keywordLength={}", keyword.length(), e);
             return Optional.empty();
         }
     }
@@ -297,19 +297,43 @@ public class TypoCorrectionService {
      * @param gramPrefix Redis 키 prefix
      */
     private void buildDictionary(List<String> words, String gramPrefix) {
-        // 기존 사전 키 삭제
-        evictDictionary(gramPrefix);
+        String lockKey = gramPrefix + "lock";
+        Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, "locked", Duration.ofMinutes(5));
+        if (Boolean.FALSE.equals(acquired)) {
+            log.info("[TypoCorrection] 사전 갱신 Lock 획득 실패 (진행 중) - {}", gramPrefix);
+            return;
+        }
 
-        for (String word : words) {
-            if (!StringUtils.hasText(word)) {
-                continue;
+        try {
+            String tempPrefix = gramPrefix + "temp:";
+            evictDictionary(tempPrefix); // 이전 실패 시 남은 temp 잔재 정리
+
+            for (String word : words) {
+                if (!StringUtils.hasText(word)) continue;
+                List<String> grams = extractGrams(word);
+                for (String gram : grams) {
+                    String key = tempPrefix + gram;
+                    stringRedisTemplate.opsForSet().add(key, word);
+                    stringRedisTemplate.expire(key, DICT_TTL);
+                }
             }
-            List<String> grams = extractGrams(word);
-            for (String gram : grams) {
-                String key = gramPrefix + gram;
-                stringRedisTemplate.opsForSet().add(key, word);
-                stringRedisTemplate.expire(key, DICT_TTL);
-            }
+
+            // 성공 시 temp 키를 실제 키로 RENAME
+            ScanOptions options = ScanOptions.scanOptions().match(tempPrefix + "*").count(500).build();
+            stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
+                try (Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
+                    while (cursor.hasNext()) {
+                        byte[] tempKeyBytes = cursor.next();
+                        String tempKey = new String(tempKeyBytes);
+                        String realKey = tempKey.replace(tempPrefix, gramPrefix);
+                        connection.keyCommands().rename(tempKeyBytes, realKey.getBytes());
+                    }
+                }
+                return null;
+            });
+            // 새 사전에 포함되지 않은 구 키워드들은 DICT_TTL 만료 시점에 자연 삭제됨
+        } finally {
+            stringRedisTemplate.delete(lockKey);
         }
     }
 

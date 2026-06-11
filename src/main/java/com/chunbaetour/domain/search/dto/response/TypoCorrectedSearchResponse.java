@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.search.dto.response;
 
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import java.util.List;
 
 /**
  * 오타 교정 검색 응답 래퍼 (KAN-276).
@@ -19,7 +20,10 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
  * @param didYouMean 오타 교정 제안 키워드. null이면 교정 없음
  */
 public record TypoCorrectedSearchResponse<T>(
-        CursorPageResponse<T> result,
+        List<T> content,
+        String nextCursor,
+        boolean hasNext,
+        int size,
         String didYouMean
 ) {
 
@@ -30,7 +34,13 @@ public record TypoCorrectedSearchResponse<T>(
      * @return didYouMean = null인 응답
      */
     public static <T> TypoCorrectedSearchResponse<T> of(CursorPageResponse<T> result) {
-        return new TypoCorrectedSearchResponse<>(result, null);
+        return new TypoCorrectedSearchResponse<>(
+                result.content(),
+                result.nextCursor(),
+                result.hasNext(),
+                result.size(),
+                null
+        );
     }
 
     /**
@@ -41,6 +51,12 @@ public record TypoCorrectedSearchResponse<T>(
      * @return didYouMean = correction인 응답
      */
     public static <T> TypoCorrectedSearchResponse<T> corrected(CursorPageResponse<T> result, String correction) {
-        return new TypoCorrectedSearchResponse<>(result, correction);
+        return new TypoCorrectedSearchResponse<>(
+                result.content(),
+                result.nextCursor(),
+                result.hasNext(),
+                result.size(),
+                correction
+        );
     }
 }

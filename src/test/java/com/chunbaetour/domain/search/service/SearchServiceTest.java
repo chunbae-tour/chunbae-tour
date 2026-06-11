@@ -177,7 +177,7 @@ class SearchServiceTest {
         TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
 
         // then
-        List<SearchPlaceResponse> content = response.result().content();
+        List<SearchPlaceResponse> content = response.content();
         assertThat(content).hasSize(4);
         // 선호 카테고리(TOURIST_SPOT)가 위로, 그 안에서는 id DESC 유지
         assertThat(content.get(0).placeId()).isEqualTo(90L);
@@ -206,7 +206,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId).result();
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -242,15 +242,15 @@ class SearchServiceTest {
         TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
 
         // then
-        assertThat(response.result().hasNext()).isTrue();
-        assertThat(response.result().content()).hasSize(3);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.content()).hasSize(3);
         // 메모리 정렬 결과: 100(선호), 80(선호), 90(비선호)
-        assertThat(response.result().content().get(0).placeId()).isEqualTo(100L);
-        assertThat(response.result().content().get(1).placeId()).isEqualTo(80L);
-        assertThat(response.result().content().get(2).placeId()).isEqualTo(90L);
+        assertThat(response.content().get(0).placeId()).isEqualTo(100L);
+        assertThat(response.content().get(1).placeId()).isEqualTo(80L);
+        assertThat(response.content().get(2).placeId()).isEqualTo(90L);
         
         // 중요: 정렬된 마지막 요소는 90이지만, nextCursor는 DB 원본(100, 90, 80)의 마지막인 80이어야 함.
-        assertThat(response.result().nextCursor()).isEqualTo("80");
+        assertThat(response.nextCursor()).isEqualTo("80");
     }
 
 
@@ -274,10 +274,10 @@ class SearchServiceTest {
         TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
 
         // then
-        assertThat(response.result().hasNext()).isTrue();
-        assertThat(response.result().content()).hasSize(2);
-        assertThat(response.result().nextCursor()).isEqualTo("9");
-        assertThat(response.result().size()).isEqualTo(2);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.content()).hasSize(2);
+        assertThat(response.nextCursor()).isEqualTo("9");
+        assertThat(response.size()).isEqualTo(2);
     }
 
     @Test
@@ -299,7 +299,7 @@ class SearchServiceTest {
         TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.result().content()).hasSize(1);
+        assertThat(response.content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
@@ -334,14 +334,14 @@ class SearchServiceTest {
         TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.result().content().get(0).festivalId()).isEqualTo(3L);
-        assertThat(response.result().content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
+        assertThat(response.content().get(0).festivalId()).isEqualTo(3L);
+        assertThat(response.content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
         
-        assertThat(response.result().content().get(1).festivalId()).isEqualTo(2L);
-        assertThat(response.result().content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
+        assertThat(response.content().get(1).festivalId()).isEqualTo(2L);
+        assertThat(response.content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
         
-        assertThat(response.result().content().get(2).festivalId()).isEqualTo(1L);
-        assertThat(response.result().content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
+        assertThat(response.content().get(2).festivalId()).isEqualTo(1L);
+        assertThat(response.content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
 
         verify(popularSearchService).incrementSearchCount("축제", "127.0.0.1");
     }
@@ -380,7 +380,7 @@ class SearchServiceTest {
                 searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.result().content()).hasSize(1);
+        assertThat(response.content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
@@ -404,7 +404,7 @@ class SearchServiceTest {
                 searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.result().content()).hasSize(1);
+        assertThat(response.content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
