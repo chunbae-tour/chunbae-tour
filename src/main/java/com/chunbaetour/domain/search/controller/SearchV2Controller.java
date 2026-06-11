@@ -3,6 +3,7 @@ package com.chunbaetour.domain.search.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import com.chunbaetour.domain.search.service.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -37,9 +38,9 @@ public class SearchV2Controller {
      * </p>
      */
     @SecurityRequirements
-    @Operation(summary = "축제 검색 v2 (address/imageUrl)")
+    @Operation(summary = "축제 검색 v2 (address/imageUrl, 오타 교정 지원)")
     @GetMapping("/festivals")
-    public ApiResponse<CursorPageResponse<SearchFestivalResponse>> searchFestivals(
+    public ApiResponse<TypoCorrectedSearchResponse<SearchFestivalResponse>> searchFestivals(
             @RequestParam(name = "q", required = false) String q,
             @RequestParam(name = "startDate", required = false) LocalDate startDate,
             @RequestParam(name = "endDate", required = false) LocalDate endDate,

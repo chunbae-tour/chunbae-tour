@@ -12,6 +12,7 @@ import com.chunbaetour.domain.search.constant.SearchRedisKeys;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalV1Response;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import com.chunbaetour.domain.search.type.SearchSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +51,7 @@ public class SearchService {
     private final FestivalQueryRepository festivalQueryRepository;
     private final PopularSearchService popularSearchService;
     private final SearchPlacePersonalizationService personalizationService;
+    private final TypoCorrectionService typoCorrectionService;
     private final StringRedisTemplate stringRedisTemplate;
     private final Clock clock;
 
@@ -81,9 +83,10 @@ public class SearchService {
      * @param clientIp 클라이언트 IP 주소
      * @param source   검색 요청 출처 (예: community-place-selector)
      * @param userId   로그인한 유저의 PK (비로그인이면 null → 개인화 미적용)
-     * @return 커서 페이지네이션이 적용된 관광지 검색 결과 (로그인 시 첫 페이지에 한해 현재 페이지 내에서 선호 카테고리 우선 노출 적용)
+     * @return 커서 페이지네이션이 적용된 관광지 검색 결과 (로그인 시 첫 페이지에 한해 현재 페이지 내에서 선호 카테고리 우선 노출 적용).
+     *         결과 0건이고 오타 후보가 있으면 {@code didYouMean}에 교정 키워드를 포함한다.
      */
-    public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, String source, Long userId) {
+    public TypoCorrectedSearchResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, String source, Long userId) {
         SearchSource searchSource = SearchSource.from(source);
         // 검색어 원문을 INFO 로그에 남기지 않고 존재/길이만 기록하여 운영 로그 보안 강화
         log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
@@ -139,7 +142,59 @@ public class SearchService {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
-        return new CursorPageResponse<>(resultItems, nextCursorStr, hasNext, resultItems.size());
+        // 6. 오타 교정 — 첫 페이지 + 결과 0건인 경우에만 시도
+        // 페이지네이션 중(cursorId != null)에는 교정 불필요 (이미 교정된 키워드로 검색 중임)
+        // 람다 캐트를 위해 effectively final 변수로 고정
+        final List<SearchPlaceResponse> finalResultItems = resultItems;
+        final String finalNextCursorStr = nextCursorStr;
+        final boolean finalHasNext = hasNext;
+        if (finalResultItems.isEmpty() && cursorId == null) {
+            return typoCorrectionService.findClosestForPlaces(normalized)
+                    .map(correction -> {
+                        log.info("[SearchService] 관광지 오타 교정 적용 — inputLength: {}, correctionLength: {}", normalized.length(), correction.length());
+                        // 교정된 키워드로 재검색 (개인화 적용은 유지)
+                        List<SearchPlaceResponse> correctedItems =
+                                placeQueryRepository.searchByKeyword(correction, category, region, null, size);
+                        boolean correctedHasNext = correctedItems.size() > size;
+                        List<SearchPlaceResponse> correctedResult = correctedHasNext
+                                ? correctedItems.subList(0, size) : correctedItems;
+                        Long correctedNextCursor = correctedResult.isEmpty() ? null
+                                : correctedResult.get(correctedResult.size() - 1).placeId();
+
+                        // In-memory Boost 적용
+                        if (!preferredCategories.isEmpty() && !correctedResult.isEmpty()) {
+                            List<SearchPlaceResponse> modifiableList = new ArrayList<>(correctedResult);
+                            modifiableList.sort(Comparator.comparing((SearchPlaceResponse p) ->
+                                    preferredCategories.contains(p.category()) ? 0 : 1
+                            ).thenComparing(SearchPlaceResponse::placeId, Comparator.reverseOrder()));
+                            correctedResult = modifiableList;
+                        }
+
+                        // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
+                        if (correctedResult.isEmpty()) {
+                            return TypoCorrectedSearchResponse.of(
+                                    new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size())
+                            );
+                        }
+
+                        // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
+                        if (searchSource.isTrackable()) {
+                            popularSearchService.incrementSearchCount(correction, clientIp);
+                        }
+
+                        return TypoCorrectedSearchResponse.corrected(
+                                new CursorPageResponse<>(correctedResult,
+                                        correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
+                                        correctedHasNext, correctedResult.size()),
+                                correction
+                        );
+                    })
+                    .orElseGet(() -> TypoCorrectedSearchResponse.of(
+                            new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size())));
+        }
+
+        return TypoCorrectedSearchResponse.of(
+                new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size()));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -162,9 +217,10 @@ public class SearchService {
      * @param size      페이지 사이즈
      * @param clientIp  클라이언트 IP 주소
      * @param source    검색 요청 출처
-     * @return 커서 페이지네이션이 적용된 축제 검색 결과
+     * @return 커서 페이지네이션이 적용된 축제 검색 결과.
+     *         결과 0건이고 오타 후보가 있으면 {@code didYouMean}에 교정 키워드를 포함한다.
      */
-    public CursorPageResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
+    public TypoCorrectedSearchResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
         SearchSource searchSource = SearchSource.from(source);
         log.info("[SearchService] 축제 검색 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
                 keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
@@ -205,16 +261,55 @@ public class SearchService {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
-        return new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
+        // 오타 교정 — 첫 페이지 + 결과 0건 + 검색어 있는 경우에만 시도
+        // 람다 캐스를 위해 effectively final 변수로 고정
+        final String finalNormalized = normalized;
+        CursorPageResponse<SearchFestivalResponse> basePage =
+                new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
+        if (updatedItems.isEmpty() && cursorId == null && StringUtils.hasText(finalNormalized)) {
+            return typoCorrectionService.findClosestForFestivals(finalNormalized)
+                    .map(correction -> {
+                        log.info("[SearchService] 축제 오타 교정 적용 — inputLength: {}, correctionLength: {}", finalNormalized.length(), correction.length());
+                        List<Festival> correctedFestivals =
+                                festivalQueryRepository.searchFestivals(correction, startDate, endDate, region, null, size);
+                        boolean correctedHasNext = correctedFestivals.size() > size;
+                        List<Festival> correctedResult = correctedHasNext
+                                ? correctedFestivals.subList(0, size) : correctedFestivals;
+                        Long correctedNextCursor = correctedResult.isEmpty() ? null
+                                : correctedResult.get(correctedResult.size() - 1).getId();
+                        List<SearchFestivalResponse> correctedItems = correctedResult.stream()
+                                .map(item -> SearchFestivalResponse.from(item,
+                                        FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
+                                .toList();
+                        // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
+                        if (correctedResult.isEmpty()) {
+                            return TypoCorrectedSearchResponse.of(basePage);
+                        }
+
+                        // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
+                        if (searchSource.isTrackable()) {
+                            popularSearchService.incrementSearchCount(correction, clientIp);
+                        }
+
+                        return TypoCorrectedSearchResponse.corrected(
+                                new CursorPageResponse<>(correctedItems,
+                                        correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
+                                        correctedHasNext, correctedItems.size()),
+                                correction
+                        );
+                    })
+                    .orElseGet(() -> TypoCorrectedSearchResponse.of(basePage));
+        }
+        return TypoCorrectedSearchResponse.of(basePage);
     }
 
     /**
      * 축제 검색 v1 — 구 키(location, thumbnailUrl) 응답.
      * <p>
-     * {@code GET /api/v1/search/festivals} 하위 호환용. 쿼리 로직은 v2와 동일.
+     * {@code GET /api/v1/search/festivals} 하위 호환용. 쿼리 로직은 v2와 동일하며 오타 교정도 동일하게 적용된다.
      * </p>
      */
-    public CursorPageResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
+    public TypoCorrectedSearchResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
         SearchSource searchSource = SearchSource.from(source);
         log.info("[SearchService] 축제 검색 v1 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
                 keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
@@ -249,7 +344,47 @@ public class SearchService {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
-        return new CursorPageResponse<>(v1Items, nextCursorStr, hasNext, v1Items.size());
+        // 오타 교정 — 첫 페이지 + 결과 0건 + 검색어 있는 경우에만 시도
+        // 람다 캐스를 위해 effectively final 변수로 고정
+        final String finalNormalizedV1 = normalized;
+        CursorPageResponse<SearchFestivalV1Response> basePage =
+                new CursorPageResponse<>(v1Items, nextCursorStr, hasNext, v1Items.size());
+        if (v1Items.isEmpty() && cursorId == null && StringUtils.hasText(finalNormalizedV1)) {
+            return typoCorrectionService.findClosestForFestivals(finalNormalizedV1)
+                    .map(correction -> {
+                        log.info("[SearchService] 축제(v1) 오타 교정 적용 — inputLength: {}, correctionLength: {}", finalNormalizedV1.length(), correction.length());
+                        List<Festival> correctedFestivals =
+                                festivalQueryRepository.searchFestivals(correction, startDate, endDate, region, null, size);
+                        boolean correctedHasNext = correctedFestivals.size() > size;
+                        List<Festival> correctedResult = correctedHasNext
+                                ? correctedFestivals.subList(0, size) : correctedFestivals;
+                        Long correctedNextCursor = correctedResult.isEmpty() ? null
+                                : correctedResult.get(correctedResult.size() - 1).getId();
+                        LocalDate correctionToday = LocalDate.now(clock);
+                        List<SearchFestivalV1Response> correctedItems = correctedResult.stream()
+                                .map(item -> SearchFestivalV1Response.from(item,
+                                        FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), correctionToday)))
+                                .toList();
+                        // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
+                        if (correctedResult.isEmpty()) {
+                            return TypoCorrectedSearchResponse.of(basePage);
+                        }
+
+                        // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
+                        if (searchSource.isTrackable()) {
+                            popularSearchService.incrementSearchCount(correction, clientIp);
+                        }
+
+                        return TypoCorrectedSearchResponse.corrected(
+                                new CursorPageResponse<>(correctedItems,
+                                        correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
+                                        correctedHasNext, correctedItems.size()),
+                                correction
+                        );
+                    })
+                    .orElseGet(() -> TypoCorrectedSearchResponse.of(basePage));
+        }
+        return TypoCorrectedSearchResponse.of(basePage);
     }
 
 }

@@ -64,6 +64,55 @@ class MenuServiceTest {
                 .build();
     }
 
+    // ── GET /merchants/me/shops/{shopId}/menus (KAN-267) ───────────────────
+
+    @Test
+    @DisplayName("메뉴 목록 조회 — 성공: 본인 가게 메뉴 반환")
+    void getMenus_success() {
+        Shop shop = createShop();
+        Menu menu = createMenu();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(java.util.List.of(menu));
+
+        java.util.List<MenuResponse> result = menuService.getMenus(USER_ID, SHOP_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).name()).isEqualTo("떡볶이");
+        assertThat(result.get(0).isAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("메뉴 목록 조회 — 메뉴 없는 가게: 빈 목록")
+    void getMenus_emptyShop_returnsEmpty() {
+        Shop shop = createShop();
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(java.util.List.of());
+
+        assertThat(menuService.getMenus(USER_ID, SHOP_ID)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("메뉴 목록 조회 — 타인/없는 가게: SHOP_NOT_FOUND")
+    void getMenus_notOwner_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> menuService.getMenus(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("메뉴 목록 조회 — SUSPENDED 가게도 조회 허용 (read, 상태 무관)")
+    void getMenus_suspendedShop_allowed() {
+        Shop shop = createShop();
+        org.springframework.test.util.ReflectionTestUtils.setField(shop, "status", ShopStatus.SUSPENDED);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(java.util.List.of(createMenu()));
+
+        assertThat(menuService.getMenus(USER_ID, SHOP_ID)).hasSize(1); // ACTIVE 가드 없음
+    }
+
     // ── POST /merchants/me/shop/menus ──────────────────────────────────────
 
     @Test
