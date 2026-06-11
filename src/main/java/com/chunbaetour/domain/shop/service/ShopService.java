@@ -116,7 +116,9 @@ public class ShopService {
     @Transactional
     public QrCodeResponse reissueMyQrCode(Long userId, Long shopId) {
         // shopId + userId 조합으로 본인 가게 조회 — 타인 가게 재발급 차단
-        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
+        // row lock: 결제요청의 nonce 검증(QrPayService.createQrPayRequest)과 동일 행을 잠가 직렬화 →
+        // nonce 회전이 결제요청과 ms 단위로 겹쳐 옛 nonce가 통과하는 race 차단 (KAN-253 리뷰)
+        Shop shop = shopRepository.findByIdAndUserIdWithLock(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
         // ACTIVE 가드 — 정지/폐업 가게는 QR 재발급 불가 (SHOP_005)

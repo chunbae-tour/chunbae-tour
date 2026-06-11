@@ -217,7 +217,7 @@ class ShopServiceTest {
         Shop shop = createShop(); // ACTIVE
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         String oldNonce = shop.getQrNonce();
-        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserIdWithLock(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
         QrCodeResponse response = shopService.reissueMyQrCode(USER_ID, SHOP_ID);
 
@@ -228,7 +228,7 @@ class ShopServiceTest {
     @Test
     @DisplayName("QR 재발급 — 타인 가게: SHOP_NOT_FOUND")
     void reissueMyQrCode_notOwner_throws() {
-        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
+        given(shopRepository.findByIdAndUserIdWithLock(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> shopService.reissueMyQrCode(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
@@ -242,7 +242,7 @@ class ShopServiceTest {
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
         ReflectionTestUtils.setField(shop, "status", ShopStatus.SUSPENDED);
-        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdAndUserIdWithLock(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 
         assertThatThrownBy(() -> shopService.reissueMyQrCode(USER_ID, SHOP_ID))
                 .isInstanceOf(BusinessException.class)
