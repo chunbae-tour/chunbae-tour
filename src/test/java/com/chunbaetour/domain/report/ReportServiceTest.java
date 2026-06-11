@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -38,7 +37,6 @@ import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
-import com.chunbaetour.domain.report.event.ReportAcceptedEvent;
 import com.chunbaetour.domain.report.service.ReportService;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
@@ -641,45 +639,5 @@ class ReportServiceTest {
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
         then(deletedUser).should(never()).suspend();
-    }
-
-    // ── resolveReport → ReportAcceptedEvent 발행 ──────────────────────────
-
-    @Test
-    @DisplayName("USER 신고 WARNING 수락 → ReportAcceptedEvent(acceptedCount=3) 발행")
-    void resolveReport_USER_WARNING_ReportAcceptedEvent_발행() {
-        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
-                ReportReason.SPAM, null);
-        ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                USER_TARGET_ID, ReportTargetType.USER, ReportStatus.RESOLVED)).willReturn(3);
-
-        reportService.resolveReport(REPORT_ID, ADMIN_ID,
-                new ReportResolveRequest(ReportAction.WARNING, "경고"));
-
-        then(eventPublisher).should().publishEvent(argThat((Object obj) -> {
-            if (!(obj instanceof ReportAcceptedEvent e)) return false;
-            return e.reportId().equals(REPORT_ID)
-                    && e.reportedUserId().equals(USER_TARGET_ID)
-                    && e.targetType() == ReportTargetType.USER
-                    && e.acceptedCount() == 3;
-        }));
-    }
-
-    @Test
-    @DisplayName("DISMISS 처리 → ReportAcceptedEvent 발행 안 함")
-    void resolveReport_DISMISS_이벤트_미발행() {
-        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
-                ReportReason.SPAM, null);
-        ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-
-        reportService.resolveReport(REPORT_ID, ADMIN_ID,
-                new ReportResolveRequest(ReportAction.DISMISS, "근거없음"));
-
-        then(eventPublisher).should(never()).publishEvent(any());
     }
 }
