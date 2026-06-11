@@ -92,6 +92,9 @@ public class ReportService {
 
         try {
             Long reportedUserId = resolveReportedUserId(request.targetType(), request.targetId());
+            if (reportedUserId == null) {
+                throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+            }
             Report report = Report.create(
                     reporterId, request.targetType(), request.targetId(),
                     request.reason(), request.description(), reportedUserId);
