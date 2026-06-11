@@ -226,7 +226,7 @@ class LoginServiceTest {
     void login_with_expired_system_sanction_clears_sanction_and_succeeds() {
         // sanctionEndAt = 1시간 전 (고정 clock 기준 만료)
         LocalDateTime expiredEndAt = LocalDateTime.of(2026, 6, 11, 11, 0, 0);
-        Account suspendedWithExpiredSanction = accountWith(5L, Role.USER, AccountStatus.SUSPENDED);
+        Account suspendedWithExpiredSanction = accountWith(5L, Role.USER, AccountStatus.ACTIVE);
         suspendedWithExpiredSanction.applySystemSanction(SanctionType.SUSPEND_7D, expiredEndAt);
 
         given(accountRepository.findByEmail(EMAIL)).willReturn(Optional.of(suspendedWithExpiredSanction));
@@ -248,7 +248,7 @@ class LoginServiceTest {
     void login_with_active_system_sanction_throws_AUTH_012() {
         // sanctionEndAt = 1시간 후 (아직 활성)
         LocalDateTime activeEndAt = LocalDateTime.of(2026, 6, 11, 13, 0, 0);
-        Account suspendedWithActiveSanction = accountWith(6L, Role.USER, AccountStatus.SUSPENDED);
+        Account suspendedWithActiveSanction = accountWith(6L, Role.USER, AccountStatus.ACTIVE);
         suspendedWithActiveSanction.applySystemSanction(SanctionType.SUSPEND_7D, activeEndAt);
 
         given(accountRepository.findByEmail(EMAIL)).willReturn(Optional.of(suspendedWithActiveSanction));

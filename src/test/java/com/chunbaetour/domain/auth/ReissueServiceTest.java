@@ -163,7 +163,7 @@ class ReissueServiceTest {
     @Test
     void reissue_with_expired_system_sanction_clears_and_succeeds() {
         // sanctionEndAt = 1시간 전 (고정 clock 기준 만료) → clearSystemSanction 후 재발급 허용
-        Account suspended = accountWith(USER_ID, Role.USER, AccountStatus.SUSPENDED);
+        Account suspended = accountWith(USER_ID, Role.USER, AccountStatus.ACTIVE);
         suspended.applySystemSanction(SanctionType.SUSPEND_7D, LocalDateTime.of(2026, 6, 11, 11, 0, 0));
 
         given(tokenIssuer.verifyRefresh(REFRESH_TOKEN)).willReturn(new RefreshClaims(USER_ID, OLD_TID));
