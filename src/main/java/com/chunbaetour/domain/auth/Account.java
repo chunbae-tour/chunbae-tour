@@ -311,6 +311,15 @@ public class Account {
         this.sanctionEndAt = null;
     }
 
+    /** 관리자 강제 시스템 제재 해제 — PERMANENT 포함 모든 단계 해제 가능. */
+    public void adminClearSystemSanction() {
+        if (this.status == AccountStatus.DELETED) return;
+        if (this.sanctionType == null) return;
+        this.status = AccountStatus.ACTIVE;
+        this.sanctionType = null;
+        this.sanctionEndAt = null;
+    }
+
     /** 시스템 제재 기간 만료 여부 — sanctionEndAt 이 null(PERMANENT 또는 미제재)이면 false. */
     public boolean isSystemSanctionExpired(LocalDateTime now) {
         return this.sanctionType != null

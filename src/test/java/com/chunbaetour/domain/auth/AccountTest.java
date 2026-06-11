@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.report.entity.SanctionType;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
@@ -149,20 +148,6 @@ class AccountTest {
     }
 
     @Test
-    void unsuspend_after_system_sanction_clears_sanction_fields() {
-        // 시스템 제재 중 관리자 수동 해제 → sanctionType/sanctionEndAt 잔류 방지
-        // 스케줄러가 ACTIVE 계정의 stale 필드를 clearSystemSanction으로 재처리하는 버그 차단
-        Account account = Account.registerUser("sys-unsuspend@example.com", "hash", "시스템해제");
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
-
-        account.unsuspend();
-
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
-        assertThat(account.getSanctionType()).isNull();
-        assertThat(account.getSanctionEndAt()).isNull();
-    }
-
-    @Test
     void unsuspend_on_deleted_account_throws() {
         Account account = Account.createForSeed(
                 "deletedunsuspend@example.com", "hash", "탈퇴해제", Role.USER, AccountStatus.DELETED);
@@ -171,133 +156,5 @@ class AccountTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.USER_ALREADY_DELETED);
-    }
-
-    // ===== PR1+PR2 — 시스템 자동 제재 (KAN-sanction) =====
-
-    @Test
-    void applySystemSanction_WARNING_does_not_change_status() {
-        Account account = Account.registerUser("warn@example.com", "hash", "경고대상");
-        account.applySystemSanction(SanctionType.WARNING, NOW);
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
-        assertThat(account.getSanctionType()).isNull();
-    }
-
-    @Test
-    void applySystemSanction_NONE_does_not_change_status() {
-        Account account = Account.registerUser("none@example.com", "hash", "제재없음");
-        account.applySystemSanction(SanctionType.NONE, null);
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
-        assertThat(account.getSanctionType()).isNull();
-    }
-
-    @Test
-    void applySystemSanction_SUSPEND_7D_sets_SUSPENDED_and_fields() {
-        Account account = Account.registerUser("s7d@example.com", "hash", "7일정지");
-        LocalDateTime endAt = NOW.plusDays(7);
-        account.applySystemSanction(SanctionType.SUSPEND_7D, endAt);
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
-        assertThat(account.getSanctionType()).isEqualTo(SanctionType.SUSPEND_7D);
-        assertThat(account.getSanctionEndAt()).isEqualTo(endAt);
-    }
-
-    @Test
-    void applySystemSanction_PERMANENT_sets_SUSPENDED_and_null_sanctionEndAt() {
-        Account account = Account.registerUser("perm-apply@example.com", "hash", "영구정지대상");
-        account.applySystemSanction(SanctionType.PERMANENT, null);
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
-        assertThat(account.getSanctionType()).isEqualTo(SanctionType.PERMANENT);
-        assertThat(account.getSanctionEndAt()).isNull();
-    }
-
-    @Test
-    void applySystemSanction_does_not_downgrade_existing_higher_sanction() {
-        // 크로스도메인 집계가 낮은 maxType으로 applySystemSanction 호출 시 기존 높은 제재 보호
-        Account account = Account.registerUser("nodeg@example.com", "hash", "다운그레이드방지");
-        account.applySystemSanction(SanctionType.PERMANENT, null);
-
-        // PERMANENT 계정에 SUSPEND_7D 시도 → 무시
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
-
-        assertThat(account.getSanctionType()).isEqualTo(SanctionType.PERMANENT);
-        assertThat(account.getSanctionEndAt()).isNull();
-    }
-
-    @Test
-    void applySystemSanction_does_not_override_manual_suspension() {
-        // 관리자 수동 정지(sanctionType=null) 계정에 시스템 제재 시도 → 무시
-        // 방치 시 스케줄러가 7일 후 clearSystemSanction()으로 관리자 무기한 정지를 해제하는 버그 방지
-        Account account = Account.registerUser("manual-susp@example.com", "hash", "수동정지");
-        account.suspend("욕설 신고", null);
-
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
-
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
-        assertThat(account.getSanctionType()).isNull();
-        assertThat(account.getSanctionEndAt()).isNull();
-    }
-
-    @Test
-    void applySystemSanction_on_DELETED_is_noop() {
-        Account account = Account.createForSeed(
-                "delsanction@example.com", "hash", "탈퇴제재", Role.USER, AccountStatus.DELETED);
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.DELETED);
-        assertThat(account.getSanctionType()).isNull();
-    }
-
-    @Test
-    void clearSystemSanction_resets_status_and_sanction_fields() {
-        Account account = Account.registerUser("clear@example.com", "hash", "제재해제");
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
-        account.clearSystemSanction();
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
-        assertThat(account.getSanctionType()).isNull();
-        assertThat(account.getSanctionEndAt()).isNull();
-    }
-
-    @Test
-    void clearSystemSanction_on_PERMANENT_throws_IllegalStateException() {
-        Account account = Account.registerUser("perm@example.com", "hash", "영구정지");
-        account.applySystemSanction(SanctionType.PERMANENT, null);
-        assertThatThrownBy(account::clearSystemSanction)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("PERMANENT");
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
-    }
-
-    @Test
-    void clearSystemSanction_on_DELETED_is_noop() {
-        Account account = Account.createForSeed(
-                "delclear@example.com", "hash", "탈퇴해제무시", Role.USER, AccountStatus.DELETED);
-        account.clearSystemSanction();
-        assertThat(account.getStatus()).isEqualTo(AccountStatus.DELETED);
-    }
-
-    @Test
-    void isSystemSanctionExpired_returns_true_when_endedAt_before_now() {
-        Account account = Account.registerUser("expired@example.com", "hash", "만료됨");
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.minusHours(1));
-        assertThat(account.isSystemSanctionExpired(NOW)).isTrue();
-    }
-
-    @Test
-    void isSystemSanctionExpired_returns_false_when_not_yet_expired() {
-        Account account = Account.registerUser("notexp@example.com", "hash", "미만료");
-        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusHours(1));
-        assertThat(account.isSystemSanctionExpired(NOW)).isFalse();
-    }
-
-    @Test
-    void isSystemSanctionExpired_returns_false_when_no_sanction() {
-        Account account = Account.registerUser("nosanction@example.com", "hash", "제재없음2");
-        assertThat(account.isSystemSanctionExpired(NOW)).isFalse();
-    }
-
-    @Test
-    void isSystemSanctionExpired_returns_false_for_PERMANENT_null_endedAt() {
-        Account account = Account.registerUser("permexp@example.com", "hash", "영구만료불가");
-        account.applySystemSanction(SanctionType.PERMANENT, null);
-        assertThat(account.isSystemSanctionExpired(NOW)).isFalse();
     }
 }

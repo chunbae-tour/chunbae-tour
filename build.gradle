@@ -97,24 +97,6 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
-// 다른 PR 브랜치의 untracked 파일들이 이 브랜치의 컴파일을 방해하지 않도록 제외.
-// 각 PR이 develop에 머지되고 나면 순차적으로 제거.
-sourceSets {
-	main {
-		java {
-			exclude 'com/chunbaetour/domain/admin/user/controller/AdminSanctionController.java'
-			exclude 'com/chunbaetour/domain/admin/user/service/AdminSanctionService.java'
-			exclude 'com/chunbaetour/domain/admin/user/dto/response/UserSanctionResponse.java'
-			exclude 'com/chunbaetour/domain/common/config/WebMvcConfig.java'
-			exclude 'com/chunbaetour/domain/report/dto/response/PendingCountResponse.java'
-			exclude 'com/chunbaetour/domain/report/event/ReportContentActionEvent.java'
-			exclude 'com/chunbaetour/domain/report/interceptor/**'
-			exclude 'com/chunbaetour/domain/report/listener/**'
-			exclude 'com/chunbaetour/domain/report/validator/**'
-		}
-	}
-}
-
 tasks.named('test') {
 	useJUnitPlatform()
 	maxHeapSize = '6g'
