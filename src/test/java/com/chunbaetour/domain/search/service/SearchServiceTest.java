@@ -109,7 +109,6 @@ class SearchServiceTest {
         mockResult.add(new SearchPlaceResponse(1L, "맛집1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 10));
         
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
-        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when (cursor != null)
         searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null, null);

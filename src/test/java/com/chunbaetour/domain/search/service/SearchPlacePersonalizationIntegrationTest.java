@@ -19,7 +19,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
+import org.junit.jupiter.api.AfterEach;
 
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 
@@ -31,7 +31,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Transactional
 class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
@@ -47,6 +46,9 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
     private UserLikeService userLikeService;
 
     @Autowired
+    private com.chunbaetour.domain.like.repository.UserLikeRepository userLikeRepository;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     private Long testUserId;
@@ -59,6 +61,13 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
         } catch (Exception e) {
             // 인덱스가 이미 존재하는 경우 무시
         }
+    }
+
+    @AfterEach
+    void tearDown() {
+        userLikeRepository.deleteAll();
+        placeRepository.deleteAll();
+        accountRepository.deleteAll();
     }
 
     @BeforeEach
