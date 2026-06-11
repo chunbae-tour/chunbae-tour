@@ -15,6 +15,8 @@ import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +44,9 @@ public class OauthLoginService {
     private final OauthSignupTicketIssuer ticketIssuer;
     private final MeterRegistry meterRegistry;
     private final SecurityAuditLogger auditLogger;
+    private final Clock clock;
 
+    @org.springframework.transaction.annotation.Transactional
     public OauthLoginResult login(OauthProvider provider, String code, String redirectUri) {
         // resolve(미지원 provider) → OAUTH_PROVIDER_UNSUPPORTED, fetch(공급자 토큰/사용자 조회) → OAUTH_PROVIDER_ERROR.
         OauthClient client = resolve(provider);
@@ -85,11 +89,15 @@ public class OauthLoginService {
         }
 
         if (account.getStatus() == AccountStatus.SUSPENDED) {
-            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "suspended").increment();
-            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(),
-                    ErrorCode.ACCOUNT_SUSPENDED.getCode(),
-                    Map.of("method", "oauth", "provider", provider.name(), "reasonDetail", "account_suspended"));
-            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+            if (account.isSystemSanctionExpired(LocalDateTime.now(clock))) {
+                account.clearSystemSanction();
+            } else {
+                meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "suspended").increment();
+                auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(),
+                        ErrorCode.ACCOUNT_SUSPENDED.getCode(),
+                        Map.of("method", "oauth", "provider", provider.name(), "reasonDetail", "account_suspended"));
+                throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+            }
         }
 
         String accessToken = tokenIssuer.issueAccess(account.getId(), account.getRole(), account.getEmail());
