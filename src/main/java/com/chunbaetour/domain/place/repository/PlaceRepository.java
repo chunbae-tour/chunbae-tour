@@ -112,4 +112,13 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      * 외부 API 식별자 목록으로 일괄 조회 — KAN-262 청크 단위 upsert에서 기존 행을 한 번에 로드(단건 N회 조회 제거).
      */
     List<Place> findByExternalIdIn(Collection<String> externalIds);
+
+    /**
+     * 오타 교정 사전 로드용 — ACTIVE 상태의 장소명 전체 조회 (KAN-276).
+     *
+     * <p>TypoCorrectionService가 서버 시작 시 Redis 2-gram 역인덱스를 구성하기 위해 사용한다.
+     * 조회 대상은 ACTIVE 상태인 장소만 포함하며, HIDDEN/DELETED는 제외한다.
+     */
+    @Query("SELECT p.name FROM Place p WHERE p.status = com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE")
+    List<String> findAllActiveNames();
 }

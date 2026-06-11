@@ -12,6 +12,8 @@ import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -40,6 +42,7 @@ public class PlaceLikeService {
     private final PlaceRepository placeRepository;
     private final PlaceQueryRepository placeQueryRepository;
     private final StringRedisTemplate stringRedisTemplate;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final String SEED_AND_INCR_SCRIPT = 
             "local key = KEYS[1]\n" +
@@ -84,6 +87,8 @@ public class PlaceLikeService {
             seedAndIncrement(placeId, dbLikeCount);
             evictDetailCache(placeId);
         });
+        
+        eventPublisher.publishEvent(new PlaceLikeChangedEvent(userId));
 
         log.info("Place like added: userId={}, placeId={}", userId, placeId);
     }
@@ -106,6 +111,8 @@ public class PlaceLikeService {
             seedAndDecrement(placeId, dbLikeCount);
             evictDetailCache(placeId);
         });
+        
+        eventPublisher.publishEvent(new PlaceLikeChangedEvent(userId));
 
         log.info("Place like removed: userId={}, placeId={}", userId, placeId);
     }
