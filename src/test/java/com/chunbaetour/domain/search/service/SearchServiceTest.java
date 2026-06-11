@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -153,6 +154,28 @@ class SearchServiceTest {
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("오타 후보는 있지만 필터 조건 등으로 인해 교정 재검색 결과가 0건이면 didYouMean 없이 빈 결과를 반환한다")
+    void searchPlaces_ReturnsEmptyWithoutDidYouMean_WhenCorrectedResultIsEmpty() {
+        // given
+        String keyword = "경북궁";
+        String correction = "경복궁";
+        int size = 10;
+        
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(List.of());
+        when(typoCorrectionService.findClosestForPlaces(keyword)).thenReturn(Optional.of(correction));
+        
+        // 교정된 검색어로 조회했으나 필터 등의 이유로 결과 0건
+        when(placeQueryRepository.searchByKeyword(correction, null, null, null, size)).thenReturn(List.of());
+
+        // when
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+
+        // then
+        assertThat(response.content()).isEmpty();
+        assertThat(response.didYouMean()).isNull();
     }
 
     @Test
@@ -407,6 +430,29 @@ class SearchServiceTest {
         assertThat(response.content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
+
+    @Test
+    @DisplayName("오타 후보는 있지만 축제 교정 재검색 결과가 0건이면 didYouMean 없이 빈 결과를 반환한다")
+    void searchFestivals_ReturnsEmptyWithoutDidYouMean_WhenCorrectedResultIsEmpty() {
+        // given
+        String keyword = "워터밤붐";
+        String correction = "워터밤";
+        int size = 10;
+
+        when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size)).thenReturn(List.of());
+        when(typoCorrectionService.findClosestForFestivals(keyword)).thenReturn(Optional.of(correction));
+        
+        // 교정어 재검색 결과 0건
+        when(festivalQueryRepository.searchFestivals(correction, null, null, null, null, size)).thenReturn(List.of());
+
+        // when
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
+
+        // then
+        assertThat(response.content()).isEmpty();
+        assertThat(response.didYouMean()).isNull();
+    }
+
 
     @Test
     @DisplayName("source가 community-place-selector이면 축제 검색 결과가 있어도 인기 검색어를 증가시키지 않는다")

@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -335,10 +336,8 @@ public class TypoCorrectionService {
             });
             // 새 사전에 포함되지 않은 구 키워드들은 DICT_TTL 만료 시점에 자연 삭제됨
         } finally {
-            String currentToken = stringRedisTemplate.opsForValue().get(lockKey);
-            if (lockToken.equals(currentToken)) {
-                stringRedisTemplate.delete(lockKey);
-            }
+            String script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+            stringRedisTemplate.execute(new DefaultRedisScript<>(script, Long.class), List.of(lockKey), lockToken);
         }
     }
 
