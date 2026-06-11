@@ -26,6 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 내 가게 조회(GET), 가게 정보 수정(PATCH) 담당.
  * 위치(address/lat/lng)는 수정 불가 — 관리자 처리 영역.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -108,6 +110,12 @@ public class ShopService {
         // shopId + userId 조합으로 본인 가게 조회
         Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // qrNonce는 DB NOT NULL 불변식이므로 null이면 데이터 정합성 오류 — 서버 장애로 처리
+        if (shop.getQrNonce() == null) {
+            log.error("[ShopService] qrNonce is null — DB invariant violated: shopId={}", shopId);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
 
         return QrCodeResponse.from(shop);
     }
