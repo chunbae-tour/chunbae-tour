@@ -49,6 +49,34 @@ class AdminAdApplicationServiceTest {
         return a;
     }
 
+    // ── GET /admin/ads/{adId} 단건 상세 (KAN-269) ──────────────────────────
+
+    @Test
+    @DisplayName("광고 신청 단건 상세 조회 — 성공: 응답 필드 검증")
+    void getApplication_success() {
+        AdApplication application = createPending(AD_ID);
+        given(adApplicationRepository.findById(AD_ID)).willReturn(Optional.of(application));
+
+        AdminAdApplicationResponse res = adminAdApplicationService.getApplication(AD_ID);
+
+        assertThat(res.applicationId()).isEqualTo(AD_ID);
+        assertThat(res.shopId()).isEqualTo(SHOP_ID);
+        assertThat(res.adType()).isEqualTo(AdType.BANNER);
+        assertThat(res.status()).isEqualTo(AdApplicationStatus.PENDING);
+        assertThat(res.cost()).isEqualTo(30_000L);
+    }
+
+    @Test
+    @DisplayName("광고 신청 단건 상세 조회 — 존재하지 않는 adId AD_APPLICATION_NOT_FOUND")
+    void getApplication_notFound() {
+        given(adApplicationRepository.findById(AD_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminAdApplicationService.getApplication(AD_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AD_APPLICATION_NOT_FOUND);
+    }
+
     @Test
     @DisplayName("광고 승인 성공 — status APPROVED 전이")
     void approve_success() {

@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,10 +45,17 @@ public class AdminAdApplicationController {
         return ApiResponse.success(adminAdApplicationService.getApplications(cursor, size, status));
     }
 
+    /** GET /api/v1/admin/ads/{adId} — 광고 신청 단건 상세 조회 (KAN-269) */
+    @Operation(summary = "광고 신청 단건 상세 조회")
+    @GetMapping("/{adId}")
+    public ApiResponse<AdminAdApplicationResponse> getApplication(@PathVariable @Positive Long adId) {
+        return ApiResponse.success(adminAdApplicationService.getApplication(adId));
+    }
+
     /** PATCH /api/v1/admin/ads/{adId}/approve — 광고 승인 */
     @Operation(summary = "광고 승인")
     @PatchMapping("/{adId}/approve")
-    public ApiResponse<Void> approve(@PathVariable Long adId) {
+    public ApiResponse<Void> approve(@PathVariable @Positive Long adId) {
         adminAdApplicationService.approve(adId);
         return ApiResponse.success(null);
     }
@@ -56,7 +64,7 @@ public class AdminAdApplicationController {
     @Operation(summary = "광고 거절")
     @PatchMapping("/{adId}/reject")
     public ApiResponse<Void> reject(
-            @PathVariable Long adId,
+            @PathVariable @Positive Long adId,
             @RequestBody @Valid AdRejectRequest request) {
         adminAdApplicationService.reject(adId, request.reason());
         return ApiResponse.success(null);
