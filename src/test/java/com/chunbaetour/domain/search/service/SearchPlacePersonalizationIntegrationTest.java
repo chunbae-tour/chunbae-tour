@@ -9,6 +9,7 @@ import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -95,12 +96,12 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
     @DisplayName("In-memory Boost가 커서 무결성을 해치지 않고 1, 2페이지 모두 정상 노출한다")
     void searchPlaces_WithInMemoryBoost_MaintainsCursorIntegrity() {
         // [1페이지 조회] size = 3
-        CursorPageResponse<SearchPlaceResponse> page1 = searchService.searchPlaces(
+        TypoCorrectedSearchResponse<SearchPlaceResponse> page1 = searchService.searchPlaces(
                 "통합테스트", null, null, null, 3, "127.0.0.1", null, testUserId);
 
-        List<SearchPlaceResponse> content1 = page1.content();
+        List<SearchPlaceResponse> content1 = page1.result().content();
         assertThat(content1).hasSize(3);
-        assertThat(page1.hasNext()).isTrue();
+        assertThat(page1.result().hasNext()).isTrue();
 
         // 1페이지에 노출된 장소 ID들을 수집
         List<Long> page1Ids = content1.stream().map(SearchPlaceResponse::placeId).toList();
@@ -111,15 +112,15 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
         // 만약 place5가 안 나왔더라도 무조건 중복 없이 3개가 나와야 함.
 
         // [2페이지 조회] 
-        Long cursor = Long.valueOf(page1.nextCursor());
-        CursorPageResponse<SearchPlaceResponse> page2 = searchService.searchPlaces(
+        Long cursor = Long.valueOf(page1.result().nextCursor());
+        TypoCorrectedSearchResponse<SearchPlaceResponse> page2 = searchService.searchPlaces(
                 "통합테스트", null, null, cursor, 3, "127.0.0.1", null, testUserId);
 
-        List<SearchPlaceResponse> content2 = page2.content();
+        List<SearchPlaceResponse> content2 = page2.result().content();
         
         // 데이터가 5개였으므로, 2페이지는 2개만 반환되어야 함.
         assertThat(content2).hasSize(2);
-        assertThat(page2.hasNext()).isFalse();
+        assertThat(page2.result().hasNext()).isFalse();
 
         // 2페이지에 노출된 장소 ID들을 수집
         List<Long> page2Ids = content2.stream().map(SearchPlaceResponse::placeId).toList();

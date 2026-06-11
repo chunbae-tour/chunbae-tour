@@ -11,6 +11,7 @@ import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,6 +49,9 @@ class SearchServiceTest {
 
     @Mock
     private SearchPlacePersonalizationService personalizationService;
+
+    @Mock
+    private TypoCorrectionService typoCorrectionService;
 
     @Spy
     private java.time.Clock clock = java.time.Clock.systemDefaultZone();
@@ -170,10 +174,10 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
 
         // then
-        List<SearchPlaceResponse> content = response.content();
+        List<SearchPlaceResponse> content = response.result().content();
         assertThat(content).hasSize(4);
         // 선호 카테고리(TOURIST_SPOT)가 위로, 그 안에서는 id DESC 유지
         assertThat(content.get(0).placeId()).isEqualTo(90L);
@@ -202,7 +206,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId).result();
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -235,18 +239,18 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
 
         // then
-        assertThat(response.hasNext()).isTrue();
-        assertThat(response.content()).hasSize(3);
+        assertThat(response.result().hasNext()).isTrue();
+        assertThat(response.result().content()).hasSize(3);
         // 메모리 정렬 결과: 100(선호), 80(선호), 90(비선호)
-        assertThat(response.content().get(0).placeId()).isEqualTo(100L);
-        assertThat(response.content().get(1).placeId()).isEqualTo(80L);
-        assertThat(response.content().get(2).placeId()).isEqualTo(90L);
+        assertThat(response.result().content().get(0).placeId()).isEqualTo(100L);
+        assertThat(response.result().content().get(1).placeId()).isEqualTo(80L);
+        assertThat(response.result().content().get(2).placeId()).isEqualTo(90L);
         
         // 중요: 정렬된 마지막 요소는 90이지만, nextCursor는 DB 원본(100, 90, 80)의 마지막인 80이어야 함.
-        assertThat(response.nextCursor()).isEqualTo("80");
+        assertThat(response.result().nextCursor()).isEqualTo("80");
     }
 
 
@@ -267,13 +271,13 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
 
         // then
-        assertThat(response.hasNext()).isTrue();
-        assertThat(response.content()).hasSize(2); // 3개 중 마지막 1개는 잘려나감
-        assertThat(response.nextCursor()).isEqualTo("9"); // index 1 (마지막 아이템)의 ID
-        assertThat(response.size()).isEqualTo(2); // 잘려나간 후 리스트 사이즈
+        assertThat(response.result().hasNext()).isTrue();
+        assertThat(response.result().content()).hasSize(2);
+        assertThat(response.result().nextCursor()).isEqualTo("9");
+        assertThat(response.result().size()).isEqualTo(2);
     }
 
     @Test
@@ -292,10 +296,10 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(null, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", null);
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.content()).hasSize(1);
+        assertThat(response.result().content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
@@ -327,20 +331,18 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
 
         // then
-        // 결과는 mockResult에 넣은 순서 (3, 2, 1 - ID 내림차순)대로 반환됨을 명시적으로 검증
-        assertThat(response.content().get(0).festivalId()).isEqualTo(3L);
-        assertThat(response.content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
+        assertThat(response.result().content().get(0).festivalId()).isEqualTo(3L);
+        assertThat(response.result().content().get(0).progressStatus()).isEqualTo(FestivalProgressStatus.ENDED);
         
-        assertThat(response.content().get(1).festivalId()).isEqualTo(2L);
-        assertThat(response.content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
+        assertThat(response.result().content().get(1).festivalId()).isEqualTo(2L);
+        assertThat(response.result().content().get(1).progressStatus()).isEqualTo(FestivalProgressStatus.IN_PROGRESS);
         
-        assertThat(response.content().get(2).festivalId()).isEqualTo(1L);
-        assertThat(response.content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
+        assertThat(response.result().content().get(2).festivalId()).isEqualTo(1L);
+        assertThat(response.result().content().get(2).progressStatus()).isEqualTo(FestivalProgressStatus.UPCOMING);
 
-        // [Fix 3] keyword="축제", 결과 있음, cursorId=null → incrementSearchCount 호출 검증 누락 수정
         verify(popularSearchService).incrementSearchCount("축제", "127.0.0.1");
     }
 
@@ -374,12 +376,11 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(null, startDate, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response =
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response =
                 searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.content()).hasSize(1);
-        // keyword null이므로 인기 검색어 집계 없음
+        assertThat(response.result().content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
@@ -399,12 +400,11 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(null, null, endDate, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response =
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response =
                 searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1", null);
 
         // then
-        assertThat(response.content()).hasSize(1);
-        // keyword null이므로 인기 검색어 집계 없음
+        assertThat(response.result().content()).hasSize(1);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 
