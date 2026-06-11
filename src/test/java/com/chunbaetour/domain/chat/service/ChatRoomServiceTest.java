@@ -74,6 +74,28 @@ class ChatRoomServiceTest {
     }
 
     @Test
+    void getRoomDetail_member_active_returns_detail() {
+        // MEMBER_ACTIVE 멤버도 상세 조회 가능 — 일반 참여자, MemberInfo에 nickname/profileImageUrl 포함
+        ChatRoom room = stubRoom();
+        ChatRoomMember member = stubMember(USER_ID, ChatMemberState.MEMBER_ACTIVE);
+        given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(eq(ROOM_ID), any()))
+                .willReturn(List.of(member));
+        Account account = mock(Account.class);
+        given(account.getId()).willReturn(USER_ID);
+        given(account.getNickname()).willReturn("여행자");
+        given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of(account));
+
+        ChatRoomDetailResponse response = chatRoomService.getRoomDetail(USER_ID, ROOM_ID);
+
+        assertThat(response.myMemberState()).isEqualTo(ChatMemberState.MEMBER_ACTIVE);
+        assertThat(response.members()).hasSize(1);
+        assertThat(response.members().get(0).nickname()).isEqualTo("여행자");
+        assertThat(response.members().get(0).profileImageUrl()).isEqualTo("https://cdn.example.com/img.jpg");
+    }
+
+    @Test
     void getRoomDetail_deletedAccount_memberInfoReturnsFallback() {
         // MEMBER_ACTIVE 멤버지만 Account 삭제(탈퇴) — MemberInfo에 "탈퇴한 사용자"/null fallback
         ChatRoom room = stubRoom();
