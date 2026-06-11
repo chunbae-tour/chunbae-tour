@@ -63,15 +63,6 @@ class CompanionPostServiceTest {
     }
 
     @Test
-    void create_maxMembers가_2미만이면_400() {
-        assertThatThrownBy(() -> postService.create(1L,
-                new CompanionPostCreateRequest("제목", "내용", 1L, "장소", "서울",
-                        LocalDate.now().plusDays(1), 1)))
-                .isInstanceOf(BusinessException.class)
-                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
-    }
-
-    @Test
     void update_maxMembers가_currentMembers미만이면_400() {
         given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
 

@@ -285,8 +285,8 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("이미 정지된 사용자 SUSPEND 처리 시 403 AUTH_012")
-        void suspend_already_suspended_user_returns_403() throws Exception {
+        @DisplayName("이미 정지된 사용자 SUSPEND 처리 시 409 REPORT_008")
+        void suspend_already_suspended_user_returns_409() throws Exception {
             Account reporter = seedFactory.seed("ss_reporter@test.com", PASSWORD, "재정지신고자", Role.USER, AccountStatus.ACTIVE);
             Account target = seedFactory.seed("ss_target@test.com", PASSWORD, "이미정지된유저", Role.USER, AccountStatus.SUSPENDED);
             Report report = reportRepository.save(Report.create(
@@ -298,8 +298,8 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(resolveBody("SUSPEND", null)))
-                    .andExpect(status().isForbidden())
-                    .andExpect(jsonPath("$.code").value("AUTH_012"));
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("REPORT_008"));
         }
 
         @Test

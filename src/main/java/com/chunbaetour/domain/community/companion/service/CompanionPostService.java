@@ -41,9 +41,6 @@ public class CompanionPostService {
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
-        if (request.maxMembers() < 2) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
         Account author = findAccount(authorId);
         CompanionPost post = CompanionPost.create(
                 authorId,

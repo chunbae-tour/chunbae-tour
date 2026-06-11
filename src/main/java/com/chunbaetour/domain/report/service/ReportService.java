@@ -391,7 +391,7 @@ public class ReportService {
                 return;
             }
             if (acc.getStatus() == AccountStatus.SUSPENDED) {
-                throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+                throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
             }
             acc.suspend();
         }, () -> log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId));
