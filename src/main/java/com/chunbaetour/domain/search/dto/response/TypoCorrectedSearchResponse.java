@@ -16,7 +16,10 @@ import java.util.List;
  * </ul>
  *
  * @param <T>        검색 결과 아이템 타입 (SearchPlaceResponse, SearchFestivalResponse 등)
- * @param result     커서 페이지네이션이 적용된 검색 결과
+ * @param content    커서 페이지네이션이 적용된 결과 리스트
+ * @param nextCursor 다음 페이지 요청을 위한 커서. 더 이상 데이터가 없으면 null
+ * @param hasNext    다음 페이지 존재 여부
+ * @param size       현재 페이지의 데이터 개수
  * @param didYouMean 오타 교정 제안 키워드. null이면 교정 없음
  */
 public record TypoCorrectedSearchResponse<T>(

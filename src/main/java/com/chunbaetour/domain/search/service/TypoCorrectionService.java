@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 오타 교정 검색 서비스 (KAN-276).
@@ -298,7 +299,8 @@ public class TypoCorrectionService {
      */
     private void buildDictionary(List<String> words, String gramPrefix) {
         String lockKey = gramPrefix + "lock";
-        Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, "locked", Duration.ofMinutes(5));
+        String lockToken = UUID.randomUUID().toString();
+        Boolean acquired = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, lockToken, Duration.ofMinutes(5));
         if (Boolean.FALSE.equals(acquired)) {
             log.info("[TypoCorrection] 사전 갱신 Lock 획득 실패 (진행 중) - {}", gramPrefix);
             return;
@@ -333,7 +335,10 @@ public class TypoCorrectionService {
             });
             // 새 사전에 포함되지 않은 구 키워드들은 DICT_TTL 만료 시점에 자연 삭제됨
         } finally {
-            stringRedisTemplate.delete(lockKey);
+            String currentToken = stringRedisTemplate.opsForValue().get(lockKey);
+            if (lockToken.equals(currentToken)) {
+                stringRedisTemplate.delete(lockKey);
+            }
         }
     }
 

@@ -170,8 +170,15 @@ public class SearchService {
                             correctedResult = modifiableList;
                         }
 
+                        // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
+                        if (correctedResult.isEmpty()) {
+                            return TypoCorrectedSearchResponse.of(
+                                    new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size())
+                            );
+                        }
+
                         // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
-                        if (searchSource.isTrackable() && !correctedResult.isEmpty()) {
+                        if (searchSource.isTrackable()) {
                             popularSearchService.incrementSearchCount(correction, clientIp);
                         }
 
@@ -274,8 +281,13 @@ public class SearchService {
                                 .map(item -> SearchFestivalResponse.from(item,
                                         FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                                 .toList();
+                        // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
+                        if (correctedResult.isEmpty()) {
+                            return TypoCorrectedSearchResponse.of(basePage);
+                        }
+
                         // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
-                        if (searchSource.isTrackable() && !correctedResult.isEmpty()) {
+                        if (searchSource.isTrackable()) {
                             popularSearchService.incrementSearchCount(correction, clientIp);
                         }
 
@@ -353,8 +365,13 @@ public class SearchService {
                                 .map(item -> SearchFestivalV1Response.from(item,
                                         FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), correctionToday)))
                                 .toList();
+                        // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
+                        if (correctedResult.isEmpty()) {
+                            return TypoCorrectedSearchResponse.of(basePage);
+                        }
+
                         // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
-                        if (searchSource.isTrackable() && !correctedResult.isEmpty()) {
+                        if (searchSource.isTrackable()) {
                             popularSearchService.incrementSearchCount(correction, clientIp);
                         }
 
