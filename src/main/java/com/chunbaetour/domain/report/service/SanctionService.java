@@ -2,9 +2,15 @@ package com.chunbaetour.domain.report.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
+import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.report.entity.Report;
+import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.entity.SanctionType;
 import com.chunbaetour.domain.report.entity.UserSanction;
+import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.repository.UserSanctionRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -29,6 +35,10 @@ public class SanctionService {
 
     private final UserSanctionRepository userSanctionRepository;
     private final AccountRepository accountRepository;
+    private final ReportRepository reportRepository;
+    private final CompanionPostRepository companionPostRepository;
+    private final FreePostRepository freePostRepository;
+    private final CommentRepository commentRepository;
     private final Clock clock;
 
     /**
@@ -71,7 +81,19 @@ public class SanctionService {
             applyAccountSuspension(userId, calculated, endedAt);
         }
 
-        // 5. 2+ 활성 도메인 → 계정 전체 정지
+        // 5. 콘텐츠 도메인 SUSPEND 이상 → 신고된 콘텐츠 숨김
+        if (calculated.severity() >= SanctionType.SUSPEND_7D.severity()
+                && targetType != ReportTargetType.USER
+                && targetType != ReportTargetType.MERCHANT) {
+            hideReportedContent(reportId, targetType);
+        }
+
+        // 6. PERMANENT → 해당 유저 전체 콘텐츠 숨김
+        if (calculated == SanctionType.PERMANENT) {
+            hideAllContentByUser(userId);
+        }
+
+        // 7. 2+ 활성 도메인 → 계정 전체 정지
         // WARNING은 endedAt = startedAt이므로 countActiveDistinctDomains에서 즉시 제외 → 실질적 no-op (의도된 정책)
         checkAndApplyCrossDomainSuspension(userId, now);
     }
@@ -87,6 +109,34 @@ public class SanctionService {
     }
 
     // ── 내부 ─────────────────────────────────────────────────────────────────
+
+    /** SUSPEND 이상 제재 도달 시 해당 신고의 target 콘텐츠 숨김. */
+    private void hideReportedContent(Long reportId, ReportTargetType targetType) {
+        Report report = reportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            log.warn("[제재 숨김] report 없음 reportId={}", reportId);
+            return;
+        }
+        Long targetId = report.getTargetId();
+        switch (targetType) {
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .ifPresent(p -> { if (!p.getStatus().name().equals("DELETED")) p.hide(); });
+            case POST_FREE -> freePostRepository.findById(targetId)
+                    .ifPresent(p -> { if (!p.getStatus().name().equals("DELETED")) p.hide(); });
+            case COMMENT -> commentRepository.findById(targetId)
+                    .ifPresent(c -> { if (c.getStatus() != com.chunbaetour.domain.community.comment.entity.CommentStatus.DELETED) c.hide(); });
+            default -> log.warn("[제재 숨김] 미지원 targetType={}", targetType);
+        }
+        log.info("[제재 숨김] reportId={} targetType={} targetId={}", reportId, targetType, targetId);
+    }
+
+    /** PERMANENT 제재 시 해당 유저의 전체 콘텐츠 숨김. */
+    private void hideAllContentByUser(Long userId) {
+        companionPostRepository.hideAllActiveByAuthorId(userId);
+        freePostRepository.hideAllActiveByAuthorId(userId);
+        commentRepository.hideAllActiveByAuthorId(userId);
+        log.info("[영구 정지 전체 숨김] userId={}", userId);
+    }
 
     private void applyAccountSuspension(Long userId, SanctionType type, LocalDateTime endedAt) {
         accountRepository.findById(userId).ifPresentOrElse(

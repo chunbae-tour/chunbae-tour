@@ -78,6 +78,16 @@ public class Comment extends BaseEntity {
         this.deletedAt = LocalDateTime.now();
     }
 
+    public void hide() {
+        this.status = CommentStatus.HIDDEN;
+    }
+
+    public void restore() {
+        if (this.status == CommentStatus.HIDDEN) {
+            this.status = CommentStatus.ACTIVE;
+        }
+    }
+
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
     }

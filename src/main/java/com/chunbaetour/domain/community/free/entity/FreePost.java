@@ -88,6 +88,12 @@ public class FreePost extends BaseEntity {
         this.status = FreePostStatus.HIDDEN;
     }
 
+    public void restore() {
+        if (this.status == FreePostStatus.HIDDEN) {
+            this.status = FreePostStatus.ACTIVE;
+        }
+    }
+
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
     }

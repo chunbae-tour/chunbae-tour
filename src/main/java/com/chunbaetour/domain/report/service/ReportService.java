@@ -29,6 +29,7 @@ import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.event.ReportAcceptedEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
@@ -223,10 +224,14 @@ public class ReportService {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
             }
 
-            applyContentAction(action, report.getTargetType(), report.getTargetId());
+            // event 발행: WARNING·DISMISS 제외
+            if (action != ReportAction.WARNING && action != ReportAction.DISMISS) {
+                eventPublisher.publishEvent(new ReportContentActionEvent(
+                        reportId, report.getTargetType(), report.getTargetId(), action));
+            }
 
             String adminNickname = resolveNickname(adminId);
-            if (action == ReportAction.DISMISS) {
+            if (action == ReportAction.DISMISS || action == ReportAction.RESTORE) {
                 report.dismiss(request.adminNote(), adminNickname);
             } else {
                 report.resolve(action, request.adminNote(), adminNickname);
@@ -314,15 +319,6 @@ public class ReportService {
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
 
-    private void applyContentAction(ReportAction action, ReportTargetType targetType, Long targetId) {
-        switch (action) {
-            case DELETE -> deleteTargetContent(targetType, targetId);
-            case SUSPEND -> suspendTargetAuthor(targetType, targetId);
-            case WARNING, DISMISS -> { /* MVP: 상태 기록만 */ }
-            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-    }
-
     private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
             // HIDE_SHOP: 신고 대상 가게만 임시 정지 (SUSPENDED, 복구 가능). role 유지.
@@ -340,36 +336,6 @@ public class ReportService {
                 }
             }
             case DISMISS -> { /* 무시, 상태 기록만 */ }
-            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-    }
-
-    private void deleteTargetContent(ReportTargetType targetType, Long targetId) {
-        switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId).ifPresentOrElse(post -> {
-                if (post.getStatus() == CompanionPostStatus.DELETED) {
-                    log.warn("deleteTargetContent: POST_COMPANION already DELETED, targetId={}", targetId);
-                    return;
-                }
-                post.hide();
-            }, () -> log.warn("deleteTargetContent: POST_COMPANION not found, targetId={}", targetId));
-            case POST_FREE -> freePostRepository.findById(targetId).ifPresentOrElse(post -> {
-                if (post.getStatus() == FreePostStatus.DELETED) {
-                    log.warn("deleteTargetContent: POST_FREE already DELETED, targetId={}", targetId);
-                    return;
-                }
-                post.hide();
-            }, () -> log.warn("deleteTargetContent: POST_FREE not found, targetId={}", targetId));
-            case COMMENT -> commentRepository.findById(targetId).ifPresentOrElse(
-                comment -> comment.delete(),
-                () -> log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId));
-            case USER -> accountRepository.findById(targetId).ifPresentOrElse(acc -> {
-                if (acc.getStatus() == AccountStatus.DELETED) {
-                    log.warn("deleteTargetContent: USER already DELETED(탈퇴), targetId={}", targetId);
-                    return;
-                }
-                acc.suspend();
-            }, () -> log.warn("deleteTargetContent: USER not found, targetId={}", targetId));
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
     }
@@ -399,31 +365,6 @@ public class ReportService {
             case MERCHANT -> shopService.findMerchantAccountId(targetId).orElse(null);
             default -> null;
         };
-    }
-
-    private void suspendTargetAuthor(ReportTargetType targetType, Long targetId) {
-        Long authorId = switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId)
-                    .map(CompanionPost::getAuthorId).orElse(null);
-            case POST_FREE -> freePostRepository.findById(targetId)
-                    .map(FreePost::getAuthorId).orElse(null);
-            case COMMENT -> commentRepository.findById(targetId)
-                    .map(Comment::getAuthorId).orElse(null);
-            case USER -> targetId;
-            default -> null;
-        };
-
-        if (authorId == null) {
-            log.warn("suspendTargetAuthor: authorId 조회 실패, targetType={}, targetId={}", targetType, targetId);
-            return;
-        }
-        accountRepository.findById(authorId).ifPresentOrElse(acc -> {
-            if (acc.getStatus() == AccountStatus.DELETED) {
-                log.warn("suspendTargetAuthor: 탈퇴 계정 정지 생략, authorId={}", authorId);
-                return;
-            }
-            acc.suspend();
-        }, () -> log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId));
     }
 
     /**
