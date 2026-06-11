@@ -10,7 +10,7 @@ import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
-import com.chunbaetour.domain.search.service.SearchPlacePersonalizationService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,7 +47,7 @@ class PlaceLikeServiceTest {
     private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
     @Mock
-    private SearchPlacePersonalizationService personalizationService;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private PlaceLikeService placeLikeService;

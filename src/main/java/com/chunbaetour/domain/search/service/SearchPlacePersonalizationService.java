@@ -2,11 +2,14 @@ package com.chunbaetour.domain.search.service;
 
 import com.chunbaetour.domain.like.dto.CategoryCount;
 import com.chunbaetour.domain.like.repository.UserLikeRepository;
+import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -122,6 +125,15 @@ public class SearchPlacePersonalizationService {
         } catch (Exception e) {
             log.warn("[Personalization] 캐시 무효화 실패. userId={}, error={}", userId, e.getMessage());
         }
+    }
+
+    /**
+     * 찜 변경 이벤트를 수신하여 선호 카테고리 캐시를 즉시 무효화한다.
+     * 트랜잭션이 성공적으로 커밋된 후에만 실행된다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onPlaceLikeChanged(PlaceLikeChangedEvent event) {
+        evictCache(event.userId());
     }
 
     // ──────────────────────────────────────────────────────────────────────────

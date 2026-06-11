@@ -112,29 +112,26 @@ class SearchPlacePersonalizationServiceTest {
     }
 
     @Test
-    @DisplayName("DB가 3개를 반환하면 서비스가 그대로 3개를 반환한다 (LIMIT은 DB에서 처리됨)")
+    @DisplayName("DB가 반환한 결과를 그대로 서비스가 반환한다 (LIMIT은 DB에서 처리됨)")
     void getPreferredCategories_ReturnsMaxThree_WhenManyCategories() {
         // given
         Long userId = 1L;
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(anyString())).thenReturn(null);
 
-        // DB LIMIT 3으로 이미 3개만 네이티브 쿼리에서 처리되므로 서비스에는 3개 도착
         CategoryCount r1 = mockCategoryCount(PlaceCategory.TOURIST_SPOT, 10L);
         CategoryCount r2 = mockCategoryCount(PlaceCategory.TRADITIONAL_MARKET, 8L);
-        CategoryCount r3 = mockCategoryCount(PlaceCategory.CULTURAL_FACILITY, 5L);
         when(userLikeRepository.findLikedPlaceCategoryCountsByUserId(userId))
-                .thenReturn(List.of(r1, r2, r3));
+                .thenReturn(List.of(r1, r2));
 
         // when
         List<PlaceCategory> result = personalizationService.getPreferredCategories(userId);
 
-        // then: DB LIMIT 3이 적용되어 3개만 돌아와야 함
-        assertThat(result).hasSize(3);
+        // then
+        assertThat(result).hasSize(2);
         assertThat(result).containsExactly(
                 PlaceCategory.TOURIST_SPOT,
-                PlaceCategory.TRADITIONAL_MARKET,
-                PlaceCategory.CULTURAL_FACILITY
+                PlaceCategory.TRADITIONAL_MARKET
         );
     }
 

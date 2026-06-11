@@ -102,8 +102,10 @@ public class SearchService {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
         }
 
-        // 1. 선호 카테고리 조회 (로그인 유저인 경우)
-        List<PlaceCategory> preferredCategories = personalizationService.getPreferredCategories(userId);
+        // 1. 선호 카테고리 조회 (첫 페이지 요청 & 로그인 유저인 경우에만)
+        List<PlaceCategory> preferredCategories = cursorId == null
+                ? personalizationService.getPreferredCategories(userId)
+                : Collections.emptyList();
 
         // 2. 조회 (hasNext 판별을 위해 size + 1 개 조회)
         // [개인화 정렬 설계 원칙 - In-memory Boost]

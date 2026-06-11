@@ -25,6 +25,7 @@ import com.chunbaetour.domain.support.AbstractIntegrationTest;
 
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,8 +46,20 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
     @Autowired
     private UserLikeService userLikeService;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private Long testUserId;
     private Long firstPageCursor;
+
+    @BeforeEach
+    void setUpFullTextIndex() {
+        try {
+            jdbcTemplate.execute("CREATE FULLTEXT INDEX idx_places_name_fulltext ON places(name) WITH PARSER ngram");
+        } catch (Exception e) {
+            // 인덱스가 이미 존재하는 경우 무시
+        }
+    }
 
     @BeforeEach
     void setUp() {
@@ -63,7 +76,7 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
         Place place1 = Place.builder().name("통합테스트 장소1").category(PlaceCategory.TRADITIONAL_MARKET).address("주소1").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
         Place place2 = Place.builder().name("통합테스트 장소2").category(PlaceCategory.TOURIST_SPOT).address("주소2").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
         Place place3 = Place.builder().name("통합테스트 장소3").category(PlaceCategory.TRADITIONAL_MARKET).address("주소3").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
-        Place place4 = Place.builder().name("통합테스트 장소4").category(PlaceCategory.CULTURAL_FACILITY).address("주소4").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
+        Place place4 = Place.builder().name("통합테스트 장소4").category(PlaceCategory.TRADITIONAL_MARKET).address("주소4").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
         Place place5 = Place.builder().name("통합테스트 장소5").category(PlaceCategory.TOURIST_SPOT).address("주소5").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
 
         placeRepository.saveAll(List.of(place1, place2, place3, place4, place5));
