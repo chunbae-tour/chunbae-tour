@@ -218,67 +218,7 @@ public class PlaceQueryRepository {
         return cursorId != null ? place.id.lt(cursorId) : null; // desc 정렬이므로 lt
     }
 
-    /**
-     * 개인화 관광지 검색 (Phase 9-2) — 선호 카테고리 부스팅 정렬.
-     * <p>
-     * 기본 검색({@link #searchByKeyword})과 동일한 필터 조건을 사용하되,
-     * {@code preferredCategories}에 포함된 카테고리를 최상단에 노출한다.
-     * </p>
-     *
-     * <b>[정렬 전략]</b><br>
-     * QueryDSL {@code orderBy}에 {@code CASE WHEN} 표현식을 추가하여
-     * 선호 카테고리의 결과를 {@code priority = 0}, 나머지를 {@code priority = 1}로
-     * 분리하고, 각 그룹 내에서는 {@code place.id DESC} 기본 정렬을 유지한다.
-     * </p>
-     *
-     * @param keyword             검색어 (null 허용)
-     * @param category            카테고리 필터 (null → 전체)
-     * @param region              지역 필터 (null → 전체)
-     * @param cursorId            커서용 마지막 placeId (null → 첫 페이지)
-     * @param size                페이지 사이즈
-     * @param preferredCategories 선호 카테고리 목록 (빈 리스트 → 기본 정렬)
-     * @return 선호 카테고리가 최상단에 배치된 관광지 검색 결과
-     */
-    public List<SearchPlaceResponse> searchByKeywordWithPersonalization(
-            String keyword, PlaceCategory category, String region,
-            Long cursorId, int size, List<PlaceCategory> preferredCategories) {
 
-        // 선호 카테고리가 없으면 기본 검색으로 위임 (불필요한 CASE WHEN 회피)
-        if (preferredCategories == null || preferredCategories.isEmpty()) {
-            return searchByKeyword(keyword, category, region, cursorId, size);
-        }
-
-        // CASE WHEN p.category IN (:preferredCategories) THEN 0 ELSE 1 END
-        // 선호 카테고리 → priority 0 (최상단), 나머지 → priority 1
-        com.querydsl.core.types.dsl.NumberExpression<Integer> priorityExpr =
-                new com.querydsl.core.types.dsl.CaseBuilder()
-                        .when(place.category.in(preferredCategories))
-                        .then(0)
-                        .otherwise(1);
-
-        return queryFactory
-                .select(Projections.constructor(SearchPlaceResponse.class,
-                        place.id,
-                        place.name,
-                        place.category,
-                        place.address,
-                        place.thumbnailUrl,
-                        place.rating,
-                        place.reviewCount
-                ))
-                .from(place)
-                .where(
-                        keywordContains(keyword),
-                        categoryEq(category),
-                        regionContains(region),
-                        cursorConditionForSearch(cursorId),
-                        place.status.eq(PlaceStatus.ACTIVE)
-                )
-                // 1차: 선호 카테고리 우선(0), 2차: place.id 내림차순(최신순)
-                .orderBy(priorityExpr.asc(), place.id.desc())
-                .limit(size + 1) // hasNext 판단을 위해 1개 더 조회
-                .fetch();
-    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // 자동완성 (Suggest) 쿼리

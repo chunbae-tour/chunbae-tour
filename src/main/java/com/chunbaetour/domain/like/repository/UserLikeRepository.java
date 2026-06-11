@@ -49,7 +49,7 @@ public interface UserLikeRepository extends JpaRepository<UserLike, Long> {
     @Query(value = "SELECT p.category AS category, COUNT(ul.id) AS count " +
                    "FROM user_likes ul " +
                    "JOIN places p ON ul.target_id = p.id " +
-                   "WHERE ul.user_id = :userId AND ul.target_type = 'PLACE' " +
+                   "WHERE ul.user_id = :userId AND ul.target_type = 'PLACE' AND p.status = 'ACTIVE' " +
                    "GROUP BY p.category " +
                    "ORDER BY count DESC " +
                    "LIMIT 3",

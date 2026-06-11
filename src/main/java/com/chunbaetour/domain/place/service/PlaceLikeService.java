@@ -12,6 +12,7 @@ import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.search.service.SearchPlacePersonalizationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -40,6 +41,7 @@ public class PlaceLikeService {
     private final PlaceRepository placeRepository;
     private final PlaceQueryRepository placeQueryRepository;
     private final StringRedisTemplate stringRedisTemplate;
+    private final SearchPlacePersonalizationService personalizationService;
 
     private static final String SEED_AND_INCR_SCRIPT = 
             "local key = KEYS[1]\n" +
@@ -83,6 +85,7 @@ public class PlaceLikeService {
         registerAfterCommit(() -> {
             seedAndIncrement(placeId, dbLikeCount);
             evictDetailCache(placeId);
+            personalizationService.evictCache(userId);
         });
 
         log.info("Place like added: userId={}, placeId={}", userId, placeId);
@@ -105,6 +108,7 @@ public class PlaceLikeService {
         registerAfterCommit(() -> {
             seedAndDecrement(placeId, dbLikeCount);
             evictDetailCache(placeId);
+            personalizationService.evictCache(userId);
         });
 
         log.info("Place like removed: userId={}, placeId={}", userId, placeId);

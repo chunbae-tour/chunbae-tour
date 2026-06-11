@@ -26,6 +26,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -101,32 +102,36 @@ public class SearchService {
             throw new BusinessException(ErrorCode.SEARCH_KEYWORD_TOO_LONG);
         }
 
-        // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
-        // [개인화 정렬 설계 원칙]
-        // 개인화 정렬(CASE WHEN priority)은 첫 페이지(cursorId=null)에만 적용한다.
-        // 이유: 개인화 정렬은 "선호 카테고리 그룹(0) → 일반 그룹(1)"으로 분리하므로,
-        // 커서(placeId)가 그룹 경계를 넘어가면 "place.id < cursorId" 조건이 일반 그룹의
-        // 높은 ID를 누락시키는 논리적 불일치가 발생한다.
-        // 2페이지부터는 기본 정렬(place.id DESC)로 전환하여 커서 정확성을 보장한다.
-        boolean isFirstPage = (cursorId == null);
-        List<PlaceCategory> preferredCategories = (isFirstPage)
-                ? personalizationService.getPreferredCategories(userId)
-                : Collections.emptyList();
+        // 1. 선호 카테고리 조회 (로그인 유저인 경우)
+        List<PlaceCategory> preferredCategories = personalizationService.getPreferredCategories(userId);
 
-        List<SearchPlaceResponse> items = preferredCategories.isEmpty()
-                ? placeQueryRepository.searchByKeyword(normalized, category, region, cursorId, size)
-                : placeQueryRepository.searchByKeywordWithPersonalization(normalized, category, region, cursorId, size, preferredCategories);
+        // 2. 조회 (hasNext 판별을 위해 size + 1 개 조회)
+        // [개인화 정렬 설계 원칙 - In-memory Boost]
+        // DB 단에서 CASE WHEN 정렬과 cursor(id) 조건을 섞어 쓰면 커서 경계를 넘을 때 데이터 누락이 발생함.
+        // 이를 완벽히 방지하기 위해 DB에서는 언제나 일관된 id DESC(최신순) 정렬로 데이터를 가져와 커서 무결성을 100% 보장함.
+        // 그 후, 가져온 "현재 페이지 결과(resultItems)" 내부에서만 선호 카테고리를 맨 위로 끌어올리는 메모리 정렬을 수행함.
+        List<SearchPlaceResponse> items = placeQueryRepository.searchByKeyword(normalized, category, region, cursorId, size);
 
-        log.debug("[SearchService] 개인화 검색 - userId={}, isFirstPage={}, preferredCategories={}", userId, isFirstPage, preferredCategories);
+        log.debug("[SearchService] 개인화 검색(In-memory Boost) - userId={}, preferredCategories={}", userId, preferredCategories);
 
-        // 2. hasNext 및 nextCursor 계산
+        // 3. hasNext 및 nextCursor 계산
         boolean hasNext = items.size() > size;
         List<SearchPlaceResponse> resultItems = hasNext ? items.subList(0, size) : items;
 
+        // nextCursor는 메모리 정렬 "이전"의 원본 순서(DB에서 준 순서) 기준의 마지막 ID여야만 다음 쿼리가 정확함.
         Long nextCursor = resultItems.isEmpty() ? null : resultItems.get(resultItems.size() - 1).placeId();
         String nextCursorStr = nextCursor != null ? String.valueOf(nextCursor) : null;
 
-        // 3. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
+        // 4. In-memory Boost 정렬 적용 (현재 페이지 내부에서만 선호도 기반 재정렬)
+        if (!preferredCategories.isEmpty() && !resultItems.isEmpty()) {
+            List<SearchPlaceResponse> modifiableList = new ArrayList<>(resultItems);
+            modifiableList.sort(Comparator.comparing((SearchPlaceResponse p) ->
+                    preferredCategories.contains(p.category()) ? 0 : 1
+            ).thenComparing(SearchPlaceResponse::placeId, Comparator.reverseOrder()));
+            resultItems = modifiableList;
+        }
+
+        // 5. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
         // 페이지네이션(cursorId != null) 시 검색 횟수가 중복으로 증가하는 어뷰징(Abuse)을 원천 차단한다.
         if (searchSource.isTrackable() && !resultItems.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
