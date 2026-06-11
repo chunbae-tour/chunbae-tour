@@ -103,6 +103,7 @@ class QrPayServiceTest {
     private static final Long MENU_ID_2 = 101L;
     private static final String PAY_REQUEST_ID = "req-001";
     private static final Long AMOUNT = 5_000L;
+    private static final String QR_NONCE = "shop-qr-nonce-001"; // 가게 현재 nonce — 결제 요청 nonce와 일치해야 통과 (KAN-253)
     // 고정 Clock(10:00:00) 기준: NOT_EXPIRED > 10:00, EXPIRED_AT < 10:00
     private static final LocalDateTime NOT_EXPIRED = LocalDateTime.of(2026, 5, 25, 10, 30, 0);
     private static final LocalDateTime EXPIRED_AT = LocalDateTime.of(2026, 5, 25, 9, 55, 0);
@@ -120,6 +121,7 @@ class QrPayServiceTest {
                 .description("전통 떡볶이 전문점")
                 .build();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        ReflectionTestUtils.setField(shop, "qrNonce", QR_NONCE); // 고정 nonce — 결제 요청 nonce 검증용
         return shop;
     }
 
@@ -154,13 +156,13 @@ class QrPayServiceTest {
         Menu menu1 = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
         Menu menu2 = createMenu(MENU_ID_2, SHOP_ID, "순대", 4000L, true);
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 2),
                 new QrPayItemRequest(MENU_ID_2, 1)
         ));
 
         Wallet wallet = createWallet(50_000L);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1, MENU_ID_2))).willReturn(List.of(menu1, menu2));
 
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
@@ -181,18 +183,35 @@ class QrPayServiceTest {
     }
 
     @Test
+    @DisplayName("QR 결제 요청 생성 — 재발급으로 무효화된 옛 nonce: QR_PAY_NONCE_MISMATCH (KAN-253)")
+    void createQrPayRequest_staleNonce_rejected() {
+        // given — 가게 현재 nonce는 QR_NONCE인데 옛 QR payload의 nonce로 요청
+        Shop shop = createActiveShop();
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, "stale-old-nonce", List.of(
+                new QrPayItemRequest(MENU_ID_1, 1)
+        ));
+
+        // then — nonce 검증은 메뉴/지갑 조회 전이므로 그 스텁 없이도 즉시 거절
+        assertThatThrownBy(() -> qrPayService.createQrPayRequest(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.QR_PAY_NONCE_MISMATCH);
+    }
+
+    @Test
     @DisplayName("QR 결제 요청 생성 — 메뉴 스냅샷 내용 검증")
     void createQrPayRequest_snapshotContents() {
         // given
         Shop shop = createActiveShop();
         Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 3)
         ));
 
         Wallet wallet = createWallet(50_000L);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
 
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
@@ -215,9 +234,9 @@ class QrPayServiceTest {
     void createQrPayRequest_duplicateMenuId_throws() {
         // given — 같은 menuId(100)를 두 번 포함한 요청
         Shop shop = createActiveShop();
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1),
                 new QrPayItemRequest(MENU_ID_1, 2)
         ));
@@ -233,8 +252,8 @@ class QrPayServiceTest {
     @DisplayName("QR 결제 요청 생성 — 가게 없음 → SHOP_NOT_FOUND")
     void createQrPayRequest_shopNotFound_throws() {
         // given
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.empty());
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -251,9 +270,9 @@ class QrPayServiceTest {
         // given — SUSPENDED 상태는 빌더로 생성 불가, mock 사용
         Shop shop = mock(Shop.class);
         given(shop.getStatus()).willReturn(ShopStatus.SUSPENDED);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -270,9 +289,9 @@ class QrPayServiceTest {
         // given
         Shop shop = mock(Shop.class);
         given(shop.getStatus()).willReturn(ShopStatus.CLOSED);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -288,10 +307,10 @@ class QrPayServiceTest {
     void createQrPayRequest_menuNotFound_throws() {
         // given — menuRepository가 빈 목록 반환 (해당 menuId 없음)
         Shop shop = createActiveShop();
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of());
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -309,10 +328,10 @@ class QrPayServiceTest {
         Shop shop = createActiveShop();
         Menu menuFromOtherShop = createMenu(MENU_ID_1, 99L, "다른가게메뉴", 3000L, true);
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menuFromOtherShop));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -330,11 +349,11 @@ class QrPayServiceTest {
         Shop shop = createActiveShop();
         Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.empty());
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -353,11 +372,11 @@ class QrPayServiceTest {
         Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
 
         Wallet lowWallet = createWallet(3_000L);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(lowWallet));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 2)
         ));
 
@@ -375,10 +394,10 @@ class QrPayServiceTest {
         Shop shop = createActiveShop();
         Menu unavailableMenu = createMenu(MENU_ID_1, SHOP_ID, "순대", 4000L, false);
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(unavailableMenu));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -396,10 +415,10 @@ class QrPayServiceTest {
         Shop shop = createActiveShop();
         Menu zeroMenu = createMenu(MENU_ID_1, SHOP_ID, "공짜메뉴", 0L, true);
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(zeroMenu));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 3)
         ));
 
@@ -416,12 +435,12 @@ class QrPayServiceTest {
         // given — validateShop 직후 existsBy 체크에서 차단 (메뉴·지갑 조회 전 조기 종료)
         Shop shop = createActiveShop();
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(qrPayRequestRepository.existsByUserIdAndShopIdAndStatusAndExpiredAtAfter(
                 eq(USER_ID), eq(SHOP_ID), eq(QrPayStatus.PENDING), any(LocalDateTime.class)))
                 .willReturn(true);
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -440,10 +459,10 @@ class QrPayServiceTest {
         Menu hugeMenu1 = createMenu(MENU_ID_1, SHOP_ID, "비싼메뉴1", Long.MAX_VALUE / 2 + 1, true);
         Menu hugeMenu2 = createMenu(MENU_ID_2, SHOP_ID, "비싼메뉴2", Long.MAX_VALUE / 2 + 1, true);
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1, MENU_ID_2))).willReturn(List.of(hugeMenu1, hugeMenu2));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1),
                 new QrPayItemRequest(MENU_ID_2, 1)
         ));
@@ -462,9 +481,9 @@ class QrPayServiceTest {
         Shop shop = mock(Shop.class);
         given(shop.getStatus()).willReturn(ShopStatus.ACTIVE);
         given(shop.getUserId()).willReturn(USER_ID); // 상인 ID = 결제자 ID
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 
@@ -483,13 +502,13 @@ class QrPayServiceTest {
         Menu menu = createMenu(MENU_ID_1, SHOP_ID, "떡볶이", 5000L, true);
         Wallet wallet = createWallet(50_000L);
 
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(shopRepository.findByIdWithLock(SHOP_ID)).willReturn(Optional.of(shop));
         given(menuRepository.findAllById(List.of(MENU_ID_1))).willReturn(List.of(menu));
         given(walletRepository.findByUserId(USER_ID)).willReturn(Optional.of(wallet));
         given(qrPayRequestRepository.saveAndFlush(any(QrPayRequest.class)))
                 .willThrow(new DataIntegrityViolationException("pending_key unique constraint"));
 
-        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, List.of(
+        QrPayCreateRequest request = new QrPayCreateRequest(SHOP_ID, QR_NONCE, List.of(
                 new QrPayItemRequest(MENU_ID_1, 1)
         ));
 

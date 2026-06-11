@@ -9,6 +9,7 @@ import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -95,7 +96,7 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
     @DisplayName("In-memory Boost가 커서 무결성을 해치지 않고 1, 2페이지 모두 정상 노출한다")
     void searchPlaces_WithInMemoryBoost_MaintainsCursorIntegrity() {
         // [1페이지 조회] size = 3
-        CursorPageResponse<SearchPlaceResponse> page1 = searchService.searchPlaces(
+        TypoCorrectedSearchResponse<SearchPlaceResponse> page1 = searchService.searchPlaces(
                 "통합테스트", null, null, null, 3, "127.0.0.1", null, testUserId);
 
         List<SearchPlaceResponse> content1 = page1.content();
@@ -105,14 +106,12 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
         // 1페이지에 노출된 장소 ID들을 수집
         List<Long> page1Ids = content1.stream().map(SearchPlaceResponse::placeId).toList();
         
-        // 메모리 부스트 확인: 선호 카테고리(TOURIST_SPOT)인 장소5(최신)가 상단에 있어야 함.
-        // DB 최신 3개는 보통 place5, place4, place3 임. (id desc 이므로)
-        // 이 중 place5는 선호, place4/3은 비선호. 따라서 부스트 후 순서는: place5, place4, place3 (id desc)
+        // boost 1개(place5)는 무조건 첫 번째 페이지 상단에 노출되거나 섞여 있어야 한다. 
         // 만약 place5가 안 나왔더라도 무조건 중복 없이 3개가 나와야 함.
 
         // [2페이지 조회] 
         Long cursor = Long.valueOf(page1.nextCursor());
-        CursorPageResponse<SearchPlaceResponse> page2 = searchService.searchPlaces(
+        TypoCorrectedSearchResponse<SearchPlaceResponse> page2 = searchService.searchPlaces(
                 "통합테스트", null, null, cursor, 3, "127.0.0.1", null, testUserId);
 
         List<SearchPlaceResponse> content2 = page2.content();
