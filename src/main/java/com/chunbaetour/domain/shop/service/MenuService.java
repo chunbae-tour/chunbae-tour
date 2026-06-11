@@ -10,6 +10,7 @@ import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,21 @@ public class MenuService {
 
     private final ShopRepository shopRepository;
     private final MenuRepository menuRepository;
+
+    /**
+     * 내 가게 메뉴 목록 조회 (KAN-267).
+     * 본인 가게만 조회 — 타인/없는 가게는 SHOP_NOT_FOUND. 상태 무관(SUSPENDED/CLOSED도 조회 허용) — 읽기 작업이므로
+     * 상인이 본인 메뉴를 항상 확인할 수 있어야 함(getMyShop 정책과 일관).
+     * soft-deleted 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함(프론트 비활성 표시).
+     */
+    public List<MenuResponse> getMenus(Long userId, Long shopId) {
+        // 소유권 검증 — ACTIVE 가드 없음(read). 타 가게/없는 가게는 SHOP_001
+        shopRepository.findByIdAndUserId(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        return menuRepository.findByShopIdOrderByIdAsc(shopId)
+                .stream().map(MenuResponse::from).toList();
+    }
 
     /**
      * 메뉴 등록.

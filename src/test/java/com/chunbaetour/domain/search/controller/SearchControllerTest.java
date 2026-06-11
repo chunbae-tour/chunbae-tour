@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.place.type.PlaceCategory;
+import com.chunbaetour.domain.search.dto.response.TypoCorrectedSearchResponse;
 import com.chunbaetour.domain.search.service.IntegratedSearchService;
 import com.chunbaetour.domain.search.service.PopularSearchService;
 import com.chunbaetour.domain.search.service.RecentSearchService;
@@ -50,7 +51,7 @@ class SearchControllerTest {
         // given
         String source = "companion-place-selector";
         given(searchService.searchPlaces(eq("광장시장"), any(), any(), any(), eq(8), any(), eq(source), any()))
-                .willReturn(new CursorPageResponse<>(Collections.emptyList(), null, false, 0));
+                .willReturn(TypoCorrectedSearchResponse.of(new CursorPageResponse<>(Collections.emptyList(), null, false, 0)));
 
         // when & then
         mockMvc.perform(get("/api/v1/search/places")
