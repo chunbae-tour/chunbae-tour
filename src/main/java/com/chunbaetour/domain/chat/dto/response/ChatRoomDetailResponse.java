@@ -1,11 +1,13 @@
 package com.chunbaetour.domain.chat.dto.response;
 
+import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public record ChatRoomDetailResponse(
         Long chatRoomId,
@@ -21,19 +23,30 @@ public record ChatRoomDetailResponse(
 ) {
     public record MemberInfo(
             Long userId,
+            String nickname,
+            String profileImageUrl,
             ChatMemberState memberState,
             LocalDateTime joinedAt
     ) {
-        public static MemberInfo from(ChatRoomMember member) {
+        // account null — 탈퇴 계정 fallback (ChatRoomMemberResponse.from()과 동일 패턴)
+        public static MemberInfo from(ChatRoomMember member, Account account) {
+            if (account == null) {
+                return new MemberInfo(
+                        member.getUserId(), "탈퇴한 사용자", null,
+                        member.getMemberState(), member.getJoinedAt());
+            }
             return new MemberInfo(
                     member.getUserId(),
+                    account.getNickname(),
+                    account.getProfileImageUrl(),
                     member.getMemberState(),
                     member.getJoinedAt()
             );
         }
     }
 
-    public static ChatRoomDetailResponse from(ChatRoom room, List<ChatRoomMember> activeMembers, Long userId) {
+    public static ChatRoomDetailResponse from(
+            ChatRoom room, List<ChatRoomMember> activeMembers, Long userId, Map<Long, Account> accountMap) {
         // 요청자의 memberState — isMember 검증 이후 호출되므로 반드시 존재
         ChatMemberState myMemberState = activeMembers.stream()
                 .filter(m -> m.getUserId().equals(userId))
@@ -50,7 +63,9 @@ public record ChatRoomDetailResponse(
                 room.getMaxMembers(),
                 room.getStatus(),
                 myMemberState,
-                activeMembers.stream().map(MemberInfo::from).toList()
+                activeMembers.stream()
+                        .map(m -> MemberInfo.from(m, accountMap.get(m.getUserId())))
+                        .toList()
         );
     }
 }

@@ -53,31 +53,41 @@ class ChatRoomServiceTest {
 
     @Test
     void getRoomDetail_owner_active_returns_detail() {
-        // OWNER_ACTIVE 멤버는 상세 조회 가능 — 방장 권한 보유자
+        // OWNER_ACTIVE 멤버는 상세 조회 가능 — 방장 권한 보유자, MemberInfo에 nickname/profileImageUrl 포함
         ChatRoom room = stubRoom();
         ChatRoomMember ownerMember = stubMember(USER_ID, ChatMemberState.OWNER_ACTIVE);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
         given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of(ownerMember));
+        Account account = mock(Account.class);
+        given(account.getId()).willReturn(USER_ID);
+        given(account.getNickname()).willReturn("여행자");
+        given(account.getProfileImageUrl()).willReturn("https://cdn.example.com/img.jpg");
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of(account));
 
         ChatRoomDetailResponse response = chatRoomService.getRoomDetail(USER_ID, ROOM_ID);
 
         assertThat(response.chatRoomId()).isEqualTo(ROOM_ID);
         assertThat(response.members()).hasSize(1);
+        assertThat(response.members().get(0).nickname()).isEqualTo("여행자");
+        assertThat(response.members().get(0).profileImageUrl()).isEqualTo("https://cdn.example.com/img.jpg");
     }
 
     @Test
-    void getRoomDetail_member_active_returns_detail() {
-        // MEMBER_ACTIVE 멤버는 상세 조회 가능 — 방장 외 일반 참여자
+    void getRoomDetail_deletedAccount_memberInfoReturnsFallback() {
+        // MEMBER_ACTIVE 멤버지만 Account 삭제(탈퇴) — MemberInfo에 "탈퇴한 사용자"/null fallback
         ChatRoom room = stubRoom();
         ChatRoomMember member = stubMember(USER_ID, ChatMemberState.MEMBER_ACTIVE);
         given(chatRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room));
         given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInOrderByJoinedAtAscIdAsc(eq(ROOM_ID), any()))
                 .willReturn(List.of(member));
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of());
 
         ChatRoomDetailResponse response = chatRoomService.getRoomDetail(USER_ID, ROOM_ID);
 
         assertThat(response.members()).hasSize(1);
+        assertThat(response.members().get(0).nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(response.members().get(0).profileImageUrl()).isNull();
     }
 
     @Test
