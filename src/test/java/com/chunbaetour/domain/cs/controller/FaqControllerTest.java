@@ -10,11 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
+import com.chunbaetour.domain.cs.dto.response.FaqTranslationResponse;
 import com.chunbaetour.domain.cs.service.FaqService;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import com.chunbaetour.domain.translation.type.LanguageCode;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -114,6 +117,40 @@ class FaqControllerTest extends AbstractIntegrationTest {
                         .param("size", "101")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ===== GET /faqs/{faqId}/translation =====
+
+    // USER 인증 → 200 + 번역된 question/answer 반환
+    @Test
+    @DisplayName("FAQ 번역 USER 인증 → 200")
+    void getFaqTranslation_whenUser_returns200() throws Exception {
+        given(faqService.getFaqTranslation(1L, LanguageCode.EN))
+                .willReturn(new FaqTranslationResponse(1L, "Test question", "Test answer", LanguageCode.EN));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/1/translation")
+                        .param("targetLanguage", "EN")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.faqId").value(1))
+                .andExpect(jsonPath("$.data.question").value("Test question"))
+                .andExpect(jsonPath("$.data.answer").value("Test answer"));
+    }
+
+    // 존재하지 않는 FAQ → 404 FAQ_001
+    @Test
+    @DisplayName("FAQ 번역 존재하지 않는 FAQ → 404")
+    void getFaqTranslation_whenFaqNotFound_returns404() throws Exception {
+        given(faqService.getFaqTranslation(999L, LanguageCode.EN))
+                .willThrow(new BusinessException(ErrorCode.FAQ_NOT_FOUND));
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get(BASE_URL + "/999/translation")
+                        .param("targetLanguage", "EN")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.FAQ_NOT_FOUND.getCode()));
     }
 
     private FaqResponse buildFaqResponse(Long id) {
