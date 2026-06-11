@@ -3,7 +3,9 @@ package com.chunbaetour.domain.cs.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
+import com.chunbaetour.domain.cs.dto.response.FaqTranslationResponse;
 import com.chunbaetour.domain.cs.service.FaqService;
+import com.chunbaetour.domain.translation.type.LanguageCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
@@ -11,6 +13,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,5 +35,14 @@ public class FaqController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(required = false) String category) {
         return ApiResponse.success(faqService.getActiveFaqs(cursor, size, category));
+    }
+
+    // 단일 FAQ 번역 (USER) — entity-ID 기반, question/answer를 targetLanguage로 번역 (client content 직접 캐싱 방지)
+    @Operation(summary = "FAQ 번역 조회 (USER)")
+    @GetMapping("/{faqId}/translation")
+    public ApiResponse<FaqTranslationResponse> getFaqTranslation(
+            @PathVariable Long faqId,
+            @RequestParam LanguageCode targetLanguage) {
+        return ApiResponse.success(faqService.getFaqTranslation(faqId, targetLanguage));
     }
 }

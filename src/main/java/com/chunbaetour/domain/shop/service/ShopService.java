@@ -2,10 +2,13 @@ package com.chunbaetour.domain.shop.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
+import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
+import com.chunbaetour.domain.shop.dto.response.AdminShopMarketResponse;
 import com.chunbaetour.domain.shop.dto.response.AdminShopPlaceResponse;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
@@ -23,6 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 내 가게 조회(GET), 가게 정보 수정(PATCH) 담당.
  * 위치(address/lat/lng)는 수정 불가 — 관리자 처리 영역.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -41,6 +46,7 @@ public class ShopService {
     private final ShopWalletRepository shopWalletRepository;
     private final ObjectMapper objectMapper;
     private final PlaceRepository placeRepository;
+    private final TraditionalMarketRepository traditionalMarketRepository;
 
     /**
      * 내 가게 목록 조회.
@@ -105,6 +111,35 @@ public class ShopService {
         Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
+        // qrNonce는 DB NOT NULL 불변식이므로 null이면 데이터 정합성 오류 — 서버 장애로 처리
+        if (shop.getQrNonce() == null) {
+            log.error("[ShopService] qrNonce is null — DB invariant violated: shopId={}", shopId);
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+
+        return QrCodeResponse.from(shop);
+    }
+
+    /**
+     * 내 가게 QR 재발급 (KAN-253). 분실·도용 의심 시 nonce를 새 UUID로 교체 → 옛 QR 무효화.
+     * ACTIVE 가게만 재발급 가능 — SUSPENDED(관리자 정지)/CLOSED(폐업)는 SHOP_INACTIVE.
+     * 재발급된 새 payload(YEOPJEON_PAY:SHOP:{shopId}:{nonce})를 응답으로 반환.
+     */
+    @Transactional
+    public QrCodeResponse reissueMyQrCode(Long userId, Long shopId) {
+        // shopId + userId 조합으로 본인 가게 조회 — 타인 가게 재발급 차단
+        // row lock: 결제요청의 nonce 검증(QrPayService.createQrPayRequest)과 동일 행을 잠가 직렬화 →
+        // nonce 회전이 결제요청과 ms 단위로 겹쳐 옛 nonce가 통과하는 race 차단 (KAN-253 리뷰)
+        Shop shop = shopRepository.findByIdAndUserIdWithLock(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // ACTIVE 가드 — 정지/폐업 가게는 QR 재발급 불가 (SHOP_005)
+        if (shop.getStatus() != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
+
+        // nonce 회전 — 기존 QR payload는 더 이상 결제에 사용 불가
+        shop.reissueQr();
         return QrCodeResponse.from(shop);
     }
 
@@ -191,6 +226,36 @@ public class ShopService {
 
         shop.linkPlace(placeId);
         return AdminShopPlaceResponse.linked(shopId, placeId, place.getName());
+    }
+
+    /**
+     * 관리자 가게-전통시장 수동 연결/해제 (KAN-268). 가게-장소 연결(KAN-217/254)의 전통시장 버전.
+     * traditionalMarketId=null 허용 — 기존 연결 해제.
+     * 상태 무관 연결/해제 허용 — SUSPENDED/CLOSED 가게도 관리자가 시장 연결 정비 가능해야 함 (의도적).
+     * 자동 매칭(B9) 미구현 상태의 보정 수단.
+     *
+     * @return 변경 결과(연결된 전통시장 id·명칭·연결여부). 보정 결과를 echo back 해 관리자가 재조회 없이 확인.
+     */
+    @Transactional
+    public AdminShopMarketResponse updateShopMarket(Long shopId, Long traditionalMarketId) {
+        // 가게 조회 — 없으면 SHOP_001
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // 해제 요청(null) — 즉시 연결 해제 후 해제 결과 반환
+        if (traditionalMarketId == null) {
+            shop.linkTraditionalMarket(null);
+            return AdminShopMarketResponse.unlinked(shopId);
+        }
+
+        // 연결 요청 — 전통시장 존재 검증 + 응답에 담을 시장명 확보
+        // 가게-장소(updateShopPlace)와 달리 status != DELETED 필터 없음 — TraditionalMarket은 soft-delete 자체가 없어
+        // 현재 검증할 상태가 없음. 향후 market soft-delete 도입 시 여기에 DELETED 필터 추가 필요. (KAN-268 리뷰)
+        TraditionalMarket market = traditionalMarketRepository.findById(traditionalMarketId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MARKET_NOT_FOUND));
+
+        shop.linkTraditionalMarket(traditionalMarketId);
+        return AdminShopMarketResponse.linked(shopId, traditionalMarketId, market.getName());
     }
 
     /**
