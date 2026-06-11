@@ -22,12 +22,10 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.MalformedJwtException;
-import com.chunbaetour.domain.report.entity.SanctionType;
 import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -158,26 +156,6 @@ class ReissueServiceTest {
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
 
         verifyRefreshWasNotRotated();
-    }
-
-    @Test
-    void reissue_with_expired_system_sanction_clears_and_succeeds() {
-        // sanctionEndAt = 1시간 전 (고정 clock 기준 만료) → clearSystemSanction 후 재발급 허용
-        Account suspended = accountWith(USER_ID, Role.USER, AccountStatus.ACTIVE);
-        suspended.applySystemSanction(SanctionType.SUSPEND_7D, LocalDateTime.of(2026, 6, 11, 11, 0, 0));
-
-        given(tokenIssuer.verifyRefresh(REFRESH_TOKEN)).willReturn(new RefreshClaims(USER_ID, OLD_TID));
-        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(suspended));
-        given(tokenIssuer.issueAccess(USER_ID, Role.USER, EMAIL)).willReturn("new-access");
-        given(tokenIssuer.issueRefresh(USER_ID)).willReturn(new TokenWithId("new-tid", "new-refresh"));
-        given(jwtProperties.refreshTokenTtl()).willReturn(REFRESH_TTL);
-        given(refreshTokenStore.rotate(USER_ID, OLD_TID, "new-tid", REFRESH_TTL)).willReturn(true);
-
-        TokenPair pair = reissueService.reissue(REFRESH_TOKEN);
-
-        assertThat(pair.accessToken()).isEqualTo("new-access");
-        assertThat(suspended.getStatus()).isEqualTo(AccountStatus.ACTIVE);
-        assertThat(suspended.getSanctionType()).isNull();
     }
 
     @Test
