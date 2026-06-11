@@ -21,6 +21,7 @@ public class SanctionListener {
         sanctionService.handleReportAccepted(
                 event.reportId(),
                 event.reportedUserId(),
-                event.targetType());
+                event.targetType(),
+                event.acceptedCount());
     }
 }

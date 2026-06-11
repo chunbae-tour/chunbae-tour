@@ -2,11 +2,9 @@ package com.chunbaetour.domain.report.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
-import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.entity.SanctionType;
 import com.chunbaetour.domain.report.entity.UserSanction;
-import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.repository.UserSanctionRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -31,7 +29,6 @@ public class SanctionService {
 
     private final UserSanctionRepository userSanctionRepository;
     private final AccountRepository accountRepository;
-    private final ReportRepository reportRepository;
     private final Clock clock;
 
     /**
@@ -39,14 +36,12 @@ public class SanctionService {
      * ReportAcceptedEvent → SanctionListener → 본 메서드 (BEFORE_COMMIT, 동일 트랜잭션).
      */
     @Transactional
-    public void handleReportAccepted(Long reportId, Long userId, ReportTargetType targetType) {
+    public void handleReportAccepted(Long reportId, Long userId, ReportTargetType targetType,
+                                     int acceptedCount) {
         LocalDateTime now = LocalDateTime.now(clock);
 
-        // 1. 해당 도메인 누적 RESOLVED 건수
-        int count = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                userId, targetType, ReportStatus.RESOLVED);
-
-        SanctionType calculated = SanctionType.fromCount(count);
+        // 1. 이벤트에서 전달받은 누적 RESOLVED 건수로 제재 단계 계산
+        SanctionType calculated = SanctionType.fromCount(acceptedCount);
         if (calculated == SanctionType.NONE) return;
 
         // 2. 이미 같은 단계 이상 집행됐으면 스킵 (중복 제재 방지)
@@ -63,7 +58,7 @@ public class SanctionService {
         LocalDateTime endedAt = calculateEndAt(calculated, now);
         UserSanction sanction = UserSanction.create(
                 userId, reportId, targetType, calculated,
-                "누적 신고 " + count + "건 도달 — 자동 제재", now, endedAt);
+                "누적 신고 " + acceptedCount + "건 도달 — 자동 제재", now, endedAt);
         userSanctionRepository.save(sanction);
 
         log.info("[제재] userId={} targetType={} sanctionType={} endedAt={}", userId, targetType, calculated, endedAt);

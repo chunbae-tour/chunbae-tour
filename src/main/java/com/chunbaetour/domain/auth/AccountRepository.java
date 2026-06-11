@@ -171,6 +171,9 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     /** 특정 시각 이후 가입 계정 수 — 오늘 신규 가입 카운트용. S03 대시보드 의존 (KAN-181). */
     long countByCreatedAtGreaterThanEqual(LocalDateTime start);
 
-    /** 시스템 제재 만료 계정 목록 — SuspendExpiryScheduler 일괄 해제용. PERMANENT(sanction_end_at IS NULL) 자동 제외. */
-    List<Account> findBySanctionEndAtBefore(LocalDateTime now);
+    /** 시스템 제재 만료 계정 목록 — SuspendExpiryScheduler 일괄 해제용.
+     * status=SUSPENDED 필터: 이미 해제된(ACTIVE) 계정의 stale 필드 재처리 방지.
+     * PERMANENT(sanction_end_at IS NULL)는 조건 불충족으로 자동 제외. */
+    @Query("SELECT a FROM Account a WHERE a.status = com.chunbaetour.domain.auth.AccountStatus.SUSPENDED AND a.sanctionEndAt < :now")
+    List<Account> findExpiredSystemSanctions(@Param("now") LocalDateTime now);
 }

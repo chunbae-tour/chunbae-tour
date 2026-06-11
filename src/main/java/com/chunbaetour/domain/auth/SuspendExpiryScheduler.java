@@ -46,7 +46,7 @@ public class SuspendExpiryScheduler {
         }
 
         // 2. Account 정지 만료 일괄 해제
-        List<Account> expiredAccounts = accountRepository.findBySanctionEndAtBefore(now);
+        List<Account> expiredAccounts = accountRepository.findExpiredSystemSanctions(now);
         expiredAccounts.forEach(Account::clearSystemSanction);
         if (!expiredAccounts.isEmpty()) {
             log.info("[제재 만료] Account {}건 ACTIVE 복구 (기준: {})", expiredAccounts.size(), now);

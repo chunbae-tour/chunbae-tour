@@ -149,6 +149,20 @@ class AccountTest {
     }
 
     @Test
+    void unsuspend_after_system_sanction_clears_sanction_fields() {
+        // 시스템 제재 중 관리자 수동 해제 → sanctionType/sanctionEndAt 잔류 방지
+        // 스케줄러가 ACTIVE 계정의 stale 필드를 clearSystemSanction으로 재처리하는 버그 차단
+        Account account = Account.registerUser("sys-unsuspend@example.com", "hash", "시스템해제");
+        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
+
+        account.unsuspend();
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(account.getSanctionType()).isNull();
+        assertThat(account.getSanctionEndAt()).isNull();
+    }
+
+    @Test
     void unsuspend_on_deleted_account_throws() {
         Account account = Account.createForSeed(
                 "deletedunsuspend@example.com", "hash", "탈퇴해제", Role.USER, AccountStatus.DELETED);
@@ -185,6 +199,19 @@ class AccountTest {
         assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
         assertThat(account.getSanctionType()).isEqualTo(SanctionType.SUSPEND_7D);
         assertThat(account.getSanctionEndAt()).isEqualTo(endAt);
+    }
+
+    @Test
+    void applySystemSanction_does_not_downgrade_existing_higher_sanction() {
+        // 크로스도메인 집계가 낮은 maxType으로 applySystemSanction 호출 시 기존 높은 제재 보호
+        Account account = Account.registerUser("nodeg@example.com", "hash", "다운그레이드방지");
+        account.applySystemSanction(SanctionType.PERMANENT, null);
+
+        // PERMANENT 계정에 SUSPEND_7D 시도 → 무시
+        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
+
+        assertThat(account.getSanctionType()).isEqualTo(SanctionType.PERMANENT);
+        assertThat(account.getSanctionEndAt()).isNull();
     }
 
     @Test

@@ -277,15 +277,19 @@ public class Account {
         this.status = AccountStatus.ACTIVE;
         this.suspendedReason = null;
         this.suspendedUntil = null;
+        this.sanctionType = null;
+        this.sanctionEndAt = null;
     }
 
     /**
      * 시스템 자동 제재 적용 — 도메인별 신고 누적 또는 크로스도메인 트리거.
      * WARNING과 NONE은 계정 정지를 유발하지 않으므로 무시.
+     * 기존 제재가 신규보다 높거나 같으면 덮어쓰지 않음 (다운그레이드 방지).
      */
     public void applySystemSanction(SanctionType type, LocalDateTime sanctionEndAt) {
         if (this.status == AccountStatus.DELETED) return;
         if (type == SanctionType.WARNING || type == SanctionType.NONE) return;
+        if (this.sanctionType != null && !type.isHigherThan(this.sanctionType)) return;
         this.status = AccountStatus.SUSPENDED;
         this.sanctionType = type;
         this.sanctionEndAt = sanctionEndAt;

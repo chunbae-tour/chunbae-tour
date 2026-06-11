@@ -45,7 +45,7 @@ class SuspendExpirySchedulerTest {
                 1L, 10L, ReportTargetType.USER, SanctionType.SUSPEND_7D,
                 "7일 제재", NOW.minusDays(8), NOW.minusHours(1));
         given(userSanctionRepository.findExpiredUnreleasedSanctions(any())).willReturn(List.of(expired));
-        given(accountRepository.findBySanctionEndAtBefore(any())).willReturn(List.of());
+        given(accountRepository.findExpiredSystemSanctions(any())).willReturn(List.of());
 
         scheduler.releaseExpiredSanctions();
 
@@ -58,7 +58,7 @@ class SuspendExpirySchedulerTest {
         Account account = Account.registerUser("exp@test.com", "hash", "만료계정");
         account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.minusHours(1));
         given(userSanctionRepository.findExpiredUnreleasedSanctions(any())).willReturn(List.of());
-        given(accountRepository.findBySanctionEndAtBefore(any())).willReturn(List.of(account));
+        given(accountRepository.findExpiredSystemSanctions(any())).willReturn(List.of(account));
 
         scheduler.releaseExpiredSanctions();
 
@@ -68,9 +68,21 @@ class SuspendExpirySchedulerTest {
     }
 
     @Test
+    void releaseExpiredSanctions_does_not_process_active_account_with_stale_sanction_fields() {
+        // unsuspend() 후 sanctionEndAt 잔류 시 스케줄러가 재처리하는 버그 회귀 방지
+        // findExpiredSystemSanctions 쿼리가 status=SUSPENDED 필터 적용하므로 ACTIVE 계정은 반환 안 됨
+        given(userSanctionRepository.findExpiredUnreleasedSanctions(any())).willReturn(List.of());
+        given(accountRepository.findExpiredSystemSanctions(any())).willReturn(List.of());
+
+        scheduler.releaseExpiredSanctions();
+
+        verify(accountRepository, never()).save(any());
+    }
+
+    @Test
     void releaseExpiredSanctions_no_expired_records_does_nothing() {
         given(userSanctionRepository.findExpiredUnreleasedSanctions(any())).willReturn(List.of());
-        given(accountRepository.findBySanctionEndAtBefore(any())).willReturn(List.of());
+        given(accountRepository.findExpiredSystemSanctions(any())).willReturn(List.of());
 
         scheduler.releaseExpiredSanctions();
 
