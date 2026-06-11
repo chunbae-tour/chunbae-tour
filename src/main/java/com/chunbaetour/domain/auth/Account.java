@@ -289,6 +289,8 @@ public class Account {
     public void applySystemSanction(SanctionType type, LocalDateTime sanctionEndAt) {
         if (this.status == AccountStatus.DELETED) return;
         if (type == SanctionType.WARNING || type == SanctionType.NONE) return;
+        // 관리자 수동 정지(sanctionType=null+SUSPENDED)는 시스템 제재로 덮어쓰지 않음
+        if (this.status == AccountStatus.SUSPENDED && this.sanctionType == null) return;
         if (this.sanctionType != null && !type.isHigherThan(this.sanctionType)) return;
         this.status = AccountStatus.SUSPENDED;
         this.sanctionType = type;

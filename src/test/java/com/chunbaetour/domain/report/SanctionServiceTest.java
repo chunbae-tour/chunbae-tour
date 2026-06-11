@@ -160,7 +160,30 @@ class SanctionServiceTest {
     }
 
     @Test
+    void calculateEndAt_SUSPEND_30D_returns_plus30days() {
+        assertThat(sanctionService.calculateEndAt(SanctionType.SUSPEND_30D, NOW))
+                .isEqualTo(NOW.plusDays(30));
+    }
+
+    @Test
     void calculateEndAt_PERMANENT_returns_null() {
         assertThat(sanctionService.calculateEndAt(SanctionType.PERMANENT, NOW)).isNull();
+    }
+
+    // ── SanctionType.fromCount() 경계값 ───────────────────────────────────────
+
+    @Test
+    void fromCount_all_thresholds_and_below_boundary() {
+        // 임계값 정확성: 3/5/10/15 + 각 경계 바로 아래
+        assertThat(SanctionType.fromCount(0)).isEqualTo(SanctionType.NONE);
+        assertThat(SanctionType.fromCount(2)).isEqualTo(SanctionType.NONE);      // 3 미만
+        assertThat(SanctionType.fromCount(3)).isEqualTo(SanctionType.WARNING);
+        assertThat(SanctionType.fromCount(4)).isEqualTo(SanctionType.WARNING);   // 5 미만
+        assertThat(SanctionType.fromCount(5)).isEqualTo(SanctionType.SUSPEND_7D);
+        assertThat(SanctionType.fromCount(9)).isEqualTo(SanctionType.SUSPEND_7D); // 10 미만
+        assertThat(SanctionType.fromCount(10)).isEqualTo(SanctionType.SUSPEND_30D);
+        assertThat(SanctionType.fromCount(14)).isEqualTo(SanctionType.SUSPEND_30D); // 15 미만
+        assertThat(SanctionType.fromCount(15)).isEqualTo(SanctionType.PERMANENT);
+        assertThat(SanctionType.fromCount(99)).isEqualTo(SanctionType.PERMANENT);
     }
 }

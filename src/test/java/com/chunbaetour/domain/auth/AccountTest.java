@@ -202,6 +202,15 @@ class AccountTest {
     }
 
     @Test
+    void applySystemSanction_PERMANENT_sets_SUSPENDED_and_null_sanctionEndAt() {
+        Account account = Account.registerUser("perm-apply@example.com", "hash", "영구정지대상");
+        account.applySystemSanction(SanctionType.PERMANENT, null);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(account.getSanctionType()).isEqualTo(SanctionType.PERMANENT);
+        assertThat(account.getSanctionEndAt()).isNull();
+    }
+
+    @Test
     void applySystemSanction_does_not_downgrade_existing_higher_sanction() {
         // 크로스도메인 집계가 낮은 maxType으로 applySystemSanction 호출 시 기존 높은 제재 보호
         Account account = Account.registerUser("nodeg@example.com", "hash", "다운그레이드방지");
@@ -211,6 +220,20 @@ class AccountTest {
         account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
 
         assertThat(account.getSanctionType()).isEqualTo(SanctionType.PERMANENT);
+        assertThat(account.getSanctionEndAt()).isNull();
+    }
+
+    @Test
+    void applySystemSanction_does_not_override_manual_suspension() {
+        // 관리자 수동 정지(sanctionType=null) 계정에 시스템 제재 시도 → 무시
+        // 방치 시 스케줄러가 7일 후 clearSystemSanction()으로 관리자 무기한 정지를 해제하는 버그 방지
+        Account account = Account.registerUser("manual-susp@example.com", "hash", "수동정지");
+        account.suspend("욕설 신고", null);
+
+        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
+
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(account.getSanctionType()).isNull();
         assertThat(account.getSanctionEndAt()).isNull();
     }
 

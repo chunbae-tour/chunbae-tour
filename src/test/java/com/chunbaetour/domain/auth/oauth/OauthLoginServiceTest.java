@@ -126,6 +126,51 @@ class OauthLoginServiceTest {
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
     }
 
+    @DisplayName("시스템 제재 만료 계정 → clearSystemSanction 후 로그인 허용")
+    @Test
+    void suspendedWithExpiredSanction_clears_and_succeeds() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-exp", "exp@example.com", "만료유저"));
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(10L);
+        when(account.getRole()).thenReturn(Role.USER);
+        when(account.getStatus()).thenReturn(AccountStatus.SUSPENDED);
+        when(account.isSystemSanctionExpired(any())).thenReturn(true);
+        when(account.getEmail()).thenReturn("exp@example.com");
+        when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-exp"))
+                .thenReturn(Optional.of(account));
+        when(tokenIssuer.issueAccess(10L, Role.USER, "exp@example.com")).thenReturn("access-exp");
+        when(tokenIssuer.issueRefresh(10L)).thenReturn(new TokenWithId("tid-exp", "refresh-exp"));
+        when(jwtProperties.refreshTokenTtl()).thenReturn(Duration.ofDays(7));
+
+        OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback");
+
+        assertThat(result.needSignup()).isFalse();
+        assertThat(result.tokenPair().accessToken()).isEqualTo("access-exp");
+        verify(account).clearSystemSanction();
+    }
+
+    @DisplayName("시스템 제재 활성 계정 → ACCOUNT_SUSPENDED")
+    @Test
+    void suspendedWithActiveSanction_throws_AUTH_012() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-act", "act@example.com", "활성정지"));
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(11L);
+        when(account.getRole()).thenReturn(Role.USER);
+        when(account.getStatus()).thenReturn(AccountStatus.SUSPENDED);
+        when(account.isSystemSanctionExpired(any())).thenReturn(false);
+        when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-act"))
+                .thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
+
+        verify(account, never()).clearSystemSanction();
+    }
+
     @DisplayName("USER 아닌 계정(MERCHANT/ADMIN) → ACCESS_DENIED (소셜 로그인은 USER 전용 진입점)")
     @Test
     void nonUserRoleRejected() {
