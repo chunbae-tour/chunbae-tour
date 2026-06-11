@@ -196,6 +196,14 @@ public class Shop extends BaseEntity {
     }
 
     /**
+     * 관리자 전통시장 연결 (KAN-268). traditionalMarketId=null 허용 — 연결 해제.
+     * 검증(TraditionalMarket 존재 여부)은 서비스 레이어에서 처리.
+     */
+    public void linkTraditionalMarket(Long traditionalMarketId) {
+        this.traditionalMarketId = traditionalMarketId;
+    }
+
+    /**
      * QR 재발급 (KAN-253). nonce를 새 UUID로 교체 → 기존 QR payload의 nonce가 더 이상 일치하지 않아
      * 옛 QR로는 결제 요청이 거절된다. 분실·도용 의심 시 상인이 호출.
      */
