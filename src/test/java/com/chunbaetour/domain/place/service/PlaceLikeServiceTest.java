@@ -2,26 +2,25 @@ package com.chunbaetour.domain.place.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
-import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-
-import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,7 +28,6 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
