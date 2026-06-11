@@ -390,7 +390,7 @@ public class ReportService {
                 log.warn("suspendTargetAuthor: 탈퇴 계정 정지 생략, authorId={}", authorId);
                 return;
             }
-            if (targetType == ReportTargetType.USER && acc.getStatus() == AccountStatus.SUSPENDED) {
+            if (acc.getStatus() == AccountStatus.SUSPENDED) {
                 throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
             }
             acc.suspend();
