@@ -3,6 +3,7 @@ package com.chunbaetour.domain.search.type;
 import java.util.Arrays;
 
 public enum SearchSource {
+    COMPANION_PLACE_SELECTOR("companion-place-selector", false),
     COMMUNITY_PLACE_SELECTOR("community-place-selector", false),
     DEFAULT("default", true);
 

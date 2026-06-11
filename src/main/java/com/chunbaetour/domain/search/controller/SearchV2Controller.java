@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.search.dto.response.SearchFestivalResponse;
 import com.chunbaetour.domain.search.service.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,6 +46,7 @@ public class SearchV2Controller {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @Parameter(description = "검색 출처 (축제 선택 검색 시 'companion-place-selector' 등 전달 시 집계 제외)")
             @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
