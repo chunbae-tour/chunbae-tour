@@ -17,20 +17,6 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
     List<UserSanction> findByUserIdAndTargetType(Long userId, ReportTargetType targetType);
 
     /**
-     * 특정 도메인의 현재 활성 제재 목록.
-     * 활성 조건: released_at IS NULL AND (ended_at IS NULL OR ended_at > now).
-     * WARNING은 ended_at = started_at 이므로 자동 제외됨.
-     */
-    @Query("SELECT s FROM UserSanction s "
-            + "WHERE s.userId = :userId AND s.targetType = :targetType "
-            + "AND s.releasedAt IS NULL "
-            + "AND (s.endedAt IS NULL OR s.endedAt > :now)")
-    List<UserSanction> findActiveSanctionsByUserIdAndTargetType(
-            @Param("userId") Long userId,
-            @Param("targetType") ReportTargetType targetType,
-            @Param("now") LocalDateTime now);
-
-    /**
      * 활성 제재가 존재하는 도메인 수 — 2개 이상이면 계정 정지 트리거.
      * WARNING 제외: ended_at = started_at 이므로 자동 제외됨.
      */

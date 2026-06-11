@@ -35,7 +35,7 @@ public class SuspendExpiryScheduler {
     private final Clock clock;
 
     @Scheduled(cron = "0 0 * * * *")
-    @SchedulerLock(name = "suspend_expiry", lockAtMostFor = "PT3M", lockAtLeastFor = "PT30S")
+    @SchedulerLock(name = "suspend_expiry", lockAtMostFor = "PT10M", lockAtLeastFor = "PT30S")
     @Transactional
     public void releaseExpiredSanctions() {
         LocalDateTime now = LocalDateTime.now(clock);
