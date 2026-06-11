@@ -59,7 +59,7 @@ class SearchServiceTest {
         String emptyKeyword = "   ";
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -71,7 +71,7 @@ class SearchServiceTest {
         String longKeyword = "a".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -88,7 +88,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
 
         // when (cursor == null)
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1");
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null);
 
         // then
         verify(popularSearchService).incrementSearchCount(keyword, "127.0.0.1");
@@ -107,7 +107,39 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
 
         // when (cursor != null)
-        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1");
+        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null);
+
+        // then
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("source가 community-place-selector이면 관광지 검색 결과가 있어도 인기 검색어를 증가시키지 않는다")
+    void searchPlaces_DoesNotIncrementPopularSearch_WhenSourceIsCommunityPlaceSelector() {
+        // given
+        String keyword = "제주";
+        int size = 10;
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "community-place-selector");
+
+        // then
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("source가 companion-place-selector이면 관광지 검색 결과가 있어도 인기 검색어를 증가시키지 않는다")
+    void searchPlaces_DoesNotIncrementPopularSearch_WhenSourceIsCompanionPlaceSelector() {
+        // given
+        String keyword = "제주";
+        int size = 10;
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector");
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -129,7 +161,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1");
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -154,7 +186,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(null, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1");
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", null);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -189,7 +221,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1");
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
 
         // then
         // 결과는 mockResult에 넣은 순서 (3, 2, 1 - ID 내림차순)대로 반환됨을 명시적으로 검증
@@ -215,7 +247,7 @@ class SearchServiceTest {
         String longKeyword = "가".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1", null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -237,7 +269,7 @@ class SearchServiceTest {
 
         // when
         CursorPageResponse<SearchFestivalResponse> response =
-                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1");
+                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1", null);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -262,11 +294,30 @@ class SearchServiceTest {
 
         // when
         CursorPageResponse<SearchFestivalResponse> response =
-                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1");
+                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1", null);
 
         // then
         assertThat(response.content()).hasSize(1);
         // keyword null이므로 인기 검색어 집계 없음
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("source가 community-place-selector이면 축제 검색 결과가 있어도 인기 검색어를 증가시키지 않는다")
+    void searchFestivals_DoesNotIncrementPopularSearch_WhenSourceIsCommunityPlaceSelector() {
+        // given
+        String keyword = "축제";
+        int size = 10;
+        Festival mockFestival = Festival.create("축제", "설명", "서울", "주소",
+                LocalDate.now(), LocalDate.now().plusDays(5), "http://url.com", null, FestivalStatus.ACTIVE);
+        org.springframework.test.util.ReflectionTestUtils.setField(mockFestival, "id", 1L);
+        when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size))
+                .thenReturn(List.of(mockFestival));
+
+        // when
+        searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", "community-place-selector");
+
+        // then
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
     }
 }

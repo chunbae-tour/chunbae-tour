@@ -15,6 +15,7 @@ import com.chunbaetour.domain.search.service.IntegratedSearchService;
 import com.chunbaetour.domain.search.dto.response.integrated.IntegratedSearchItem;
 import com.chunbaetour.domain.search.dto.response.SuggestResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -136,10 +137,12 @@ public class SearchController {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @Parameter(description = "검색 출처 (동행/커뮤니티 장소 선택 검색은 'companion-place-selector' 또는 'community-place-selector' 전달 시 집계 제외)")
+            @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp, source);
         return ApiResponse.success(response);
     }
 
@@ -170,10 +173,12 @@ public class SearchController {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @Parameter(description = "검색 출처 (축제 선택 검색 시 'companion-place-selector' 등 전달 시 집계 제외)")
+            @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp));
+        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp, source));
     }
 
     /**
