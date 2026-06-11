@@ -14,8 +14,13 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.FaqCreateRequest;
 import com.chunbaetour.domain.cs.dto.request.FaqUpdateRequest;
 import com.chunbaetour.domain.cs.dto.response.FaqResponse;
+import com.chunbaetour.domain.cs.dto.response.FaqTranslationResponse;
 import com.chunbaetour.domain.cs.entity.Faq;
 import com.chunbaetour.domain.cs.repository.FaqRepository;
+import com.chunbaetour.domain.translation.dto.response.TranslationResponse;
+import com.chunbaetour.domain.translation.service.TranslationService;
+import com.chunbaetour.domain.translation.type.LanguageCode;
+import com.chunbaetour.domain.translation.type.TranslationSourceType;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -30,6 +35,7 @@ class FaqServiceTest {
 
     @InjectMocks private FaqService faqService;
     @Mock private FaqRepository faqRepository;
+    @Mock private TranslationService translationService;
 
     // ===== getAll (ADMIN cursor 페이징) =====
 
@@ -170,6 +176,50 @@ class FaqServiceTest {
         given(faqRepository.findById(999L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> faqService.delete(999L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.FAQ_NOT_FOUND));
+    }
+
+    // ===== getFaqTranslation =====
+
+    // 활성 FAQ → question/answer 각각 번역 후 반환
+    @Test
+    void getFaqTranslation_returnsTranslatedQuestionAndAnswer() {
+        Faq faq = buildFaq(1L);
+        given(faqRepository.findById(1L)).willReturn(Optional.of(faq));
+        given(translationService.translate("테스트 질문", LanguageCode.EN, TranslationSourceType.FAQ))
+                .willReturn(new TranslationResponse("Test question", LanguageCode.EN));
+        given(translationService.translate("테스트 답변", LanguageCode.EN, TranslationSourceType.FAQ))
+                .willReturn(new TranslationResponse("Test answer", LanguageCode.EN));
+
+        FaqTranslationResponse result = faqService.getFaqTranslation(1L, LanguageCode.EN);
+
+        assertThat(result.faqId()).isEqualTo(1L);
+        assertThat(result.question()).isEqualTo("Test question");
+        assertThat(result.answer()).isEqualTo("Test answer");
+        assertThat(result.targetLanguage()).isEqualTo(LanguageCode.EN);
+    }
+
+    // 존재하지 않는 FAQ → FAQ_NOT_FOUND
+    @Test
+    void getFaqTranslation_throwsFaqNotFound_whenFaqNotExists() {
+        given(faqRepository.findById(999L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> faqService.getFaqTranslation(999L, LanguageCode.EN))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.FAQ_NOT_FOUND));
+    }
+
+    // 비활성 FAQ → FAQ_NOT_FOUND (목록 조회와 동일하게 USER 노출 제외)
+    @Test
+    void getFaqTranslation_throwsFaqNotFound_whenFaqInactive() {
+        Faq faq = buildFaq(1L);
+        faq.deactivate();
+        given(faqRepository.findById(1L)).willReturn(Optional.of(faq));
+
+        assertThatThrownBy(() -> faqService.getFaqTranslation(1L, LanguageCode.EN))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.FAQ_NOT_FOUND));
