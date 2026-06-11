@@ -39,7 +39,7 @@ public class NotificationEventHandler {
     // 참여 신청 생성 — 방장에게 CHAT_JOIN_REQUEST 알림, 원본 트랜잭션 커밋 후 새 트랜잭션에서 저장
     // REQUIRES_NEW 트랜잭션 실패 시 원본 비즈니스 흐름 영향 없음 — log.error로 silent loss 추적
     // Push는 REQUIRES_NEW afterCommit 훅에서 전송 — 커밋 전 유령 알림/미노출 방지
-    // referenceType=CHAT_ROOM, referenceId=chatRoomId — 알림 클릭 시 신청 관리 화면 이동용 (KAN-280)
+    // referenceType=CHAT_ROOM, referenceId=chatRoomId — 알림 클릭 시 신청 관리 화면 이동용
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleJoinRequestCreated(JoinRequestCreatedEvent event) {
