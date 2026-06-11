@@ -218,6 +218,8 @@ public class ShopService {
         }
 
         // 연결 요청 — 전통시장 존재 검증 + 응답에 담을 시장명 확보
+        // 가게-장소(updateShopPlace)와 달리 status != DELETED 필터 없음 — TraditionalMarket은 soft-delete 자체가 없어
+        // 현재 검증할 상태가 없음. 향후 market soft-delete 도입 시 여기에 DELETED 필터 추가 필요. (KAN-268 리뷰)
         TraditionalMarket market = traditionalMarketRepository.findById(traditionalMarketId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MARKET_NOT_FOUND));
 
