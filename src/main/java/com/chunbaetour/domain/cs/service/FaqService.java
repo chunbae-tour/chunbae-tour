@@ -17,6 +17,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -59,7 +60,9 @@ public class FaqService {
     }
 
     // USER: 활성 FAQ 단건 번역 — entity-ID 기반, question/answer를 targetLanguage로 번역 (FAQ 캐시 경유)
-    @Transactional
+    // 트랜잭션 미사용 — Google API 호출(translate) 동안 DB 커넥션을 점유하지 않기 위해 NOT_SUPPORTED.
+    // findById는 Spring Data JPA가 자체 짧은 트랜잭션으로 처리, 캐시 저장도 TranslationCacheService에서 REQUIRES_NEW로 별도 처리됨
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public FaqTranslationResponse getFaqTranslation(Long faqId, LanguageCode targetLanguage) {
         Faq faq = faqRepository.findById(faqId)
                 .filter(Faq::isActive)
