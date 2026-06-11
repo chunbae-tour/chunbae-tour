@@ -62,6 +62,7 @@ public class SanctionService {
         userSanctionRepository.save(sanction);
 
         log.info("[제재] userId={} targetType={} sanctionType={} endedAt={}", userId, targetType, calculated, endedAt);
+        // TODO: SecurityAuditLogger 연동 — 자동 제재 적용 이력 감사 로그 기록
 
         // 4. USER·MERCHANT 도메인 → Account 직접 정지 (계정 전체 차단)
         if ((targetType == ReportTargetType.USER || targetType == ReportTargetType.MERCHANT)

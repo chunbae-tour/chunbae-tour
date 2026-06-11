@@ -40,6 +40,8 @@ public class SuspendExpiryScheduler {
         LocalDateTime now = LocalDateTime.now(clock);
 
         // 1. user_sanction 만료 이력 일괄 release
+        // TODO: 항목별 try-catch 추가 — 한 건 실패 시 나머지 처리 계속되도록
+        // TODO: SecurityAuditLogger 연동 — 자동 제재 해제 이력 감사 로그 기록
         List<com.chunbaetour.domain.report.entity.UserSanction> expired =
                 userSanctionRepository.findExpiredUnreleasedSanctions(now);
         expired.forEach(s -> s.release(null, now));
