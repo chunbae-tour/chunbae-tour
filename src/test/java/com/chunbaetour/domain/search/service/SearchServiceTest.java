@@ -46,6 +46,9 @@ class SearchServiceTest {
     @Mock
     private PopularSearchService popularSearchService;
 
+    @Mock
+    private SearchPlacePersonalizationService personalizationService;
+
     @Spy
     private java.time.Clock clock = java.time.Clock.systemDefaultZone();
 
@@ -59,7 +62,7 @@ class SearchServiceTest {
         String emptyKeyword = "   ";
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", null))
+        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -71,7 +74,7 @@ class SearchServiceTest {
         String longKeyword = "a".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", null))
+        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -86,9 +89,10 @@ class SearchServiceTest {
         mockResult.add(new SearchPlaceResponse(1L, "맛집1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 10));
         
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when (cursor == null)
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
 
         // then
         verify(popularSearchService).incrementSearchCount(keyword, "127.0.0.1");
@@ -107,7 +111,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
 
         // when (cursor != null)
-        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null);
+        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null, null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -121,9 +125,10 @@ class SearchServiceTest {
         int size = 10;
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
                 .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "community-place-selector");
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "community-place-selector", null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -137,13 +142,113 @@ class SearchServiceTest {
         int size = 10;
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
                 .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector");
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector", null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
     }
+
+    @Test
+    @DisplayName("선호 카테고리가 존재하면 현재 페이지 내에서 In-memory Boost 정렬이 수행된다")
+    void searchPlaces_PerformsInMemoryBoost_WhenPreferredCategoriesExist() {
+        // given
+        String keyword = "맛집";
+        int size = 10;
+        Long userId = 1L;
+
+        // DB는 기본 정렬(id DESC)로 반환
+        List<SearchPlaceResponse> mockResult = new ArrayList<>();
+        mockResult.add(new SearchPlaceResponse(100L, "비선호1", PlaceCategory.TRADITIONAL_MARKET, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(90L, "선호1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(80L, "비선호2", PlaceCategory.TRADITIONAL_MARKET, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(70L, "선호2", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1));
+
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
+
+        // when
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+
+        // then
+        List<SearchPlaceResponse> content = response.content();
+        assertThat(content).hasSize(4);
+        // 선호 카테고리(TOURIST_SPOT)가 위로, 그 안에서는 id DESC 유지
+        assertThat(content.get(0).placeId()).isEqualTo(90L);
+        assertThat(content.get(1).placeId()).isEqualTo(70L);
+        // 비선호 카테고리가 아래로, 그 안에서 id DESC 유지
+        assertThat(content.get(2).placeId()).isEqualTo(100L);
+        assertThat(content.get(3).placeId()).isEqualTo(80L);
+    }
+
+    @Test
+    @DisplayName("In-memory Boost가 적용되어도 nextCursor는 DB 원본 순서 기준 마지막 요소의 ID를 반환한다")
+    void searchPlaces_ReturnsNextCursorBasedOnOriginalDbOrder_WhenInMemoryBoostApplied() {
+        // given
+        String keyword = "맛집";
+        int size = 3;
+        Long userId = 1L;
+
+        // DB에서 size+1개(4개) 반환 -> hasNext=true
+        List<SearchPlaceResponse> mockResult = new ArrayList<>();
+        mockResult.add(new SearchPlaceResponse(100L, "비선호1", PlaceCategory.TRADITIONAL_MARKET, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(90L, "선호1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(80L, "비선호2", PlaceCategory.TRADITIONAL_MARKET, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(70L, "선호2", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1));
+
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
+
+        // when
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+
+        // then
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.content()).hasSize(3);
+        // 메모리 정렬 결과: 90(선호), 100(비선호), 80(비선호)
+        assertThat(response.content().get(0).placeId()).isEqualTo(90L);
+        assertThat(response.content().get(1).placeId()).isEqualTo(100L);
+        assertThat(response.content().get(2).placeId()).isEqualTo(80L);
+        
+        // 중요: nextCursor는 정렬된 리스트의 마지막(80)이 아니라, 원본 3개(100, 90, 80) 중 가장 마지막 요소인 80이어야 함. (우연히 같을 순 있지만, 논리적으로 원본을 따름)
+        // 만약 원본이 100(선호), 90(비선호), 80(선호) 였다면, 정렬 후 100, 80, 90. nextCursor는 80이어야 함.
+        assertThat(response.nextCursor()).isEqualTo("80");
+    }
+
+    @Test
+    @DisplayName("원본(100선호, 90비선호, 80선호)일 때 nextCursor 검증 (정렬 후 마지막 요소의 ID가 아닌 원본의 마지막 ID)")
+    void searchPlaces_NextCursorStrictValidation() {
+        // given
+        String keyword = "맛집";
+        int size = 3;
+        Long userId = 1L;
+
+        List<SearchPlaceResponse> mockResult = new ArrayList<>();
+        mockResult.add(new SearchPlaceResponse(100L, "선호1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(90L, "비선호1", PlaceCategory.TRADITIONAL_MARKET, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(80L, "선호2", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1));
+        mockResult.add(new SearchPlaceResponse(70L, "비선호2", PlaceCategory.TRADITIONAL_MARKET, "주소", "url", 4.5f, 1));
+
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
+
+        // when
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+
+        // then
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.content()).hasSize(3);
+        // 메모리 정렬 결과: 100(선호), 80(선호), 90(비선호)
+        assertThat(response.content().get(0).placeId()).isEqualTo(100L);
+        assertThat(response.content().get(1).placeId()).isEqualTo(80L);
+        assertThat(response.content().get(2).placeId()).isEqualTo(90L);
+        
+        // 중요: 정렬된 마지막 요소는 90이지만, nextCursor는 DB 원본(100, 90, 80)의 마지막인 80이어야 함.
+        assertThat(response.nextCursor()).isEqualTo("80");
+    }
+
 
     @Test
     @DisplayName("hasNext 및 nextCursor가 올바르게 계산된다 (size+1 기반)")
@@ -159,9 +264,10 @@ class SearchServiceTest {
         mockResult.add(new SearchPlaceResponse(8L, "맛집8", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 10));
         
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -319,5 +425,45 @@ class SearchServiceTest {
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Phase 9-2: 검색 결과 개인화
+    // ──────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("비로그인 유저(userId=null)는 기본 정렬 리포지토리를 호출한다")
+    void searchPlaces_CallsDefaultRepository_WhenUserIdIsNull() {
+        // given
+        String keyword = "제주";
+        int size = 10;
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+
+        // then: 기본 리포지토리만 호출되어야 함
+        verify(placeQueryRepository).searchByKeyword(keyword, null, null, null, size);
+    }
+
+    @Test
+    @DisplayName("로그인 유저라도 선호 카테고리가 없으면 기본 정렬리포지토리를 호출한다")
+    void searchPlaces_CallsDefaultRepository_WhenNoPreferredCategories() {
+        // given
+        Long userId = 99L;
+        String keyword = "제주";
+        int size = 10;
+        // 유저가 로그인했지만 찜 리스트가 없는 경우
+        when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of());
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+
+        // then: 선호 카테고리가 없으니 기본 리포지토리 사용
+        verify(placeQueryRepository).searchByKeyword(keyword, null, null, null, size);
     }
 }
