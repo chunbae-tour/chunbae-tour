@@ -21,6 +21,7 @@ import com.chunbaetour.domain.shop.service.ShopService;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
+import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
@@ -72,6 +73,12 @@ public class ReportService {
     private final CommentRepository commentRepository;
     private final ShopService shopService;
     private final ApplicationEventPublisher eventPublisher;
+
+    // ── PR6: 미처리 신고 건수 ────────────────────────────────────────────
+
+    public PendingCountResponse getPendingCount() {
+        return PendingCountResponse.of(reportRepository.countByStatus(ReportStatus.PENDING));
+    }
 
     // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
 

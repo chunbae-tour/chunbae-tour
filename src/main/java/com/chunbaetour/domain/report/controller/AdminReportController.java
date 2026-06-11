@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
@@ -36,6 +37,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminReportController {
 
     private final ReportService reportService;
+
+    @Operation(summary = "미처리 신고 건수 조회")
+    @GetMapping("/pending-count")
+    public ApiResponse<PendingCountResponse> getPendingCount() {
+        return ApiResponse.success(reportService.getPendingCount());
+    }
 
     /**
      * 신고 목록 조회 (cursor 페이징).

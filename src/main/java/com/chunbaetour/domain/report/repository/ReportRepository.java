@@ -37,6 +37,9 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             @Param("cursorId") Long cursorId,
             Pageable pageable);
 
+    // ── 미처리 신고 건수 (PR6 pending-count badge) ────────────────────
+    long countByStatus(ReportStatus status);
+
     // ── 자동 숨김용 신고 건수 집계 (KAN-93) ─────────────────────────────
     long countByTargetTypeAndTargetIdAndStatus(
             ReportTargetType targetType, Long targetId, ReportStatus status);
