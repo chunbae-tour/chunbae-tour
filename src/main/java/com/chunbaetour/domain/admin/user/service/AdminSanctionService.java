@@ -11,9 +11,11 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -56,11 +58,17 @@ public class AdminSanctionService {
 
         // 잔여 활성 제재 없으면 Account 시스템 제재 해제
         if (remaining.isEmpty()) {
-            accountRepository.findById(userId).ifPresent(acc -> {
+            // TOCTOU 방어: 해제 직전 재조회로 동시 제재 삽입 감지
+            List<UserSanction> recheck = userSanctionRepository.findAllActiveSanctionsByUserId(
+                    userId, LocalDateTime.now(clock));
+            if (!recheck.isEmpty()) {
+                return;
+            }
+            accountRepository.findById(userId).ifPresentOrElse(acc -> {
                 if (acc.getSanctionType() != null) {
                     acc.adminClearSystemSanction();
                 }
-            });
+            }, () -> log.warn("AdminSanctionService.releaseSanction: Account not found userId={}", userId));
             return;
         }
 
@@ -74,11 +82,11 @@ public class AdminSanctionService {
                 .anyMatch(t -> t == ReportTargetType.USER || t == ReportTargetType.MERCHANT);
 
         if (!hasAccountLevelDomain && activeDomains < 2) {
-            accountRepository.findById(userId).ifPresent(acc -> {
+            accountRepository.findById(userId).ifPresentOrElse(acc -> {
                 if (acc.getSanctionType() != null) {
                     acc.adminClearSystemSanction();
                 }
-            });
+            }, () -> log.warn("AdminSanctionService.releaseSanction: Account not found userId={}", userId));
         }
     }
 }

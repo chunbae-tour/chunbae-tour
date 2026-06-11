@@ -78,7 +78,7 @@ public class Report extends BaseEntity {
     private Long reportedUserId;
 
     public static Report create(Long reporterId, ReportTargetType targetType, Long targetId,
-                                ReportReason reason, String description) {
+                                ReportReason reason, String description, Long reportedUserId) {
         Report report = new Report();
         report.reporterId = reporterId;
         report.targetType = targetType;
@@ -86,6 +86,7 @@ public class Report extends BaseEntity {
         report.reason = reason;
         report.description = description;
         report.status = ReportStatus.PENDING;
+        report.reportedUserId = reportedUserId;
         return report;
     }
 

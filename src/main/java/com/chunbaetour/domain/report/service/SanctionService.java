@@ -37,7 +37,7 @@ public class SanctionService {
      */
     @Transactional
     public void handleReportAccepted(Long reportId, Long userId, ReportTargetType targetType,
-                                     int acceptedCount) {
+                                     long acceptedCount) {
         LocalDateTime now = LocalDateTime.now(clock);
 
         // 1. 이벤트에서 전달받은 누적 RESOLVED 건수로 제재 단계 계산

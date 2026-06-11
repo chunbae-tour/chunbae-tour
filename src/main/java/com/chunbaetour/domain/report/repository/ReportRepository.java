@@ -46,6 +46,6 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     long countByTargetTypeAndTargetId(ReportTargetType targetType, Long targetId);
 
     // ── 도메인별 제재 누적 집계 (PR1+PR2 SanctionService) ──────────────────
-    int countByReportedUserIdAndTargetTypeAndStatus(
+    long countByReportedUserIdAndTargetTypeAndStatus(
             Long reportedUserId, ReportTargetType targetType, ReportStatus status);
 }

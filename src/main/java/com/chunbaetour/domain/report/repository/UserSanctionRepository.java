@@ -54,6 +54,7 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
     /**
      * 만료됐지만 아직 release 처리되지 않은 제재 — 스케줄러 일괄 해제용.
      * PERMANENT(ended_at IS NULL)는 제외.
+     * WARNING 제재는 ended_at = started_at이므로 생성 직후 이 쿼리에 포함되어 즉시 release 처리됨.
      */
     @Query("SELECT s FROM UserSanction s "
             + "WHERE s.releasedAt IS NULL "

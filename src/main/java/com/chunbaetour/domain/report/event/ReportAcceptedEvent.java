@@ -15,7 +15,7 @@ public record ReportAcceptedEvent(
         Long reportId,
         Long reportedUserId,
         ReportTargetType targetType,
-        int acceptedCount
+        long acceptedCount
 ) {
     public ReportAcceptedEvent {
         if (reportId == null || reportedUserId == null || targetType == null) {

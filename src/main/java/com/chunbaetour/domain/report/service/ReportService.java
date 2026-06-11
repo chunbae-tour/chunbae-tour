@@ -91,9 +91,10 @@ public class ReportService {
         }
 
         try {
+            Long reportedUserId = resolveReportedUserId(request.targetType(), request.targetId());
             Report report = Report.create(
                     reporterId, request.targetType(), request.targetId(),
-                    request.reason(), request.description());
+                    request.reason(), request.description(), reportedUserId);
             // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
             ReportCreateResponse response = ReportCreateResponse.of(reportRepository.saveAndFlush(report));
 
@@ -228,16 +229,7 @@ public class ReportService {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
             reportRepository.saveAndFlush(report);
-
-            if (action != ReportAction.DISMISS) {
-                Long reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
-                if (reportedUserId != null) {
-                    int acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                            reportedUserId, report.getTargetType(), ReportStatus.RESOLVED);
-                    eventPublisher.publishEvent(new ReportAcceptedEvent(
-                            report.getId(), reportedUserId, report.getTargetType(), acceptedCount));
-                }
-            }
+            publishReportAcceptedEventIfNeeded(report, action);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
@@ -278,16 +270,7 @@ public class ReportService {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
             reportRepository.saveAndFlush(report);
-
-            if (action != ReportAction.DISMISS) {
-                Long reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
-                if (reportedUserId != null) {
-                    int acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                            reportedUserId, report.getTargetType(), ReportStatus.RESOLVED);
-                    eventPublisher.publishEvent(new ReportAcceptedEvent(
-                            report.getId(), reportedUserId, report.getTargetType(), acceptedCount));
-                }
-            }
+            publishReportAcceptedEventIfNeeded(report, action);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
@@ -386,6 +369,15 @@ public class ReportService {
             }, () -> log.warn("deleteTargetContent: USER not found, targetId={}", targetId));
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
+    }
+
+    private void publishReportAcceptedEventIfNeeded(Report report, ReportAction action) {
+        if (action == ReportAction.DISMISS) return;
+        if (report.getReportedUserId() == null) return;
+        long acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
+                report.getReportedUserId(), report.getTargetType(), ReportStatus.RESOLVED);
+        eventPublisher.publishEvent(new ReportAcceptedEvent(
+                report.getId(), report.getReportedUserId(), report.getTargetType(), acceptedCount));
     }
 
     private Long resolveReportedUserId(ReportTargetType targetType, Long targetId) {
