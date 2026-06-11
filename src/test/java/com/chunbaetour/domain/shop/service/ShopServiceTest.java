@@ -209,6 +209,19 @@ class ShopServiceTest {
         assertThat(response.qrPayload()).isEqualTo("YEOPJEON_PAY:SHOP:" + SHOP_ID + ":nonce-suspended");
     }
 
+    @Test
+    @DisplayName("QR 코드 조회 — qrNonce null(DB 불변식 위반) → INTERNAL_SERVER_ERROR")
+    void getMyQrCode_whenQrNonceIsNull_throwsInternalServerError() {
+        Shop shop = mock(Shop.class);
+        given(shop.getQrNonce()).willReturn(null);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        assertThatThrownBy(() -> shopService.getMyQrCode(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
+    }
+
     // ── POST /shops/{shopId}/qr/reissue (KAN-253) ──────────────────────────
 
     @Test
