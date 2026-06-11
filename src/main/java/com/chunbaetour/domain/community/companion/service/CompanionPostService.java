@@ -41,6 +41,9 @@ public class CompanionPostService {
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
+        if (request.maxMembers() < 2) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         Account author = findAccount(authorId);
         CompanionPost post = CompanionPost.create(
                 authorId,
@@ -104,6 +107,9 @@ public class CompanionPostService {
         // placeId·placeName은 쌍으로 수정해야 함 — 한쪽만 보내면 데이터 불일치
         if ((request.placeId() == null) != (request.placeName() == null)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        if (request.maxMembers() != null && request.maxMembers() < post.getCurrentMembers()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         post.update(
                 request.title(), request.content(),

@@ -15,6 +15,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneResponse;
+import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateRequest;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
@@ -59,6 +60,25 @@ class CompanionPostServiceTest {
                 1L, "제주도 동행 모집", "같이 가요!", 100L, "성산일출봉",
                 "제주", LocalDate.now().plusDays(7), 4);
         ReflectionTestUtils.setField(activePost, "id", 1L);
+    }
+
+    @Test
+    void create_maxMembers가_2미만이면_400() {
+        assertThatThrownBy(() -> postService.create(1L,
+                new CompanionPostCreateRequest("제목", "내용", 1L, "장소", "서울",
+                        LocalDate.now().plusDays(1), 1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    void update_maxMembers가_currentMembers미만이면_400() {
+        given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
+
+        assertThatThrownBy(() -> postService.update(1L, 1L,
+                new CompanionPostUpdateRequest(null, null, null, null, null, null, 0)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
     }
 
     @Test
