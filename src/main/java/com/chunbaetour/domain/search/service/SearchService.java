@@ -81,7 +81,7 @@ public class SearchService {
      * @param clientIp 클라이언트 IP 주소
      * @param source   검색 요청 출처 (예: community-place-selector)
      * @param userId   로그인한 유저의 PK (비로그인이면 null → 개인화 미적용)
-     * @return 커서 페이지네이션이 적용된 관광지 검색 결과 (로그인 시 선호 카테고리 우선 노출)
+     * @return 커서 페이지네이션이 적용된 관광지 검색 결과 (로그인 시 첫 페이지에 한해 현재 페이지 내에서 선호 카테고리 우선 노출 적용)
      */
     public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, String source, Long userId) {
         SearchSource searchSource = SearchSource.from(source);

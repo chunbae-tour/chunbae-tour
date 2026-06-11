@@ -2,20 +2,16 @@ package com.chunbaetour.domain.search.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
-import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
-import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.search.dto.response.SearchPlaceResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -52,14 +48,15 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
     private JdbcTemplate jdbcTemplate;
 
     private Long testUserId;
-    private Long firstPageCursor;
 
     @BeforeEach
     void setUpFullTextIndex() {
         try {
             jdbcTemplate.execute("CREATE FULLTEXT INDEX idx_places_name_fulltext ON places(name) WITH PARSER ngram");
         } catch (Exception e) {
-            // 인덱스가 이미 존재하는 경우 무시
+            if (e.getMessage() == null || (!e.getMessage().contains("Duplicate key name") && !e.getMessage().contains("already exists"))) {
+                throw e;
+            }
         }
     }
 
@@ -78,8 +75,7 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
         testUserId = savedAccount.getId();
 
         // 2. 관광지 데이터 세팅 (이름에 모두 "통합테스트" 포함, 총 5개)
-        GeometryFactory factory = new GeometryFactory();
-        
+
         // ID가 늦게 삽입될수록 높다고 가정하면 (실제로는 sequence지만),
         // 최신순(id desc) 정렬 시 아래 삽입 순서의 역순으로 조회됨.
         Place place1 = Place.builder().name("통합테스트 장소1").category(PlaceCategory.TRADITIONAL_MARKET).address("주소1").lat(BigDecimal.valueOf(37.5)).lng(BigDecimal.valueOf(126.9)).build();
