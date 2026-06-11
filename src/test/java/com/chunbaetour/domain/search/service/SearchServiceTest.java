@@ -46,6 +46,9 @@ class SearchServiceTest {
     @Mock
     private PopularSearchService popularSearchService;
 
+    @Mock
+    private SearchPlacePersonalizationService personalizationService;
+
     @Spy
     private java.time.Clock clock = java.time.Clock.systemDefaultZone();
 
@@ -59,7 +62,7 @@ class SearchServiceTest {
         String emptyKeyword = "   ";
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", null))
+        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -71,7 +74,7 @@ class SearchServiceTest {
         String longKeyword = "a".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", null))
+        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -86,9 +89,10 @@ class SearchServiceTest {
         mockResult.add(new SearchPlaceResponse(1L, "맛집1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 10));
         
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when (cursor == null)
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
 
         // then
         verify(popularSearchService).incrementSearchCount(keyword, "127.0.0.1");
@@ -105,9 +109,10 @@ class SearchServiceTest {
         mockResult.add(new SearchPlaceResponse(1L, "맛집1", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 10));
         
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
+        // cursorId != null → isFirstPage=false → personalizationService 호출 없음 (stub 불필요)
 
         // when (cursor != null)
-        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null);
+        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null, null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -121,9 +126,10 @@ class SearchServiceTest {
         int size = 10;
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
                 .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "community-place-selector");
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "community-place-selector", null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -137,9 +143,10 @@ class SearchServiceTest {
         int size = 10;
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
                 .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector");
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector", null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -159,9 +166,10 @@ class SearchServiceTest {
         mockResult.add(new SearchPlaceResponse(8L, "맛집8", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 10));
         
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -319,5 +327,70 @@ class SearchServiceTest {
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Phase 9-2: 검색 결과 개인화
+    // ──────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("로그인 유저에 선호 카테고리가 있으면 부스팅 정렬 리포지토리를 호출한다")
+    void searchPlaces_CallsPersonalizedRepository_WhenPreferredCategoriesExist() {
+        // given
+        Long userId = 42L;
+        String keyword = "제주";
+        int size = 10;
+        List<PlaceCategory> preferred = List.of(PlaceCategory.TOURIST_SPOT, PlaceCategory.TRADITIONAL_MARKET);
+        when(personalizationService.getPreferredCategories(userId)).thenReturn(preferred);
+        when(placeQueryRepository.searchByKeywordWithPersonalization(keyword, null, null, null, size, preferred))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        CursorPageResponse<SearchPlaceResponse> response =
+                searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+
+        // then: 개인화 리포지토리가 호출되어야 함
+        verify(placeQueryRepository).searchByKeywordWithPersonalization(keyword, null, null, null, size, preferred);
+        // 기본 리포지토리는 호출되지 않아야 함
+        verify(placeQueryRepository, never()).searchByKeyword(any(), any(), any(), any(), anyInt());
+        assertThat(response.content()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("비로그인 유저(userId=null)는 기본 정렬 리포지토리를 호출한다")
+    void searchPlaces_CallsDefaultRepository_WhenUserIdIsNull() {
+        // given
+        String keyword = "제주";
+        int size = 10;
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+
+        // then: 기본 리포지토리만 호출되어야 함
+        verify(placeQueryRepository).searchByKeyword(keyword, null, null, null, size);
+        verify(placeQueryRepository, never()).searchByKeywordWithPersonalization(any(), any(), any(), any(), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("로그인 유저라도 선호 카테고리가 없으면 기본 정렬리포지토리를 호출한다")
+    void searchPlaces_CallsDefaultRepository_WhenNoPreferredCategories() {
+        // given
+        Long userId = 99L;
+        String keyword = "제주";
+        int size = 10;
+        // 유저가 로그인했지만 찜 리스트가 없는 경우
+        when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of());
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+
+        // then: 선호 카테고리가 없으니 기본 리포지토리 사용
+        verify(placeQueryRepository).searchByKeyword(keyword, null, null, null, size);
+        verify(placeQueryRepository, never()).searchByKeywordWithPersonalization(any(), any(), any(), any(), anyInt(), any());
     }
 }

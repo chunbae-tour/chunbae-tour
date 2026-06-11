@@ -126,10 +126,11 @@ public class SearchController {
      * @param region   지역 (옵션)
      * @param cursor   커서 아이디 (옵션, 이전 페이지의 마지막 placeId)
      * @param size     페이지 사이즈 (기본값 10)
-     * @return 200 OK + 커서 페이지네이션이 적용된 관광지 목록
+     * @param source   검색 출처 (동행/커뮤니티 장소 선택용 비집계 시 값 전달)
+     * @return 200 OK + 커서 페이지네이션이 적용된 관광지 목록 (로그인 시 선호 카테고리 우선 노출)
      */
     @SecurityRequirements
-    @Operation(summary = "관광지 검색")
+    @Operation(summary = "관광지 검색 (로그인 시 선호 카테고리 우선 노출)")
     @GetMapping("/places")
     public ApiResponse<CursorPageResponse<SearchPlaceResponse>> searchPlaces(
             @RequestParam(name = "q", required = false) String q,
@@ -139,10 +140,11 @@ public class SearchController {
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
             @Parameter(description = "검색 출처 (동행/커뮤니티 장소 선택 검색은 'companion-place-selector' 또는 'community-place-selector' 전달 시 집계 제외)")
             @RequestParam(name = "source", required = false) String source,
+            @AuthenticationPrincipal Long userId,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp, source);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp, source, userId);
         return ApiResponse.success(response);
     }
 

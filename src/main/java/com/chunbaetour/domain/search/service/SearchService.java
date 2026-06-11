@@ -25,6 +25,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -47,6 +48,7 @@ public class SearchService {
     private final PlaceQueryRepository placeQueryRepository;
     private final FestivalQueryRepository festivalQueryRepository;
     private final PopularSearchService popularSearchService;
+    private final SearchPlacePersonalizationService personalizationService;
     private final StringRedisTemplate stringRedisTemplate;
     private final Clock clock;
 
@@ -77,9 +79,10 @@ public class SearchService {
      * @param size     페이지 사이즈
      * @param clientIp 클라이언트 IP 주소
      * @param source   검색 요청 출처 (예: community-place-selector)
-     * @return 커서 페이지네이션이 적용된 관광지 검색 결과
+     * @param userId   로그인한 유저의 PK (비로그인이면 null → 개인화 미적용)
+     * @return 커서 페이지네이션이 적용된 관광지 검색 결과 (로그인 시 선호 카테고리 우선 노출)
      */
-    public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, String source) {
+    public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, String source, Long userId) {
         SearchSource searchSource = SearchSource.from(source);
         // 검색어 원문을 INFO 로그에 남기지 않고 존재/길이만 기록하여 운영 로그 보안 강화
         log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
@@ -99,7 +102,22 @@ public class SearchService {
         }
 
         // 1. 조회 (hasNext 판별을 위해 size + 1 개 조회)
-        List<SearchPlaceResponse> items = placeQueryRepository.searchByKeyword(normalized, category, region, cursorId, size);
+        // [개인화 정렬 설계 원칙]
+        // 개인화 정렬(CASE WHEN priority)은 첫 페이지(cursorId=null)에만 적용한다.
+        // 이유: 개인화 정렬은 "선호 카테고리 그룹(0) → 일반 그룹(1)"으로 분리하므로,
+        // 커서(placeId)가 그룹 경계를 넘어가면 "place.id < cursorId" 조건이 일반 그룹의
+        // 높은 ID를 누락시키는 논리적 불일치가 발생한다.
+        // 2페이지부터는 기본 정렬(place.id DESC)로 전환하여 커서 정확성을 보장한다.
+        boolean isFirstPage = (cursorId == null);
+        List<PlaceCategory> preferredCategories = (isFirstPage)
+                ? personalizationService.getPreferredCategories(userId)
+                : Collections.emptyList();
+
+        List<SearchPlaceResponse> items = preferredCategories.isEmpty()
+                ? placeQueryRepository.searchByKeyword(normalized, category, region, cursorId, size)
+                : placeQueryRepository.searchByKeywordWithPersonalization(normalized, category, region, cursorId, size, preferredCategories);
+
+        log.debug("[SearchService] 개인화 검색 - userId={}, isFirstPage={}, preferredCategories={}", userId, isFirstPage, preferredCategories);
 
         // 2. hasNext 및 nextCursor 계산
         boolean hasNext = items.size() > size;
