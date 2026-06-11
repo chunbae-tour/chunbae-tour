@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 메뉴 CRUD API (STORY-11, 목록 조회 KAN-268).
+ * 메뉴 CRUD API (STORY-11, 목록 조회 KAN-267).
  * GET    /api/v1/merchants/me/shops/{shopId}/menus          — 내 가게 메뉴 목록 (MERCHANT)
  * POST   /api/v1/merchants/me/shops/{shopId}/menus          — 메뉴 등록 (MERCHANT)
  * PATCH  /api/v1/merchants/me/shops/{shopId}/menus/{menuId} — 메뉴 수정 (MERCHANT)
@@ -40,7 +40,7 @@ public class MenuController {
 
     private final MenuService menuService;
 
-    @Operation(summary = "내 가게 메뉴 목록 조회", description = "본인 가게 메뉴 목록 (KAN-268). 비활성 메뉴 포함, 삭제 메뉴 제외.")
+    @Operation(summary = "내 가게 메뉴 목록 조회", description = "본인 가게 메뉴 목록 (KAN-267). 비활성 메뉴 포함, 삭제 메뉴 제외.")
     @GetMapping
     public ApiResponse<List<MenuResponse>> getMenus(
             @AuthenticationPrincipal Long userId,

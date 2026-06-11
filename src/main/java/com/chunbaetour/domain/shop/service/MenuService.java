@@ -29,7 +29,7 @@ public class MenuService {
     private final MenuRepository menuRepository;
 
     /**
-     * 내 가게 메뉴 목록 조회 (KAN-268).
+     * 내 가게 메뉴 목록 조회 (KAN-267).
      * 본인 가게만 조회 — 타인/없는 가게는 SHOP_NOT_FOUND. 상태 무관(SUSPENDED/CLOSED도 조회 허용) — 읽기 작업이므로
      * 상인이 본인 메뉴를 항상 확인할 수 있어야 함(getMyShop 정책과 일관).
      * soft-deleted 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함(프론트 비활성 표시).

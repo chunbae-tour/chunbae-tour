@@ -64,7 +64,7 @@ class MenuServiceTest {
                 .build();
     }
 
-    // ── GET /merchants/me/shops/{shopId}/menus (KAN-268) ───────────────────
+    // ── GET /merchants/me/shops/{shopId}/menus (KAN-267) ───────────────────
 
     @Test
     @DisplayName("메뉴 목록 조회 — 성공: 본인 가게 메뉴 반환")
