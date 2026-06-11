@@ -23,11 +23,14 @@ import com.chunbaetour.domain.notification.service.NotificationService;
 import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.user.SimpSession;
+import org.springframework.messaging.simp.user.SimpSubscription;
 import org.springframework.messaging.simp.user.SimpUser;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -58,17 +61,17 @@ class NotificationEventHandlerTest {
     private static final Long RECIPIENT_USER_ID_1 = 6L;
     private static final Long RECIPIENT_USER_ID_2 = 7L;
 
-    // 참여 신청 생성 이벤트 — 방장에게 CHAT_JOIN_REQUEST 알림 저장 + Redis Push 검증
+    // 참여 신청 생성 이벤트 — 방장에게 CHAT_JOIN_REQUEST 알림 저장 + Redis Push 검증, referenceType=CHAT_ROOM (신청 관리 화면 이동용)
     @Test
     void handleJoinRequestCreated_notifiesOwner_andPushes() {
-        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, NotificationReferenceType.JOIN_REQUEST, JOIN_REQUEST_ID);
+        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
         given(notificationService.createNotification(
                 eq(OWNER_USER_ID),
                 eq(NotificationType.CHAT_JOIN_REQUEST),
                 eq("참여 신청 도착"),
                 eq("채팅방 참여 신청이 도착했어요."),
-                eq(NotificationReferenceType.JOIN_REQUEST),
-                eq(JOIN_REQUEST_ID))).willReturn(notification);
+                eq(NotificationReferenceType.CHAT_ROOM),
+                eq(CHAT_ROOM_ID))).willReturn(notification);
 
         handler.handleJoinRequestCreated(
                 new JoinRequestCreatedEvent(CHAT_ROOM_ID, JOIN_REQUEST_ID, OWNER_USER_ID));
@@ -78,8 +81,8 @@ class NotificationEventHandlerTest {
                 eq(NotificationType.CHAT_JOIN_REQUEST),
                 eq("참여 신청 도착"),
                 eq("채팅방 참여 신청이 도착했어요."),
-                eq(NotificationReferenceType.JOIN_REQUEST),
-                eq(JOIN_REQUEST_ID));
+                eq(NotificationReferenceType.CHAT_ROOM),
+                eq(CHAT_ROOM_ID));
         verify(notificationRedisPubSubService).publish(
                 eq(OWNER_USER_ID),
                 any(NotificationResponse.class));
@@ -188,11 +191,11 @@ class NotificationEventHandlerTest {
         verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_2), any(NotificationResponse.class));
     }
 
-    // 연결 중(온라인) 수신자 — SimpUserRegistry에 등록돼 있으면 알림 생성/Push 모두 skip (정책 안B)
+    // 채팅방 화면 보는 중(해당 방 토픽 구독) 수신자 — 알림 생성/Push 모두 skip (정책 안B 확장판)
     @Test
-    void handleChatMessageSent_onlineRecipient_isSkipped() {
-        SimpUser onlineUser = mock(SimpUser.class);
-        given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_1))).willReturn(onlineUser);
+    void handleChatMessageSent_recipientViewingRoom_isSkipped() {
+        SimpUser viewingUser = mockSubscribedUser("/sub/chat/rooms/" + CHAT_ROOM_ID);
+        given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_1))).willReturn(viewingUser);
         given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_2))).willReturn(null);
         Notification notification2 = buildNotification(111L, RECIPIENT_USER_ID_2, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
         given(notificationService.createNotification(
@@ -206,6 +209,23 @@ class NotificationEventHandlerTest {
         verify(notificationService, never()).createNotification(eq(RECIPIENT_USER_ID_1), any(), any(), any(), any(), any());
         verify(notificationRedisPubSubService, never()).publish(eq(RECIPIENT_USER_ID_1), any());
         verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_2), any(NotificationResponse.class));
+    }
+
+    // 온라인이지만 해당 채팅방 미구독(다른 화면) 수신자 — CHAT_MESSAGE 알림 발송 (안B 확장판 핵심 변경)
+    @Test
+    void handleChatMessageSent_recipientOnlineButNotViewingRoom_isNotified() {
+        SimpUser onlineOtherPageUser = mockSubscribedUser("/user/queue/notifications");
+        given(simpUserRegistry.getUser(String.valueOf(RECIPIENT_USER_ID_1))).willReturn(onlineOtherPageUser);
+        Notification notification1 = buildNotification(110L, RECIPIENT_USER_ID_1, NotificationType.CHAT_MESSAGE, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(RECIPIENT_USER_ID_1), eq(NotificationType.CHAT_MESSAGE), eq("새 채팅 메시지"),
+                eq("채팅방에 새 메시지가 도착했어요."), eq(NotificationReferenceType.CHAT_ROOM), eq(CHAT_ROOM_ID)))
+                .willReturn(notification1);
+
+        handler.handleChatMessageSent(new ChatMessageSentEvent(
+                CHAT_ROOM_ID, SENDER_USER_ID, List.of(RECIPIENT_USER_ID_1)));
+
+        verify(notificationRedisPubSubService).publish(eq(RECIPIENT_USER_ID_1), any(NotificationResponse.class));
     }
 
     // 일부 수신자 알림 저장 실패 — 해당 수신자만 건너뛰고 나머지는 정상 처리 (둘 다 오프라인 가정)
@@ -231,7 +251,7 @@ class NotificationEventHandlerTest {
     // Redis Push 실패 시 예외 미전파 — 알림 저장 롤백 없음 보장
     @Test
     void handleJoinRequestCreated_pushFailure_doesNotPropagateException() {
-        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, NotificationReferenceType.JOIN_REQUEST, JOIN_REQUEST_ID);
+        Notification notification = buildNotification(100L, OWNER_USER_ID, NotificationType.CHAT_JOIN_REQUEST, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
         given(notificationService.createNotification(any(), any(), any(), any(), any(), any()))
                 .willReturn(notification);
         willThrow(new RuntimeException("Redis unavailable"))
@@ -361,5 +381,16 @@ class NotificationEventHandlerTest {
                 .build();
         ReflectionTestUtils.setField(n, "id", id);
         return n;
+    }
+
+    // 단일 세션이 destination 하나를 구독 중인 SimpUser mock 생성
+    private SimpUser mockSubscribedUser(String destination) {
+        SimpSubscription subscription = mock(SimpSubscription.class);
+        given(subscription.getDestination()).willReturn(destination);
+        SimpSession session = mock(SimpSession.class);
+        given(session.getSubscriptions()).willReturn(Set.of(subscription));
+        SimpUser user = mock(SimpUser.class);
+        given(user.getSessions()).willReturn(Set.of(session));
+        return user;
     }
 }
