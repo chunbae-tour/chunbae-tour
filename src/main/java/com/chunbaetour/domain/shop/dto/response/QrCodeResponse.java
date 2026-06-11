@@ -13,7 +13,7 @@ public record QrCodeResponse(Long shopId, String shopName, String qrPayload) {
         return new QrCodeResponse(
                 shop.getId(),
                 shop.getShopName(),
-                "YEOPJEON_PAY:SHOP:" + shop.getId() + ":" + shop.getQrNonce()
+                "YEOPJEON_PAY:SHOP:" + shop.getId() + ":" + java.util.Objects.requireNonNull(shop.getQrNonce(), "qrNonce must not be null")
         );
     }
 }

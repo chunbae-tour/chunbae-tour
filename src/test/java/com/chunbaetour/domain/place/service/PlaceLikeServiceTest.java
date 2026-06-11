@@ -23,6 +23,7 @@ import org.springframework.data.domain.PageRequest;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,6 +31,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
 
 @ExtendWith(MockitoExtension.class)
 class PlaceLikeServiceTest {
@@ -110,5 +113,39 @@ class PlaceLikeServiceTest {
         assertThatThrownBy(() -> placeLikeService.getUserLikedPlaces(userId, pageRequest))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("찜 추가 시 PlaceLikeChangedEvent 이벤트가 발행된다")
+    void addLike_PublishesEvent() {
+        // given
+        Long userId = 1L;
+        Long placeId = 100L;
+        Place mockPlace = mock(Place.class);
+        when(placeRepository.findById(placeId)).thenReturn(Optional.of(mockPlace));
+
+        // when
+        placeLikeService.addLike(userId, placeId);
+
+        // then
+        verify(userLikeService).addLike(userId, LikeTargetType.PLACE, placeId);
+        verify(eventPublisher).publishEvent(any(PlaceLikeChangedEvent.class));
+    }
+
+    @Test
+    @DisplayName("찜 취소 시 PlaceLikeChangedEvent 이벤트가 발행된다")
+    void removeLike_PublishesEvent() {
+        // given
+        Long userId = 1L;
+        Long placeId = 100L;
+        Place mockPlace = mock(Place.class);
+        when(placeRepository.findById(placeId)).thenReturn(Optional.of(mockPlace));
+
+        // when
+        placeLikeService.removeLike(userId, placeId);
+
+        // then
+        verify(userLikeService).removeLike(userId, LikeTargetType.PLACE, placeId);
+        verify(eventPublisher).publishEvent(any(PlaceLikeChangedEvent.class));
     }
 }

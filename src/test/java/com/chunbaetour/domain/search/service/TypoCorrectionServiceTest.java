@@ -124,7 +124,7 @@ class TypoCorrectionServiceTest {
     @DisplayName("오타 교정 - 허용 거리(MAX_DISTANCE)를 초과하는 후보는 무시된다")
     void findClosest_IgnoresCandidatesExceedingMaxDistance() {
         // given
-        String keyword = "광화수"; // "광화문"과 거리 1, "경복궁"과 거리 3
+        String keyword = "광화수"; // "광화문"과 거리 1, "화수목"과 거리 3
         String prefix = SearchRedisKeys.TYPO_GRAM_PREFIX_PLACES;
         
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
