@@ -59,7 +59,7 @@ class SearchServiceTest {
         String emptyKeyword = "   ";
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", true))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -71,7 +71,7 @@ class SearchServiceTest {
         String longKeyword = "a".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", true))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -88,7 +88,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
 
         // when (cursor == null)
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1");
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true);
 
         // then
         verify(popularSearchService).incrementSearchCount(keyword, "127.0.0.1");
@@ -107,7 +107,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
 
         // when (cursor != null)
-        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1");
+        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", true);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -129,7 +129,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1");
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -154,7 +154,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(null, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1");
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", true);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -189,7 +189,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1");
+        CursorPageResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", true);
 
         // then
         // 결과는 mockResult에 넣은 순서 (3, 2, 1 - ID 내림차순)대로 반환됨을 명시적으로 검증
@@ -215,7 +215,7 @@ class SearchServiceTest {
         String longKeyword = "가".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1"))
+        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1", true))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -237,7 +237,7 @@ class SearchServiceTest {
 
         // when
         CursorPageResponse<SearchFestivalResponse> response =
-                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1");
+                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1", true);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -262,7 +262,7 @@ class SearchServiceTest {
 
         // when
         CursorPageResponse<SearchFestivalResponse> response =
-                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1");
+                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1", true);
 
         // then
         assertThat(response.content()).hasSize(1);

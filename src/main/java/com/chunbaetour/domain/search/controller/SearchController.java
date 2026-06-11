@@ -136,10 +136,12 @@ public class SearchController {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @RequestParam(name = "track", defaultValue = "true") boolean track,
+            @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp);
+        CursorPageResponse<SearchPlaceResponse> response = searchService.searchPlaces(q, category, region, cursor, size, clientIp, track);
         return ApiResponse.success(response);
     }
 
@@ -170,10 +172,12 @@ public class SearchController {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @RequestParam(name = "track", defaultValue = "true") boolean track,
+            @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp));
+        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp, track));
     }
 
     /**

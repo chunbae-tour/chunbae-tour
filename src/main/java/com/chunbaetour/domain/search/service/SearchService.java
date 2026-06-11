@@ -76,7 +76,7 @@ public class SearchService {
      * @param clientIp 클라이언트 IP 주소
      * @return 커서 페이지네이션이 적용된 관광지 검색 결과
      */
-    public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp) {
+    public CursorPageResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, boolean track) {
         // 검색어 원문을 INFO 로그에 남기지 않고 존재/길이만 기록하여 운영 로그 보안 강화
         log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}",
                 keyword != null ? keyword.length() : 0, category, region, cursorId, size);
@@ -106,7 +106,7 @@ public class SearchService {
 
         // 3. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
         // 페이지네이션(cursorId != null) 시 검색 횟수가 중복으로 증가하는 어뷰징(Abuse)을 원천 차단한다.
-        if (!resultItems.isEmpty() && cursorId == null) {
+        if (track && !resultItems.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
@@ -134,7 +134,7 @@ public class SearchService {
      * @param clientIp  클라이언트 IP 주소
      * @return 커서 페이지네이션이 적용된 축제 검색 결과
      */
-    public CursorPageResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp) {
+    public CursorPageResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, boolean track) {
         log.info("[SearchService] 축제 검색 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}",
                 keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size);
 
@@ -170,7 +170,7 @@ public class SearchService {
                 .map(item -> SearchFestivalResponse.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                 .toList();
 
-        if (StringUtils.hasText(normalized) && !updatedItems.isEmpty() && cursorId == null) {
+        if (track && StringUtils.hasText(normalized) && !updatedItems.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
@@ -183,7 +183,7 @@ public class SearchService {
      * {@code GET /api/v1/search/festivals} 하위 호환용. 쿼리 로직은 v2와 동일.
      * </p>
      */
-    public CursorPageResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp) {
+    public CursorPageResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, boolean track) {
         log.info("[SearchService] 축제 검색 v1 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}",
                 keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size);
 
@@ -213,7 +213,7 @@ public class SearchService {
                 .map(item -> SearchFestivalV1Response.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                 .toList();
 
-        if (StringUtils.hasText(normalized) && !v1Items.isEmpty() && cursorId == null) {
+        if (track && StringUtils.hasText(normalized) && !v1Items.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
