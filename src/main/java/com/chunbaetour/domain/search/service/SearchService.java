@@ -151,7 +151,7 @@ public class SearchService {
         if (finalResultItems.isEmpty() && cursorId == null) {
             return typoCorrectionService.findClosestForPlaces(normalized)
                     .map(correction -> {
-                        log.info("[SearchService] 관광지 오타 교정 적용 — '{}' -> '{}'", normalized, correction);
+                        log.info("[SearchService] 관광지 오타 교정 적용 — inputLength: {}, correctionLength: {}", normalized.length(), correction.length());
                         // 교정된 키워드로 재검색 (개인화 적용은 유지)
                         List<SearchPlaceResponse> correctedItems =
                                 placeQueryRepository.searchByKeyword(correction, category, region, null, size);
@@ -160,6 +160,16 @@ public class SearchService {
                                 ? correctedItems.subList(0, size) : correctedItems;
                         Long correctedNextCursor = correctedResult.isEmpty() ? null
                                 : correctedResult.get(correctedResult.size() - 1).placeId();
+
+                        // In-memory Boost 적용
+                        if (!preferredCategories.isEmpty() && !correctedResult.isEmpty()) {
+                            List<SearchPlaceResponse> modifiableList = new ArrayList<>(correctedResult);
+                            modifiableList.sort(Comparator.comparing((SearchPlaceResponse p) ->
+                                    preferredCategories.contains(p.category()) ? 0 : 1
+                            ).thenComparing(SearchPlaceResponse::placeId, Comparator.reverseOrder()));
+                            correctedResult = modifiableList;
+                        }
+
                         return TypoCorrectedSearchResponse.corrected(
                                 new CursorPageResponse<>(correctedResult,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
@@ -247,7 +257,7 @@ public class SearchService {
         if (updatedItems.isEmpty() && cursorId == null && StringUtils.hasText(finalNormalized)) {
             return typoCorrectionService.findClosestForFestivals(finalNormalized)
                     .map(correction -> {
-                        log.info("[SearchService] 축제 오타 교정 적용 — '{}' -> '{}'", finalNormalized, correction);
+                        log.info("[SearchService] 축제 오타 교정 적용 — inputLength: {}, correctionLength: {}", finalNormalized.length(), correction.length());
                         List<Festival> correctedFestivals =
                                 festivalQueryRepository.searchFestivals(correction, startDate, endDate, region, null, size);
                         boolean correctedHasNext = correctedFestivals.size() > size;
@@ -320,7 +330,7 @@ public class SearchService {
         if (v1Items.isEmpty() && cursorId == null && StringUtils.hasText(finalNormalizedV1)) {
             return typoCorrectionService.findClosestForFestivals(finalNormalizedV1)
                     .map(correction -> {
-                        log.info("[SearchService] 축제(v1) 오타 교정 적용 — '{}' -> '{}'", finalNormalizedV1, correction);
+                        log.info("[SearchService] 축제(v1) 오타 교정 적용 — inputLength: {}, correctionLength: {}", finalNormalizedV1.length(), correction.length());
                         List<Festival> correctedFestivals =
                                 festivalQueryRepository.searchFestivals(correction, startDate, endDate, region, null, size);
                         boolean correctedHasNext = correctedFestivals.size() > size;

@@ -7,6 +7,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -316,10 +319,15 @@ public class TypoCorrectionService {
      * @param gramPrefix Redis 키 prefix (예: "search:typo:places:gram:")
      */
     private void evictDictionary(String gramPrefix) {
-        Set<String> keys = stringRedisTemplate.keys(gramPrefix + "*");
-        if (keys != null && !keys.isEmpty()) {
-            stringRedisTemplate.delete(keys);
-        }
+        ScanOptions options = ScanOptions.scanOptions().match(gramPrefix + "*").count(500).build();
+        stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
+            try (Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
+                while (cursor.hasNext()) {
+                    connection.keyCommands().del(cursor.next());
+                }
+            }
+            return null;
+        });
     }
 
     /**

@@ -129,7 +129,7 @@ class TypoCorrectionServiceTest {
         
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
         when(setOperations.members(prefix + "광화")).thenReturn(Set.of("광화문"));
-        when(setOperations.members(prefix + "화수")).thenReturn(Set.of("화수목")); // 거리 2 초과 (광화수 vs 화수목 = 거리 2)
+        when(setOperations.members(prefix + "화수")).thenReturn(Set.of("화수목")); // 거리 3으로 MAX_DISTANCE 초과
 
         // when
         Optional<String> closest = typoCorrectionService.findClosest(keyword, prefix);
