@@ -83,7 +83,7 @@ public class SearchService {
         SearchSource searchSource = SearchSource.from(source);
         // 검색어 원문을 INFO 로그에 남기지 않고 존재/길이만 기록하여 운영 로그 보안 강화
         log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
-                keyword != null ? keyword.length() : 0, category, region, cursorId, size, source, searchSource.isTrackable());
+                keyword != null ? keyword.length() : 0, category, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
 
         // 검색어 양끝 공백 제거 (정규화) - 이후 로직 전체에 적용
         String normalized = keyword != null ? keyword.strip() : null;
@@ -142,7 +142,7 @@ public class SearchService {
     public CursorPageResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
         SearchSource searchSource = SearchSource.from(source);
         log.info("[SearchService] 축제 검색 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
-                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, source, searchSource.isTrackable());
+                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
 
         // 검색 시작일/종료일 유효성 선검증
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
@@ -192,7 +192,7 @@ public class SearchService {
     public CursorPageResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
         SearchSource searchSource = SearchSource.from(source);
         log.info("[SearchService] 축제 검색 v1 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
-                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, source, searchSource.isTrackable());
+                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
 
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new BusinessException(ErrorCode.SEARCH_INVALID_DATE_RANGE);

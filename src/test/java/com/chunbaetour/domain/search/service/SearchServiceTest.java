@@ -130,6 +130,22 @@ class SearchServiceTest {
     }
 
     @Test
+    @DisplayName("source가 companion-place-selector이면 관광지 검색 결과가 있어도 인기 검색어를 증가시키지 않는다")
+    void searchPlaces_DoesNotIncrementPopularSearch_WhenSourceIsCompanionPlaceSelector() {
+        // given
+        String keyword = "제주";
+        int size = 10;
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "제주", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector");
+
+        // then
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    @Test
     @DisplayName("hasNext 및 nextCursor가 올바르게 계산된다 (size+1 기반)")
     void searchPlaces_CalculatesHasNextAndNextCursorCorrectly() {
         // given
