@@ -49,7 +49,7 @@ class SearchControllerTest {
     void searchPlaces_PassesSourceToService() throws Exception {
         // given
         String source = "companion-place-selector";
-        given(searchService.searchPlaces(eq("광장시장"), any(), any(), any(), eq(8), any(), eq(source)))
+        given(searchService.searchPlaces(eq("광장시장"), any(), any(), any(), eq(8), any(), eq(source), any()))
                 .willReturn(new CursorPageResponse<>(Collections.emptyList(), null, false, 0));
 
         // when & then
