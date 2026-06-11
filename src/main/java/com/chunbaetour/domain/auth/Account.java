@@ -330,7 +330,7 @@ public class Account {
     public boolean isSystemSanctionExpired(LocalDateTime now) {
         return this.sanctionType != null
                 && this.sanctionEndAt != null
-                && this.sanctionEndAt.isBefore(now);
+                && !this.sanctionEndAt.isAfter(now);
     }
 
     /**

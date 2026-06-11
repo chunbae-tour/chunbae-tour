@@ -71,6 +71,7 @@ public class SanctionService {
         }
 
         // 5. 2+ 활성 도메인 → 계정 전체 정지
+        // WARNING은 endedAt = startedAt이므로 countActiveDistinctDomains에서 즉시 제외 → 실질적 no-op (의도된 정책)
         checkAndApplyCrossDomainSuspension(userId, now);
     }
 
