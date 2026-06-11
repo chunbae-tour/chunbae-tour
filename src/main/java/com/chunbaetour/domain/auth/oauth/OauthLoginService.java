@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 소셜 로그인 1단계 — 인가코드로 공급자 사용자 식별 후, 기존 계정이면 로그인(JWT 발급), 신규면 가입 티켓 발급.
@@ -46,7 +47,7 @@ public class OauthLoginService {
     private final SecurityAuditLogger auditLogger;
     private final Clock clock;
 
-    @org.springframework.transaction.annotation.Transactional
+    @Transactional
     public OauthLoginResult login(OauthProvider provider, String code, String redirectUri) {
         // resolve(미지원 provider) → OAUTH_PROVIDER_UNSUPPORTED, fetch(공급자 토큰/사용자 조회) → OAUTH_PROVIDER_ERROR.
         OauthClient client = resolve(provider);

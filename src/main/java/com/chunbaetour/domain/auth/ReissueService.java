@@ -58,7 +58,7 @@ public class ReissueService {
     /**
      * Refresh Token으로 새 Access + Refresh를 발급한다.
      *
-     * <p>{@code @Transactional(readOnly = true)}: DB 작업은 Account 조회만이라 readOnly.
+     * <p>{@code @Transactional}: 시스템 제재 만료 시 clearSystemSanction() 호출로 Account 상태 변경 필요.
      * Redis 호출(rotate)은 트랜잭션 밖이므로 영향 없음.
      *
      * @param refreshToken Cookie에서 추출한 Refresh JWT
