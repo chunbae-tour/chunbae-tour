@@ -26,6 +26,17 @@ public class AdminAdApplicationService {
     private final AdApplicationRepository adApplicationRepository;
 
     /**
+     * 관리자 광고 신청 단건 상세 조회 (KAN-269).
+     * 승인·거절 판단 전 신청 1건의 상세 확인용. 없는 adId면 AD_APPLICATION_NOT_FOUND.
+     * 목록 조회와 동일한 응답 형식(AdminAdApplicationResponse) 유지.
+     */
+    public AdminAdApplicationResponse getApplication(Long adId) {
+        AdApplication application = adApplicationRepository.findById(adId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AD_APPLICATION_NOT_FOUND));
+        return AdminAdApplicationResponse.from(application);
+    }
+
+    /**
      * 광고 승인.
      * AdApplication SELECT FOR UPDATE 후 상태 전이.
      */
