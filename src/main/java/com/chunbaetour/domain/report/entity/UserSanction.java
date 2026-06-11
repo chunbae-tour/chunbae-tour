@@ -71,6 +71,19 @@ public class UserSanction {
             String reason,
             LocalDateTime startedAt,
             LocalDateTime endedAt) {
+        if (userId == null || reportId == null || targetType == null
+                || sanctionType == null || reason == null || startedAt == null) {
+            throw new IllegalArgumentException("UserSanction 필수 필드는 null일 수 없습니다.");
+        }
+        if (reason.length() > 500) {
+            throw new IllegalArgumentException("reason은 500자 이하여야 합니다.");
+        }
+        if (endedAt != null && endedAt.isBefore(startedAt)) {
+            throw new IllegalArgumentException("endedAt은 startedAt 이후여야 합니다.");
+        }
+        if (sanctionType == SanctionType.PERMANENT && endedAt != null) {
+            throw new IllegalArgumentException("PERMANENT 제재는 endedAt이 null이어야 합니다.");
+        }
         UserSanction sanction = new UserSanction();
         sanction.userId = userId;
         sanction.reportId = reportId;

@@ -40,13 +40,16 @@ public class AdminSanctionService {
      * PERMANENT 포함 모든 단계 해제 가능 (관리자 강제 해제 {@code adminClearSystemSanction} 사용).
      */
     @Transactional
-    public void releaseSanction(Long sanctionId, Long adminId) {
+    public void releaseSanction(Long userId, Long sanctionId, Long adminId) {
         UserSanction sanction = userSanctionRepository.findById(sanctionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SANCTION_NOT_FOUND));
 
+        if (!sanction.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.SANCTION_NOT_FOUND);
+        }
+
         sanction.release(adminId, LocalDateTime.now(clock)); // 이미 해제된 경우 무시 (idempotent)
 
-        Long userId = sanction.getUserId();
         LocalDateTime now = LocalDateTime.now(clock);
 
         List<UserSanction> remaining = userSanctionRepository.findAllActiveSanctionsByUserId(userId, now);

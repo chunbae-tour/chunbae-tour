@@ -61,6 +61,6 @@ public class AdminSanctionController {
     ) {
         AccessClaims claims = (AccessClaims) request.getAttribute(
                 JwtAuthenticationFilter.REQUEST_ATTR_ACCESS_CLAIMS);
-        adminSanctionService.releaseSanction(sanctionId, claims.userId());
+        adminSanctionService.releaseSanction(userId, sanctionId, claims.userId());
     }
 }

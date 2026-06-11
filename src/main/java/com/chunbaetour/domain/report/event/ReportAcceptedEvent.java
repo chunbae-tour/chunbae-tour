@@ -16,4 +16,13 @@ public record ReportAcceptedEvent(
         Long reportedUserId,
         ReportTargetType targetType,
         int acceptedCount
-) {}
+) {
+    public ReportAcceptedEvent {
+        if (reportId == null || reportedUserId == null || targetType == null) {
+            throw new IllegalArgumentException("ReportAcceptedEvent 필수 필드는 null일 수 없습니다.");
+        }
+        if (acceptedCount < 0) {
+            throw new IllegalArgumentException("acceptedCount는 음수일 수 없습니다.");
+        }
+    }
+}
