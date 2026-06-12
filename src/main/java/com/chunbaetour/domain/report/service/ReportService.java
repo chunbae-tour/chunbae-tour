@@ -17,6 +17,9 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.place.PlaceReview;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.shop.service.ShopService;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
@@ -71,6 +74,7 @@ public class ReportService {
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
+    private final PlaceReviewRepository placeReviewRepository;
     private final ShopService shopService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -320,7 +324,10 @@ public class ReportService {
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요
             }
-            // TODO(KAN-152): REVIEW enum 추가 후 case REVIEW -> { /* 자동 숨김 처리 */ } 추가
+            case REVIEW -> placeReviewRepository.findByIdForUpdate(targetId)
+                    .filter(r -> r.getStatus() == PlaceReviewStatus.ACTIVE)
+                    .filter(r -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
+                    .ifPresent(PlaceReview::delete);
         }
     }
 
@@ -370,6 +377,8 @@ public class ReportService {
                     .map(Comment::getAuthorId).orElse(null);
             case USER -> targetId;
             case MERCHANT -> shopService.findMerchantAccountId(targetId).orElse(null);
+            case REVIEW -> placeReviewRepository.findById(targetId)
+                    .map(r -> r.getAuthor().getId()).orElse(null);
             default -> null;
         };
     }
@@ -401,7 +410,9 @@ public class ReportService {
                     .flatMap(accountRepository::findById)
                     .map(a -> new TargetDetail(null, a.getNickname(), null))
                     .orElse(TargetDetail.deleted());
-            // TODO(KAN-152): REVIEW 도메인 구현 후 case 추가 — title·content·imageUrls 반환
+            case REVIEW -> placeReviewRepository.findById(targetId)
+                    .map(r -> new TargetDetail(null, r.getContent(), null))
+                    .orElse(TargetDetail.deleted());
         };
     }
 
@@ -473,7 +484,16 @@ public class ReportService {
                     throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
-            // REVIEW: 리뷰 도메인 구현(KAN-152) 완료 후 case 추가 필요
+            case REVIEW -> {
+                PlaceReview review = placeReviewRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (review.getStatus() != PlaceReviewStatus.ACTIVE) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (review.isOwnedBy(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
+                }
+            }
             default -> throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
         }
     }

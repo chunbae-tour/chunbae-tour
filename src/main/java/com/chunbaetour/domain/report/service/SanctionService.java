@@ -5,6 +5,8 @@ import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
@@ -40,6 +42,7 @@ public class SanctionService {
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
+    private final PlaceReviewRepository placeReviewRepository;
     private final Clock clock;
 
     /**
@@ -126,6 +129,8 @@ public class SanctionService {
                     .ifPresent(p -> { if (!p.getStatus().name().equals("DELETED")) p.hide(); });
             case COMMENT -> commentRepository.findById(targetId)
                     .ifPresent(c -> { if (c.getStatus() != com.chunbaetour.domain.community.comment.entity.CommentStatus.DELETED) c.hide(); });
+            case REVIEW -> placeReviewRepository.findById(targetId)
+                    .ifPresent(r -> { if (r.getStatus() != PlaceReviewStatus.DELETED) r.delete(); });
             default -> log.warn("[제재 숨김] 미지원 targetType={}", targetType);
         }
         log.info("[제재 숨김] reportId={} targetType={} targetId={}", reportId, targetType, targetId);

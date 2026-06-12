@@ -97,15 +97,6 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
-// ReviewReportListener는 REVIEW 도메인(KAN-152) 의존 — 해당 PR 머지 전까지 빌드 제외.
-sourceSets {
-	main {
-		java {
-			exclude 'com/chunbaetour/domain/report/listener/ReviewReportListener.java'
-		}
-	}
-}
-
 tasks.named('test') {
 	useJUnitPlatform()
 	maxHeapSize = '6g'

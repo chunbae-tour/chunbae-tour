@@ -2,13 +2,16 @@ package com.chunbaetour.domain.place.repository;
 
 import com.chunbaetour.domain.place.PlaceReview;
 import com.chunbaetour.domain.place.PlaceReviewStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> {
 
@@ -58,4 +61,9 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
      */
     @Query("SELECT SUM(r.rating), COUNT(r) FROM PlaceReview r WHERE r.place.id = :placeId AND r.status = 'ACTIVE'")
     List<Object[]> sumRatingAndCount(@Param("placeId") Long placeId);
+
+    /** 자동 숨김 직렬화용 비관적 쓰기 락 — 동시 신고로 인한 임계값 경합 방지 (KAN-93). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM PlaceReview r WHERE r.id = :id")
+    Optional<PlaceReview> findByIdForUpdate(@Param("id") Long id);
 }

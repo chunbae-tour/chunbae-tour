@@ -48,8 +48,7 @@ public class SanctionCheckInterceptor implements HandlerInterceptor {
         DOMAIN_PATTERNS.put("/api/v1/community/posts/companions/**", ReportTargetType.POST_COMPANION);
         DOMAIN_PATTERNS.put("/api/v1/community/posts/free/**",       ReportTargetType.POST_FREE);
         DOMAIN_PATTERNS.put("/api/v1/community/comments/**",         ReportTargetType.COMMENT);
-        // TODO(PR3): REVIEW targetType 추가 후 활성화
-        // DOMAIN_PATTERNS.put("/api/v1/places/*/reviews",           ReportTargetType.REVIEW);
+        DOMAIN_PATTERNS.put("/api/v1/places/*/reviews/**",          ReportTargetType.REVIEW);
     }
 
     private final AccountRepository accountRepository;

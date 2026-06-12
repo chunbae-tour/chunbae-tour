@@ -20,6 +20,9 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.place.PlaceReview;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
@@ -195,5 +198,37 @@ class ReportListenerTest {
                 .handle(event(ReportTargetType.USER, ReportAction.SUSPEND));
 
         then(acc).should().suspend();
+    }
+
+    // ── ReviewReportListener ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Review DELETE — 이미 DELETED면 delete 스킵")
+    void review_delete_alreadyDeleted_skips() {
+        PlaceReviewRepository repo = mock(PlaceReviewRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getStatus()).willReturn(PlaceReviewStatus.DELETED);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(review));
+
+        new ReviewReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.REVIEW, ReportAction.DELETE));
+
+        then(review).should(never()).delete();
+    }
+
+    @Test
+    @DisplayName("Review DELETE — 활성이면 delete")
+    void review_delete_active_deletes() {
+        PlaceReviewRepository repo = mock(PlaceReviewRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getStatus()).willReturn(PlaceReviewStatus.ACTIVE);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(review));
+
+        new ReviewReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.REVIEW, ReportAction.DELETE));
+
+        then(review).should().delete();
     }
 }
