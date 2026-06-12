@@ -111,13 +111,27 @@ public class CacheWarmupService {
 
             Set<TypedTuple<String>> tuples = new HashSet<>();
             for (Place place : popularPlaces) {
-                double score = (place.getLikeCount() * PlaceRedisConstants.POPULAR_LIKE_WEIGHT)
-                        + (place.getViewCount() * PlaceRedisConstants.POPULAR_VIEW_WEIGHT);
+                int likeCount = resolveRedisCount(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX, place.getId(), place.getLikeCount());
+                int viewCount = resolveRedisCount(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX, place.getId(), place.getViewCount());
+                
+                double score = (likeCount * PlaceRedisConstants.POPULAR_LIKE_WEIGHT)
+                        + (viewCount * PlaceRedisConstants.POPULAR_VIEW_WEIGHT);
                 tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
             }
 
-            stringRedisTemplate.opsForZSet().add(key, tuples);
-            stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+            try {
+                stringRedisTemplate.opsForZSet().add(key, tuples);
+                Boolean expired = stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+                if (Boolean.FALSE.equals(expired)) {
+                    throw new IllegalStateException("expire 연산이 false를 반환했습니다");
+                }
+            } catch (Exception e) {
+                // Partial Write 방지: ZSet 적재 후 TTL 설정에 실패한 경우 쓰레기 데이터 영구 존속을 막기 위해 키 삭제
+                try {
+                    stringRedisTemplate.delete(key);
+                } catch (Exception ignore) {}
+                throw new IllegalStateException("ZSet 적재 및 TTL 설정 중 예외 발생 — rollback 완료", e);
+            }
 
             log.info("[CacheWarmup] 인기 추천 ZSet 웜업 완료 — {}건 적재", popularPlaces.size());
         } catch (Exception e) {
@@ -164,7 +178,7 @@ public class CacheWarmupService {
                         continue;
                     }
 
-                    int likeCount = resolveRedisLikeCount(place.getId(), place.getLikeCount());
+                    int likeCount = resolveRedisCount(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX, place.getId(), place.getLikeCount());
 
                     // imageUrls JSON 파싱
                     List<String> imageUrls = parseImageUrls(place.getImageUrls());
@@ -198,13 +212,12 @@ public class CacheWarmupService {
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────────
 
-    private int resolveRedisLikeCount(Long placeId, int dbFallback) {
+    private int resolveRedisCount(String prefix, Long placeId, int dbFallback) {
         try {
-            String val = stringRedisTemplate.opsForValue()
-                    .get(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId);
+            String val = stringRedisTemplate.opsForValue().get(prefix + placeId);
             return (val != null) ? Integer.parseInt(val) : dbFallback;
         } catch (Exception e) {
-            log.warn("[CacheWarmup] Redis likeCount 조회 실패, DB 값 사용: placeId={}", placeId, e);
+            log.warn("[CacheWarmup] Redis count 조회 실패, DB 값 사용: key={}{}, err={}", prefix, placeId, e.getMessage());
             return dbFallback;
         }
     }

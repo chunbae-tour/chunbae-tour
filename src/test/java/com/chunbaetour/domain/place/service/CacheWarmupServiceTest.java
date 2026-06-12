@@ -124,7 +124,9 @@ class CacheWarmupServiceTest {
         // given
         Place place = createActivePlace(PLACE_ID);
         given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
+        given(stringRedisTemplate.expire(anyString(), any(Long.class), any())).willReturn(true);
 
         // when
         cacheWarmupService.warmupPopularZSet(List.of(place));
@@ -176,6 +178,27 @@ class CacheWarmupServiceTest {
         assertDoesNotThrow(
                 () -> cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)))
         );
+    }
+
+    @Test
+    @DisplayName("인기 ZSet 웜업 — TTL 설정 실패 시 Partial Write 방지를 위해 롤백(삭제)")
+    void warmupPopularZSet_ttlFail_rollbacks() {
+        // given
+        Place place = createActivePlace(PLACE_ID);
+        given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
+        
+        // expire가 false 반환(실패) 모킹
+        given(stringRedisTemplate.expire(anyString(), any(Long.class), any())).willReturn(false);
+
+        // when
+        cacheWarmupService.warmupPopularZSet(List.of(place));
+
+        // then
+        verify(zSetOperations).add(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), any());
+        // TTL 실패로 인해 delete가 호출되어야 함
+        verify(stringRedisTemplate).delete(PlaceRedisConstants.RECOMMEND_POPULAR_KEY);
     }
 
     // ── warmupPlaceDetails ───────────────────────────────────────────────────────
