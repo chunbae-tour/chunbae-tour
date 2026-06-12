@@ -114,6 +114,14 @@ public class ChatRoom extends BaseEntity {
         }
     }
 
+    // 방장 위임 — ownerId 교체. 멤버 상태(OWNER_ACTIVE/MEMBER_ACTIVE) 교체는 서비스에서 ChatRoomMember 양쪽에 별도 적용
+    public void transferOwner(Long newOwnerId) {
+        if (this.ownerId.equals(newOwnerId)) {
+            throw new BusinessException(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET);
+        }
+        this.ownerId = newOwnerId;
+    }
+
     public void close() {
         if (this.status == ChatRoomStatus.CLOSED) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);

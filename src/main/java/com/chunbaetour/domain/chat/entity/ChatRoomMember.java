@@ -107,6 +107,22 @@ public class ChatRoomMember extends BaseEntity {
         this.leftAt = LocalDateTime.now();
     }
 
+    // 방장 위임 — 위임받는 멤버: MEMBER_ACTIVE만 OWNER_ACTIVE로 전환 가능 (본인·비활성 멤버는 차단)
+    public void promoteToOwner() {
+        if (this.memberState != ChatMemberState.MEMBER_ACTIVE) {
+            throw new BusinessException(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET);
+        }
+        this.memberState = ChatMemberState.OWNER_ACTIVE;
+    }
+
+    // 방장 위임 — 위임하는 멤버: OWNER_ACTIVE를 MEMBER_ACTIVE로 전환
+    public void demoteFromOwner() {
+        if (this.memberState != ChatMemberState.OWNER_ACTIVE) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        this.memberState = ChatMemberState.MEMBER_ACTIVE;
+    }
+
     // MEMBER_LEFT 상태 유저 재참여 수락 시 호출 — 새 레코드 INSERT 대신 기존 레코드 업데이트
     public void reactivate() {
         if (this.memberState != ChatMemberState.MEMBER_LEFT) {

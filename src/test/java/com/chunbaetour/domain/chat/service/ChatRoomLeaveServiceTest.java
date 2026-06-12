@@ -2,6 +2,7 @@ package com.chunbaetour.domain.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -22,6 +23,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 @ExtendWith(MockitoExtension.class)
 class ChatRoomLeaveServiceTest {
@@ -87,20 +89,56 @@ class ChatRoomLeaveServiceTest {
     }
 
     @Test
-    void leaveRoom_owner_throws_CHAT_OWNER_CANNOT_LEAVE() {
-        // 방장(OWNER_ACTIVE)은 직접 퇴장 불가 — close()로만 방 종료 가능
+    void leaveRoom_ownerWithOtherActiveMembers_throws_CHAT_OWNER_CANNOT_LEAVE() {
+        // 방장 + 다른 ACTIVE 멤버 존재 — 위임 선행 필요(CHAT_015), leave()/close() 호출되지 않아야 함
         ChatRoomMember member = mock(ChatRoomMember.class);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
-        doThrow(new BusinessException(ErrorCode.CHAT_OWNER_CANNOT_LEAVE)).when(member).leave();
+        given(member.isOwner()).willReturn(true);
+        given(room.getCurrentMembers()).willReturn(2);
 
         assertThatThrownBy(() -> chatRoomService.leaveRoom(USER_ID, ROOM_ID))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> extractErrorCode(ex))
                 .isEqualTo(ErrorCode.CHAT_OWNER_CANNOT_LEAVE);
 
-        // leave() 실패 시 인원 감소가 일어나면 안 됨
+        verify(member, never()).leave();
+        verify(room, never()).close();
         verify(room, never()).decrementMembers();
+    }
+
+    @Test
+    void leaveRoom_soleOwner_closesRoom() {
+        // 단독 방장(다른 ACTIVE 멤버 없음) 퇴장 시도 — 위임 없이 방 자동 CLOSED
+        ChatRoomMember member = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        given(member.isOwner()).willReturn(true);
+        given(room.getCurrentMembers()).willReturn(1);
+
+        chatRoomService.leaveRoom(USER_ID, ROOM_ID);
+
+        verify(room).close();
+        verify(chatRoomRepository).saveAndFlush(room);
+        verify(member, never()).leave();
+        verify(room, never()).decrementMembers();
+    }
+
+    @Test
+    void leaveRoom_soleOwner_concurrentModification_throws_CONCURRENT_UPDATE() {
+        // 단독 방장 자동 CLOSED 처리 중 @Version 충돌 — CONCURRENT_UPDATE
+        ChatRoomMember member = mock(ChatRoomMember.class);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        given(member.isOwner()).willReturn(true);
+        given(room.getCurrentMembers()).willReturn(1);
+        willThrow(ObjectOptimisticLockingFailureException.class)
+                .given(chatRoomRepository).saveAndFlush(room);
+
+        assertThatThrownBy(() -> chatRoomService.leaveRoom(USER_ID, ROOM_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> extractErrorCode(ex))
+                .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
     }
 
     @Test
