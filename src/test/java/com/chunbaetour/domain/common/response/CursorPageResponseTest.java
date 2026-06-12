@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.common.response;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
@@ -67,5 +68,14 @@ class CursorPageResponseTest {
         assertThat(result.content()).containsExactly("only");
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("of — size<1이면 IllegalArgumentException으로 fail-fast (page.get(-1) 500 방지)")
+    void of_sizeBelowOne_throws() {
+        List<Item> raw = List.of(new Item(10L, "a"));
+
+        assertThatThrownBy(() -> CursorPageResponse.of(raw, 0, Item::name, Item::getId))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }
