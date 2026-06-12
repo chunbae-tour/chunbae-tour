@@ -26,21 +26,35 @@ public class PlaceStatsSyncBatchService {
      * 전체 루프를 단일 트랜잭션으로 묶지 않고 청크마다 분리하여 DB 커넥션 점유를 최소화한다.
      */
     public void syncDirtyStats() {
-        while (true) {
-            // 1. 더티 마킹된 ID 청크(최대 CHUNK_SIZE개) 꺼내기 (pop 대신 randomMembers로 조회만 수행)
-            List<String> dirtyIds = stringRedisTemplate.opsForSet().randomMembers(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, CHUNK_SIZE);
-            if (dirtyIds == null || dirtyIds.isEmpty()) {
-                break; // 더 이상 동기화할 데이터가 없음
+        // Cursor 기반으로 안전하게 순회하여 무한 루프 방지
+        try (org.springframework.data.redis.core.Cursor<String> cursor = stringRedisTemplate.opsForSet().scan(
+                PlaceRedisConstants.PLACE_DIRTY_STATS_KEY,
+                org.springframework.data.redis.core.ScanOptions.scanOptions().count(CHUNK_SIZE).build())) {
+            
+            java.util.List<String> chunk = new java.util.ArrayList<>();
+            while (cursor.hasNext()) {
+                chunk.add(cursor.next());
+                if (chunk.size() >= CHUNK_SIZE) {
+                    processChunk(chunk);
+                    chunk.clear();
+                }
             }
+            if (!chunk.isEmpty()) {
+                processChunk(chunk);
+            }
+        } catch (Exception e) {
+            log.error("[PlaceStatsSync] 커서 스캔 및 동기화 중 오류 발생", e);
+        }
+    }
 
-            try {
-                placeStatsSyncChunkService.syncChunk(dirtyIds);
-                // DB 갱신까지 완벽히 성공하면 SRANDMEMBER로 가져온 ID들을 더티 큐에서 SREM 삭제
-                stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, dirtyIds.toArray(new Object[0]));
-            } catch (Exception e) {
-                log.error("[PlaceStatsSync] 청크 동기화 실패. 삭제(SREM)를 보류하여 데이터 유실을 방지합니다. 실패 ID 수: {}", dirtyIds.size(), e);
-                throw e;
-            }
+    private void processChunk(List<String> dirtyIds) {
+        try {
+            placeStatsSyncChunkService.syncChunk(dirtyIds);
+            // DB 갱신까지 완벽히 성공하면 SREM 삭제
+            stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, (Object[]) dirtyIds.toArray(new String[0]));
+        } catch (Exception e) {
+            log.error("[PlaceStatsSync] 청크 동기화 실패. 삭제(SREM)를 보류하여 데이터 유실을 방지합니다. 실패 ID 수: {}", dirtyIds.size(), e);
+            throw e;
         }
     }
 }

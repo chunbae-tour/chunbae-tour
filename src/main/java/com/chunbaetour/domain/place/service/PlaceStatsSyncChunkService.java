@@ -105,13 +105,19 @@ public class PlaceStatsSyncChunkService {
 
         int updatedRows = updatedRowsCount != null ? updatedRowsCount : 0;
 
-        // 3. 동기화가 성공한 카운터 키들을 삭제(DEL)하여 다음 요청 시 DB 최신 값 기준으로 캐시가 Seed 되도록 보장
-        List<String> keysToDelete = new ArrayList<>();
+        // 3. 동기화가 성공한 카운터 키들을 삭제할 때 Race Condition 방지
+        // 찰나의 타이밍에 유저 트래픽으로 Redis 값이 변했을 수 있으므로, 배치가 읽었던 값과 정확히 일치할 때만 삭제(Atomic Delete)
+        String atomicDeleteScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+        org.springframework.data.redis.core.script.DefaultRedisScript<Long> script = new org.springframework.data.redis.core.script.DefaultRedisScript<>(atomicDeleteScript, Long.class);
+
         for (StatsUpdateDto dto : updates) {
-            keysToDelete.add(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id());
-            keysToDelete.add(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id());
+            if (dto.viewCount() != null) {
+                stringRedisTemplate.execute(script, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id()), String.valueOf(dto.viewCount()));
+            }
+            if (dto.likeCount() != null) {
+                stringRedisTemplate.execute(script, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id()), String.valueOf(dto.likeCount()));
+            }
         }
-        stringRedisTemplate.delete(keysToDelete);
 
         log.info("Place stats sync chunk completed: {} requested, {} rows updated.", updates.size(), updatedRows);
     }
