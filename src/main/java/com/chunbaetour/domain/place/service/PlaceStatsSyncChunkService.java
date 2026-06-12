@@ -26,6 +26,12 @@ public class PlaceStatsSyncChunkService {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
 
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> ATOMIC_DELETE_SCRIPT = 
+        new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", 
+            Long.class
+        );
+
     public void syncChunk(List<String> dirtyIds) {
         // 1. Redis에서 해당 ID들의 최신 통계 조회
         List<String> viewKeys = new ArrayList<>();
@@ -107,15 +113,12 @@ public class PlaceStatsSyncChunkService {
 
         // 3. 동기화가 성공한 카운터 키들을 삭제할 때 Race Condition 방지
         // 찰나의 타이밍에 유저 트래픽으로 Redis 값이 변했을 수 있으므로, 배치가 읽었던 값과 정확히 일치할 때만 삭제(Atomic Delete)
-        String atomicDeleteScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
-        org.springframework.data.redis.core.script.DefaultRedisScript<Long> script = new org.springframework.data.redis.core.script.DefaultRedisScript<>(atomicDeleteScript, Long.class);
-
         for (StatsUpdateDto dto : updates) {
             if (dto.viewCount() != null) {
-                stringRedisTemplate.execute(script, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id()), String.valueOf(dto.viewCount()));
+                stringRedisTemplate.execute(ATOMIC_DELETE_SCRIPT, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id()), String.valueOf(dto.viewCount()));
             }
             if (dto.likeCount() != null) {
-                stringRedisTemplate.execute(script, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id()), String.valueOf(dto.likeCount()));
+                stringRedisTemplate.execute(ATOMIC_DELETE_SCRIPT, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id()), String.valueOf(dto.likeCount()));
             }
         }
 
