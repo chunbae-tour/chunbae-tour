@@ -26,6 +26,12 @@ public class PlaceStatsSyncBatchService {
      * 전체 루프를 단일 트랜잭션으로 묶지 않고 청크마다 분리하여 DB 커넥션 점유를 최소화한다.
      */
     public void syncDirtyStats() {
+        // 스케줄러 스레드 무한 점유 및 ShedLock 만료 방지를 위한 제한 설정
+        long startTime = System.currentTimeMillis();
+        long maxDurationMs = 45000; // 최대 45초 (1분 주기 감안)
+        int maxProcessedCount = 10000; // 최대 10,000개
+        int processedCount = 0;
+
         // Cursor 기반으로 안전하게 순회하여 무한 루프 방지
         try (org.springframework.data.redis.core.Cursor<String> cursor = stringRedisTemplate.opsForSet().scan(
                 PlaceRedisConstants.PLACE_DIRTY_STATS_KEY,
@@ -36,7 +42,14 @@ public class PlaceStatsSyncBatchService {
                 chunk.add(cursor.next());
                 if (chunk.size() >= CHUNK_SIZE) {
                     tryProcessChunk(chunk);
+                    processedCount += chunk.size();
                     chunk.clear();
+
+                    // 한 번의 배치 스케줄러에서 한계를 초과하면 조기 탈출 (나머지는 다음 1분 뒤 배치로 위임)
+                    if (System.currentTimeMillis() - startTime > maxDurationMs || processedCount >= maxProcessedCount) {
+                        log.warn("[PlaceStatsSync] 최대 처리 시간 또는 개수 초과로 배치 조기 종료. 다음 주기에 이어서 처리합니다. (processed: {})", processedCount);
+                        break;
+                    }
                 }
             }
             if (!chunk.isEmpty()) {

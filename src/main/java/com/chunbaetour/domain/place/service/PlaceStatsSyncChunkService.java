@@ -1,22 +1,16 @@
 package com.chunbaetour.domain.place.service;
 
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
-/**
- * 조회수/좋아요 통계 비동기 배치의 청크 단위를 처리하는 서비스 (KAN-279).
- * 트랜잭션 격리를 위해 분리됨.
- */
+import java.util.ArrayList;
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -34,8 +28,12 @@ public class PlaceStatsSyncChunkService {
             "local expectedView = ARGV[1];\n" +
             "local expectedLike = ARGV[2];\n" +
             "local placeId = ARGV[3];\n" +
-            "local viewMatch = (expectedView == '' or redis.call('get', viewKey) == expectedView);\n" +
-            "local likeMatch = (expectedLike == '' or redis.call('get', likeKey) == expectedLike);\n" +
+            "local actualView = redis.call('get', viewKey);\n" +
+            "local viewMatch = false;\n" +
+            "if expectedView == '' then viewMatch = (not actualView) else viewMatch = (actualView == expectedView) end;\n" +
+            "local actualLike = redis.call('get', likeKey);\n" +
+            "local likeMatch = false;\n" +
+            "if expectedLike == '' then likeMatch = (not actualLike) else likeMatch = (actualLike == expectedLike) end;\n" +
             "if viewMatch and likeMatch then\n" +
             "  if expectedView ~= '' then redis.call('del', viewKey) end;\n" +
             "  if expectedLike ~= '' then redis.call('del', likeKey) end;\n" +
@@ -48,9 +46,9 @@ public class PlaceStatsSyncChunkService {
         );
 
     public void syncChunk(List<String> dirtyIds) {
-        // 1. Redis에서 해당 ID들의 최신 통계 조회
         List<String> viewKeys = new ArrayList<>();
         List<String> likeKeys = new ArrayList<>();
+
         for (String id : dirtyIds) {
             viewKeys.add(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + id);
             likeKeys.add(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + id);
@@ -59,93 +57,96 @@ public class PlaceStatsSyncChunkService {
         List<String> viewCounts = stringRedisTemplate.opsForValue().multiGet(viewKeys);
         List<String> likeCounts = stringRedisTemplate.opsForValue().multiGet(likeKeys);
 
-        List<StatsUpdateDto> updates = new ArrayList<>();
-        for (int i = 0; i < dirtyIds.size(); i++) {
-            String idStr = dirtyIds.get(i);
-            String vcStr = viewCounts != null ? viewCounts.get(i) : null;
-            String lcStr = likeCounts != null ? likeCounts.get(i) : null;
-
-            if (vcStr == null && lcStr == null) {
-                continue;
-            }
-
-            try {
-                Long id = Long.parseLong(idStr);
-                Integer viewCount = vcStr != null ? Integer.valueOf(vcStr) : null;
-                Integer likeCount = lcStr != null ? Integer.valueOf(lcStr) : null;
-
-                updates.add(new StatsUpdateDto(id, viewCount, likeCount));
-            } catch (Exception e) {
-                log.error("[PlaceStatsSync] 카운터 파싱 실패 - 항목 건너뜀: id={}, vc={}, lc={}", idStr, vcStr, lcStr, e);
-            }
-        }
-
-        if (updates.isEmpty()) {
+        if (viewCounts == null || likeCounts == null) {
+            log.warn("Redis multiGet returned null for keys. Aborting chunk.");
             return;
         }
 
-        // 2. JdbcTemplate을 활용한 Bulk Update
-        String sql = "UPDATE places SET " +
-                     "view_count = COALESCE(?, view_count), " +
-                     "like_count = COALESCE(?, like_count) " +
-                     "WHERE id = ?";
+        List<StatsUpdateDto> updates = new ArrayList<>();
+        List<Long> emptyIds = new ArrayList<>();
 
-        Integer updatedRowsCount = transactionTemplate.execute(status -> {
-            int[] results = jdbcTemplate.batchUpdate(sql, new BatchPreparedStatementSetter() {
-                @Override
-                public void setValues(PreparedStatement ps, int i) throws SQLException {
-                    StatsUpdateDto dto = updates.get(i);
-                    
-                    if (dto.viewCount() != null) {
-                        ps.setInt(1, dto.viewCount());
-                    } else {
-                        ps.setNull(1, java.sql.Types.INTEGER);
-                    }
-                    
-                    if (dto.likeCount() != null) {
-                        ps.setInt(2, dto.likeCount());
-                    } else {
-                        ps.setNull(2, java.sql.Types.INTEGER);
-                    }
-                    
-                    ps.setLong(3, dto.id());
+        for (int i = 0; i < dirtyIds.size(); i++) {
+            String idStr = dirtyIds.get(i);
+            String vcStr = viewCounts.get(i);
+            String lcStr = likeCounts.get(i);
+
+            try {
+                Long id = Long.parseLong(idStr);
+                if (vcStr == null && lcStr == null) {
+                    emptyIds.add(id);
+                } else {
+                    Integer viewCount = vcStr != null ? Integer.valueOf(vcStr) : null;
+                    Integer likeCount = lcStr != null ? Integer.valueOf(lcStr) : null;
+                    updates.add(new StatsUpdateDto(id, viewCount, likeCount));
                 }
-
-                @Override
-                public int getBatchSize() {
-                    return updates.size();
-                }
-            });
-
-            int count = 0;
-            for (int r : results) {
-                if (r > 0) count++;
+            } catch (Exception e) {
+                log.error("카운터 파싱 실패 - 항목 건너뜀 (placeId: {})", idStr, e);
             }
-            return count;
-        });
+        }
 
-        int updatedRows = updatedRowsCount != null ? updatedRowsCount : 0;
+        int updatedRows = 0;
+        if (!updates.isEmpty()) {
+            updates.sort(java.util.Comparator.comparing(StatsUpdateDto::id));
 
-        // 3. Race Condition 방지를 위한 카운터 삭제 및 Dirty 마커(SREM) 동시 원자적 제거
-        // 찰나의 타이밍에 유저 트래픽으로 Redis 값이 변했다면 삭제와 SREM을 모두 보류하고 다음 배치에서 재처리
+            String sql = "UPDATE places SET " +
+                         "view_count = COALESCE(?, view_count), " +
+                         "like_count = COALESCE(?, like_count) " +
+                         "WHERE id = ?";
+
+            Integer updatedRowsCount = transactionTemplate.execute(status -> {
+                int[] results = jdbcTemplate.batchUpdate(sql, new org.springframework.jdbc.core.BatchPreparedStatementSetter() {
+                    @Override
+                    public void setValues(java.sql.PreparedStatement ps, int i) throws java.sql.SQLException {
+                        StatsUpdateDto dto = updates.get(i);
+                        if (dto.viewCount() != null) ps.setInt(1, dto.viewCount());
+                        else ps.setNull(1, java.sql.Types.INTEGER);
+                        
+                        if (dto.likeCount() != null) ps.setInt(2, dto.likeCount());
+                        else ps.setNull(2, java.sql.Types.INTEGER);
+                        
+                        ps.setLong(3, dto.id());
+                    }
+
+                    @Override
+                    public int getBatchSize() {
+                        return updates.size();
+                    }
+                });
+
+                int count = 0;
+                for (int r : results) {
+                    if (r > 0) count++;
+                }
+                return count;
+            });
+            updatedRows = updatedRowsCount != null ? updatedRowsCount : 0;
+        }
+
         for (StatsUpdateDto dto : updates) {
             String expectedViewStr = dto.viewCount() != null ? String.valueOf(dto.viewCount()) : "";
             String expectedLikeStr = dto.likeCount() != null ? String.valueOf(dto.likeCount()) : "";
-            
-            stringRedisTemplate.execute(
-                ATOMIC_CLEANUP_SCRIPT,
-                java.util.Arrays.asList(
-                    PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id(),
-                    PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id(),
-                    PlaceRedisConstants.PLACE_DIRTY_STATS_KEY
-                ),
-                expectedViewStr,
-                expectedLikeStr,
-                String.valueOf(dto.id())
-            );
+            executeLuaCleanup(dto.id(), expectedViewStr, expectedLikeStr);
         }
 
-        log.info("Place stats sync chunk completed: {} requested, {} rows updated.", updates.size(), updatedRows);
+        for (Long id : emptyIds) {
+            executeLuaCleanup(id, "", "");
+        }
+
+        log.info("Place stats sync chunk completed: {} requested, {} rows updated, {} empty cleaned.", dirtyIds.size(), updatedRows, emptyIds.size());
+    }
+
+    private void executeLuaCleanup(Long id, String expectedViewStr, String expectedLikeStr) {
+        stringRedisTemplate.execute(
+            ATOMIC_CLEANUP_SCRIPT,
+            java.util.Arrays.asList(
+                PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + id,
+                PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + id,
+                PlaceRedisConstants.PLACE_DIRTY_STATS_KEY
+            ),
+            expectedViewStr,
+            expectedLikeStr,
+            String.valueOf(id)
+        );
     }
 
     private record StatsUpdateDto(Long id, Integer viewCount, Integer likeCount) {}
