@@ -26,9 +26,24 @@ public class PlaceStatsSyncChunkService {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
 
-    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> ATOMIC_DELETE_SCRIPT = 
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> ATOMIC_CLEANUP_SCRIPT = 
         new org.springframework.data.redis.core.script.DefaultRedisScript<>(
-            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", 
+            "local viewKey = KEYS[1];\n" +
+            "local likeKey = KEYS[2];\n" +
+            "local dirtyKey = KEYS[3];\n" +
+            "local expectedView = ARGV[1];\n" +
+            "local expectedLike = ARGV[2];\n" +
+            "local placeId = ARGV[3];\n" +
+            "local viewMatch = (expectedView == '' or redis.call('get', viewKey) == expectedView);\n" +
+            "local likeMatch = (expectedLike == '' or redis.call('get', likeKey) == expectedLike);\n" +
+            "if viewMatch and likeMatch then\n" +
+            "  if expectedView ~= '' then redis.call('del', viewKey) end;\n" +
+            "  if expectedLike ~= '' then redis.call('del', likeKey) end;\n" +
+            "  redis.call('srem', dirtyKey, placeId);\n" +
+            "  return 1;\n" +
+            "else\n" +
+            "  return 0;\n" +
+            "end;", 
             Long.class
         );
 
@@ -111,15 +126,23 @@ public class PlaceStatsSyncChunkService {
 
         int updatedRows = updatedRowsCount != null ? updatedRowsCount : 0;
 
-        // 3. 동기화가 성공한 카운터 키들을 삭제할 때 Race Condition 방지
-        // 찰나의 타이밍에 유저 트래픽으로 Redis 값이 변했을 수 있으므로, 배치가 읽었던 값과 정확히 일치할 때만 삭제(Atomic Delete)
+        // 3. Race Condition 방지를 위한 카운터 삭제 및 Dirty 마커(SREM) 동시 원자적 제거
+        // 찰나의 타이밍에 유저 트래픽으로 Redis 값이 변했다면 삭제와 SREM을 모두 보류하고 다음 배치에서 재처리
         for (StatsUpdateDto dto : updates) {
-            if (dto.viewCount() != null) {
-                stringRedisTemplate.execute(ATOMIC_DELETE_SCRIPT, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id()), String.valueOf(dto.viewCount()));
-            }
-            if (dto.likeCount() != null) {
-                stringRedisTemplate.execute(ATOMIC_DELETE_SCRIPT, java.util.Collections.singletonList(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id()), String.valueOf(dto.likeCount()));
-            }
+            String expectedViewStr = dto.viewCount() != null ? String.valueOf(dto.viewCount()) : "";
+            String expectedLikeStr = dto.likeCount() != null ? String.valueOf(dto.likeCount()) : "";
+            
+            stringRedisTemplate.execute(
+                ATOMIC_CLEANUP_SCRIPT,
+                java.util.Arrays.asList(
+                    PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + dto.id(),
+                    PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + dto.id(),
+                    PlaceRedisConstants.PLACE_DIRTY_STATS_KEY
+                ),
+                expectedViewStr,
+                expectedLikeStr,
+                String.valueOf(dto.id())
+            );
         }
 
         log.info("Place stats sync chunk completed: {} requested, {} rows updated.", updates.size(), updatedRows);
