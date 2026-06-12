@@ -53,6 +53,9 @@ class ChargeServiceTest {
     @Mock
     private PortOneProperties portOneProperties;
 
+    @Mock
+    private DailyChargeLimiter dailyChargeLimiter;
+
     @InjectMocks
     private ChargeService chargeService;
 
@@ -223,6 +226,22 @@ class ChargeServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHARGE_AMOUNT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("일일 충전 한도 초과 시 멱등성 키 점유 전에 PAY_030을 던진다 (KAN-293)")
+    void charge_dailyLimitExceeded_throws_PAY_030_before_idempotency_mark() {
+        willThrow(new PaymentException(ErrorCode.DAILY_CHARGE_LIMIT_EXCEEDED))
+                .given(dailyChargeLimiter).assertWithinDailyLimit(1L, 100_000L);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(100_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DAILY_CHARGE_LIMIT_EXCEEDED);
+
+        // 한도 초과는 외부 호출·키 점유 전에 차단 — 자원 미소모
+        verify(idempotencyService, never()).checkAndMark(anyString());
+        verify(paymentGatewayClient, never()).preRegister(anyString(), anyLong());
     }
 
     // ── cancelCharge (KAN-252) ────────────────────────────────────────────────

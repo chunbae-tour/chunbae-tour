@@ -140,6 +140,8 @@ public enum ErrorCode {
     QR_PAY_CONFIRM_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_028", "본인 가게의 결제 요청만 승인/거절할 수 있습니다."),
     // PAY_029: QR payload의 nonce가 현재 가게 nonce와 불일치 — 재발급으로 무효화된 옛 QR (KAN-253)
     QR_PAY_NONCE_MISMATCH(HttpStatus.CONFLICT,             "PAY_029", "만료된 QR 코드입니다. 최신 QR로 다시 시도해주세요."),
+    // PAY_030: 하루 충전 완료 누적액이 일일 한도(50만원)를 초과 (KAN-293)
+    DAILY_CHARGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST,    "PAY_030", "1일 충전 한도(500,000원)를 초과했습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),

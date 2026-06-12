@@ -38,6 +38,7 @@ public class ChargeService {
     private final PaymentGatewayClient paymentGatewayClient;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PortOneProperties portOneProperties;
+    private final DailyChargeLimiter dailyChargeLimiter;
 
     // 충전 플로우:
     // [1] 금액 검증 → [1.5] PortOne 설정 검증 → [2] 멱등성 키 점유 → [3] 포트원 사전등록 → [4] 주문 PENDING 저장 → [5] orderUid 반환
@@ -48,6 +49,10 @@ public class ChargeService {
     public ChargeResponse charge(Long userId, String idempotencyKey, ChargeRequest request) {
         // [1] 금액 2차 검증 (최소 5,000원 / 1,000원 단위 / 최대 100,000원)
         validateAmount(request.amount());
+
+        // [1.2] 일일 충전 한도 검증 (KAN-293) — 오늘 완료 누적액 + 이번 요청액 > 50만이면 차단.
+        // 멱등성 키 점유·외부 호출 전에 실행해 한도 초과 요청이 자원을 소모하지 않게 한다.
+        dailyChargeLimiter.assertWithinDailyLimit(userId, request.amount());
 
         // [1.5] PortOne 설정 누락 검증 — 키 점유 전에 실행해 불필요한 멱등성 키 소모 방지
         String storeId = portOneProperties.getStoreId();
