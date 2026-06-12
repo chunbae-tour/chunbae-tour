@@ -96,14 +96,14 @@ class CacheWarmupServiceTest {
                 .willReturn(topPlaces);
 
         // 하위 메서드의 실제 동작은 방지하고 호출 여부만 검증하기 위해 doNothing 사용
-        doNothing().when(cacheWarmupService).warmupPopularZSet(any());
+        doNothing().when(cacheWarmupService).warmupPopularZSet(any(), anyString());
         doNothing().when(cacheWarmupService).warmupPlaceDetails(any());
 
         // when
         cacheWarmupService.onApplicationReady();
 
         // then: warmupPopularZSet에는 ZSET_TOP_N개만, warmupPlaceDetails에는 DETAIL_TOP_N개만 전달
-        verify(cacheWarmupService).warmupPopularZSet(topPlaces.subList(0, PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N));
+        verify(cacheWarmupService).warmupPopularZSet(eq(topPlaces.subList(0, PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N)), anyString());
         verify(cacheWarmupService).warmupPlaceDetails(topPlaces.subList(0, PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N));
     }
 
@@ -120,7 +120,7 @@ class CacheWarmupServiceTest {
 
         // then: DB 조회 및 하위 메서드 호출 없음
         verify(placeRepository, never()).findTopPopularPlaces(any(Double.class), any(Double.class), any());
-        verify(cacheWarmupService, never()).warmupPopularZSet(any());
+        verify(cacheWarmupService, never()).warmupPopularZSet(any(), anyString());
         verify(cacheWarmupService, never()).warmupPlaceDetails(any());
     }
 
@@ -138,7 +138,7 @@ class CacheWarmupServiceTest {
         cacheWarmupService.onApplicationReady();
 
         // then
-        verify(cacheWarmupService, never()).warmupPopularZSet(any());
+        verify(cacheWarmupService, never()).warmupPopularZSet(any(), anyString());
         verify(cacheWarmupService, never()).warmupPlaceDetails(any());
     }
 
@@ -156,10 +156,10 @@ class CacheWarmupServiceTest {
         given(stringRedisTemplate.expire(anyString(), any(Long.class), any())).willReturn(true);
 
         // when
-        cacheWarmupService.warmupPopularZSet(List.of(place));
+        cacheWarmupService.warmupPopularZSet(List.of(place), "test-lock-token");
 
         // then
-        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp";
+        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp:test-lock-token";
         verify(zSetOperations).add(eq(tmpKey), any());
         verify(stringRedisTemplate).expire(
                 eq(tmpKey),
@@ -178,7 +178,7 @@ class CacheWarmupServiceTest {
         given(stringRedisTemplate.getExpire(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(60L);
 
         // when
-        cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)));
+        cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)), "test-lock-token");
 
         // then — DB 조회나 적재 없어야 함
         verify(zSetOperations, never()).add(anyString(), any());
@@ -188,7 +188,7 @@ class CacheWarmupServiceTest {
     @DisplayName("인기 ZSet 웜업 — 파라미터가 비었을 때: ZSet 적재 스킵")
     void warmupPopularZSet_emptyList_skipsCache() {
         // when
-        cacheWarmupService.warmupPopularZSet(List.of());
+        cacheWarmupService.warmupPopularZSet(List.of(), "test-lock-token");
 
         // then
         verify(zSetOperations, never()).add(anyString(), any());
@@ -202,7 +202,7 @@ class CacheWarmupServiceTest {
 
         // when & then — 예외 전파 없이 정상 반환
         assertDoesNotThrow(
-                () -> cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)))
+                () -> cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)), "test-lock-token")
         );
     }
 
@@ -220,10 +220,10 @@ class CacheWarmupServiceTest {
         given(stringRedisTemplate.expire(anyString(), any(Long.class), any())).willReturn(false);
 
         // when
-        cacheWarmupService.warmupPopularZSet(List.of(place));
+        cacheWarmupService.warmupPopularZSet(List.of(place), "test-lock-token");
 
         // then
-        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp";
+        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp:test-lock-token";
         verify(zSetOperations).add(eq(tmpKey), any());
         // TTL 실패로 인해 delete가 호출되어야 함
         verify(stringRedisTemplate).delete(tmpKey);

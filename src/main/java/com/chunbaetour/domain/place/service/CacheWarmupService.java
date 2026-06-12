@@ -64,11 +64,11 @@ public class CacheWarmupService {
     public void onApplicationReady() {
         log.info("[CacheWarmup] 캐시 웜업 시작");
 
-        // 1. 다중 인스턴스 분산 락 (5분)
+        // 1. 다중 인스턴스 분산 락 (최대 예상 소요시간 고려하여 15분 연장)
         String lockKey = PlaceRedisConstants.CACHE_WARMUP_LOCK_KEY;
         String lockToken = UUID.randomUUID().toString();
         Boolean acquired = stringRedisTemplate.opsForValue()
-                .setIfAbsent(lockKey, lockToken, Duration.ofMinutes(5));
+                .setIfAbsent(lockKey, lockToken, Duration.ofMinutes(15));
         if (!Boolean.TRUE.equals(acquired)) {
             log.info("[CacheWarmup] 다른 인스턴스에서 웜업 중이거나 이미 완료됨 — 스킵");
             return;
@@ -100,7 +100,7 @@ public class CacheWarmupService {
                     .limit(PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N)
                     .toList();
 
-            warmupPopularZSet(popularPlaces);
+            warmupPopularZSet(popularPlaces, lockToken);
             warmupPlaceDetails(rescoredTopPlaces);
 
             log.info("[CacheWarmup] 캐시 웜업 완료");
@@ -122,7 +122,7 @@ public class CacheWarmupService {
      *
      * <p>이미 키가 존재하면(재시작 직후 TTL이 살아있는 경우) 불필요한 DB 조회를 생략한다.
      */
-    public void warmupPopularZSet(List<Place> popularPlaces) {
+    public void warmupPopularZSet(List<Place> popularPlaces, String lockToken) {
         if (popularPlaces.isEmpty()) {
             log.warn("[CacheWarmup] 인기 추천 웜업 — 적재 대상 없음");
             return;
@@ -147,7 +147,7 @@ public class CacheWarmupService {
                 tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
             }
 
-            String tmpKey = key + ":tmp";
+            String tmpKey = key + ":tmp:" + lockToken;
             try {
                 // 임시 키에 완전한 데이터를 구성하고 원자적으로 교체(rename)하여 불완전 복구 방지
                 stringRedisTemplate.opsForZSet().add(tmpKey, tuples);
