@@ -23,7 +23,8 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
     @Query("SELECT COUNT(DISTINCT s.targetType) FROM UserSanction s "
             + "WHERE s.userId = :userId "
             + "AND s.releasedAt IS NULL "
-            + "AND (s.endedAt IS NULL OR s.endedAt > :now)")
+            + "AND (s.endedAt IS NULL OR s.endedAt > :now) "
+            + "AND s.targetType != com.chunbaetour.domain.report.entity.ReportTargetType.MERCHANT")
     long countActiveDistinctDomainsByUserId(
             @Param("userId") Long userId,
             @Param("now") LocalDateTime now);
@@ -32,7 +33,8 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
     @Query("SELECT s FROM UserSanction s "
             + "WHERE s.userId = :userId "
             + "AND s.releasedAt IS NULL "
-            + "AND (s.endedAt IS NULL OR s.endedAt > :now)")
+            + "AND (s.endedAt IS NULL OR s.endedAt > :now) "
+            + "AND s.targetType != com.chunbaetour.domain.report.entity.ReportTargetType.MERCHANT")
     List<UserSanction> findAllActiveSanctionsByUserId(
             @Param("userId") Long userId,
             @Param("now") LocalDateTime now);

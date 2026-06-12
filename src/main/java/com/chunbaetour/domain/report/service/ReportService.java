@@ -376,11 +376,15 @@ public class ReportService {
 
     private void publishReportAcceptedEventIfNeeded(Report report, ReportAction action) {
         if (action == ReportAction.DISMISS) return;
-        if (report.getReportedUserId() == null) return;
+        Long reportedUserId = report.getReportedUserId();
+        if (reportedUserId == null) {
+            reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
+        }
+        if (reportedUserId == null) return;
         long acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                report.getReportedUserId(), report.getTargetType(), ReportStatus.RESOLVED);
+                reportedUserId, report.getTargetType(), ReportStatus.RESOLVED);
         eventPublisher.publishEvent(new ReportAcceptedEvent(
-                report.getId(), report.getReportedUserId(), report.getTargetType(), acceptedCount));
+                report.getId(), reportedUserId, report.getTargetType(), acceptedCount));
     }
 
     private Long resolveReportedUserId(ReportTargetType targetType, Long targetId) {
@@ -498,6 +502,9 @@ public class ReportService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (account.getRole() != Role.USER) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+                if (account.getStatus() == AccountStatus.DELETED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
                 }
             }
             case MERCHANT -> {

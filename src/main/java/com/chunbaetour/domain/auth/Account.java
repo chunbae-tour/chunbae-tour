@@ -297,7 +297,16 @@ public class Account {
         }
         // 관리자 수동 정지(sanctionType=null+SUSPENDED)는 시스템 제재로 덮어쓰지 않음
         if (this.status == AccountStatus.SUSPENDED && this.sanctionType == null) return;
-        if (this.sanctionType != null && !type.isHigherThan(this.sanctionType)) return;
+        if (this.sanctionType != null) {
+            if (type.severity() < this.sanctionType.severity()) return;
+            if (type == this.sanctionType) {
+                if (sanctionEndAt != null
+                        && (this.sanctionEndAt == null || sanctionEndAt.isAfter(this.sanctionEndAt))) {
+                    this.sanctionEndAt = sanctionEndAt;
+                }
+                return;
+            }
+        }
         this.status = AccountStatus.SUSPENDED;
         this.sanctionType = type;
         this.sanctionEndAt = sanctionEndAt;
