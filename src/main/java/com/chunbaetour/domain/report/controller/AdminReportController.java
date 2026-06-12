@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
@@ -68,7 +69,7 @@ public class AdminReportController {
      */
     @Operation(summary = "신고 상세 조회")
     @GetMapping("/{reportId}")
-    public ApiResponse<ReportDetailResponse> getReport(@PathVariable Long reportId) {
+    public ApiResponse<ReportDetailResponse> getReport(@Positive @PathVariable Long reportId) {
         return ApiResponse.success(reportService.getReport(reportId));
     }
 
@@ -84,7 +85,7 @@ public class AdminReportController {
     @Operation(summary = "콘텐츠 신고 처리")
     @PostMapping("/{reportId}/resolve")
     public ApiResponse<ReportResolveResponse> resolveReport(
-            @PathVariable Long reportId,
+            @Positive @PathVariable Long reportId,
             @AuthenticationPrincipal Long adminId,
             @Valid @RequestBody ReportResolveRequest request
     ) {
@@ -103,7 +104,7 @@ public class AdminReportController {
     @Operation(summary = "가게 신고 처리")
     @PostMapping("/{reportId}/resolve/merchant")
     public ApiResponse<ReportResolveResponse> resolveMerchantReport(
-            @PathVariable Long reportId,
+            @Positive @PathVariable Long reportId,
             @AuthenticationPrincipal Long adminId,
             @Valid @RequestBody MerchantReportResolveRequest request
     ) {
