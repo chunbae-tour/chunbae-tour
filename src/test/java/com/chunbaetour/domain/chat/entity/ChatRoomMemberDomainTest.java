@@ -102,13 +102,14 @@ class ChatRoomMemberDomainTest {
         assertThat(owner.isActiveMember()).isTrue();
     }
 
+    // OWNER_ACTIVE가 아닌데 호출되는 경우는 ChatRoom.ownerId와의 정합성이 깨진 서버측 버그 — INTERNAL_SERVER_ERROR
     @Test
-    void demoteFromOwner_notOwner_throws_INVALID_REQUEST() {
+    void demoteFromOwner_notOwner_throws_INTERNAL_SERVER_ERROR() {
         ChatRoomMember member = ChatRoomMember.ofMember(room, 2L);
         assertThatThrownBy(member::demoteFromOwner)
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
-                .isEqualTo(ErrorCode.INVALID_REQUEST);
+                .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 
     // ChatMemberState.activeStates() — isActiveMember()와 정의 일치 확인

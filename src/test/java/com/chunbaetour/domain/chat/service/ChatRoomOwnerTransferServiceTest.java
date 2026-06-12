@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
+import com.chunbaetour.domain.chat.event.ChatOwnerTransferredEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +36,9 @@ class ChatRoomOwnerTransferServiceTest {
 
     @Mock
     private ChatRoomMemberRepository chatRoomMemberRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ChatRoomService chatRoomService;
@@ -67,6 +72,7 @@ class ChatRoomOwnerTransferServiceTest {
         verify(currentOwner).demoteFromOwner();
         verify(room).transferOwner(NEW_OWNER_ID);
         verify(chatRoomRepository).saveAndFlush(room);
+        verify(eventPublisher).publishEvent(new ChatOwnerTransferredEvent(ROOM_ID, NEW_OWNER_ID));
     }
 
     // 존재하지 않는 채팅방 — CHAT_001
@@ -156,6 +162,9 @@ class ChatRoomOwnerTransferServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(this::extractErrorCode)
                 .isEqualTo(ErrorCode.CONCURRENT_UPDATE);
+
+        // saveAndFlush 실패로 예외 전파 — 알림 이벤트 발행 전 단계이므로 미호출
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {
