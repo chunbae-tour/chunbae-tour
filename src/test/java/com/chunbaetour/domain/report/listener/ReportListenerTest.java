@@ -231,4 +231,91 @@ class ReportListenerTest {
 
         then(review).should().delete();
     }
+
+    @Test
+    @DisplayName("Review SUSPEND — 작성자 활성 계정이면 suspend")
+    void review_suspend_active_suspends() {
+        PlaceReviewRepository repo = mock(PlaceReviewRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        PlaceReview review = mock(PlaceReview.class);
+        Account author = mock(Account.class);
+        given(author.getId()).willReturn(AUTHOR_ID);
+        given(review.getAuthor()).willReturn(author);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(review));
+        Account target = mock(Account.class);
+        given(target.getStatus()).willReturn(AccountStatus.ACTIVE);
+        given(accRepo.findById(AUTHOR_ID)).willReturn(Optional.of(target));
+
+        new ReviewReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.REVIEW, ReportAction.SUSPEND));
+
+        then(target).should().suspend();
+    }
+
+    @Test
+    @DisplayName("Review SUSPEND — 작성자 이미 SUSPENDED면 REPORT_TARGET_ALREADY_SUSPENDED (#487)")
+    void review_suspend_alreadySuspended_throws() {
+        PlaceReviewRepository repo = mock(PlaceReviewRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        PlaceReview review = mock(PlaceReview.class);
+        Account author = mock(Account.class);
+        given(author.getId()).willReturn(AUTHOR_ID);
+        given(review.getAuthor()).willReturn(author);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(review));
+        Account target = mock(Account.class);
+        given(target.getStatus()).willReturn(AccountStatus.SUSPENDED);
+        given(accRepo.findById(AUTHOR_ID)).willReturn(Optional.of(target));
+
+        ReviewReportListener listener = new ReviewReportListener(repo, accRepo);
+        ReportContentActionEvent evt = event(ReportTargetType.REVIEW, ReportAction.SUSPEND);
+
+        assertThatThrownBy(() -> listener.handle(evt))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
+        then(target).should(never()).suspend();
+    }
+
+    // ── RESTORE 액션 (PR5 — 관리자 콘텐츠 숨김 해제) ──────────────────────────
+
+    @Test
+    @DisplayName("CompanionPost RESTORE — restore 호출")
+    void companion_restore_calls_restore() {
+        CompanionPostRepository repo = mock(CompanionPostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        CompanionPost post = mock(CompanionPost.class);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(post));
+
+        new CompanionPostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_COMPANION, ReportAction.RESTORE));
+
+        then(post).should().restore();
+    }
+
+    @Test
+    @DisplayName("FreePost RESTORE — restore 호출")
+    void free_restore_calls_restore() {
+        FreePostRepository repo = mock(FreePostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        FreePost post = mock(FreePost.class);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(post));
+
+        new FreePostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_FREE, ReportAction.RESTORE));
+
+        then(post).should().restore();
+    }
+
+    @Test
+    @DisplayName("Comment RESTORE — restore 호출")
+    void comment_restore_calls_restore() {
+        CommentRepository repo = mock(CommentRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        Comment comment = mock(Comment.class);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(comment));
+
+        new CommentReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.COMMENT, ReportAction.RESTORE));
+
+        then(comment).should().restore();
+    }
 }
