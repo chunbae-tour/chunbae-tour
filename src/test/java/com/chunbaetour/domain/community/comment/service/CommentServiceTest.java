@@ -4,7 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
@@ -198,6 +199,7 @@ class CommentServiceTest {
                 commentService.findAll(POST_ID, POST_TYPE, null, size);
 
         assertThat(result.content()).hasSize(1);
+        then(accountRepository).should(never()).findAllById(any());
     }
 
     // ── findReplies ───────────────────────────────────────────────────────
