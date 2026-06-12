@@ -50,7 +50,7 @@ public class PlaceService {
     private final KakaoLocalApiClient kakaoLocalApiClient;
     private final PlaceDetailEnrichmentService placeDetailEnrichmentService;
 
-    private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
+    private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES);
     private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
 
     @Transactional(readOnly = true)
