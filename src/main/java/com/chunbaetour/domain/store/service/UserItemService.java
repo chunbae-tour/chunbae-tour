@@ -57,15 +57,8 @@ public class UserItemService {
         List<UserItem> items = userItemRepository.findItemsByUserIdWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = items.size() > size;
-        List<UserItem> page = hasNext ? items.subList(0, size) : items;
-
-        List<UserItemResponse> content = page.stream()
-                .map(UserItemResponse::from)
-                .toList();
-
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(items, size, UserItemResponse::from, UserItem::getId);
     }
 
     public UserItemQrResponse issueQr(Long userId, Long itemId) {
