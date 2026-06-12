@@ -35,26 +35,30 @@ public class PlaceStatsSyncBatchService {
             while (cursor.hasNext()) {
                 chunk.add(cursor.next());
                 if (chunk.size() >= CHUNK_SIZE) {
-                    processChunk(chunk);
+                    tryProcessChunk(chunk);
                     chunk.clear();
                 }
             }
             if (!chunk.isEmpty()) {
-                processChunk(chunk);
+                tryProcessChunk(chunk);
             }
         } catch (Exception e) {
             log.error("[PlaceStatsSync] 커서 스캔 및 동기화 중 오류 발생", e);
         }
     }
 
-    private void processChunk(List<String> dirtyIds) {
+    /**
+     * 청크 처리 실패 시 해당 청크만 건너뛰고 나머지 순회를 계속하도록 예외를 격리한다.
+     * 1분 뒤 스케줄러가 재실행되므로 실패 청크의 ID들은 더티 큐에 그대로 남아 자동 재처리된다.
+     */
+    private void tryProcessChunk(List<String> dirtyIds) {
         try {
             placeStatsSyncChunkService.syncChunk(dirtyIds);
             // DB 갱신까지 완벽히 성공하면 SREM 삭제
             stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, (Object[]) dirtyIds.toArray(new String[0]));
         } catch (Exception e) {
-            log.error("[PlaceStatsSync] 청크 동기화 실패. 삭제(SREM)를 보류하여 데이터 유실을 방지합니다. 실패 ID 수: {}", dirtyIds.size(), e);
-            throw e;
+            log.error("[PlaceStatsSync] 청크 동기화 실패. 해당 청크를 건너뛰고 다음 청크를 계속 처리합니다. 실패 ID 수: {}", dirtyIds.size(), e);
+            // throw 하지 않으므로 while 루프가 계속 진행됨
         }
     }
 }
