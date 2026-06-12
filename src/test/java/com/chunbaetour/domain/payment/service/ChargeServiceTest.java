@@ -229,8 +229,12 @@ class ChargeServiceTest {
     }
 
     @Test
-    @DisplayName("일일 충전 한도 초과 시 멱등성 키 점유 전에 PAY_030을 던진다 (KAN-293)")
+    @DisplayName("신규 요청에서 일일 한도 초과 시 멱등성 키 점유 전에 PAY_030을 던진다 (KAN-293)")
     void charge_dailyLimitExceeded_throws_PAY_030_before_idempotency_mark() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
+        // 기존 주문 없음 — 신규 요청 경로로 진입해 한도 검증에 도달
+        given(paymentOrderRepository.findByIdempotencyKey("key")).willReturn(Optional.empty());
         willThrow(new PaymentException(ErrorCode.DAILY_CHARGE_LIMIT_EXCEEDED))
                 .given(dailyChargeLimiter).assertWithinDailyLimit(1L, 100_000L);
 
@@ -242,6 +246,22 @@ class ChargeServiceTest {
         // 한도 초과는 외부 호출·키 점유 전에 차단 — 자원 미소모
         verify(idempotencyService, never()).checkAndMark(anyString());
         verify(paymentGatewayClient, never()).preRegister(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("기존 PENDING 주문 재시도는 일일 한도 검증을 건너뛰고 멱등 재생한다 (KAN-293 멱등성 보존)")
+    void charge_existingPendingOrder_skipsDailyLimitCheck() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
+        PaymentOrder pendingOrder = PaymentOrder.create(
+                "existing-uid", 1L, 100_000L, "retry-key", PaymentMethod.CARD, "pg-order");
+        given(paymentOrderRepository.findByIdempotencyKey("retry-key")).willReturn(Optional.of(pendingOrder));
+
+        ChargeResponse response = chargeService.charge(1L, "retry-key", new ChargeRequest(100_000L, PaymentMethod.CARD));
+
+        assertThat(response.orderUid()).isEqualTo("existing-uid");
+        // 이미 만들어진 주문의 멱등 응답은 이후 누적액과 무관해야 함 — 한도 검증 미호출
+        verify(dailyChargeLimiter, never()).assertWithinDailyLimit(anyLong(), anyLong());
     }
 
     // ── cancelCharge (KAN-252) ────────────────────────────────────────────────

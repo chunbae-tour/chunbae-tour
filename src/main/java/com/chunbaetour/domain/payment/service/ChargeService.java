@@ -50,10 +50,6 @@ public class ChargeService {
         // [1] 금액 2차 검증 (최소 5,000원 / 1,000원 단위 / 최대 100,000원)
         validateAmount(request.amount());
 
-        // [1.2] 일일 충전 한도 검증 (KAN-293) — 오늘 완료 누적액 + 이번 요청액 > 50만이면 차단.
-        // 멱등성 키 점유·외부 호출 전에 실행해 한도 초과 요청이 자원을 소모하지 않게 한다.
-        dailyChargeLimiter.assertWithinDailyLimit(userId, request.amount());
-
         // [1.5] PortOne 설정 누락 검증 — 키 점유 전에 실행해 불필요한 멱등성 키 소모 방지
         String storeId = portOneProperties.getStoreId();
         if (storeId == null || storeId.isBlank()) {
@@ -76,6 +72,12 @@ public class ChargeService {
             // Redis TTL(24h) 만료 후 동일 키 재사용 시 DB UNIQUE 위반 → 500 방지
             throw new PaymentException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
         }
+
+        // [1.8] 일일 충전 한도 검증 (KAN-293) — 신규 요청에만 적용.
+        // 기존 주문 재생/PAY_007 분기([1.7]) 이후에 둬, 이미 만들어진 주문의 멱등 응답이
+        // 이후 완료 누적액 변화로 PAY_030으로 뒤바뀌는 멱등성 계약 위반을 막는다.
+        // 키 점유([2])·외부 호출([3]) 전이라 한도 초과 요청은 자원을 소모하지 않는다.
+        dailyChargeLimiter.assertWithinDailyLimit(userId, request.amount());
 
         // [2] 멱등성 키 점유 — 중복 요청 차단 (Redis 24시간 TTL)
         idempotencyService.checkAndMark(idempotencyKey);
