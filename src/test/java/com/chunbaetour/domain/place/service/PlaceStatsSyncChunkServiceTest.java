@@ -22,6 +22,7 @@ import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -142,5 +143,24 @@ class PlaceStatsSyncChunkServiceTest {
                 eq("1")
         );
         verify(transactionManager).commit(transactionStatus);
+    }
+
+    @Test
+    @DisplayName("batchUpdate 실패 시 트랜잭션을 롤백하고 dirty marker를 유지한다")
+    void syncChunk_rollsBackTransactionWhenBatchUpdateFails() {
+        // given
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.multiGet(List.of("place:view:1"))).willReturn(List.of("100"));
+        given(valueOperations.multiGet(List.of("place:like:1"))).willReturn(List.of("10"));
+        given(transactionManager.getTransaction(any(DefaultTransactionDefinition.class))).willReturn(transactionStatus);
+        given(jdbcTemplate.batchUpdate(anyString(), any(BatchPreparedStatementSetter.class)))
+                .willThrow(new DataAccessException("DB connection failed") {});
+
+        // when & then
+        assertThatThrownBy(() -> placeStatsSyncChunkService.syncChunk(List.of("1")))
+                .isInstanceOf(DataAccessException.class);
+
+        verify(transactionManager).rollback(transactionStatus);
+        verify(stringRedisTemplate, never()).execute(any(RedisScript.class), anyList(), any());
     }
 }
