@@ -285,6 +285,24 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
 
         @Test
+        @DisplayName("이미 정지된 사용자 SUSPEND 처리 시 409 REPORT_008")
+        void suspend_already_suspended_user_returns_409() throws Exception {
+            Account reporter = seedFactory.seed("ss_reporter@test.com", PASSWORD, "재정지신고자", Role.USER, AccountStatus.ACTIVE);
+            Account target = seedFactory.seed("ss_target@test.com", PASSWORD, "이미정지된유저", Role.USER, AccountStatus.SUSPENDED);
+            Report report = reportRepository.save(Report.create(
+                    reporter.getId(), ReportTargetType.USER, target.getId(),
+                    ReportReason.HARASSMENT, null, target.getId()));
+            String adminToken = adminToken();
+
+            mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(resolveBody("SUSPEND", null)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("REPORT_008"));
+        }
+
+        @Test
         @DisplayName("존재하지 않는 신고 처리 시 404 REPORT_005")
         void not_found_report_returns_404() throws Exception {
             String adminToken = adminToken();

@@ -5,6 +5,8 @@ import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
@@ -35,7 +37,11 @@ public class FreePostReportListener {
                 post.hide();
             } else if (event.action() == ReportAction.SUSPEND) {
                 accountRepository.findById(post.getAuthorId()).ifPresent(acc -> {
-                    if (acc.getStatus() != AccountStatus.DELETED) acc.suspend();
+                    if (acc.getStatus() == AccountStatus.DELETED) return;
+                    if (acc.getStatus() == AccountStatus.SUSPENDED) {
+                        throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
+                    }
+                    acc.suspend();
                 });
             } else if (event.action() == ReportAction.RESTORE) {
                 post.restore();

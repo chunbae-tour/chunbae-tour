@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.report.listener;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -8,6 +9,8 @@ import static org.mockito.Mockito.never;
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.auth.AccountStatus;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
@@ -164,16 +167,19 @@ class ReportListenerTest {
     }
 
     @Test
-    @DisplayName("User SUSPEND — 이미 SUSPENDED면 suspend 스킵 (멱등)")
-    void user_suspend_alreadySuspended_skips() {
+    @DisplayName("User SUSPEND — 이미 SUSPENDED면 REPORT_TARGET_ALREADY_SUSPENDED (#487)")
+    void user_suspend_alreadySuspended_throws() {
         AccountRepository accRepo = mock(AccountRepository.class);
         Account acc = mock(Account.class);
         given(acc.getStatus()).willReturn(AccountStatus.SUSPENDED);
         given(accRepo.findById(TARGET_ID)).willReturn(Optional.of(acc));
 
-        new UserReportListener(accRepo)
-                .handle(event(ReportTargetType.USER, ReportAction.SUSPEND));
+        UserReportListener listener = new UserReportListener(accRepo);
+        ReportContentActionEvent evt = event(ReportTargetType.USER, ReportAction.SUSPEND);
 
+        assertThatThrownBy(() -> listener.handle(evt))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
         then(acc).should(never()).suspend();
     }
 

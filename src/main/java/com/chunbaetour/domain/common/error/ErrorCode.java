@@ -229,8 +229,10 @@ public enum ErrorCode {
     REPORT_ALREADY_RESOLVED(HttpStatus.CONFLICT,             "REPORT_006", "이미 처리된 신고 내역입니다."),
     // REPORT_007: targetType 불일치 엔드포인트 — MERCHANT 신고에 /resolve, 콘텐츠 신고에 /resolve/merchant 사용 시
     REPORT_WRONG_ENDPOINT(HttpStatus.BAD_REQUEST,            "REPORT_007", "해당 신고 유형에 맞지 않는 처리 엔드포인트입니다."),
-    // REPORT_008: 제재 이력 없음 — 운영자 조기 해제 시 존재하지 않는 sanctionId
-    SANCTION_NOT_FOUND(HttpStatus.NOT_FOUND,                 "REPORT_008", "존재하지 않는 제재 이력입니다."),
+    // REPORT_008: 이미 정지된 계정 재정지 시도
+    REPORT_TARGET_ALREADY_SUSPENDED(HttpStatus.CONFLICT,     "REPORT_008", "이미 정지된 계정입니다."),
+    // REPORT_009: 제재 이력 없음 — 운영자 조기 해제 시 존재하지 않는 sanctionId
+    SANCTION_NOT_FOUND(HttpStatus.NOT_FOUND,                 "REPORT_009", "존재하지 않는 제재 이력입니다."),
 
     // ===== CS / FAQ (담당: 임하은) =====
     FAQ_NOT_FOUND(HttpStatus.NOT_FOUND,                     "FAQ_001", "존재하지 않는 FAQ입니다."),
