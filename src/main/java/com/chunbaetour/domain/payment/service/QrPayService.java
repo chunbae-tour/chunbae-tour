@@ -445,7 +445,9 @@ public class QrPayService {
      * 트랜잭션 컨텍스트 밖(직접 호출·테스트 등)에서는 즉시 삭제한다.
      */
     private void invalidateMerchantHomeCache(Long merchantUserId) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+        // 실제 트랜잭션이 있을 때만 afterCommit 등록(커밋 후 발화 보장). isSynchronizationActive 대신
+        // isActualTransactionActive 사용 — PlaceReviewService.registerAfterCommit 패턴과 정합 (KAN-283 리뷰).
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {

@@ -124,6 +124,9 @@ public class MerchantHomeService {
         LocalDateTime yesterdayStart = toUtc(todayStartKst.minusDays(1));
 
         // 오늘 완료된 결제 경량 목록을 한 번만 조회해 매출 합계·시간대 분포·최근 결제에 함께 재사용한다.
+        // [트레이드오프] 시간대 분포가 당일 완료 전건을 요구해 LIMIT 없이 적재한다(menu_items 제외 경량 뷰).
+        // 인덱스로 풀스캔은 해소됐으나 캐시 미스마다 적재량이 일 거래량에 비례 → 고거래 가게에서 힙/전송 부담.
+        // 후속 최적화: 합계·시간버킷을 DB GROUP BY HOUR(CONVERT_TZ) + SUM으로 내리고 최근 결제만 LIMIT 10 분리.
         List<CompletedQrPayView> todayCompleted = qrPayRequestRepository
                 .findCompletedByShopsBetween(shopIds, QrPayStatus.COMPLETED, todayStart, todayEnd);
 
@@ -149,6 +152,8 @@ public class MerchantHomeService {
 
         // 미완료 카운터: 오늘(expiredAt 기준) 거절(REJECTED)+만료(EXPIRED)로 끝난 건수. 사용자 취소(CANCELLED)는 상인 귀책이 아니라 제외한다.
         // expiredAt은 UTC로 저장돼 todayStart/todayEnd(UTC)와 존이 일관된다(createdAt은 KST라 사용 불가 — 쿼리 주석 참조).
+        // [경계 5분 오차 수용] expiredAt = 접수 +5분이라, createdAt 기준 대비 윈도우가 5분 뒤로 밀린다.
+        // KST 23:55~24:00 접수·거절 건은 expiredAt이 익일이라 당일 카운터에서 빠진다(일 경계 5분 엣지 — 무해로 수용).
         long missedPaymentCount = qrPayRequestRepository.countByShopsAndStatusesBetween(
                 shopIds, MISSED_STATUSES, todayStart, todayEnd);
 
