@@ -41,6 +41,9 @@ public final class PlaceRedisConstants {
     /** 서버 시작 시 캐시 웜업 대상 관광지 상세 수 — 인기 Top N개를 미리 적재 */
     public static final int CACHE_WARMUP_DETAIL_TOP_N = 20;
 
+    /** ZSet 인기 추천 웜업 대상 수 */
+    public static final int CACHE_WARMUP_ZSET_TOP_N = 10;
+
     /** 캐시 웜업 각 요청 간 간격(ms) — DB/Redis 부하 분산 목적 */
     public static final long CACHE_WARMUP_INTERVAL_MS = 50;
 

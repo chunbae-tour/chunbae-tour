@@ -20,7 +20,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,7 +31,7 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <h3>웜업 대상</h3>
  * <ol>
- *   <li><b>인기 관광지 ZSet</b> ({@code recommend:popular}) — Top 10 인기 점수 적재</li>
+ *   <li><b>인기 관광지 ZSet</b> ({@code recommend:popular}) — Top {@value PlaceRedisConstants#CACHE_WARMUP_ZSET_TOP_N} 인기 점수 적재</li>
  *   <li><b>관광지 상세 캐시</b> ({@code place:{id}}) — 인기 Top {@value PlaceRedisConstants#CACHE_WARMUP_DETAIL_TOP_N}개 선적재</li>
  * </ol>
  *
@@ -75,8 +74,8 @@ public class CacheWarmupService {
                 return;
             }
 
-            // Top 10개를 ZSet 웜업에 전달
-            List<Place> popularPlaces = topPlaces.subList(0, Math.min(topPlaces.size(), 10));
+            // Top N개를 ZSet 웜업에 전달
+            List<Place> popularPlaces = topPlaces.subList(0, Math.min(topPlaces.size(), PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N));
             warmupPopularZSet(popularPlaces);
             warmupPlaceDetails(topPlaces);
 
@@ -89,7 +88,7 @@ public class CacheWarmupService {
     // ── 1단계: 인기 추천 ZSet 웜업 ─────────────────────────────────────────────
 
     /**
-     * {@code recommend:popular} ZSet에 인기 Top 10 관광지 점수를 미리 적재한다.
+     * {@code recommend:popular} ZSet에 인기 Top {@value PlaceRedisConstants#CACHE_WARMUP_ZSET_TOP_N} 관광지 점수를 미리 적재한다.
      *
      * <p>이미 키가 존재하면(재시작 직후 TTL이 살아있는 경우) 불필요한 DB 조회를 생략한다.
      */
