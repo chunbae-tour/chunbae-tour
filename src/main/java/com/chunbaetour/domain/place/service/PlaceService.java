@@ -137,6 +137,9 @@ public class PlaceService {
             "end;\n" +
             "local result = redis.call('INCR', key);\n" +
             "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
+            "if redis.call('TTL', KEYS[2]) == -1 then\n" +
+            "  redis.call('EXPIRE', KEYS[2], ARGV[3]);\n" +
+            "end;\n" +
             "return result;";
 
     private static final String INCR_IF_EXISTS_SCRIPT = 
@@ -144,6 +147,9 @@ public class PlaceService {
             "if redis.call('EXISTS', key) == 1 then\n" +
             "  local result = redis.call('INCR', key);\n" +
             "  redis.call('SADD', KEYS[2], ARGV[1]);\n" +
+            "  if redis.call('TTL', KEYS[2]) == -1 then\n" +
+            "    redis.call('EXPIRE', KEYS[2], ARGV[2]);\n" +
+            "  end;\n" +
             "  return result;\n" +
             "else\n" +
             "  return -1;\n" +
@@ -315,7 +321,8 @@ public class PlaceService {
             Long result = stringRedisTemplate.execute(
                     REDIS_SCRIPT_INCR_IF_EXISTS,
                     java.util.Arrays.asList(key, dirtyKey),
-                    String.valueOf(placeId)
+                    String.valueOf(placeId),
+                    String.valueOf(PlaceRedisConstants.PLACE_DIRTY_STATS_TTL_SECONDS)
             );
 
             // 2. 캐시에 없으면(-1) 콜드 스타트로 간주, DB 1회 조회 후 원자적 SEED_AND_INCR + SADD
@@ -325,7 +332,8 @@ public class PlaceService {
                         REDIS_SCRIPT_INCR,
                         java.util.Arrays.asList(key, dirtyKey),
                         String.valueOf(dbViewCount),
-                        String.valueOf(placeId)
+                        String.valueOf(placeId),
+                        String.valueOf(PlaceRedisConstants.PLACE_DIRTY_STATS_TTL_SECONDS)
                 );
             }
         } catch (Exception e) {

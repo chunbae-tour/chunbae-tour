@@ -2,7 +2,10 @@ package com.chunbaetour.domain.place.service;
 
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -18,8 +21,18 @@ public class PlaceStatsSyncBatchService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final PlaceStatsSyncChunkService placeStatsSyncChunkService;
+    private final MeterRegistry meterRegistry;
 
     private static final int CHUNK_SIZE = 100;
+    private static final String METRIC_FAILURE_TOTAL = "place.stats.sync.failure.total";
+    private static final String METRIC_LAST_FAILURE_EPOCH_MS = "place.stats.sync.last.failure.epoch.millis";
+
+    private final AtomicLong lastFailureEpochMillis = new AtomicLong(0L);
+
+    @PostConstruct
+    void registerMetrics() {
+        meterRegistry.gauge(METRIC_LAST_FAILURE_EPOCH_MS, lastFailureEpochMillis);
+    }
 
     /**
      * 더티 마킹된 관광지의 조회수/좋아요 수를 Redis에서 읽어 DB로 일괄 갱신한다.
@@ -56,6 +69,7 @@ public class PlaceStatsSyncBatchService {
                 tryProcessChunk(chunk);
             }
         } catch (Exception e) {
+            recordFailure("scan");
             log.error("[PlaceStatsSync] 커서 스캔 및 동기화 중 오류 발생", e);
         }
     }
@@ -68,7 +82,13 @@ public class PlaceStatsSyncBatchService {
         try {
             placeStatsSyncChunkService.syncChunk(dirtyIds);
         } catch (Exception e) {
+            recordFailure("chunk");
             log.error("[PlaceStatsSync] 청크 동기화 실패. 해당 청크를 건너뛰고 다음 청크를 계속 처리합니다. 실패 ID 수: {}", dirtyIds.size(), e);
         }
+    }
+
+    private void recordFailure(String stage) {
+        meterRegistry.counter(METRIC_FAILURE_TOTAL, "stage", stage).increment();
+        lastFailureEpochMillis.set(System.currentTimeMillis());
     }
 }
