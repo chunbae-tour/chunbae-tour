@@ -64,6 +64,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     Optional<Place> findByIdAndStatus(Long id, PlaceStatus status);
 
     /**
+     * 조회수만 단일 조회 (Redis 선시드용)
+     */
+    @Query("SELECT p.viewCount FROM Place p WHERE p.id = :id")
+    Optional<Integer> findViewCountById(@Param("id") Long id);
+
+    /**
      * 특정 상태가 아닌 Place 존재 여부 (KAN-217 Shop-Place 연결 검증용).
      * DELETED를 제외하고 조회 — soft delete된 장소에 가게 연결 차단.
      */
