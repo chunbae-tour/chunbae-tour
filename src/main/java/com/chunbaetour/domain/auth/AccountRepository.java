@@ -175,7 +175,7 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     /** 시스템 제재 만료 계정 목록 — SuspendExpiryScheduler 일괄 해제용.
      * status=SUSPENDED 필터: 이미 해제된(ACTIVE) 계정의 stale 필드 재처리 방지.
      * PERMANENT(sanction_end_at IS NULL)는 조건 불충족으로 자동 제외. */
-    @Query("SELECT a FROM Account a WHERE a.status = :status AND a.sanctionEndAt < :now")
+    @Query("SELECT a FROM Account a WHERE a.status = :status AND a.sanctionEndAt <= :now")
     List<Account> findExpiredSystemSanctions(@Param("status") AccountStatus status,
                                              @Param("now") LocalDateTime now);
 }
