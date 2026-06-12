@@ -15,7 +15,6 @@ import com.chunbaetour.domain.notification.type.NotificationReferenceType;
 import com.chunbaetour.domain.notification.type.NotificationType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.user.SimpUser;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -30,8 +29,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @RequiredArgsConstructor
 public class NotificationEventHandler {
 
-    private static final String CHAT_ROOM_TOPIC_PREFIX = "/sub/chat/rooms/";
-
     private final NotificationService notificationService;
     private final NotificationRedisPubSubService notificationRedisPubSubService;
     private final SimpUserRegistry simpUserRegistry;
@@ -39,7 +36,6 @@ public class NotificationEventHandler {
     // 참여 신청 생성 — 방장에게 CHAT_JOIN_REQUEST 알림, 원본 트랜잭션 커밋 후 새 트랜잭션에서 저장
     // REQUIRES_NEW 트랜잭션 실패 시 원본 비즈니스 흐름 영향 없음 — log.error로 silent loss 추적
     // Push는 REQUIRES_NEW afterCommit 훅에서 전송 — 커밋 전 유령 알림/미노출 방지
-    // referenceType=CHAT_ROOM, referenceId=chatRoomId — 알림 클릭 시 신청 관리 화면 이동용
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleJoinRequestCreated(JoinRequestCreatedEvent event) {
@@ -49,8 +45,8 @@ public class NotificationEventHandler {
                     NotificationType.CHAT_JOIN_REQUEST,
                     "참여 신청 도착",
                     "채팅방 참여 신청이 도착했어요.",
-                    NotificationReferenceType.CHAT_ROOM,
-                    event.chatRoomId());
+                    NotificationReferenceType.JOIN_REQUEST,
+                    event.joinRequestId());
             pushNotification(notification);
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — chatRoomId={}, joinRequestId={}, ownerUserId={}",
@@ -115,13 +111,13 @@ public class NotificationEventHandler {
         }
     }
 
-    // 채팅 메시지 전송 — 해당 방을 보고 있지 않은 멤버에게만 CHAT_MESSAGE 알림, 한 명 실패해도 나머지 계속 처리
-    // 온라인 판단: 수신자 세션이 /sub/chat/rooms/{chatRoomId} 구독 중 → 해당 방 보는 중 → 알림 skip (정책 안B 확장판, 09_정책_결정_기록.md)
+    // 채팅 메시지 전송 — 미연결(오프라인) 멤버에게만 CHAT_MESSAGE 알림, 한 명 실패해도 나머지 계속 처리
+    // 오프라인 판단: SimpUserRegistry.getUser(userId) != null → WebSocket 연결 중 → 알림 skip (정책 안B, 09_정책_결정_기록.md)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void handleChatMessageSent(ChatMessageSentEvent event) {
         for (Long recipientUserId : event.recipientUserIds()) {
-            if (isViewingChatRoom(recipientUserId, event.chatRoomId())) {
+            if (simpUserRegistry.getUser(String.valueOf(recipientUserId)) != null) {
                 continue;
             }
             try {
@@ -138,18 +134,6 @@ public class NotificationEventHandler {
                         event.chatRoomId(), event.senderId(), recipientUserId, e);
             }
         }
-    }
-
-    // 수신자가 해당 채팅방 토픽(/sub/chat/rooms/{chatRoomId})을 구독 중인 세션을 갖는지 확인
-    private boolean isViewingChatRoom(Long userId, Long chatRoomId) {
-        SimpUser user = simpUserRegistry.getUser(String.valueOf(userId));
-        if (user == null) {
-            return false;
-        }
-        String topic = CHAT_ROOM_TOPIC_PREFIX + chatRoomId;
-        return user.getSessions().stream()
-                .flatMap(session -> session.getSubscriptions().stream())
-                .anyMatch(subscription -> topic.equals(subscription.getDestination()));
     }
 
     // Redis Pub/Sub으로 Push — REQUIRES_NEW 커밋 후 전송해 유령 알림/미노출 방지
