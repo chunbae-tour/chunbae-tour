@@ -62,6 +62,16 @@ class CompanionPostServiceTest {
     }
 
     @Test
+    void update_maxMembers가_currentMembers미만이면_400() {
+        given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
+
+        assertThatThrownBy(() -> postService.update(1L, 1L,
+                new CompanionPostUpdateRequest(null, null, null, null, null, null, 0)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
     void 소유자가_아닌_유저가_수정하면_403() {
         given(postRepository.findById(1L)).willReturn(Optional.of(activePost));
 
