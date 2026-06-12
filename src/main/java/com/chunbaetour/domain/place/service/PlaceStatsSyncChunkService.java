@@ -35,8 +35,6 @@ public class PlaceStatsSyncChunkService {
             "local likeMatch = false;\n" +
             "if expectedLike == '' then likeMatch = (not actualLike) else likeMatch = (actualLike == expectedLike) end;\n" +
             "if viewMatch and likeMatch then\n" +
-            "  if expectedView ~= '' then redis.call('del', viewKey) end;\n" +
-            "  if expectedLike ~= '' then redis.call('del', likeKey) end;\n" +
             "  redis.call('srem', dirtyKey, placeId);\n" +
             "  return 1;\n" +
             "else\n" +
@@ -80,7 +78,8 @@ public class PlaceStatsSyncChunkService {
                     updates.add(new StatsUpdateDto(id, viewCount, likeCount));
                 }
             } catch (Exception e) {
-                log.error("카운터 파싱 실패 - 항목 건너뜀 (placeId: {})", idStr, e);
+                log.error("카운터 파싱 실패 - 무한 재시도 방지를 위해 더티 큐에서 즉시 제거 (placeId: {})", idStr, e);
+                stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, idStr);
             }
         }
 
@@ -89,7 +88,7 @@ public class PlaceStatsSyncChunkService {
             updates.sort(java.util.Comparator.comparing(StatsUpdateDto::id));
 
             String sql = "UPDATE places SET " +
-                         "view_count = COALESCE(?, view_count), " +
+                         "view_count = GREATEST(view_count, COALESCE(?, view_count)), " +
                          "like_count = COALESCE(?, like_count) " +
                          "WHERE id = ?";
 
