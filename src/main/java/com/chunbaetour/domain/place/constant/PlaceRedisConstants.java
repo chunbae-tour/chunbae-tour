@@ -35,6 +35,12 @@ public final class PlaceRedisConstants {
     /** 주소 지오코딩 캐시 키 접두사 — 키: geocoding::{SHA-256(query)} */
     public static final String GEOCODING_CACHE_PREFIX = "geocoding::";
 
+    /** 서버 시작 시 캐시 웜업 대상 관광지 상세 수 — 인기 Top N개를 미리 적재 */
+    public static final int CACHE_WARMUP_DETAIL_TOP_N = 20;
+
+    /** 캐시 웜업 각 요청 간 간격(ms) — DB/Redis 부하 분산 목적 */
+    public static final long CACHE_WARMUP_INTERVAL_MS = 50;
+
     private PlaceRedisConstants() {
         // 인스턴스화 방지
     }
