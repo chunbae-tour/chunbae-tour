@@ -28,8 +28,7 @@ class DailyChargeLimiterTest {
     private PaymentOrderRepository paymentOrderRepository;
 
     // 2026-06-11T16:00:00Z = KST 2026-06-12 01:00 → 한도 일자는 KST 기준 2026-06-12.
-    // UTC 일자(06-11)와 KST 일자(06-12)가 갈라지는 시각이라, 구현이 clock.withZone(KST)를 빼고
-    // UTC 일자로 회귀하면 아래 경계 단언이 깨진다(KST 변환 회귀 가드).
+    // UTC 일자(06-11)와 KST 일자(06-12)가 갈라지는 시각이라, 구현이 clock.withZone(KST)를 빼면 깨진다(KST 일자 가드).
     @Spy
     private Clock clock = Clock.fixed(Instant.parse("2026-06-11T16:00:00Z"), ZoneOffset.UTC);
 
@@ -37,9 +36,10 @@ class DailyChargeLimiterTest {
     private DailyChargeLimiter dailyChargeLimiter;
 
     private static final Long USER_ID = 1L;
-    // KST 2026-06-12 00:00 = UTC 2026-06-11 15:00 / KST 2026-06-13 00:00 = UTC 2026-06-12 15:00
-    private static final LocalDateTime START_AT = LocalDateTime.of(2026, 6, 11, 15, 0);
-    private static final LocalDateTime END_AT = LocalDateTime.of(2026, 6, 12, 15, 0);
+    // created_at은 KST wall-clock 저장 → 경계도 KST naive(UTC 변환 금지). KST 2026-06-12 영업일 = [06-12 00:00, 06-13 00:00).
+    // 구현이 UTC로 -9h 변환하면(06-11 15:00 등) 이 단언이 깨져 타임존 회귀를 잡는다.
+    private static final LocalDateTime START_AT = LocalDateTime.of(2026, 6, 12, 0, 0);
+    private static final LocalDateTime END_AT = LocalDateTime.of(2026, 6, 13, 0, 0);
 
     @Test
     @DisplayName("당일 누적 + 요청액이 한도 이하면 통과한다")

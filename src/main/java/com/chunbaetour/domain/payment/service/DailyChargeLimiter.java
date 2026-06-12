@@ -7,8 +7,6 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -26,11 +24,21 @@ import org.springframework.stereotype.Component;
  *   <li><b>완료 후 취소·환불 유지</b>: pgTransactionId 마커로 "한 번이라도 완료된" 주문을 계속 합산 → 50만 충전 후
  *       취소·재충전으로 한도를 세탁하는 것을 막는다.</li>
  *   <li><b>결제 전 취소·실패 제외</b>: PENDING→CANCELLED(사용자 취소)·FAILED는 pgTransactionId가 null이라
- *       합산에서 자연 제외 → 결제를 포기한 사용자가 한도를 억울하게 소모하지 않는다.</li>
+ *       합산에서 자연 제외된다(사용자 취소 API·웹훅으로 종착 상태에 도달한 경우).</li>
  * </ul>
  *
- * <p>한도 일자는 KST 자정 경계로 리셋한다. created_at은 UTC 저장이므로 KST 영업일 경계를 UTC로 변환해 조회한다.
- * 검증·집계가 모두 created_at 단일 기준이라 자정 경계에서 일자 불일치가 발생하지 않는다.
+ * <p><b>알려진 한계(방치 PENDING)</b>: 사용자가 결제창만 띄우고 이탈해 PENDING이 종착 상태로 정리되지
+ * 않으면(웹훅 미수신) 해당 PENDING은 당일 한도에 계속 합산된다 — 안전 방향(과차단)이지만 정상 사용자가
+ * 한도를 억울하게 소모할 수 있다. 충전 PENDING 만료 스케줄러(백로그 B3: 고아 PENDING 스케줄러)가 도입되면
+ * 미결제 PENDING이 FAILED로 전이돼 합산에서 빠진다. B3 도입 전까지는 의도된 한계로 둔다.
+ *
+ * <p><b>동시성</b>: 검증(SUM 조회)과 PENDING INSERT의 TOCTOU 경합은 {@code ChargeService.charge()}의
+ * 사용자 단위 분산락이 직렬화해 막는다(이 클래스 자체는 락을 잡지 않음).
+ *
+ * <p>한도 일자는 KST 자정 경계로 리셋한다. <b>created_at은 JPA auditing(@CreatedDate)이 JVM 기본 존
+ * (운영 -Duser.timezone=Asia/Seoul)으로 기록하는 KST wall-clock</b>이므로, 조회 경계도 UTC 변환 없이
+ * KST naive LocalDateTime으로 맞춘다. (completedAt/expiredAt은 Clock systemUTC 기준 UTC라 UTC로 변환하지만,
+ * created_at을 UTC로 변환하면 9시간 어긋나 한도 리셋이 자정이 아닌 15:00 KST가 된다 — KAN-293 리뷰 반영.)
  *
  * <p>Redis 의존이 없어 fail-open/누적 유실 같은 경로가 존재하지 않는다. DB 장애 시에는 충전 플로우 전체가
  * 동일하게 실패하므로 한도만 조용히 비활성화되는 상황도 없다.
@@ -53,11 +61,11 @@ public class DailyChargeLimiter {
      * @throws PaymentException PAY_030 — 일일 충전 한도 초과
      */
     public void assertWithinDailyLimit(Long userId, long amount) {
-        // KST 영업일 경계(오늘 00:00 ~ 내일 00:00)를 DB 저장 기준 UTC LocalDateTime으로 변환한다.
+        // KST 영업일 경계(오늘 00:00 ~ 내일 00:00)를 KST naive LocalDateTime 그대로 사용한다.
+        // created_at이 KST wall-clock으로 저장되므로 UTC 변환 없이 같은 KST naive 값과 비교해야 한다.
         LocalDate today = LocalDate.now(clock.withZone(KST));
-        ZonedDateTime startKst = today.atStartOfDay(KST);
-        LocalDateTime startAt = startKst.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
-        LocalDateTime endAt = startKst.plusDays(1).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        LocalDateTime startAt = today.atStartOfDay();
+        LocalDateTime endAt = today.plusDays(1).atStartOfDay();
 
         // 당일 충전 누적액(진행중 + 완료 이력)을 payment_orders에서 직접 합산한다.
         long charged = paymentOrderRepository.sumChargedAmountForDailyLimit(userId, startAt, endAt);

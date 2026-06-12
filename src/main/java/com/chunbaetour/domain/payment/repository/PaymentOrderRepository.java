@@ -55,7 +55,8 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
      * 한도에 그대로 유지돼 한도 세탁을 방지한다. 반면 결제 전 취소(PENDING→CANCELLED)·실패(FAILED)는
      * pgTransactionId가 null이라 자연 제외돼 사용자가 한도를 억울하게 소모하지 않는다.
      *
-     * <p>created_at은 UTC로 저장되므로 호출 측에서 KST 영업일 경계를 UTC로 변환해 전달한다.
+     * <p>created_at은 JPA auditing이 JVM 기본 존(운영=KST)으로 기록하는 KST wall-clock이다. 따라서 호출 측은
+     * UTC 변환 없이 KST naive 영업일 경계(오늘 00:00 ~ 내일 00:00)를 그대로 전달한다(UTC로 변환하면 9h 어긋남).
      */
     @Query("SELECT COALESCE(SUM(p.amount), 0) FROM PaymentOrder p "
             + "WHERE p.userId = :userId "

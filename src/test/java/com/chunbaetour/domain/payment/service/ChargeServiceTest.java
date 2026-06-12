@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -29,12 +30,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -56,8 +61,22 @@ class ChargeServiceTest {
     @Mock
     private DailyChargeLimiter dailyChargeLimiter;
 
+    @Mock
+    private RedissonClient redissonClient;
+
+    @Mock
+    private RLock chargeLock;
+
     @InjectMocks
     private ChargeService chargeService;
+
+    @BeforeEach
+    void setUpChargeLock() throws InterruptedException {
+        // 충전 직렬화 분산락 — 금액 검증 이후 모든 경로가 락을 거치므로 lenient로 통과 stub.
+        // 단위 테스트는 트랜잭션 밖이라 charge()가 finally 즉시해제 분기를 탄다.
+        lenient().when(redissonClient.getLock(anyString())).thenReturn(chargeLock);
+        lenient().when(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).thenReturn(true);
+    }
 
     @Test
     @DisplayName("정상 충전 요청 시 프론트 결제창 호출에 필요한 값을 반환한다")
