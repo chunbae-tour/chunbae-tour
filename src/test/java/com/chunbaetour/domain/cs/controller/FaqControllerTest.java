@@ -153,6 +153,43 @@ class FaqControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value(ErrorCode.FAQ_NOT_FOUND.getCode()));
     }
 
+    // 미인증 → 401 AUTH_006
+    @Test
+    @DisplayName("FAQ 번역 미인증 → 401")
+    void getFaqTranslation_whenUnauthenticated_returns401() throws Exception {
+        mockMvc.perform(get(BASE_URL + "/1/translation")
+                        .param("targetLanguage", "EN"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.getCode()));
+        verifyNoInteractions(faqService);
+    }
+
+    // ADMIN 인증 → 403 AUTH_007
+    @Test
+    @DisplayName("FAQ 번역 ADMIN 인증 → 403")
+    void getFaqTranslation_whenAdmin_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");
+        mockMvc.perform(get(BASE_URL + "/1/translation")
+                        .param("targetLanguage", "EN")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
+        verifyNoInteractions(faqService);
+    }
+
+    // MERCHANT 인증 → 403 AUTH_007
+    @Test
+    @DisplayName("FAQ 번역 MERCHANT 인증 → 403")
+    void getFaqTranslation_whenMerchant_returns403() throws Exception {
+        String token = tokenIssuer.issueAccess(1L, Role.MERCHANT, "merchant@test.com");
+        mockMvc.perform(get(BASE_URL + "/1/translation")
+                        .param("targetLanguage", "EN")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ACCESS_DENIED.getCode()));
+        verifyNoInteractions(faqService);
+    }
+
     private FaqResponse buildFaqResponse(Long id) {
         return new FaqResponse(id, "테스트 질문", "테스트 답변", "PAYMENT", true, LocalDateTime.now(), LocalDateTime.now());
     }
