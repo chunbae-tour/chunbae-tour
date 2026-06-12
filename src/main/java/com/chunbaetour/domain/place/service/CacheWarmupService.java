@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -18,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.DefaultTypedTuple;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
@@ -64,8 +66,9 @@ public class CacheWarmupService {
 
         // 1. 다중 인스턴스 분산 락 (5분)
         String lockKey = PlaceRedisConstants.CACHE_WARMUP_LOCK_KEY;
+        String lockToken = UUID.randomUUID().toString();
         Boolean acquired = stringRedisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "1", Duration.ofMinutes(5));
+                .setIfAbsent(lockKey, lockToken, Duration.ofMinutes(5));
         if (!Boolean.TRUE.equals(acquired)) {
             log.info("[CacheWarmup] 다른 인스턴스에서 웜업 중이거나 이미 완료됨 — 스킵");
             return;
@@ -104,9 +107,10 @@ public class CacheWarmupService {
         } catch (Exception e) {
             log.error("[CacheWarmup] 캐시 웜업 전체 실패", e);
         } finally {
-            // 웜업 완료 또는 실패 시 락 명시적 해제
+            // 웜업 완료 또는 실패 시 자신이 획득한 락일 때만 Lua 스크립트로 명시적 해제
             try {
-                stringRedisTemplate.delete(lockKey);
+                String script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+                stringRedisTemplate.execute(new DefaultRedisScript<>(script, Long.class), Collections.singletonList(lockKey), lockToken);
             } catch (Exception ignore) {}
         }
     }
@@ -143,18 +147,21 @@ public class CacheWarmupService {
                 tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
             }
 
+            String tmpKey = key + ":tmp";
             try {
-                stringRedisTemplate.opsForZSet().add(key, tuples);
-                Boolean expired = stringRedisTemplate.expire(key, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+                // 임시 키에 완전한 데이터를 구성하고 원자적으로 교체(rename)하여 불완전 복구 방지
+                stringRedisTemplate.opsForZSet().add(tmpKey, tuples);
+                Boolean expired = stringRedisTemplate.expire(tmpKey, PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
                 if (Boolean.FALSE.equals(expired)) {
                     throw new IllegalStateException("expire 연산이 false를 반환했습니다");
                 }
+                stringRedisTemplate.rename(tmpKey, key);
             } catch (Exception e) {
-                // Partial Write 방지: ZSet 적재 후 TTL 설정에 실패한 경우 쓰레기 데이터 영구 존속을 막기 위해 키 삭제
+                // 실패한 경우 임시 키 삭제
                 try {
-                    stringRedisTemplate.delete(key);
+                    stringRedisTemplate.delete(tmpKey);
                 } catch (Exception ignore) {}
-                throw new IllegalStateException("ZSet 적재 및 TTL 설정 중 예외 발생 — rollback 완료", e);
+                throw new IllegalStateException("ZSet 적재 및 키 교체 중 예외 발생 — rollback 완료", e);
             }
 
             log.info("[CacheWarmup] 인기 추천 ZSet 웜업 완료 — {}건 적재", popularPlaces.size());
@@ -211,11 +218,15 @@ public class CacheWarmupService {
                     String json = objectMapper.writeValueAsString(cacheDto);
                     
                     // 중간에 사용자 요청으로 캐시가 생성되었을 수 있으므로 setIfAbsent 사용
-                    stringRedisTemplate.opsForValue().setIfAbsent(
+                    Boolean stored = stringRedisTemplate.opsForValue().setIfAbsent(
                             cacheKey, json,
                             Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES)
                     );
-                    warmedUp++;
+                    if (Boolean.TRUE.equals(stored)) {
+                        warmedUp++;
+                    } else {
+                        skipped++;
+                    }
                 } catch (Exception e) {
                     log.warn("[CacheWarmup] 관광지 상세 개별 캐시 실패 — placeId={}", place.getId(), e);
                 } finally {

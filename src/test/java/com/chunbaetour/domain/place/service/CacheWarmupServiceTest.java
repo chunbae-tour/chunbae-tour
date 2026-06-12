@@ -159,12 +159,14 @@ class CacheWarmupServiceTest {
         cacheWarmupService.warmupPopularZSet(List.of(place));
 
         // then
-        verify(zSetOperations).add(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), any());
+        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp";
+        verify(zSetOperations).add(eq(tmpKey), any());
         verify(stringRedisTemplate).expire(
-                eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY),
+                eq(tmpKey),
                 eq(PlaceRedisConstants.RECOMMEND_CACHE_TTL_MINUTES),
                 eq(TimeUnit.MINUTES)
         );
+        verify(stringRedisTemplate).rename(eq(tmpKey), eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY));
     }
 
     @Test
@@ -221,9 +223,10 @@ class CacheWarmupServiceTest {
         cacheWarmupService.warmupPopularZSet(List.of(place));
 
         // then
-        verify(zSetOperations).add(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), any());
+        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp";
+        verify(zSetOperations).add(eq(tmpKey), any());
         // TTL 실패로 인해 delete가 호출되어야 함
-        verify(stringRedisTemplate).delete(PlaceRedisConstants.RECOMMEND_POPULAR_KEY);
+        verify(stringRedisTemplate).delete(tmpKey);
     }
 
     // ── warmupPlaceDetails ───────────────────────────────────────────────────────
