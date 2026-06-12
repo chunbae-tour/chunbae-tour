@@ -14,13 +14,15 @@ import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
-import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
+import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProjection;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
@@ -41,16 +43,19 @@ class CompanionServiceTest {
     @Mock private ChatRoomRepository chatRoomRepository;
     @Mock private ChatRoomMemberRepository chatRoomMemberRepository;
 
-    // ===== startCompanion =====
+    private static final LocalDate TRIP_START = LocalDate.of(2026, 7, 1);
+    private static final LocalDate TRIP_END = LocalDate.of(2026, 7, 5);
 
-    // 정상 시작 — 방장 + 참여자 저장, 응답 반환
+    // ===== createCompanion =====
+
+    // 정상 생성 — 방장 + 참여자 저장, 응답 반환
     @Test
-    void startCompanion_success_returnsResponse() {
+    void createCompanion_success_returnsResponse() {
         Long ownerId = 1L;
         Long roomId = 10L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        CompanionStartRequest request = new CompanionStartRequest(List.of(2L));
-        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        CompanionCreateRequest request = new CompanionCreateRequest(List.of(2L), TRIP_START, TRIP_END);
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         // JPA save 후 ID 세팅 시뮬레이션 — CompanionParticipant 빌더 검증 통과용
         ReflectionTestUtils.setField(companion, "id", 100L);
 
@@ -61,7 +66,7 @@ class CompanionServiceTest {
         given(companionRepository.save(any())).willReturn(companion);
         given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
 
-        CompanionStartResponse response = companionService.startCompanion(ownerId, roomId, request);
+        CompanionCreateResponse response = companionService.createCompanion(ownerId, roomId, request);
 
         assertThat(response.status()).isEqualTo("ONGOING");
         assertThat(response.participantUserIds()).containsExactlyInAnyOrder(2L, 1L);
@@ -69,10 +74,11 @@ class CompanionServiceTest {
 
     // 방 없음 → CHAT_001
     @Test
-    void startCompanion_roomNotFound_throwsRoomNotFound() {
+    void createCompanion_roomNotFound_throwsRoomNotFound() {
         given(chatRoomRepository.findById(any())).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> companionService.startCompanion(1L, 10L, new CompanionStartRequest(List.of())))
+        assertThatThrownBy(() -> companionService.createCompanion(1L, 10L,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND));
@@ -81,14 +87,15 @@ class CompanionServiceTest {
 
     // 방장 아님 → CHAT_006
     @Test
-    void startCompanion_notOwner_throwsForbidden() {
+    void createCompanion_notOwner_throwsForbidden() {
         Long ownerId = 1L;
         Long otherUser = 2L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
 
-        assertThatThrownBy(() -> companionService.startCompanion(otherUser, 10L, new CompanionStartRequest(List.of())))
+        assertThatThrownBy(() -> companionService.createCompanion(otherUser, 10L,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN));
@@ -97,14 +104,15 @@ class CompanionServiceTest {
 
     // CLOSED 방 → CHAT_013
     @Test
-    void startCompanion_closedRoom_throwsRoomClosed() {
+    void createCompanion_closedRoom_throwsRoomClosed() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
         chatRoom.close();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of())))
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, 10L,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_ROOM_CLOSED));
@@ -113,16 +121,17 @@ class CompanionServiceTest {
 
     // 같은 방에 ENDED 동행 존재 → CR_004
     @Test
-    void startCompanion_endedCompanionExists_throwsAlreadyExists() {
+    void createCompanion_endedCompanionExists_throwsAlreadyExists() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion endedCompanion = Companion.builder().chatRoomId(10L).build();
+        Companion endedCompanion = Companion.builder().chatRoomId(10L).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         endedCompanion.end();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(endedCompanion));
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of())))
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, 10L,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMPANION_ALREADY_EXISTS));
@@ -131,15 +140,16 @@ class CompanionServiceTest {
 
     // 같은 방에 ONGOING 동행 존재 → CR_007
     @Test
-    void startCompanion_ongoingCompanionExists_throwsAlreadyStarted() {
+    void createCompanion_ongoingCompanionExists_throwsAlreadyStarted() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion ongoingCompanion = Companion.builder().chatRoomId(10L).build();
+        Companion ongoingCompanion = Companion.builder().chatRoomId(10L).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(ongoingCompanion));
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of())))
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, 10L,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMPANION_ALREADY_STARTED));
@@ -148,7 +158,7 @@ class CompanionServiceTest {
 
     // 방장이 ACTIVE 멤버 아님(채팅방 나간 상태) → CHAT_005
     @Test
-    void startCompanion_ownerNotActiveMember_throwsNotJoined() {
+    void createCompanion_ownerNotActiveMember_throwsNotJoined() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
         List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
@@ -158,7 +168,8 @@ class CompanionServiceTest {
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(10L, List.of(2L, ownerId), activeStates))
                 .willReturn(1L);
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(2L))))
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, 10L,
+                new CompanionCreateRequest(List.of(2L), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_NOT_JOINED));
@@ -167,7 +178,7 @@ class CompanionServiceTest {
 
     // 참여자가 ACTIVE 멤버 아님 → CHAT_005
     @Test
-    void startCompanion_participantNotMember_throwsNotJoined() {
+    void createCompanion_participantNotMember_throwsNotJoined() {
         Long ownerId = 1L;
         Long participantId = 2L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
@@ -178,16 +189,101 @@ class CompanionServiceTest {
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(10L, List.of(participantId, ownerId), activeStates))
                 .willReturn(1L);
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, 10L, new CompanionStartRequest(List.of(participantId))))
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, 10L,
+                new CompanionCreateRequest(List.of(participantId), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.CHAT_NOT_JOINED));
         verify(companionRepository, never()).save(any());
     }
 
+    // tripEndDate < tripStartDate → COMMON_004(INVALID_INPUT_VALUE)
+    @Test
+    void createCompanion_tripEndBeforeStart_throwsInvalidInputValue() {
+        assertThatThrownBy(() -> companionService.createCompanion(1L, 10L,
+                new CompanionCreateRequest(List.of(), TRIP_END, TRIP_START)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.INVALID_INPUT_VALUE));
+        verify(companionRepository, never()).save(any());
+    }
+
+    // 방장 또는 참여자가 다른 ONGOING 동행과 기간 겹침 → CR_010
+    @Test
+    void createCompanion_dateOverlap_throwsDateOverlap() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(2L);
+        // 참여자(2L)가 이미 같은 기간에 다른 ONGOING 동행 참여 중
+        given(companionParticipantRepository.findOngoingTripPeriodsByUserIds(any(), any()))
+                .willReturn(List.of(new TripPeriod(2L, TRIP_START, TRIP_END)));
+
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, roomId,
+                new CompanionCreateRequest(List.of(2L), TRIP_START, TRIP_END)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_DATE_OVERLAP));
+        verify(companionRepository, never()).save(any());
+    }
+
+    // 경계값 — 신규 기간 시작일이 기존 동행 종료일과 같은 날(맞닿음)이면 겹침으로 판단 → CR_010
+    @Test
+    void createCompanion_dateOverlapBoundaryTouching_throwsDateOverlap() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        LocalDate otherStart = TRIP_START.minusDays(10);
+        LocalDate otherEnd = TRIP_START; // 신규 동행 시작일과 동일
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
+        given(companionParticipantRepository.findOngoingTripPeriodsByUserIds(any(), any()))
+                .willReturn(List.of(new TripPeriod(ownerId, otherStart, otherEnd)));
+
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, roomId,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_DATE_OVERLAP));
+    }
+
+    // 기간이 겹치지 않으면 정상 생성됨
+    @Test
+    void createCompanion_nonOverlappingPeriod_succeeds() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+        // 기존 ONGOING 동행 기간은 신규 기간(TRIP_START~TRIP_END) 이전에 종료됨 — 겹치지 않음
+        LocalDate otherStart = TRIP_START.minusDays(10);
+        LocalDate otherEnd = TRIP_START.minusDays(2);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
+        given(companionParticipantRepository.findOngoingTripPeriodsByUserIds(any(), any()))
+                .willReturn(List.of(new TripPeriod(ownerId, otherStart, otherEnd)));
+        given(companionRepository.save(any())).willReturn(companion);
+        given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
+
+        CompanionCreateResponse response = companionService.createCompanion(ownerId, roomId,
+                new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+
+        assertThat(response.status()).isEqualTo("ONGOING");
+    }
+
     // uq_companions_chat_room_id TOCTOU race → CR_007
     @Test
-    void startCompanion_uniqueConstraintRace_throwsAlreadyStarted() {
+    void createCompanion_uniqueConstraintRace_throwsAlreadyStarted() {
         Long ownerId = 1L;
         Long roomId = 10L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
@@ -201,7 +297,8 @@ class CompanionServiceTest {
                 .willReturn(2L);
         given(companionRepository.save(any())).willThrow(dataEx);
 
-        assertThatThrownBy(() -> companionService.startCompanion(ownerId, roomId, new CompanionStartRequest(List.of(2L))))
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, roomId,
+                new CompanionCreateRequest(List.of(2L), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMPANION_ALREADY_STARTED));
@@ -215,7 +312,7 @@ class CompanionServiceTest {
         Long ownerId = 1L;
         Long roomId = 10L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         ReflectionTestUtils.setField(companion, "id", 100L);
         CompanionAddParticipantsRequest request = new CompanionAddParticipantsRequest(List.of(2L, 3L));
 
@@ -300,7 +397,7 @@ class CompanionServiceTest {
     void addParticipants_endedCompanion_throwsAlreadyEnded() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion endedCompanion = Companion.builder().chatRoomId(10L).build();
+        Companion endedCompanion = Companion.builder().chatRoomId(10L).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         endedCompanion.end();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
@@ -319,7 +416,7 @@ class CompanionServiceTest {
     void addParticipants_participantNotMember_throwsNotJoined() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion companion = Companion.builder().chatRoomId(10L).build();
+        Companion companion = Companion.builder().chatRoomId(10L).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         ReflectionTestUtils.setField(companion, "id", 100L);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
@@ -335,13 +432,38 @@ class CompanionServiceTest {
         verify(companionParticipantRepository, never()).saveAll(any());
     }
 
+    // 추가 대상이 다른 ONGOING 동행과 기간 겹침 → CR_010
+    @Test
+    void addParticipants_dateOverlap_throwsDateOverlap() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
+        // 추가 대상(2L)이 이미 같은 기간에 다른 ONGOING 동행 참여 중
+        given(companionParticipantRepository.findOngoingTripPeriodsByUserIds(any(), any()))
+                .willReturn(List.of(new TripPeriod(2L, TRIP_START, TRIP_END)));
+
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, roomId,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_DATE_OVERLAP));
+        verify(companionParticipantRepository, never()).saveAll(any());
+    }
+
     // 이미 참여자 → CR_008
     @Test
     void addParticipants_duplicateParticipant_throwsAlreadyExists() {
         Long ownerId = 1L;
         Long roomId = 10L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         ReflectionTestUtils.setField(companion, "id", 100L);
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
@@ -366,7 +488,7 @@ class CompanionServiceTest {
         Long ownerId = 1L;
         Long roomId = 10L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         ReflectionTestUtils.setField(companion, "id", 100L);
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
@@ -391,7 +513,7 @@ class CompanionServiceTest {
         Long ownerId = 1L;
         Long roomId = 10L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
 
         given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
         given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
@@ -437,7 +559,7 @@ class CompanionServiceTest {
     void endCompanion_alreadyEnded_throwsAlreadyEnded() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion endedCompanion = Companion.builder().chatRoomId(10L).build();
+        Companion endedCompanion = Companion.builder().chatRoomId(10L).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
         endedCompanion.end();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
@@ -447,5 +569,24 @@ class CompanionServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMPANION_ALREADY_ENDED));
+    }
+
+    // findOngoingTripPeriodsByUserIds 결과 표현용 — CompanionTripPeriodProjection의 단순 테스트 구현체
+    private record TripPeriod(Long userId, LocalDate tripStartDate, LocalDate tripEndDate)
+            implements CompanionTripPeriodProjection {
+        @Override
+        public Long getUserId() {
+            return userId;
+        }
+
+        @Override
+        public LocalDate getTripStartDate() {
+            return tripStartDate;
+        }
+
+        @Override
+        public LocalDate getTripEndDate() {
+            return tripEndDate;
+        }
     }
 }

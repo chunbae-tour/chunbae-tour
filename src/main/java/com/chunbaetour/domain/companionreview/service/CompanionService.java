@@ -8,15 +8,17 @@ import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
-import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
+import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProjection;
 import com.chunbaetour.domain.companionreview.type.CompanionStatus;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,9 +38,14 @@ public class CompanionService {
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
 
-    // 동행 시작 — 방장 검증, 중복 방지(CR_004/CR_007), 참여자 ACTIVE 멤버 검증, 방장 자동 포함
+    // 동행 생성 — 방장 검증, 중복 방지(CR_004/CR_007), 참여자 ACTIVE 멤버 검증, 방장 자동 포함, 기간 겹침 검증(CR_010)
     @Transactional
-    public CompanionStartResponse startCompanion(Long ownerId, Long roomId, CompanionStartRequest request) {
+    public CompanionCreateResponse createCompanion(Long ownerId, Long roomId, CompanionCreateRequest request) {
+        // tripEndDate < tripStartDate → 400 (KAN-296)
+        if (request.tripEndDate().isBefore(request.tripStartDate())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
@@ -76,10 +83,17 @@ public class CompanionService {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
 
+        // 방장+참여자 전원의 다른 ONGOING 동행과 기간 겹침 검증 — CR_010 (생성 전이므로 excludeCompanionId 없음)
+        validateNoDateOverlap(allParticipantIds, request.tripStartDate(), request.tripEndDate(), null);
+
         Companion companion;
         try {
             companion = companionRepository.save(
-                    Companion.builder().chatRoomId(roomId).build());
+                    Companion.builder()
+                            .chatRoomId(roomId)
+                            .tripStartDate(request.tripStartDate())
+                            .tripEndDate(request.tripEndDate())
+                            .build());
         } catch (DataIntegrityViolationException e) {
             // uq_companions_chat_room_id 위반 — TOCTOU 동시 요청이 앱 레벨 체크 통과한 경우
             Throwable cause = e.getCause();
@@ -98,7 +112,19 @@ public class CompanionService {
                 .toList();
         companionParticipantRepository.saveAll(participants);
 
-        return CompanionStartResponse.of(companion, allParticipantIds);
+        return CompanionCreateResponse.of(companion, allParticipantIds);
+    }
+
+    // 기간 겹침 검증 — userIds 중 한 명이라도 다른 ONGOING 동행과 [tripStartDate, tripEndDate]가 겹치면 CR_010
+    private void validateNoDateOverlap(List<Long> userIds, LocalDate tripStartDate, LocalDate tripEndDate,
+            Long excludeCompanionId) {
+        List<CompanionTripPeriodProjection> ongoingTripPeriods = companionParticipantRepository
+                .findOngoingTripPeriodsByUserIds(userIds, excludeCompanionId);
+        boolean hasOverlap = ongoingTripPeriods.stream()
+                .anyMatch(p -> !tripStartDate.isAfter(p.getTripEndDate()) && !tripEndDate.isBefore(p.getTripStartDate()));
+        if (hasOverlap) {
+            throw new BusinessException(ErrorCode.COMPANION_DATE_OVERLAP);
+        }
     }
 
     // 동행 참여자 추가 — 방장 검증, CLOSED 차단, ONGOING 확인(CR_006), ACTIVE 멤버 확인, 중복 시 CR_008
@@ -134,6 +160,9 @@ public class CompanionService {
         if (activeCount != distinctUserIds.size()) {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
+
+        // 추가 대상 전원의 다른 ONGOING 동행과 기간 겹침 검증 — CR_010 (본인 동행은 excludeCompanionId로 제외)
+        validateNoDateOverlap(distinctUserIds, companion.getTripStartDate(), companion.getTripEndDate(), companion.getId());
 
         List<CompanionParticipant> participants = distinctUserIds.stream()
                 .map(userId -> CompanionParticipant.builder()
