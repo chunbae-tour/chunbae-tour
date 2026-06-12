@@ -51,9 +51,6 @@ public class PlaceLikeService {
             "end;\n" +
             "local result = redis.call('INCR', key);\n" +
             "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
-            "if redis.call('TTL', KEYS[2]) == -1 then\n" +
-            "  redis.call('EXPIRE', KEYS[2], ARGV[3]);\n" +
-            "end;\n" +
             "return result;";
 
     private static final String SEED_AND_DECR_SCRIPT = 
@@ -65,15 +62,9 @@ public class PlaceLikeService {
             "if current < 0 then\n" +
             "  redis.call('SET', key, 0);\n" +
             "  redis.call('SADD', KEYS[2], ARGV[2]);\n" +
-            "  if redis.call('TTL', KEYS[2]) == -1 then\n" +
-            "    redis.call('EXPIRE', KEYS[2], ARGV[3]);\n" +
-            "  end;\n" +
             "  return 0;\n" +
             "end;\n" +
             "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
-            "if redis.call('TTL', KEYS[2]) == -1 then\n" +
-            "  redis.call('EXPIRE', KEYS[2], ARGV[3]);\n" +
-            "end;\n" +
             "return current;";
 
     private static final DefaultRedisScript<Long> REDIS_SCRIPT_INCR =
@@ -157,8 +148,7 @@ public class PlaceLikeService {
                     REDIS_SCRIPT_INCR,
                     java.util.Arrays.asList(key, dirtyKey),
                     String.valueOf(dbLikeCount),
-                    String.valueOf(placeId),
-                    String.valueOf(PlaceRedisConstants.PLACE_DIRTY_STATS_TTL_SECONDS)
+                    String.valueOf(placeId)
             );
         } catch (Exception e) {
             log.warn("Place like count seed+increment failed: placeId={}", placeId, e);
@@ -177,8 +167,7 @@ public class PlaceLikeService {
                     REDIS_SCRIPT_DECR,
                     java.util.Arrays.asList(key, dirtyKey),
                     String.valueOf(dbLikeCount),
-                    String.valueOf(placeId),
-                    String.valueOf(PlaceRedisConstants.PLACE_DIRTY_STATS_TTL_SECONDS)
+                    String.valueOf(placeId)
             );
         } catch (Exception e) {
             log.warn("Place like count seed+decrement failed: placeId={}", placeId, e);

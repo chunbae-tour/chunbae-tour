@@ -56,8 +56,7 @@ public class PlaceStatsSyncChunkService {
         List<String> likeCounts = stringRedisTemplate.opsForValue().multiGet(likeKeys);
 
         if (viewCounts == null || likeCounts == null) {
-            log.warn("Redis multiGet returned null for keys. Aborting chunk.");
-            return;
+            throw new IllegalStateException("Redis multiGet returned null for place stats keys.");
         }
 
         List<StatsUpdateDto> updates = new ArrayList<>();
