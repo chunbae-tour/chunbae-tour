@@ -36,6 +36,7 @@ import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.service.ReportService;
 import com.chunbaetour.domain.auth.AccountStatus;
@@ -560,84 +561,71 @@ class ReportServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.REPORT_NOT_FOUND);
     }
 
-    // ── resolveReport: 이미 삭제된 대상 500 회귀 ──────────────────────────────
+    // ── resolveReport: 콘텐츠 액션 이벤트 발행 (PR5 — 동기 처리→이벤트 기반 전환) ──────
+    // 실제 콘텐츠 숨김/삭제/정지 및 이미삭제 가드·멱등 처리는 각 도메인 Listener 책임.
+    // resolveReport 책임은 ReportContentActionEvent 발행까지 → 여기서 그것만 검증.
 
     @Test
-    @DisplayName("POST_FREE 이미 DELETED — DELETE resolve 시 500 없이 완료")
-    void resolveReport_POST_FREE_이미삭제됨_500없음() {
+    @DisplayName("POST_FREE DELETE resolve — ReportContentActionEvent(DELETE) 발행")
+    void resolveReport_POST_FREE_DELETE_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        FreePost deletedPost = mock(FreePost.class);
-        given(deletedPost.getStatus()).willReturn(FreePostStatus.DELETED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(deletedPost));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedPost).should(never()).hide();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.POST_FREE, FREE_POST_ID, ReportAction.DELETE));
     }
 
     @Test
-    @DisplayName("POST_COMPANION 이미 DELETED — DELETE resolve 시 500 없이 완료")
-    void resolveReport_POST_COMPANION_이미삭제됨_500없음() {
+    @DisplayName("POST_COMPANION DELETE resolve — ReportContentActionEvent(DELETE) 발행")
+    void resolveReport_POST_COMPANION_DELETE_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION, COMP_POST_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        CompanionPost deletedPost = mock(CompanionPost.class);
-        given(deletedPost.getStatus()).willReturn(CompanionPostStatus.DELETED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(deletedPost));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedPost).should(never()).hide();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.POST_COMPANION, COMP_POST_ID, ReportAction.DELETE));
     }
 
     @Test
-    @DisplayName("COMMENT 이미 DELETED — DELETE resolve 시 멱등, 500 없이 완료")
-    void resolveReport_COMMENT_이미삭제됨_DELETE_멱등() {
+    @DisplayName("COMMENT DELETE resolve — ReportContentActionEvent(DELETE) 발행")
+    void resolveReport_COMMENT_DELETE_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.COMMENT, COMMENT_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        Comment deletedComment = mock(Comment.class);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.of(deletedComment));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedComment).should().delete();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.COMMENT, COMMENT_ID, ReportAction.DELETE));
     }
 
     @Test
-    @DisplayName("USER 탈퇴(DELETED) — SUSPEND resolve 시 skip, 500 없이 완료")
-    void resolveReport_USER_탈퇴계정_SUSPEND_500없음() {
+    @DisplayName("USER SUSPEND resolve — ReportContentActionEvent(SUSPEND) 발행")
+    void resolveReport_USER_SUSPEND_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        Account deletedUser = mock(Account.class);
-        given(deletedUser.getStatus()).willReturn(AccountStatus.DELETED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(deletedUser));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.SUSPEND, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedUser).should(never()).suspend();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.USER, USER_TARGET_ID, ReportAction.SUSPEND));
     }
 }

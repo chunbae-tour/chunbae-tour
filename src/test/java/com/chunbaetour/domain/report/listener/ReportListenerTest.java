@@ -1,0 +1,193 @@
+package com.chunbaetour.domain.report.listener;
+
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+
+import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.AccountStatus;
+import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.entity.CommentStatus;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.companion.entity.CompanionPost;
+import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
+import com.chunbaetour.domain.community.free.entity.FreePost;
+import com.chunbaetour.domain.community.free.entity.FreePostStatus;
+import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.event.ReportContentActionEvent;
+import com.chunbaetour.domain.report.type.ReportAction;
+import java.util.Optional;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * 콘텐츠 제재 리스너 가드 검증.
+ * PR5에서 ReportService 동기 처리 → 이벤트 기반으로 이전된 가드 로직
+ * (이미 DELETED 스킵, 멱등, 탈퇴 계정 정지 생략)을 리스너 단위로 검증.
+ */
+class ReportListenerTest {
+
+    private static final Long REPORT_ID = 1L;
+    private static final Long TARGET_ID = 10L;
+    private static final Long AUTHOR_ID = 50L;
+
+    private ReportContentActionEvent event(ReportTargetType type, ReportAction action) {
+        return new ReportContentActionEvent(REPORT_ID, type, TARGET_ID, action);
+    }
+
+    // ── CompanionPostReportListener ──────────────────────────────────────────
+
+    @Test
+    @DisplayName("CompanionPost DELETE — 이미 DELETED면 hide 스킵")
+    void companion_delete_alreadyDeleted_skips() {
+        CompanionPostRepository repo = mock(CompanionPostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        CompanionPost post = mock(CompanionPost.class);
+        given(post.getStatus()).willReturn(CompanionPostStatus.DELETED);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(post));
+
+        new CompanionPostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_COMPANION, ReportAction.DELETE));
+
+        then(post).should(never()).hide();
+    }
+
+    @Test
+    @DisplayName("CompanionPost DELETE — 활성이면 hide")
+    void companion_delete_active_hides() {
+        CompanionPostRepository repo = mock(CompanionPostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        CompanionPost post = mock(CompanionPost.class);
+        given(post.getStatus()).willReturn(CompanionPostStatus.ACTIVE);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(post));
+
+        new CompanionPostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_COMPANION, ReportAction.DELETE));
+
+        then(post).should().hide();
+    }
+
+    @Test
+    @DisplayName("CompanionPost — targetType 불일치 시 no-op")
+    void companion_wrongType_noop() {
+        CompanionPostRepository repo = mock(CompanionPostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+
+        new CompanionPostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_FREE, ReportAction.DELETE));
+
+        then(repo).should(never()).findById(TARGET_ID);
+    }
+
+    // ── FreePostReportListener ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("FreePost DELETE — 이미 DELETED면 hide 스킵")
+    void free_delete_alreadyDeleted_skips() {
+        FreePostRepository repo = mock(FreePostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        FreePost post = mock(FreePost.class);
+        given(post.getStatus()).willReturn(FreePostStatus.DELETED);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(post));
+
+        new FreePostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_FREE, ReportAction.DELETE));
+
+        then(post).should(never()).hide();
+    }
+
+    @Test
+    @DisplayName("FreePost DELETE — 활성이면 hide")
+    void free_delete_active_hides() {
+        FreePostRepository repo = mock(FreePostRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        FreePost post = mock(FreePost.class);
+        given(post.getStatus()).willReturn(FreePostStatus.ACTIVE);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(post));
+
+        new FreePostReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.POST_FREE, ReportAction.DELETE));
+
+        then(post).should().hide();
+    }
+
+    // ── CommentReportListener ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Comment DELETE — 이미 DELETED면 delete 스킵 (멱등)")
+    void comment_delete_alreadyDeleted_skips() {
+        CommentRepository repo = mock(CommentRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        Comment comment = mock(Comment.class);
+        given(comment.getStatus()).willReturn(CommentStatus.DELETED);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(comment));
+
+        new CommentReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.COMMENT, ReportAction.DELETE));
+
+        then(comment).should(never()).delete();
+    }
+
+    @Test
+    @DisplayName("Comment DELETE — 활성이면 delete")
+    void comment_delete_active_deletes() {
+        CommentRepository repo = mock(CommentRepository.class);
+        AccountRepository accRepo = mock(AccountRepository.class);
+        Comment comment = mock(Comment.class);
+        given(comment.getStatus()).willReturn(CommentStatus.ACTIVE);
+        given(repo.findById(TARGET_ID)).willReturn(Optional.of(comment));
+
+        new CommentReportListener(repo, accRepo)
+                .handle(event(ReportTargetType.COMMENT, ReportAction.DELETE));
+
+        then(comment).should().delete();
+    }
+
+    // ── UserReportListener ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("User SUSPEND — 탈퇴(DELETED) 계정이면 suspend 스킵")
+    void user_suspend_deleted_skips() {
+        AccountRepository accRepo = mock(AccountRepository.class);
+        Account acc = mock(Account.class);
+        given(acc.getStatus()).willReturn(AccountStatus.DELETED);
+        given(accRepo.findById(TARGET_ID)).willReturn(Optional.of(acc));
+
+        new UserReportListener(accRepo)
+                .handle(event(ReportTargetType.USER, ReportAction.SUSPEND));
+
+        then(acc).should(never()).suspend();
+    }
+
+    @Test
+    @DisplayName("User SUSPEND — 이미 SUSPENDED면 suspend 스킵 (멱등)")
+    void user_suspend_alreadySuspended_skips() {
+        AccountRepository accRepo = mock(AccountRepository.class);
+        Account acc = mock(Account.class);
+        given(acc.getStatus()).willReturn(AccountStatus.SUSPENDED);
+        given(accRepo.findById(TARGET_ID)).willReturn(Optional.of(acc));
+
+        new UserReportListener(accRepo)
+                .handle(event(ReportTargetType.USER, ReportAction.SUSPEND));
+
+        then(acc).should(never()).suspend();
+    }
+
+    @Test
+    @DisplayName("User SUSPEND — 활성 계정이면 suspend")
+    void user_suspend_active_suspends() {
+        AccountRepository accRepo = mock(AccountRepository.class);
+        Account acc = mock(Account.class);
+        given(acc.getStatus()).willReturn(AccountStatus.ACTIVE);
+        given(accRepo.findById(TARGET_ID)).willReturn(Optional.of(acc));
+
+        new UserReportListener(accRepo)
+                .handle(event(ReportTargetType.USER, ReportAction.SUSPEND));
+
+        then(acc).should().suspend();
+    }
+}
