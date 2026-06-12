@@ -147,7 +147,8 @@ public class MerchantHomeService {
                         shopIds, QrPayStatus.COMPLETED, yesterdayStart, todayStart),
                 0L);
 
-        // 미완료 카운터: 오늘 접수돼 거절(REJECTED)+만료(EXPIRED)로 끝난 건수. 사용자 취소(CANCELLED)는 상인 귀책이 아니라 제외한다.
+        // 미완료 카운터: 오늘(expiredAt 기준) 거절(REJECTED)+만료(EXPIRED)로 끝난 건수. 사용자 취소(CANCELLED)는 상인 귀책이 아니라 제외한다.
+        // expiredAt은 UTC로 저장돼 todayStart/todayEnd(UTC)와 존이 일관된다(createdAt은 KST라 사용 불가 — 쿼리 주석 참조).
         long missedPaymentCount = qrPayRequestRepository.countByShopsAndStatusesBetween(
                 shopIds, MISSED_STATUSES, todayStart, todayEnd);
 

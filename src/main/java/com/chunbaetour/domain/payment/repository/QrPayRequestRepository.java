@@ -89,19 +89,22 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
                                                          @Param("endAt") LocalDateTime endAt);
 
     /**
-     * 상인 홈 대시보드 — 기간 내 접수돼 미완료(거절+만료)로 끝난 QR 결제 건수 (KAN-283).
-     * 거절/만료는 completedAt이 null이라 완료 시각으로 집계할 수 없다.
-     * 만료는 스케줄러 bulk UPDATE로 전이돼 updatedAt(@LastModifiedDate)이 갱신되지 않으므로,
-     * 거절·만료를 일관되게 집계하려고 항상 set되는 createdAt(접수 시각) 기준으로 센다.
-     * QR 만료는 접수 +5분이라 createdAt과 전이 시각이 사실상 같다.
+     * 상인 홈 대시보드 — 기간 내 미완료(거절+만료)로 끝난 QR 결제 건수 (KAN-283).
+     *
+     * <p>집계 윈도우 컬럼으로 createdAt이 아니라 <b>expiredAt</b>을 쓴다. createdAt은 JPA auditing
+     * (@CreatedDate, JVM 기본 존)으로 기록돼 운영(-Duser.timezone=Asia/Seoul)에선 KST wall-clock인 반면,
+     * 호출 측이 넘기는 경계(startAt/endAt)와 completedAt/expiredAt은 Clock(systemUTC) 기준 UTC wall-clock이다.
+     * createdAt을 UTC 경계와 비교하면 9시간 밀려 오후 3시(KST) 이후 거절·만료가 당일 카운터에서 누락된다.
+     * expiredAt은 생성 시 UTC clock으로 (접수 +5분)이 항상 set(NOT NULL)되고 REJECTED/EXPIRED 모두 보존되므로
+     * 존이 일관된다. createdAt 기준 대비 윈도우가 5분 시프트되나 일 단위 카운터에는 무해하다.
      */
     @Query("""
             SELECT COUNT(q)
             FROM QrPayRequest q
             WHERE q.shopId IN :shopIds
               AND q.status IN :statuses
-              AND q.createdAt >= :startAt
-              AND q.createdAt < :endAt
+              AND q.expiredAt >= :startAt
+              AND q.expiredAt < :endAt
             """)
     long countByShopsAndStatusesBetween(@Param("shopIds") List<Long> shopIds,
                                         @Param("statuses") Collection<QrPayStatus> statuses,

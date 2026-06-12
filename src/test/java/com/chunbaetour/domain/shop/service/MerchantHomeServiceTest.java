@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,7 +79,8 @@ class MerchantHomeServiceTest {
                         "req-001",
                         SHOP_ID,
                         5_000L,
-                        LocalDateTime.of(2026, 5, 25, 10, 10)
+                        // completedAt은 UTC 저장값(=KST 10:10). hourlySales(KST)와 기준 타임존이 다름을 명시.
+                        LocalDateTime.of(2026, 5, 25, 1, 10)
                 ))
         );
         String cached = objectMapper.writeValueAsString(cachedResponse);
@@ -93,7 +95,7 @@ class MerchantHomeServiceTest {
         assertThat(response.missedPaymentCount()).isEqualTo(2L);
         assertThat(response.recentPayments()).hasSize(1);
         assertThat(response.recentPayments().get(0).completedAt())
-                .isEqualTo(LocalDateTime.of(2026, 5, 25, 10, 10));
+                .isEqualTo(LocalDateTime.of(2026, 5, 25, 1, 10));
         verify(shopRepository, never()).findAllByUserId(any());
         verify(qrPayRequestRepository, never())
                 .findCompletedByShopsBetween(any(), any(), any(), any());
@@ -205,6 +207,31 @@ class MerchantHomeServiceTest {
 
         assertThat(response.todaySalesDate()).isEqualTo(LocalDate.of(2026, 5, 25));
         assertThat(response.todaySalesAmount()).isZero();
+    }
+
+    @Test
+    @DisplayName("상인 홈 조회 — 완료 11건이면 최근 결제는 10건만, 매출 합계는 11건 전체다")
+    void getHome_recentPayments_cappedAtTen_butSalesSumsAll() {
+        given(redisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.get(CACHE_KEY)).willReturn(null);
+        given(shopRepository.findAllByUserId(USER_ID)).willReturn(List.of(createShop()));
+        // 완료 11건 (각 1,000원, 최신순). UTC 01:0x → KST 10:0x.
+        List<CompletedQrPayView> completed = IntStream.rangeClosed(1, 11)
+                .mapToObj(i -> view(String.format("req-%02d", i), 1_000L,
+                        LocalDateTime.of(2026, 5, 25, 1, i)))
+                .toList();
+        given(qrPayRequestRepository.findCompletedByShopsBetween(
+                eq(List.of(SHOP_ID)), eq(QrPayStatus.COMPLETED), eq(TODAY_START), eq(TODAY_END)
+        )).willReturn(completed);
+
+        MerchantHomeResponse response = merchantHomeService.getHome(USER_ID);
+
+        // 목록은 10건으로 제한, 11번째(req-11) 제외
+        assertThat(response.recentPayments()).hasSize(10);
+        assertThat(response.recentPayments().get(0).payRequestId()).isEqualTo("req-01");
+        assertThat(response.recentPayments()).noneMatch(p -> "req-11".equals(p.payRequestId()));
+        // 매출 합계는 잘리지 않고 11건 전체 — '합계는 전체, 목록은 10건' 계약
+        assertThat(response.todaySalesAmount()).isEqualTo(11_000L);
     }
 
     private Shop createShop() {
