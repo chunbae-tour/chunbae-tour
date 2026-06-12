@@ -55,7 +55,13 @@ public class PlaceStatsSyncBatchService {
         
         // 스캔 루프가 완전히 끝난 뒤, 성공한 ID들만 일괄 SREM 삭제
         if (!processedIds.isEmpty()) {
-            stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, (Object[]) processedIds.toArray(new String[0]));
+            // 대규모 삭제 시 Redis 명령어 파라미터 한계 초과(OOM)를 방지하기 위해 1,000개 단위로 파티셔닝
+            int partitionSize = 1000;
+            for (int i = 0; i < processedIds.size(); i += partitionSize) {
+                int end = Math.min(processedIds.size(), i + partitionSize);
+                java.util.List<String> partition = processedIds.subList(i, end);
+                stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, (Object[]) partition.toArray(new String[0]));
+            }
         }
     }
 
