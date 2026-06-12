@@ -14,6 +14,9 @@ public final class PlaceRedisConstants {
     /** 관광지 조회수 카운터 키 접두사 */
     public static final String PLACE_VIEW_COUNT_PREFIX = "place:view:";
 
+    /** 조회수/좋아요 수 변경이 발생한 관광지 ID를 담는 Set 키 (배치 동기화용) */
+    public static final String PLACE_DIRTY_STATS_KEY = "place:dirty_stats";
+
     /** 인기 관광지 추천 리스트 키 (ZSet) */
     public static final String RECOMMEND_POPULAR_KEY = "recommend:popular";
 
