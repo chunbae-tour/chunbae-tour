@@ -97,6 +97,18 @@ class FreePostServiceTest {
     }
 
     @Test
+    void findById_탈퇴한_작성자_탈퇴한사용자로_반환() {
+        FreePost post = buildPost(POST_ID, FreePostStatus.ACTIVE);
+        given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.empty());
+
+        FreePostGetOneResponse response = postService.findById(POST_ID);
+
+        assertThat(response.writer().nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(response.writer().userId()).isNull();
+    }
+
+    @Test
     void findById_DELETED_POST_NOT_FOUND() {
         FreePost post = buildPost(POST_ID, FreePostStatus.DELETED);
         given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));

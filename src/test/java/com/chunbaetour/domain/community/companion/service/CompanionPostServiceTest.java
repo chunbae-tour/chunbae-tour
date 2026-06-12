@@ -8,7 +8,9 @@ import static org.mockito.BDDMockito.then;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
+import com.chunbaetour.domain.chat.type.ChatRoomStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -106,6 +108,66 @@ class CompanionPostServiceTest {
     }
 
     @Test
+    void findById_탈퇴한_작성자_탈퇴한사용자로_반환() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.empty());
+        given(chatRoomRepository.findByPostId(POST_ID)).willReturn(Optional.empty());
+
+        CompanionPostGetOneResponse response = postService.findById(POST_ID);
+
+        assertThat(response.writer().nickname()).isEqualTo("탈퇴한 사용자");
+        assertThat(response.writer().userId()).isNull();
+    }
+
+    @Test
+    void findById_채팅방_OPEN_chatRoomId_반환() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        Account author = mockAccount(AUTHOR_ID);
+        ChatRoom chatRoom = ChatRoom.createWithOwner(POST_ID, 99L, "채팅방", null, 4);
+        ReflectionTestUtils.setField(chatRoom, "id", 10L);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(chatRoomRepository.findByPostId(POST_ID)).willReturn(Optional.of(chatRoom));
+
+        CompanionPostGetOneResponse response = postService.findById(POST_ID);
+
+        assertThat(response.chatRoomId()).isEqualTo(10L);
+        assertThat(response.chatRoomStatus()).isEqualTo(ChatRoomStatus.OPEN);
+    }
+
+    @Test
+    void findById_채팅방_CLOSED_chatRoomStatus_CLOSED() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        Account author = mockAccount(AUTHOR_ID);
+        ChatRoom chatRoom = ChatRoom.createWithOwner(POST_ID, 99L, "채팅방", null, 4);
+        ReflectionTestUtils.setField(chatRoom, "id", 10L);
+        chatRoom.close();
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(chatRoomRepository.findByPostId(POST_ID)).willReturn(Optional.of(chatRoom));
+
+        CompanionPostGetOneResponse response = postService.findById(POST_ID);
+
+        assertThat(response.chatRoomId()).isEqualTo(10L);
+        assertThat(response.chatRoomStatus()).isEqualTo(ChatRoomStatus.CLOSED);
+    }
+
+    @Test
+    void findById_채팅방_없으면_chatRoomId_null() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        Account author = mockAccount(AUTHOR_ID);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(chatRoomRepository.findByPostId(POST_ID)).willReturn(Optional.empty());
+
+        CompanionPostGetOneResponse response = postService.findById(POST_ID);
+
+        assertThat(response.chatRoomId()).isNull();
+        assertThat(response.chatRoomStatus()).isNull();
+    }
+
+    @Test
     void findById_DELETED_POST_NOT_FOUND() {
         CompanionPost post = buildPost(POST_ID, CompanionPostStatus.DELETED);
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
@@ -174,6 +236,34 @@ class CompanionPostServiceTest {
         assertThat(result.content()).hasSize(1);
     }
 
+    @Test
+    void findAll_채팅방있는_게시글_chatRoomId_포함() {
+        CompanionPost post = buildPost(1L, CompanionPostStatus.ACTIVE);
+        ChatRoom chatRoom = ChatRoom.createWithOwner(1L, 99L, "채팅방", null, 4);
+        ReflectionTestUtils.setField(chatRoom, "id", 10L);
+        given(postRepository.findByFilters(any(), any(), any(), any(), any(Pageable.class)))
+                .willReturn(List.of(post));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of(chatRoom));
+
+        CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 5);
+
+        assertThat(result.content().get(0).chatRoomId()).isEqualTo(10L);
+    }
+
+    @Test
+    void findAll_채팅방없는_게시글_chatRoomId_null() {
+        CompanionPost post = buildPost(1L, CompanionPostStatus.ACTIVE);
+        given(postRepository.findByFilters(any(), any(), any(), any(), any(Pageable.class)))
+                .willReturn(List.of(post));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
+
+        CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 5);
+
+        assertThat(result.content().get(0).chatRoomId()).isNull();
+    }
+
     // ── update ────────────────────────────────────────────────────────────
 
     @Test
@@ -202,6 +292,18 @@ class CompanionPostServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.POST_UPDATE_FORBIDDEN);
+    }
+
+    @Test
+    void update_placeName만_있고_placeId_없으면_INVALID_REQUEST() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+
+        assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID,
+                new CompanionPostUpdateRequest(null, null, null, "새 장소명", null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test

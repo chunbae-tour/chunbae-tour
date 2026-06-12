@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
 import com.chunbaetour.domain.auth.Account;
@@ -134,6 +135,33 @@ class CommentServiceTest {
     }
 
     @Test
+    void create_존재하지않는_사용자_USER_NOT_FOUND() {
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.create(
+                AUTHOR_ID, POST_ID, POST_TYPE, new CommentCreateRequest("내용", null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    void create_COMPANION_게시판_댓글_성공() {
+        Account author = mockAccount(AUTHOR_ID);
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(commentRepository.save(any())).willAnswer(inv -> {
+            Comment c = inv.getArgument(0);
+            ReflectionTestUtils.setField(c, "id", COMMENT_ID);
+            return c;
+        });
+
+        CommentCreateResponse response = commentService.create(
+                AUTHOR_ID, POST_ID, PostType.COMPANION, new CommentCreateRequest("같이 가요!", null));
+
+        assertThat(response.commentId()).isEqualTo(COMMENT_ID);
+    }
+
+    @Test
     void create_다른_게시글의_댓글을_parent로_COMMENT_NOT_FOUND() {
         Long parentId = 50L;
         // parent가 다른 게시글 소속
@@ -150,6 +178,19 @@ class CommentServiceTest {
     }
 
     // ── findAll ───────────────────────────────────────────────────────────
+
+    @Test
+    void findAll_빈_결과() {
+        given(commentRepository.findRootComments(any(), any(), any(), any(Pageable.class)))
+                .willReturn(List.of());
+
+        CursorPageResponse<CommentGetListResponse> result =
+                commentService.findAll(POST_ID, POST_TYPE, null, 10);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+    }
 
     @Test
     void findAll_hasNext_true() {
@@ -202,6 +243,39 @@ class CommentServiceTest {
         then(accountRepository).should(never()).findAllById(any());
     }
 
+    @Test
+    void findAll_삭제된_루트_댓글_placeholder_표시() {
+        int size = 5;
+        Comment deleted = buildComment(1L, null, CommentStatus.DELETED);
+        given(commentRepository.findRootComments(any(), any(), any(), any(Pageable.class)))
+                .willReturn(List.of(deleted));
+        given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of());
+
+        CursorPageResponse<CommentGetListResponse> result =
+                commentService.findAll(POST_ID, POST_TYPE, null, size);
+
+        CommentGetListResponse item = result.content().get(0);
+        assertThat(item.deleted()).isTrue();
+        assertThat(item.content()).isEqualTo("(삭제된 댓글)");
+        assertThat(item.writer()).isNull();
+        assertThat(item.updatedAt()).isNull();
+    }
+
+    @Test
+    void findAll_삭제된_루트_댓글_replyCount_포함() {
+        int size = 5;
+        Comment deleted = buildComment(1L, null, CommentStatus.DELETED);
+        ReplyCount rc = mockReplyCount(1L, 3L);
+        given(commentRepository.findRootComments(any(), any(), any(), any(Pageable.class)))
+                .willReturn(List.of(deleted));
+        given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of(rc));
+
+        CursorPageResponse<CommentGetListResponse> result =
+                commentService.findAll(POST_ID, POST_TYPE, null, size);
+
+        assertThat(result.content().get(0).replyCount()).isEqualTo(3L);
+    }
+
     // ── findReplies ───────────────────────────────────────────────────────
 
     @Test
@@ -217,6 +291,28 @@ class CommentServiceTest {
         List<CommentGetListResponse> replies = commentService.findReplies(POST_ID, POST_TYPE, COMMENT_ID);
 
         assertThat(replies).hasSize(2);
+    }
+
+    @Test
+    void findReplies_숨김_게시글_POST_NOT_FOUND() {
+        willThrow(new BusinessException(ErrorCode.POST_NOT_FOUND))
+                .given(postQueryService).validateExists(POST_ID, POST_TYPE);
+
+        assertThatThrownBy(() -> commentService.findReplies(POST_ID, POST_TYPE, COMMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.POST_NOT_FOUND);
+    }
+
+    @Test
+    void findReplies_삭제된_게시글_POST_NOT_FOUND() {
+        willThrow(new BusinessException(ErrorCode.POST_NOT_FOUND))
+                .given(postQueryService).validateExists(POST_ID, PostType.COMPANION);
+
+        assertThatThrownBy(() -> commentService.findReplies(POST_ID, PostType.COMPANION, COMMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.POST_NOT_FOUND);
     }
 
     @Test
@@ -245,6 +341,17 @@ class CommentServiceTest {
     }
 
     // ── update ────────────────────────────────────────────────────────────
+
+    @Test
+    void update_존재하지않는_댓글_COMMENT_NOT_FOUND() {
+        given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.update(AUTHOR_ID, POST_ID, POST_TYPE, COMMENT_ID,
+                new CommentUpdateRequest("수정내용")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COMMENT_NOT_FOUND);
+    }
 
     @Test
     void update_성공() {
@@ -283,6 +390,16 @@ class CommentServiceTest {
     }
 
     // ── delete ────────────────────────────────────────────────────────────
+
+    @Test
+    void delete_존재하지않는_댓글_COMMENT_NOT_FOUND() {
+        given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.delete(AUTHOR_ID, POST_ID, POST_TYPE, COMMENT_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COMMENT_NOT_FOUND);
+    }
 
     @Test
     void delete_성공() {
