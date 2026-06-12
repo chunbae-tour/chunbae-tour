@@ -29,7 +29,10 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
             @Param("userId") Long userId,
             @Param("now") LocalDateTime now);
 
-    /** 유저의 모든 활성 제재 — 크로스 도메인 계정 정지 시 최고 단계·최대 endedAt 계산용. */
+    /**
+     * 유저의 모든 활성 제재 — 크로스 도메인 계정 정지 시 최고 단계·최대 endedAt 계산용.
+     * WARNING 제외: ended_at = started_at 이므로 자동 제외됨.
+     */
     @Query("SELECT s FROM UserSanction s "
             + "WHERE s.userId = :userId "
             + "AND s.releasedAt IS NULL "
@@ -47,6 +50,6 @@ public interface UserSanctionRepository extends JpaRepository<UserSanction, Long
     @Query("SELECT s FROM UserSanction s "
             + "WHERE s.releasedAt IS NULL "
             + "AND s.endedAt IS NOT NULL "
-            + "AND s.endedAt < :now")
+            + "AND s.endedAt <= :now")
     List<UserSanction> findExpiredUnreleasedSanctions(@Param("now") LocalDateTime now);
 }
