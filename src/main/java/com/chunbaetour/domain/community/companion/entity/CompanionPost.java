@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -16,7 +17,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "companion_posts")
+@Table(name = "companion_posts", indexes = {
+        // 기본 목록 (필터 없음): WHERE status=? AND id<cursor ORDER BY id DESC
+        @Index(name = "idx_companion_status_id", columnList = "status, id"),
+        // region 필터: WHERE status=? AND region=? ... ORDER BY id DESC
+        @Index(name = "idx_companion_status_region_id", columnList = "status, region, id"),
+        // meetingDate 필터: WHERE status=? AND meeting_date=? ... ORDER BY id DESC
+        @Index(name = "idx_companion_status_meeting_date_id", columnList = "status, meeting_date, id")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CompanionPost extends BaseEntity {
