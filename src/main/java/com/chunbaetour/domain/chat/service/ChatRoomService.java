@@ -27,9 +27,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,7 +117,7 @@ public class ChatRoomService {
     private void saveClosedRoom(ChatRoom chatRoom, Long roomId) {
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ConcurrencyFailureException e) {
             ChatRoom refreshed = chatRoomRepository.findById(roomId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
             if (refreshed.getStatus() == ChatRoomStatus.CLOSED) {
@@ -154,7 +154,7 @@ public class ChatRoomService {
 
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ConcurrencyFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
 
@@ -176,8 +176,10 @@ public class ChatRoomService {
             throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
         }
 
+        // 현재 방장의 멤버 레코드가 없으면 ChatRoom.ownerId와 ChatRoomMember 상태가 불일치하는
+        // 서버측 데이터 정합성 버그 — 클라이언트 요청 오류(403)가 아닌 서버 오류(500)로 처리 (demoteFromOwner()와 동일 기준)
         ChatRoomMember currentOwner = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, ownerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR));
 
         // 위임 대상이 같은 방의 멤버가 아니면 CHAT_019 — 본인·강퇴·퇴장 멤버는 promoteToOwner()에서 추가 차단
         ChatRoomMember newOwner = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, newOwnerId)
@@ -187,10 +189,12 @@ public class ChatRoomService {
         currentOwner.demoteFromOwner();
         chatRoom.transferOwner(newOwnerId);
 
-        // saveAndFlush로 커밋 전 DB 쓰기를 강제해 낙관적 잠금 실패를 메서드 내부에서 처리
+        // saveAndFlush로 커밋 전 DB 쓰기를 강제해 충돌을 메서드 내부에서 처리
+        // ConcurrencyFailureException — @Version 낙관적 잠금 실패뿐 아니라, 동시 transferOwner/kickMember가
+        // chat_rooms/chat_room_members 행을 서로 다른 순서로 잠그며 발생하는 DB 데드락(CannotAcquireLockException)도 포괄
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ConcurrencyFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
 
@@ -231,7 +235,7 @@ public class ChatRoomService {
         // closeRoom과 동일한 패턴 — 트랜잭션 커밋 시 래핑 예외로 매핑 누락되는 케이스 방지
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ConcurrencyFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
     }

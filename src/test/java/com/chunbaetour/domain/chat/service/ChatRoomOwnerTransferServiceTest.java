@@ -108,6 +108,21 @@ class ChatRoomOwnerTransferServiceTest {
                 .isEqualTo(ErrorCode.CHAT_ROOM_CLOSED);
     }
 
+    // 현재 방장의 멤버 레코드 없음 — ChatRoom.ownerId와 ChatRoomMember 상태 불일치(서버 데이터 정합성 버그) — INTERNAL_SERVER_ERROR
+    @Test
+    void transferOwner_currentOwnerNotFound_throws_INTERNAL_SERVER_ERROR() {
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, OWNER_ID))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chatRoomService.transferOwner(OWNER_ID, ROOM_ID, NEW_OWNER_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(this::extractErrorCode)
+                .isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR);
+
+        verify(chatRoomMemberRepository, never()).findByChatRoomIdAndUserId(ROOM_ID, NEW_OWNER_ID);
+        verify(room, never()).transferOwner(any());
+    }
+
     // 위임 대상이 채팅방 멤버가 아님 — CHAT_019
     @Test
     void transferOwner_targetNotJoined_throws_CHAT_OWNER_TRANSFER_INVALID_TARGET() {

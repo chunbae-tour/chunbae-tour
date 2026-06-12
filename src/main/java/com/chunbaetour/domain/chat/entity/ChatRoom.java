@@ -39,6 +39,8 @@ public class ChatRoom extends BaseEntity {
     @Column(name = "post_id", nullable = false)
     private Long postId;
 
+    // CLOSED 방의 ownerId는 별도로 갱신되지 않음 — 방장이 leaveRoom()으로 퇴장(OWNER_ACTIVE → MEMBER_LEFT)해도
+    // "이력상 마지막 방장"을 가리키는 값으로 그대로 유지된다 (09_정책_결정_기록.md)
     @Column(name = "owner_id", nullable = false)
     private Long ownerId;
 

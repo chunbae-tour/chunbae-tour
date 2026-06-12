@@ -93,6 +93,16 @@ class ChatRoomMemberDomainTest {
                 .isEqualTo(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET);
     }
 
+    @Test
+    void promoteToOwner_kickedMember_throws_CHAT_OWNER_TRANSFER_INVALID_TARGET() {
+        ChatRoomMember member = ChatRoomMember.ofMember(room, 2L);
+        member.kick();
+        assertThatThrownBy(member::promoteToOwner)
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET);
+    }
+
     // demoteFromOwner() — OWNER_ACTIVE만 MEMBER_ACTIVE로 전환 가능
     @Test
     void demoteFromOwner_ownerActive_becomesMemberActive() {

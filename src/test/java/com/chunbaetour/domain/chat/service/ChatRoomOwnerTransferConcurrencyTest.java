@@ -123,11 +123,107 @@ class ChatRoomOwnerTransferConcurrencyTest extends AbstractIntegrationTest {
         assertThat(owners).hasSize(1);
         assertThat(owners.get(0).getUserId()).isEqualTo(updated.getOwnerId());
 
+        // 위임에 실패한 트랜잭션은 CONCURRENT_UPDATE로 롤백 — 기존 방장은 MEMBER_ACTIVE로 정상 전환
+        ChatRoomMember oldOwner = members.stream()
+                .filter(m -> m.getUserId().equals(OWNER_ID))
+                .findFirst()
+                .orElseThrow();
+        assertThat(oldOwner.getMemberState()).isEqualTo(ChatMemberState.MEMBER_ACTIVE);
+
         // 성공한 트랜잭션 1건만 AFTER_COMMIT으로 신규 방장에게 CHAT_OWNER_TRANSFERRED 알림 발송
         List<Notification> notifications = notificationRepository.findAll();
         assertThat(notifications).hasSize(1);
         assertThat(notifications.get(0).getUserId()).isEqualTo(NEW_OWNER_ID);
         assertThat(notifications.get(0).getType()).isEqualTo(NotificationType.CHAT_OWNER_TRANSFERRED);
+    }
+
+    @Test
+    @DisplayName("방장 위임과 강퇴가 같은 대상에게 동시 요청 → 1건만 성공, 데이터 정합성 유지")
+    void concurrentTransferAndKick_onlyOneSucceeds_consistentState() throws Exception {
+        ChatRoom chatRoom = ChatRoom.createWithOwner(POST_ID, OWNER_ID, "위임/강퇴 동시성 테스트 방", null, 5);
+        chatRoomRepository.saveAndFlush(chatRoom);
+        Long chatRoomId = chatRoom.getId();
+
+        // 위임 대상 = 강퇴 대상 — MEMBER_ACTIVE로 참여
+        ChatRoomMember targetMember = ChatRoomMember.ofMember(chatRoom, NEW_OWNER_ID);
+        chatRoomMemberRepository.saveAndFlush(targetMember);
+        chatRoom.incrementMembers();
+        chatRoomRepository.saveAndFlush(chatRoom);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        List<ErrorCode> failedCodes = Collections.synchronizedList(new ArrayList<>());
+
+        CompletableFuture<Boolean> transferFuture;
+        CompletableFuture<Boolean> kickFuture;
+        try {
+            transferFuture = CompletableFuture.supplyAsync(() -> {
+                ready.countDown();
+                await(start);
+                try {
+                    chatRoomService.transferOwner(OWNER_ID, chatRoomId, NEW_OWNER_ID);
+                    return true;
+                } catch (BusinessException e) {
+                    failedCodes.add(e.getErrorCode());
+                    return false;
+                }
+            }, executor);
+
+            kickFuture = CompletableFuture.supplyAsync(() -> {
+                ready.countDown();
+                await(start);
+                try {
+                    chatRoomService.kickMember(OWNER_ID, chatRoomId, NEW_OWNER_ID);
+                    return true;
+                } catch (BusinessException e) {
+                    failedCodes.add(e.getErrorCode());
+                    return false;
+                }
+            }, executor);
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            CompletableFuture.allOf(transferFuture, kickFuture).get(15, TimeUnit.SECONDS);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+
+        boolean transferSucceeded = transferFuture.join();
+        boolean kickSucceeded = kickFuture.join();
+
+        // ChatRoomMember에는 @Version 없음 — ChatRoom의 @Version + 트랜잭션 롤백으로 한쪽만 커밋되어야 함
+        assertThat(transferSucceeded ^ kickSucceeded).isTrue();
+        assertThat(failedCodes).hasSize(1);
+        assertThat(failedCodes.get(0)).isIn(ErrorCode.CONCURRENT_UPDATE, ErrorCode.CHAT_SETTING_FORBIDDEN);
+
+        ChatRoom updated = chatRoomRepository.findById(chatRoomId).orElseThrow();
+        List<ChatRoomMember> members = chatRoomMemberRepository.findByChatRoomId(chatRoomId);
+        ChatRoomMember target = members.stream()
+                .filter(m -> m.getUserId().equals(NEW_OWNER_ID))
+                .findFirst()
+                .orElseThrow();
+
+        if (transferSucceeded) {
+            // 위임 성공 — 대상이 신규 방장, 인원수는 그대로
+            assertThat(updated.getOwnerId()).isEqualTo(NEW_OWNER_ID);
+            assertThat(target.getMemberState()).isEqualTo(ChatMemberState.OWNER_ACTIVE);
+            assertThat(updated.getCurrentMembers()).isEqualTo(2);
+        } else {
+            // 강퇴 성공 — 대상은 MEMBER_KICKED, 인원수 -1, ownerId는 그대로
+            assertThat(updated.getOwnerId()).isEqualTo(OWNER_ID);
+            assertThat(target.getMemberState()).isEqualTo(ChatMemberState.MEMBER_KICKED);
+            assertThat(updated.getCurrentMembers()).isEqualTo(1);
+        }
+
+        // 어느 쪽이 성공하든 OWNER_ACTIVE 멤버는 정확히 1명이며 ownerId와 일치 — 정합성 깨짐 없음
+        List<ChatRoomMember> owners = members.stream()
+                .filter(m -> m.getMemberState() == ChatMemberState.OWNER_ACTIVE)
+                .toList();
+        assertThat(owners).hasSize(1);
+        assertThat(owners.get(0).getUserId()).isEqualTo(updated.getOwnerId());
     }
 
     // CountDownLatch.await() InterruptedException 래핑
