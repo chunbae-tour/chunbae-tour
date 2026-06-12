@@ -15,7 +15,6 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneResponse;
-import com.chunbaetour.domain.community.companion.dto.CompanionPostCreateRequest;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
