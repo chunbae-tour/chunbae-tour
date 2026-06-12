@@ -320,6 +320,20 @@ class CompanionPostServiceTest {
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
+    @Test
+    void update_maxMembers가_currentMembers미만이면_INVALID_INPUT_VALUE() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        // maxMembers=0 < currentMembers(생성 시 owner 1명)
+        CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
+                null, null, null, null, null, null, 0);
+
+        assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
     // ── delete ────────────────────────────────────────────────────────────
 
     @Test
