@@ -74,8 +74,9 @@ public class ChargeService {
         }
 
         // [1.8] 일일 충전 한도 검증 (KAN-293) — 신규 요청에만 적용.
+        // payment_orders의 당일 충전 누적(진행중 PENDING + 완료 이력)을 SUM 조회해 한도 초과를 차단한다.
         // 기존 주문 재생/PAY_007 분기([1.7]) 이후에 둬, 이미 만들어진 주문의 멱등 응답이
-        // 이후 완료 누적액 변화로 PAY_030으로 뒤바뀌는 멱등성 계약 위반을 막는다.
+        // 이후 누적액 변화로 PAY_030으로 뒤바뀌는 멱등성 계약 위반을 막는다.
         // 키 점유([2])·외부 호출([3]) 전이라 한도 초과 요청은 자원을 소모하지 않는다.
         dailyChargeLimiter.assertWithinDailyLimit(userId, request.amount());
 

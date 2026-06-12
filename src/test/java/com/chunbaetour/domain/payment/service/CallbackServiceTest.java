@@ -54,9 +54,6 @@ class CallbackServiceTest {
     @Mock
     private WalletService walletService;
 
-    @Mock
-    private DailyChargeLimiter dailyChargeLimiter;
-
     @InjectMocks
     private CallbackService callbackService;
 
@@ -77,8 +74,6 @@ class CallbackServiceTest {
 
         verify(paymentOrderRepository).completeIfNotCompleted("order-uid-1", "tx-1");
         verify(walletService).charge(eq(1L), eq(10_000L), any());
-        // 충전 완료 → 일일 한도 누적 (KAN-293). 트랜잭션 컨텍스트 밖이라 즉시 가산.
-        verify(dailyChargeLimiter).accumulate(1L, 10_000L);
         verify(idempotencyService).unmark("idem-key-1");
     }
 

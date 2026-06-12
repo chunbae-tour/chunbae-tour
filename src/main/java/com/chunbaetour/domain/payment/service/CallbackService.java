@@ -24,7 +24,6 @@ public class CallbackService {
     private final PaymentGatewayClient paymentGatewayClient;
     private final IdempotencyService idempotencyService;
     private final WalletService walletService;
-    private final DailyChargeLimiter dailyChargeLimiter;
 
     // handle()에서 모든 handle* 메서드를 self-invocation으로 호출하므로
     // 각 메서드의 @Transactional이 프록시를 거치지 않음 → handle()의 트랜잭션에 통합.
@@ -129,8 +128,6 @@ public class CallbackService {
         }
 
         walletService.charge(order.getUserId(), order.getAmount(), order.getId());
-        // 일일 충전 한도 누적 (KAN-293) — 커밋 확정 후 가산해 롤백 시 과집계(한도 조기 차단)를 방지.
-        scheduleAccumulateDailyChargeOnCommit(order.getUserId(), order.getAmount());
         scheduleUnmark(order.getIdempotencyKey());
     }
 
@@ -259,26 +256,6 @@ public class CallbackService {
         } else {
             // 트랜잭션 밖 → 즉시 실행
             idempotencyService.unmark(idempotencyKey);
-        }
-    }
-
-    /**
-     * 일일 충전 한도 누적을 DB 커밋 이후로 예약한다 (KAN-293).
-     *
-     * <p>충전 완료 트랜잭션이 롤백되면 실제로는 충전되지 않은 금액이라, 커밋 전에 Redis 누적을 올리면
-     * 그날 한도가 과도하게 차 정상 충전이 조기에 차단된다(사용자 손해). afterCommit으로 미뤄 커밋 성공 시에만 가산한다.
-     * 트랜잭션 컨텍스트 밖(테스트 등)에서는 즉시 가산한다.
-     */
-    private void scheduleAccumulateDailyChargeOnCommit(Long userId, long amount) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    dailyChargeLimiter.accumulate(userId, amount);
-                }
-            });
-        } else {
-            dailyChargeLimiter.accumulate(userId, amount);
         }
     }
 

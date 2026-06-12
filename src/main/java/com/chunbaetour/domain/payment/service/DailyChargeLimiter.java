@@ -2,89 +2,67 @@ package com.chunbaetour.domain.payment.service;
 
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.exception.PaymentException;
+import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
  * 일일 충전 총액 제한 (KAN-293).
- * 사용자별 하루 <b>충전 완료</b> 누적액을 Redis에 쌓고, 충전 요청 시 일 한도(50만원) 초과를 차단한다.
+ * 사용자별 하루 충전 시도 누적액을 {@code payment_orders}에서 직접 SUM 조회해 일 한도(50만원) 초과를 차단한다.
  *
- * <p>누적은 충전 완료(웹훅 COMPLETED) 시점에만 가산하므로 실패·취소 충전은 한도에 반영되지 않는다.
- * Redis 키 {@code daily:charge:{userId}:{KST날짜}} 에 누적액을 저장하고 TTL 48시간으로 자동 청소한다.
- * 날짜가 키에 포함되므로 자정이 지나면 자동으로 새 키(새 한도)가 적용된다.
+ * <p><b>진실원은 payment_orders 테이블이다.</b> 별도 카운터(Redis 등)를 두지 않고 검증 시점에 당일 주문을 합산한다.
+ * 집계 대상은 진행중(PENDING) + 완료 이력이 있는 주문(pgTransactionId != null)이며, 상세 기준은
+ * {@link PaymentOrderRepository#sumChargedAmountForDailyLimit}에 정의돼 있다.
  *
- * <p>Redis 장애 시에는 결제 가용성을 우선해 한도 검증·누적을 건너뛰고 통과시킨다(경고 로그만 남김).
+ * <ul>
+ *   <li><b>PENDING 포함</b>: 결제창은 떴지만 아직 미완료인 주문도 합산 → 새 멱등키로 N건을 만들어 한도를 우회하는
+ *       경로를 차단한다(별도 카운터 방식의 핵심 결함 해소).</li>
+ *   <li><b>완료 후 취소·환불 유지</b>: pgTransactionId 마커로 "한 번이라도 완료된" 주문을 계속 합산 → 50만 충전 후
+ *       취소·재충전으로 한도를 세탁하는 것을 막는다.</li>
+ *   <li><b>결제 전 취소·실패 제외</b>: PENDING→CANCELLED(사용자 취소)·FAILED는 pgTransactionId가 null이라
+ *       합산에서 자연 제외 → 결제를 포기한 사용자가 한도를 억울하게 소모하지 않는다.</li>
+ * </ul>
  *
- * <p><b>알려진 한계(TOCTOU) — 의도적 허용</b>: 검증(조회)과 누적(완료 시 가산)이 분리돼 있어,
- * 잔여 한도가 1만원인 사용자가 동시에 1만원 충전 2건을 요청하면 둘 다 검증을 통과한 뒤 모두 완료돼
- * 한도를 일시적으로 소폭 초과할 수 있다. 이를 완벽히 막으려면 결제창 진입 시 한도를 선차감하는
- * Pending Amount(임시 차감 후 만료 복구) 관리가 필요하나, 사용자가 결제를 중도 포기하면 하루 한도를
- * 억울하게 소모하게 된다. 일 한도는 음수 불가 자원(재고)이 아니라 남용 방지용 soft cap이므로,
- * 결제 이탈 방지를 우선해 후차감(완료 시 가산) 방식을 유지하고 이 경합은 허용한다.
- * 엄격 차단이 필요해지면 INCR 선점 + 보상 또는 Pending Amount 방식으로 전환한다(별도 STORY).
+ * <p>한도 일자는 KST 자정 경계로 리셋한다. created_at은 UTC 저장이므로 KST 영업일 경계를 UTC로 변환해 조회한다.
+ * 검증·집계가 모두 created_at 단일 기준이라 자정 경계에서 일자 불일치가 발생하지 않는다.
+ *
+ * <p>Redis 의존이 없어 fail-open/누적 유실 같은 경로가 존재하지 않는다. DB 장애 시에는 충전 플로우 전체가
+ * 동일하게 실패하므로 한도만 조용히 비활성화되는 상황도 없다.
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DailyChargeLimiter {
 
-    /** 일일 충전 완료 누적 한도(원). 건당 한도(5,000~100,000)와 별개로 그 위에 적용된다. */
+    /** 일일 충전 누적 한도(원). 건당 한도(5,000~100,000)와 별개로 그 위에 적용된다. */
     static final long DAILY_LIMIT = 500_000L;
-    /** 키 자동 청소용 TTL. 날짜 키라 정밀 만료가 불필요하므로 하루 보존 + 여유를 둔 고정 48시간. */
-    private static final Duration KEY_TTL = Duration.ofHours(48);
     /** 충전 일자 판단 기준 시간대 — 한국 자정 경계로 일일 한도를 리셋한다. */
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    private static final String KEY_PREFIX = "daily:charge:";
 
-    private final StringRedisTemplate redisTemplate;
+    private final PaymentOrderRepository paymentOrderRepository;
     private final Clock clock;
 
     /**
-     * 충전 요청 시 일일 한도를 검증한다. 오늘 완료 누적액 + 이번 요청액이 한도를 넘으면 차단한다.
-     * Redis 장애 시 가용성을 우선해 검증을 건너뛰고 통과시킨다.
+     * 충전 요청 시 일일 한도를 검증한다. 오늘 충전 누적액 + 이번 요청액이 한도를 넘으면 차단한다.
      *
      * @throws PaymentException PAY_030 — 일일 충전 한도 초과
      */
     public void assertWithinDailyLimit(Long userId, long amount) {
-        long charged;
-        try {
-            String value = redisTemplate.opsForValue().get(key(userId));
-            charged = (value == null) ? 0L : Long.parseLong(value);
-        } catch (Exception e) {
-            // Redis 장애·파싱 오류 시 결제 가용성 우선 — 한도 검증 생략하고 통과
-            log.warn("[일일 충전 한도] 누적액 조회 실패 — 한도 검증 생략 (userId: {})", userId, e);
-            return;
-        }
+        // KST 영업일 경계(오늘 00:00 ~ 내일 00:00)를 DB 저장 기준 UTC LocalDateTime으로 변환한다.
+        LocalDate today = LocalDate.now(clock.withZone(KST));
+        ZonedDateTime startKst = today.atStartOfDay(KST);
+        LocalDateTime startAt = startKst.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        LocalDateTime endAt = startKst.plusDays(1).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+
+        // 당일 충전 누적액(진행중 + 완료 이력)을 payment_orders에서 직접 합산한다.
+        long charged = paymentOrderRepository.sumChargedAmountForDailyLimit(userId, startAt, endAt);
         if (charged + amount > DAILY_LIMIT) {
             throw new PaymentException(ErrorCode.DAILY_CHARGE_LIMIT_EXCEEDED);
         }
-    }
-
-    /**
-     * 충전 완료 시 오늘 누적액에 충전 금액을 가산한다.
-     * 매 가산 후 TTL을 다시 설정해 TTL 없는 잔존 키가 생기지 않도록 한다(날짜 키라 갱신돼도 안전).
-     * Redis 장애 시 누적을 포기한다 — 한도가 일시적으로 느슨해질 뿐 결제 자체는 정상 처리된다.
-     */
-    public void accumulate(Long userId, long amount) {
-        try {
-            String key = key(userId);
-            redisTemplate.opsForValue().increment(key, amount);
-            redisTemplate.expire(key, KEY_TTL);
-        } catch (Exception e) {
-            log.warn("[일일 충전 한도] 누적 가산 실패 — 무시 (userId: {}, amount: {})", userId, amount, e);
-        }
-    }
-
-    /** daily:charge:{userId}:{KST 일자} */
-    private String key(Long userId) {
-        LocalDate today = LocalDate.now(clock.withZone(KST));
-        return KEY_PREFIX + userId + ":" + today.format(DateTimeFormatter.ISO_LOCAL_DATE);
     }
 }
