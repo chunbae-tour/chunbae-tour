@@ -268,6 +268,9 @@ public class QrPayService {
                     throw new BusinessException(ErrorCode.INVALID_REQUEST);
                 }
                 lockedRequest.reject(request.rejectReason());
+                // 거절 시 상인 홈 미완료(거절+만료) 카운터가 즉시 반영되도록 캐시 무효화 (KAN-283).
+                // 만료(EXPIRED)는 bulk 스케줄러라 영향 상인 식별이 어려워 TTL(3분)에 맡긴다.
+                invalidateMerchantHomeCache(merchantUserId);
                 return;
             }
 
@@ -432,13 +435,13 @@ public class QrPayService {
 
     /**
      * 상인 홈 캐시를 무효화한다.
-     * 승인 완료 직후 최신 매출과 최근 결제가 바로 보이도록 best-effort로 삭제한다.
+     * 승인(매출·최근 결제) 또는 거절(미완료 카운터) 직후 최신 값이 바로 보이도록 best-effort로 삭제한다.
      */
     private void invalidateMerchantHomeCache(Long merchantUserId) {
         try {
             redisTemplate.delete(CACHE_KEY_PREFIX + merchantUserId);
         } catch (Exception e) {
-            log.warn("[QR 결제 승인] 상인 홈 캐시 무효화 실패 (merchantUserId: {})", merchantUserId, e);
+            log.warn("[QR 결제] 상인 홈 캐시 무효화 실패 (merchantUserId: {})", merchantUserId, e);
         }
     }
 

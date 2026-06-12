@@ -4,6 +4,7 @@ import com.chunbaetour.domain.payment.entity.QrPayRequest;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -68,9 +69,13 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
                                             @Param("startAt") LocalDateTime startAt,
                                             @Param("endAt") LocalDateTime endAt);
 
-    /** 상인 홈 대시보드 — 오늘 완료된 QR 결제 중 최신 10건 */
+    /**
+     * 상인 홈 대시보드 — 기간 내 완료된 QR 결제 경량 목록(최신순).
+     * 매출 합계·시간대별 분포·최근 결제 목록을 한 번의 조회로 함께 산출하기 위해 menu_items를 제외한 뷰로 반환한다.
+     */
     @Query("""
-            SELECT q
+            SELECT q.payRequestId AS payRequestId, q.shopId AS shopId,
+                   q.amount AS amount, q.completedAt AS completedAt
             FROM QrPayRequest q
             WHERE q.shopId IN :shopIds
               AND q.status = :status
@@ -78,9 +83,28 @@ public interface QrPayRequestRepository extends JpaRepository<QrPayRequest, Long
               AND q.completedAt < :endAt
             ORDER BY q.completedAt DESC, q.id DESC
             """)
-    List<QrPayRequest> findRecentCompletedByShops(@Param("shopIds") List<Long> shopIds,
-                                                   @Param("status") QrPayStatus status,
-                                                   @Param("startAt") LocalDateTime startAt,
-                                                   @Param("endAt") LocalDateTime endAt,
-                                                   Pageable pageable);
+    List<CompletedQrPayView> findCompletedByShopsBetween(@Param("shopIds") List<Long> shopIds,
+                                                         @Param("status") QrPayStatus status,
+                                                         @Param("startAt") LocalDateTime startAt,
+                                                         @Param("endAt") LocalDateTime endAt);
+
+    /**
+     * 상인 홈 대시보드 — 기간 내 접수돼 미완료(거절+만료)로 끝난 QR 결제 건수 (KAN-283).
+     * 거절/만료는 completedAt이 null이라 완료 시각으로 집계할 수 없다.
+     * 만료는 스케줄러 bulk UPDATE로 전이돼 updatedAt(@LastModifiedDate)이 갱신되지 않으므로,
+     * 거절·만료를 일관되게 집계하려고 항상 set되는 createdAt(접수 시각) 기준으로 센다.
+     * QR 만료는 접수 +5분이라 createdAt과 전이 시각이 사실상 같다.
+     */
+    @Query("""
+            SELECT COUNT(q)
+            FROM QrPayRequest q
+            WHERE q.shopId IN :shopIds
+              AND q.status IN :statuses
+              AND q.createdAt >= :startAt
+              AND q.createdAt < :endAt
+            """)
+    long countByShopsAndStatusesBetween(@Param("shopIds") List<Long> shopIds,
+                                        @Param("statuses") Collection<QrPayStatus> statuses,
+                                        @Param("startAt") LocalDateTime startAt,
+                                        @Param("endAt") LocalDateTime endAt);
 }
