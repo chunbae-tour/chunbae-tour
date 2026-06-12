@@ -81,14 +81,9 @@ class CacheWarmupServiceTest {
         Place place = createActivePlace(PLACE_ID);
         given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
-        given(placeRepository.findTopPopularPlaces(
-                eq(PlaceRedisConstants.POPULAR_LIKE_WEIGHT),
-                eq(PlaceRedisConstants.POPULAR_VIEW_WEIGHT),
-                any(Pageable.class)
-        )).willReturn(List.of(place));
 
         // when
-        cacheWarmupService.warmupPopularZSet();
+        cacheWarmupService.warmupPopularZSet(List.of(place));
 
         // then
         verify(zSetOperations).add(eq(PlaceRedisConstants.RECOMMEND_POPULAR_KEY), any());
@@ -107,22 +102,21 @@ class CacheWarmupServiceTest {
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(10L);
 
         // when
-        cacheWarmupService.warmupPopularZSet();
+        cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)));
 
-        // then — DB 조회 없어야 함
-        verify(placeRepository, never()).findTopPopularPlaces(any(), any(), any());
+        // then — DB 조회나 적재 없어야 함
+        verify(zSetOperations, never()).add(anyString(), any());
     }
 
     @Test
-    @DisplayName("인기 ZSet 웜업 — DB 조회 결과 없음: ZSet 적재 스킵")
-    void warmupPopularZSet_emptyDb_skipsCache() {
+    @DisplayName("인기 ZSet 웜업 — 파라미터가 비었을 때: ZSet 적재 스킵")
+    void warmupPopularZSet_emptyList_skipsCache() {
         // given
         given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
-        given(placeRepository.findTopPopularPlaces(any(), any(), any())).willReturn(List.of());
 
         // when
-        cacheWarmupService.warmupPopularZSet();
+        cacheWarmupService.warmupPopularZSet(List.of());
 
         // then
         verify(zSetOperations, never()).add(anyString(), any());
@@ -136,7 +130,7 @@ class CacheWarmupServiceTest {
 
         // when & then — 예외 전파 없이 정상 반환
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(
-                () -> cacheWarmupService.warmupPopularZSet()
+                () -> cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)))
         );
     }
 
@@ -147,7 +141,6 @@ class CacheWarmupServiceTest {
     void warmupPlaceDetails_cacheMiss_storesInRedis() throws Exception {
         // given
         Place place = createActivePlace(PLACE_ID);
-        given(placeRepository.findTopPopularPlaces(any(), any(), any())).willReturn(List.of(place));
 
         String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + PLACE_ID;
         given(stringRedisTemplate.hasKey(cacheKey)).willReturn(false);
@@ -157,7 +150,7 @@ class CacheWarmupServiceTest {
         given(objectMapper.writeValueAsString(any())).willReturn("{\"placeId\":1}");
 
         // when
-        cacheWarmupService.warmupPlaceDetails();
+        cacheWarmupService.warmupPlaceDetails(List.of(place));
 
         // then
         verify(valueOperations).set(eq(cacheKey), anyString(), any());
@@ -168,13 +161,12 @@ class CacheWarmupServiceTest {
     void warmupPlaceDetails_cacheExists_skipsWrite() throws Exception {
         // given
         Place place = createActivePlace(PLACE_ID);
-        given(placeRepository.findTopPopularPlaces(any(), any(), any())).willReturn(List.of(place));
 
         String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + PLACE_ID;
         given(stringRedisTemplate.hasKey(cacheKey)).willReturn(true);
 
         // when
-        cacheWarmupService.warmupPlaceDetails();
+        cacheWarmupService.warmupPlaceDetails(List.of(place));
 
         // then — Redis SET이 호출되지 않아야 함
         verify(objectMapper, never()).writeValueAsString(any());
@@ -185,30 +177,27 @@ class CacheWarmupServiceTest {
     void warmupPlaceDetails_enrichmentPending_skipsWrite() throws Exception {
         // given
         Place place = createActivePlace(PLACE_ID);
-        ReflectionTestUtils.setField(place, "enrichRetryCount", 0); // needsDetailEnrichment = true 유도
-        given(placeRepository.findTopPopularPlaces(any(), any(), any())).willReturn(List.of(place));
+        ReflectionTestUtils.setField(place, "enrichAttemptCount", 0); // 실제 필드명 사용
+        ReflectionTestUtils.setField(place, "source", com.chunbaetour.domain.place.type.PlaceSource.API_FETCH);
+        ReflectionTestUtils.setField(place, "externalId", "12345");
+        // description은 null이므로 needsDetailEnrichment = true
 
         String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + PLACE_ID;
         given(stringRedisTemplate.hasKey(cacheKey)).willReturn(false);
         given(placeDetailEnrichmentService.enrichIfNeeded(place)).willReturn(place);
 
-        // needsDetailEnrichment()가 true인 경우 — description이 null이면 true
-        // Place 빌더 기본값 상 description = null → needsDetailEnrichment = true
         // when
-        cacheWarmupService.warmupPlaceDetails();
+        cacheWarmupService.warmupPlaceDetails(List.of(place));
 
         // then — 직렬화 없이 스킵
         verify(objectMapper, never()).writeValueAsString(any());
     }
 
     @Test
-    @DisplayName("관광지 상세 웜업 — DB 조회 결과 없음: 조기 반환")
-    void warmupPlaceDetails_emptyDb_returnsEarly() throws Exception {
-        // given
-        given(placeRepository.findTopPopularPlaces(any(), any(), any())).willReturn(List.of());
-
+    @DisplayName("관광지 상세 웜업 — 파라미터가 비었을 때: 조기 반환")
+    void warmupPlaceDetails_emptyList_returnsEarly() throws Exception {
         // when
-        cacheWarmupService.warmupPlaceDetails();
+        cacheWarmupService.warmupPlaceDetails(List.of());
 
         // then — hasKey, enrichIfNeeded 등 이후 로직 미호출
         verify(stringRedisTemplate, never()).hasKey(anyString());
@@ -217,22 +206,27 @@ class CacheWarmupServiceTest {
     @Test
     @DisplayName("관광지 상세 웜업 — 개별 직렬화 실패 시 다음 항목 계속 진행")
     void warmupPlaceDetails_serializationError_continuesNextPlace() throws Exception {
-        // given — place 2개 중 첫 번째만 직렬화 오류
         Place place1 = createActivePlace(1L);
+        ReflectionTestUtils.setField(place1, "description", "설명"); // needsDetailEnrichment = false 유도
         Place place2 = createActivePlace(2L);
-        given(placeRepository.findTopPopularPlaces(any(), any(), any())).willReturn(List.of(place1, place2));
+        ReflectionTestUtils.setField(place2, "description", "설명");
 
-        given(stringRedisTemplate.hasKey(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + 1L)).willReturn(false);
-        given(stringRedisTemplate.hasKey(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + 2L)).willReturn(false);
+        given(stringRedisTemplate.hasKey(anyString())).willReturn(false);
         given(placeDetailEnrichmentService.enrichIfNeeded(any())).willAnswer(inv -> inv.getArgument(0));
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
         given(valueOperations.get(anyString())).willReturn(null);
+        
+        // 첫 번째 직렬화 실패, 두 번째 성공 모킹
+        given(objectMapper.writeValueAsString(any()))
+                .willThrow(new RuntimeException("직렬화 오류"))
+                .willReturn("{\"placeId\":2}");
 
-        // place1은 직렬화 실패, place2는 성공 (단, place1도 description=null이므로 enrichmentPending=true → 스킵됨)
-        // 실질적으로 두 place 모두 enrichmentPending=true이므로 writeValueAsString 호출 없음
-        // → 아래는 예외 없이 완료되는지만 검증
+        // when & then — 예외 전파 안됨 검증
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(
-                () -> cacheWarmupService.warmupPlaceDetails()
+                () -> cacheWarmupService.warmupPlaceDetails(List.of(place1, place2))
         );
+        
+        // 두 번째 place는 직렬화에 성공하여 SET이 1번 호출되었는지 검증
+        verify(valueOperations, org.mockito.Mockito.times(1)).set(anyString(), anyString(), any());
     }
 }

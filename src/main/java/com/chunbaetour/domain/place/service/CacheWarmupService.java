@@ -4,6 +4,8 @@ import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.dto.response.PlaceCacheDto;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import java.time.Duration;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,6 +21,7 @@ import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -59,9 +62,28 @@ public class CacheWarmupService {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
         log.info("[CacheWarmup] 캐시 웜업 시작");
-        warmupPopularZSet();
-        warmupPlaceDetails();
-        log.info("[CacheWarmup] 캐시 웜업 완료");
+
+        try {
+            List<Place> topPlaces = placeRepository.findTopPopularPlaces(
+                    PlaceRedisConstants.POPULAR_LIKE_WEIGHT,
+                    PlaceRedisConstants.POPULAR_VIEW_WEIGHT,
+                    PageRequest.of(0, PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N)
+            );
+
+            if (topPlaces.isEmpty()) {
+                log.warn("[CacheWarmup] DB 조회 결과 없음 — 웜업 스킵");
+                return;
+            }
+
+            // Top 10개를 ZSet 웜업에 전달
+            List<Place> popularPlaces = topPlaces.subList(0, Math.min(topPlaces.size(), 10));
+            warmupPopularZSet(popularPlaces);
+            warmupPlaceDetails(topPlaces);
+
+            log.info("[CacheWarmup] 캐시 웜업 완료");
+        } catch (Exception e) {
+            log.error("[CacheWarmup] 캐시 웜업 전체 실패", e);
+        }
     }
 
     // ── 1단계: 인기 추천 ZSet 웜업 ─────────────────────────────────────────────
@@ -71,8 +93,7 @@ public class CacheWarmupService {
      *
      * <p>이미 키가 존재하면(재시작 직후 TTL이 살아있는 경우) 불필요한 DB 조회를 생략한다.
      */
-    @Transactional(readOnly = true)
-    public void warmupPopularZSet() {
+    public void warmupPopularZSet(List<Place> popularPlaces) {
         String key = PlaceRedisConstants.RECOMMEND_POPULAR_KEY;
         try {
             // 이미 캐시에 데이터가 있으면 건너뜀
@@ -83,14 +104,9 @@ public class CacheWarmupService {
             }
 
             log.info("[CacheWarmup] 인기 추천 ZSet 웜업 시작");
-            List<Place> popularPlaces = placeRepository.findTopPopularPlaces(
-                    PlaceRedisConstants.POPULAR_LIKE_WEIGHT,
-                    PlaceRedisConstants.POPULAR_VIEW_WEIGHT,
-                    PageRequest.of(0, 10)
-            );
 
             if (popularPlaces.isEmpty()) {
-                log.warn("[CacheWarmup] 인기 추천 웜업 — DB 조회 결과 없음");
+                log.warn("[CacheWarmup] 인기 추천 웜업 — 적재 대상 없음");
                 return;
             }
 
@@ -118,18 +134,12 @@ public class CacheWarmupService {
      * <p>이미 캐시가 존재하는 관광지는 건너뛰어 불필요한 덮어쓰기를 방지한다.
      * 각 관광지 간 {@value PlaceRedisConstants#CACHE_WARMUP_INTERVAL_MS}ms 간격으로 DB·Redis 부하를 분산한다.
      */
-    @Transactional(readOnly = true)
-    public void warmupPlaceDetails() {
+    public void warmupPlaceDetails(List<Place> topPlaces) {
         try {
             log.info("[CacheWarmup] 관광지 상세 캐시 웜업 시작 (Top {})", PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N);
-            List<Place> topPlaces = placeRepository.findTopPopularPlaces(
-                    PlaceRedisConstants.POPULAR_LIKE_WEIGHT,
-                    PlaceRedisConstants.POPULAR_VIEW_WEIGHT,
-                    PageRequest.of(0, PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N)
-            );
 
             if (topPlaces.isEmpty()) {
-                log.warn("[CacheWarmup] 관광지 상세 웜업 — DB 조회 결과 없음");
+                log.warn("[CacheWarmup] 관광지 상세 웜업 — 적재 대상 없음");
                 return;
             }
 
@@ -156,16 +166,15 @@ public class CacheWarmupService {
                     }
 
                     int likeCount = resolveRedisLikeCount(place.getId(), place.getLikeCount());
-                    PlaceCacheDto cacheDto = PlaceCacheDto.of(place, java.util.List.of(), likeCount);
 
                     // imageUrls JSON 파싱
                     List<String> imageUrls = parseImageUrls(place.getImageUrls());
-                    cacheDto = PlaceCacheDto.of(place, imageUrls, likeCount);
+                    PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrls, likeCount);
 
                     String json = objectMapper.writeValueAsString(cacheDto);
                     stringRedisTemplate.opsForValue().set(
                             cacheKey, json,
-                            java.time.Duration.ofMinutes(10)
+                            Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES)
                     );
                     warmedUp++;
                 } catch (Exception e) {
@@ -203,13 +212,13 @@ public class CacheWarmupService {
 
     private List<String> parseImageUrls(String imageUrlsJson) {
         if (imageUrlsJson == null || imageUrlsJson.isBlank()) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
         try {
-            return objectMapper.readValue(imageUrlsJson, new tools.jackson.core.type.TypeReference<List<String>>() {});
+            return objectMapper.readValue(imageUrlsJson, new TypeReference<List<String>>() {});
         } catch (Exception e) {
             log.warn("[CacheWarmup] imageUrls JSON 파싱 실패: {}", imageUrlsJson, e);
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
     }
 }
