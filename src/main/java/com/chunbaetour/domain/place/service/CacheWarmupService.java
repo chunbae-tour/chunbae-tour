@@ -62,26 +62,52 @@ public class CacheWarmupService {
     public void onApplicationReady() {
         log.info("[CacheWarmup] 캐시 웜업 시작");
 
+        // 1. 다중 인스턴스 분산 락 (5분)
+        String lockKey = PlaceRedisConstants.CACHE_WARMUP_LOCK_KEY;
+        Boolean acquired = stringRedisTemplate.opsForValue()
+                .setIfAbsent(lockKey, "1", Duration.ofMinutes(5));
+        if (!Boolean.TRUE.equals(acquired)) {
+            log.info("[CacheWarmup] 다른 인스턴스에서 웜업 중이거나 이미 완료됨 — 스킵");
+            return;
+        }
+
         try {
-            List<Place> topPlaces = placeRepository.findTopPopularPlaces(
+            // 2. DB에서 넉넉한 후보군 조회 (Top 100)
+            List<Place> dbCandidates = placeRepository.findTopPopularPlaces(
                     PlaceRedisConstants.POPULAR_LIKE_WEIGHT,
                     PlaceRedisConstants.POPULAR_VIEW_WEIGHT,
-                    PageRequest.of(0, PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N)
+                    PageRequest.of(0, PlaceRedisConstants.CACHE_WARMUP_DB_CANDIDATE_TOP_N)
             );
 
-            if (topPlaces.isEmpty()) {
+            if (dbCandidates.isEmpty()) {
                 log.warn("[CacheWarmup] DB 조회 결과 없음 — 웜업 스킵");
                 return;
             }
 
-            // Top N개를 ZSet 웜업에 전달
-            List<Place> popularPlaces = topPlaces.subList(0, Math.min(topPlaces.size(), PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N));
+            // 3. Redis 최신 카운터를 반영하여 재계산 및 정렬 후 Top 20 컷
+            List<Place> rescoredTopPlaces = dbCandidates.stream()
+                    .map(p -> new PlaceScore(p, calculateRedisBasedScore(p)))
+                    .sorted((p1, p2) -> Double.compare(p2.score(), p1.score()))
+                    .limit(PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N)
+                    .map(ps -> ps.place())
+                    .toList();
+
+            // 4. 그 중 Top 10을 ZSet 웜업에 전달
+            List<Place> popularPlaces = rescoredTopPlaces.stream()
+                    .limit(PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N)
+                    .toList();
+
             warmupPopularZSet(popularPlaces);
-            warmupPlaceDetails(topPlaces);
+            warmupPlaceDetails(rescoredTopPlaces);
 
             log.info("[CacheWarmup] 캐시 웜업 완료");
         } catch (Exception e) {
             log.error("[CacheWarmup] 캐시 웜업 전체 실패", e);
+        } finally {
+            // 웜업 완료 또는 실패 시 락 명시적 해제
+            try {
+                stringRedisTemplate.delete(lockKey);
+            } catch (Exception ignore) {}
         }
     }
 
@@ -93,29 +119,27 @@ public class CacheWarmupService {
      * <p>이미 키가 존재하면(재시작 직후 TTL이 살아있는 경우) 불필요한 DB 조회를 생략한다.
      */
     public void warmupPopularZSet(List<Place> popularPlaces) {
+        if (popularPlaces.isEmpty()) {
+            log.warn("[CacheWarmup] 인기 추천 웜업 — 적재 대상 없음");
+            return;
+        }
+
         String key = PlaceRedisConstants.RECOMMEND_POPULAR_KEY;
         try {
-            // 이미 캐시에 데이터가 있으면 건너뜀
+            // 이미 캐시에 온전한 데이터(Size >= N, TTL > 0)가 있으면 건너뜀
             Long existingSize = stringRedisTemplate.opsForZSet().zCard(key);
-            if (existingSize != null && existingSize > 0) {
-                log.info("[CacheWarmup] 인기 추천 ZSet 이미 존재 — 웜업 생략 (size={})", existingSize);
+            Long expire = stringRedisTemplate.getExpire(key);
+            if (existingSize != null && existingSize >= PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N
+                    && expire != null && expire > 0) {
+                log.info("[CacheWarmup] 인기 추천 ZSet 정상 캐시 존재 — 웜업 생략 (size={})", existingSize);
                 return;
             }
 
             log.info("[CacheWarmup] 인기 추천 ZSet 웜업 시작");
 
-            if (popularPlaces.isEmpty()) {
-                log.warn("[CacheWarmup] 인기 추천 웜업 — 적재 대상 없음");
-                return;
-            }
-
             Set<TypedTuple<String>> tuples = new HashSet<>();
             for (Place place : popularPlaces) {
-                int likeCount = resolveRedisCount(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX, place.getId(), place.getLikeCount());
-                int viewCount = resolveRedisCount(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX, place.getId(), place.getViewCount());
-                
-                double score = (likeCount * PlaceRedisConstants.POPULAR_LIKE_WEIGHT)
-                        + (viewCount * PlaceRedisConstants.POPULAR_VIEW_WEIGHT);
+                double score = calculateRedisBasedScore(place);
                 tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
             }
 
@@ -160,16 +184,16 @@ public class CacheWarmupService {
             int skipped = 0;
 
             for (Place place : topPlaces) {
-                String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + place.getId();
-
-                // 이미 캐시가 있으면 건너뜀
-                Boolean exists = stringRedisTemplate.hasKey(cacheKey);
-                if (Boolean.TRUE.equals(exists)) {
-                    skipped++;
-                    continue;
-                }
-
                 try {
+                    String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + place.getId();
+
+                    // 이미 캐시가 있으면 건너뜀
+                    Boolean exists = stringRedisTemplate.hasKey(cacheKey);
+                    if (Boolean.TRUE.equals(exists)) {
+                        skipped++;
+                        continue;
+                    }
+
                     place = placeDetailEnrichmentService.enrichIfNeeded(place);
 
                     // enrichment 미완료(needsDetailEnrichment=true)면 캐시 오염 방지를 위해 skip
@@ -185,22 +209,24 @@ public class CacheWarmupService {
                     PlaceCacheDto cacheDto = PlaceCacheDto.of(place, imageUrls, likeCount);
 
                     String json = objectMapper.writeValueAsString(cacheDto);
-                    stringRedisTemplate.opsForValue().set(
+                    
+                    // 중간에 사용자 요청으로 캐시가 생성되었을 수 있으므로 setIfAbsent 사용
+                    stringRedisTemplate.opsForValue().setIfAbsent(
                             cacheKey, json,
                             Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES)
                     );
                     warmedUp++;
                 } catch (Exception e) {
                     log.warn("[CacheWarmup] 관광지 상세 개별 캐시 실패 — placeId={}", place.getId(), e);
-                }
-
-                // 부하 분산 인터벌
-                try {
-                    Thread.sleep(PlaceRedisConstants.CACHE_WARMUP_INTERVAL_MS);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    log.warn("[CacheWarmup] 관광지 상세 웜업 인터럽트 — 중단");
-                    break;
+                } finally {
+                    // 부하 분산 인터벌 (실패/건너뜀 상관없이 무조건 간격 유지)
+                    try {
+                        Thread.sleep(PlaceRedisConstants.CACHE_WARMUP_INTERVAL_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.warn("[CacheWarmup] 관광지 상세 웜업 인터럽트 — 중단");
+                        break;
+                    }
                 }
             }
 
@@ -233,4 +259,13 @@ public class CacheWarmupService {
             return Collections.emptyList();
         }
     }
+
+    private double calculateRedisBasedScore(Place place) {
+        int likeCount = resolveRedisCount(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX, place.getId(), place.getLikeCount());
+        int viewCount = resolveRedisCount(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX, place.getId(), place.getViewCount());
+        return (likeCount * PlaceRedisConstants.POPULAR_LIKE_WEIGHT)
+                + (viewCount * PlaceRedisConstants.POPULAR_VIEW_WEIGHT);
+    }
+
+    private record PlaceScore(Place place, double score) {}
 }

@@ -17,6 +17,7 @@ import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
@@ -81,10 +82,15 @@ class CacheWarmupServiceTest {
     @Test
     @DisplayName("웜업 메인 — DB에서 조회 후 하위 메서드로 데이터 분배 (슬라이싱 확인)")
     void onApplicationReady_loadsFromDbAndDistributes() {
-        // given: ZSet_TOP_N (10)보다 많은 11개의 데이터를 세팅하여 subList 검증
-        List<Place> topPlaces = IntStream.rangeClosed(1, 11)
+        // given: CACHE_WARMUP_DETAIL_TOP_N(20)보다 많은 21개의 데이터를 세팅하여 두 subList 검증
+        List<Place> topPlaces = IntStream.rangeClosed(1, PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N + 1)
                 .mapToObj(i -> createActivePlace((long) i))
                 .toList();
+
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
+        // resolveRedisCount 호출 시 null 반환 (DB 값 fallback 유도)
+        given(valueOperations.get(anyString())).willReturn(null);
 
         given(placeRepository.findTopPopularPlaces(any(Double.class), any(Double.class), any()))
                 .willReturn(topPlaces);
@@ -96,15 +102,35 @@ class CacheWarmupServiceTest {
         // when
         cacheWarmupService.onApplicationReady();
 
-        // then: warmupPopularZSet에는 슬라이싱된 10개만, warmupPlaceDetails에는 11개 전체 전달
-        verify(cacheWarmupService).warmupPopularZSet(topPlaces.subList(0, 10));
-        verify(cacheWarmupService).warmupPlaceDetails(topPlaces);
+        // then: warmupPopularZSet에는 ZSET_TOP_N개만, warmupPlaceDetails에는 DETAIL_TOP_N개만 전달
+        verify(cacheWarmupService).warmupPopularZSet(topPlaces.subList(0, PlaceRedisConstants.CACHE_WARMUP_ZSET_TOP_N));
+        verify(cacheWarmupService).warmupPlaceDetails(topPlaces.subList(0, PlaceRedisConstants.CACHE_WARMUP_DETAIL_TOP_N));
+    }
+
+    @Test
+    @DisplayName("웜업 메인 — 분산 락 획득 실패 시 스킵")
+    void onApplicationReady_lockFailed_skipsWarmup() {
+        // given
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        // 락 획득 실패 모킹
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(false);
+
+        // when
+        cacheWarmupService.onApplicationReady();
+
+        // then: DB 조회 및 하위 메서드 호출 없음
+        verify(placeRepository, never()).findTopPopularPlaces(any(Double.class), any(Double.class), any());
+        verify(cacheWarmupService, never()).warmupPopularZSet(any());
+        verify(cacheWarmupService, never()).warmupPlaceDetails(any());
     }
 
     @Test
     @DisplayName("웜업 메인 — DB 조회 결과 없으면 하위 메서드 스킵")
     void onApplicationReady_emptyDb_skipsWarmup() {
         // given
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).willReturn(true);
+        
         given(placeRepository.findTopPopularPlaces(any(Double.class), any(Double.class), any()))
                 .willReturn(List.of());
 
@@ -126,6 +152,7 @@ class CacheWarmupServiceTest {
         given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
+        given(stringRedisTemplate.getExpire(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(null);
         given(stringRedisTemplate.expire(anyString(), any(Long.class), any())).willReturn(true);
 
         // when
@@ -146,6 +173,7 @@ class CacheWarmupServiceTest {
         // given — ZSet에 이미 데이터 있음
         given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(10L);
+        given(stringRedisTemplate.getExpire(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(60L);
 
         // when
         cacheWarmupService.warmupPopularZSet(List.of(createActivePlace(PLACE_ID)));
@@ -157,10 +185,6 @@ class CacheWarmupServiceTest {
     @Test
     @DisplayName("인기 ZSet 웜업 — 파라미터가 비었을 때: ZSet 적재 스킵")
     void warmupPopularZSet_emptyList_skipsCache() {
-        // given
-        given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
-        given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
-
         // when
         cacheWarmupService.warmupPopularZSet(List.of());
 
@@ -188,6 +212,7 @@ class CacheWarmupServiceTest {
         given(stringRedisTemplate.opsForZSet()).willReturn(zSetOperations);
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
         given(zSetOperations.zCard(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(0L);
+        given(stringRedisTemplate.getExpire(PlaceRedisConstants.RECOMMEND_POPULAR_KEY)).willReturn(null);
         
         // expire가 false 반환(실패) 모킹
         given(stringRedisTemplate.expire(anyString(), any(Long.class), any())).willReturn(false);
@@ -220,7 +245,7 @@ class CacheWarmupServiceTest {
         cacheWarmupService.warmupPlaceDetails(List.of(place));
 
         // then
-        verify(valueOperations).set(eq(cacheKey), anyString(), any());
+        verify(valueOperations).setIfAbsent(eq(cacheKey), anyString(), any(Duration.class));
     }
 
     @Test
@@ -293,6 +318,6 @@ class CacheWarmupServiceTest {
         );
         
         // 두 번째 place는 직렬화에 성공하여 SET이 1번 호출되었는지 검증
-        verify(valueOperations, times(1)).set(anyString(), anyString(), any());
+        verify(valueOperations, times(1)).setIfAbsent(anyString(), anyString(), any(Duration.class));
     }
 }

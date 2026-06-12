@@ -41,6 +41,12 @@ public final class PlaceRedisConstants {
     /** 서버 시작 시 캐시 웜업 대상 관광지 상세 수 — 인기 Top N개를 미리 적재 */
     public static final int CACHE_WARMUP_DETAIL_TOP_N = 20;
 
+    /** 캐시 웜업 시 Redis 재계산을 위해 DB에서 조회할 후보군 수 */
+    public static final int CACHE_WARMUP_DB_CANDIDATE_TOP_N = 100;
+
+    /** 다중 인스턴스 환경에서 캐시 웜업 동시 실행 방지를 위한 분산 락 키 */
+    public static final String CACHE_WARMUP_LOCK_KEY = "lock:cache-warmup";
+
     /** ZSet 인기 추천 웜업 대상 수 */
     public static final int CACHE_WARMUP_ZSET_TOP_N = 10;
 
