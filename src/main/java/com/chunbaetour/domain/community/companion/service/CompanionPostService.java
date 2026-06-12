@@ -105,6 +105,9 @@ public class CompanionPostService {
         if ((request.placeId() == null) != (request.placeName() == null)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
+        if (request.maxMembers() != null && request.maxMembers() < post.getCurrentMembers()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         post.update(
                 request.title(), request.content(),
                 request.placeId(), request.placeName(),
