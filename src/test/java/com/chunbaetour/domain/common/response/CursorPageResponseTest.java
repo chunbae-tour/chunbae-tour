@@ -46,7 +46,7 @@ class CursorPageResponseTest {
     }
 
     @Test
-    @DisplayName("of — 빈 목록이면 빈 content, hasNext=false, nextCursor=null, size=0")
+    @DisplayName("of — 빈 목록이면 빈 content·hasNext=false·nextCursor=null, size는 요청값(2)을 echo")
     void of_empty_returnsEmpty() {
         CursorPageResponse<String> result =
                 CursorPageResponse.of(List.<Item>of(), 2, Item::name, Item::getId);
@@ -54,7 +54,8 @@ class CursorPageResponseTest {
         assertThat(result.content()).isEmpty();
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
-        assertThat(result.size()).isZero();
+        // size 필드는 실제 반환 개수(0)가 아니라 요청 size(2)를 echo (팀 표준)
+        assertThat(result.size()).isEqualTo(2);
     }
 
     @Test
@@ -68,6 +69,20 @@ class CursorPageResponseTest {
         assertThat(result.content()).containsExactly("only");
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("of — 마지막 페이지에 요청보다 적게 남아도 size는 요청값을 echo한다")
+    void of_partialLastPage_echoesRequestedSize() {
+        List<Item> raw = List.of(new Item(30L, "a"), new Item(20L, "b"));  // 2개
+
+        CursorPageResponse<String> result =
+                CursorPageResponse.of(raw, 5, Item::name, Item::getId);     // size=5 요청
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isFalse();
+        // 실제 반환 2개여도 size 필드는 요청한 5
+        assertThat(result.size()).isEqualTo(5);
     }
 
     @Test

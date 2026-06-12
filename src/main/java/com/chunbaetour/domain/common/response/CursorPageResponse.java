@@ -24,7 +24,8 @@ public record CursorPageResponse<T>(
      * @param idExtractor  nextCursor 인코딩에 쓸 엔티티 id 추출 함수
      * @param <E>          원본 엔티티 타입
      * @param <R>          응답 DTO 타입
-     * @return content(최대 size개), nextCursor(다음 없으면 null), hasNext, size로 구성된 응답
+     * @return content(최대 size개), nextCursor(다음 없으면 null), hasNext, 그리고 <b>요청 size를 그대로 echo</b>한
+     *         size 필드로 구성된 응답. size는 실제 반환 개수(content.size())가 아니라 요청 페이지 크기다(팀 표준).
      * @throws IllegalArgumentException size가 1 미만인 경우
      */
     public static <E, R> CursorPageResponse<R> of(
@@ -47,6 +48,7 @@ public record CursorPageResponse<T>(
         String nextCursor = hasNext
                 ? CursorUtils.encode(idExtractor.applyAsLong(page.get(page.size() - 1)))
                 : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // size 필드는 실제 반환 개수가 아니라 요청 size를 그대로 echo한다(팀 표준).
+        return new CursorPageResponse<>(content, nextCursor, hasNext, size);
     }
 }
