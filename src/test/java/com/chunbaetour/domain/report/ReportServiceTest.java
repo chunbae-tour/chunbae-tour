@@ -44,6 +44,10 @@ import com.chunbaetour.domain.place.PlaceReview;
 import com.chunbaetour.domain.place.PlaceReviewStatus;
 import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.repository.ReportQueryRepository;
+import com.chunbaetour.domain.report.repository.UserSanctionRepository;
+import com.chunbaetour.domain.report.entity.SanctionType;
+import com.chunbaetour.domain.report.entity.UserSanction;
 import com.chunbaetour.domain.report.service.ReportService;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
@@ -72,6 +76,8 @@ class ReportServiceTest {
     @Mock private FreePostRepository freePostRepository;
     @Mock private CommentRepository commentRepository;
     @Mock private PlaceReviewRepository placeReviewRepository;
+    @Mock private ReportQueryRepository reportQueryRepository;
+    @Mock private UserSanctionRepository userSanctionRepository;
     @Mock private AccountRepository accountRepository;
     @Mock private ShopService shopService;
     @Mock private ApplicationEventPublisher eventPublisher;
@@ -735,6 +741,7 @@ class ReportServiceTest {
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(reviewReport));
         given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.of(review));
         given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+        given(accountRepository.findById(2L)).willReturn(Optional.empty());
 
         ReportDetailResponse result = reportService.getReport(REPORT_ID);
 
@@ -754,6 +761,7 @@ class ReportServiceTest {
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(reviewReport));
         given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.empty());
         given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+        given(accountRepository.findById(2L)).willReturn(Optional.empty());
 
         ReportDetailResponse result = reportService.getReport(REPORT_ID);
 
@@ -761,6 +769,39 @@ class ReportServiceTest {
     }
 
     // ── 미처리 신고 건수 (PR6) ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("신고 상세 — 피신고 유저 제재 상태(계정+도메인) 포함")
+    void getReport_includes_reportedUserSanction() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자");
+        Account reportedUser = mock(Account.class);
+        given(reportedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
+        given(reportedUser.getSanctionType()).willReturn(SanctionType.SUSPEND_30D);
+        given(reportedUser.getSanctionEndAt()).willReturn(java.time.LocalDateTime.of(2026, 7, 1, 0, 0));
+        UserSanction domainSanction = UserSanction.create(USER_TARGET_ID, 1L,
+                ReportTargetType.POST_FREE, SanctionType.SUSPEND_7D, "도메인 제재",
+                java.time.LocalDateTime.of(2026, 6, 1, 0, 0), java.time.LocalDateTime.of(2026, 6, 8, 0, 0));
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(reportedUser));
+        given(userSanctionRepository.findAllActiveSanctionsByUserId(eq(USER_TARGET_ID), any()))
+                .willReturn(java.util.List.of(domainSanction));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.reportedUserSanction()).isNotNull();
+        assertThat(result.reportedUserSanction().accountStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(result.reportedUserSanction().accountSanctionType()).isEqualTo(SanctionType.SUSPEND_30D);
+        assertThat(result.reportedUserSanction().activeDomainSanctions()).hasSize(1);
+        assertThat(result.reportedUserSanction().activeDomainSanctions().get(0).targetType())
+                .isEqualTo(ReportTargetType.POST_FREE);
+    }
 
     @Test
     @DisplayName("getPendingCount — PENDING 건수 반환")

@@ -39,6 +39,8 @@ import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.repository.ReportQueryRepository;
+import com.chunbaetour.domain.report.repository.UserSanctionRepository;
+import com.chunbaetour.domain.report.dto.response.ReportedUserSanctionInfo;
 import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.event.ReportAcceptedEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
@@ -80,6 +82,7 @@ public class ReportService {
 
     private final ReportRepository reportRepository;
     private final ReportQueryRepository reportQueryRepository;
+    private final UserSanctionRepository userSanctionRepository;
     private final AccountRepository accountRepository;
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
@@ -215,8 +218,21 @@ public class ReportService {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
         TargetDetail detail = resolveTargetDetail(report.getTargetType(), report.getTargetId());
+        ReportedUserSanctionInfo sanctionInfo = resolveReportedUserSanction(report.getReportedUserId());
         return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()),
-                detail.title(), detail.content(), detail.imageUrls());
+                detail.title(), detail.content(), detail.imageUrls(), sanctionInfo);
+    }
+
+    /** 피신고 유저의 현재 제재 상태 (계정 레벨 + 도메인별 활성 제재). 없으면 null. */
+    private ReportedUserSanctionInfo resolveReportedUserSanction(Long reportedUserId) {
+        if (reportedUserId == null) {
+            return null;
+        }
+        return accountRepository.findById(reportedUserId)
+                .map(account -> ReportedUserSanctionInfo.of(account,
+                        userSanctionRepository.findAllActiveSanctionsByUserId(
+                                reportedUserId, LocalDateTime.now())))
+                .orElse(null);
     }
 
     // ── KAN-92: 관리자 신고 처리 ──────────────────────────────────────────
