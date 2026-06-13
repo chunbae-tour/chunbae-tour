@@ -7,6 +7,8 @@ import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportStatusUpdateRequest;
 import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
+import com.chunbaetour.domain.report.entity.ReportReason;
+import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.service.ReportService;
@@ -54,14 +56,18 @@ public class AdminReportController {
      * @param cursor Base64 인코딩된 cursor (null = 첫 페이지)
      * @param size   페이지 크기 (1~100, 기본 20)
      */
-    @Operation(summary = "신고 목록 조회")
+    @Operation(summary = "신고 목록 조회 (status·targetType·reason·reportedUserId 필터)")
     @GetMapping
     public ApiResponse<CursorPageResponse<ReportResponse>> getReports(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) ReportTargetType targetType,
+            @RequestParam(required = false) ReportReason reason,
+            @RequestParam(required = false) Long reportedUserId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        return ApiResponse.success(reportService.getReports(status, cursor, size));
+        return ApiResponse.success(
+                reportService.getReports(status, targetType, reason, reportedUserId, cursor, size));
     }
 
     /**

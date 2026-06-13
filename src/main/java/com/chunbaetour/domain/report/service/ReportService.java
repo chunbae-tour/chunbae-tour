@@ -38,11 +38,14 @@ import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.repository.ReportQueryRepository;
+import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.event.ReportAcceptedEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +79,7 @@ public class ReportService {
     private int autoHideThreshold;
 
     private final ReportRepository reportRepository;
+    private final ReportQueryRepository reportQueryRepository;
     private final AccountRepository accountRepository;
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
@@ -169,33 +173,36 @@ public class ReportService {
      * @param cursor      Base64 인코딩된 cursor (null = 첫 페이지)
      * @param size        페이지 크기
      */
-    public CursorPageResponse<ReportResponse> getReports(String statusParam, String cursor, int size) {
-        PageRequest pageable = PageRequest.of(0, size + 1);
+    public CursorPageResponse<ReportResponse> getReports(String statusParam, ReportTargetType targetType,
+            ReportReason reason, Long reportedUserId, String cursor, int size) {
         ReportStatus status = parseStatus(statusParam);
         Long cursorId = CursorUtils.decodeSafe(cursor);
-        List<Report> reports;
-
-        if (status == null) {
-            reports = (cursorId == null)
-                    ? reportRepository.findAllOrderByIdDesc(pageable)
-                    : reportRepository.findByIdLessThanOrderByIdDesc(cursorId, pageable);
-        } else {
-            reports = (cursorId == null)
-                    ? reportRepository.findByStatusOrderByIdDesc(status, pageable)
-                    : reportRepository.findByStatusAndIdLessThanOrderByIdDesc(status, cursorId, pageable);
-        }
+        List<Report> reports = reportQueryRepository.findByFilter(
+                status, targetType, reason, reportedUserId, cursorId, size);
 
         boolean hasNext = reports.size() > size;
         List<Report> content = hasNext ? reports.subList(0, size) : reports;
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
-        // N+1 방지: 신고자 ID 일괄 조회 후 Map 매핑
-        Set<Long> reporterIds = content.stream().map(Report::getReporterId).collect(Collectors.toSet());
-        Map<Long, String> nicknameMap = accountRepository.findAllById(reporterIds).stream()
-                .collect(Collectors.toMap(Account::getId, Account::getNickname));
+        // N+1 방지: 신고자 + 피신고 유저 계정 일괄 조회 (제재 상태 뱃지용)
+        Set<Long> accountIds = new HashSet<>();
+        content.forEach(r -> {
+            accountIds.add(r.getReporterId());
+            if (r.getReportedUserId() != null) {
+                accountIds.add(r.getReportedUserId());
+            }
+        });
+        Map<Long, Account> accountMap = accountRepository.findAllById(accountIds).stream()
+                .collect(Collectors.toMap(Account::getId, a -> a));
 
         List<ReportResponse> responses = content.stream()
-                .map(r -> ReportResponse.of(r, nicknameMap.getOrDefault(r.getReporterId(), "탈퇴한 사용자")))
+                .map(r -> {
+                    Account reporter = accountMap.get(r.getReporterId());
+                    String nickname = reporter != null ? reporter.getNickname() : "탈퇴한 사용자";
+                    Account reportedUser = r.getReportedUserId() != null
+                            ? accountMap.get(r.getReportedUserId()) : null;
+                    return ReportResponse.of(r, nickname, reportedUser);
+                })
                 .toList();
 
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
