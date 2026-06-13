@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.request.ReportStatusUpdateRequest;
 import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -110,5 +112,23 @@ public class AdminReportController {
     ) {
         return ApiResponse.success(
                 reportService.resolveMerchantReport(reportId, adminId, request));
+    }
+
+    /**
+     * 신고 상태 정정 (관리자 오판 정정).
+     * RESOLVED → DISMISSED 만 허용. 콘텐츠 복원 + 누적 카운트 자동 감소.
+     *
+     * @param reportId 정정할 신고 ID
+     * @param adminId  인증된 관리자 계정
+     * @param request  정정 요청 (status=DISMISSED, adminNote)
+     */
+    @Operation(summary = "신고 상태 정정 (오판 정정)")
+    @PatchMapping("/{reportId}/status")
+    public ApiResponse<ReportResolveResponse> updateReportStatus(
+            @Positive @PathVariable Long reportId,
+            @AuthenticationPrincipal Long adminId,
+            @Valid @RequestBody ReportStatusUpdateRequest request
+    ) {
+        return ApiResponse.success(reportService.updateReportStatus(reportId, adminId, request));
     }
 }

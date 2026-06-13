@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -37,6 +38,7 @@ import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.event.ReportContentActionEvent;
+import com.chunbaetour.domain.report.dto.request.ReportStatusUpdateRequest;
 import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.place.PlaceReview;
 import com.chunbaetour.domain.place.PlaceReviewStatus;
@@ -768,5 +770,77 @@ class ReportServiceTest {
         PendingCountResponse result = reportService.getPendingCount();
 
         assertThat(result.count()).isEqualTo(7L);
+    }
+
+    // ── 제재 카운트 1년 윈도우 ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("제재 카운트 — 1년 윈도우 메서드로 집계 + ReportAcceptedEvent 발행")
+    void resolveReport_uses_windowed_count() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
+                ReportReason.SPAM, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(reportRepository.countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+                eq(USER_TARGET_ID), eq(ReportTargetType.USER), eq(ReportStatus.RESOLVED), any()))
+                .willReturn(5L);
+
+        reportService.resolveReport(REPORT_ID, ADMIN_ID,
+                new ReportResolveRequest(ReportAction.SUSPEND, null));
+
+        // 윈도우 카운트(5)로 ReportAcceptedEvent 발행 — 옛 비윈도우 메서드는 호출 안 됨
+        then(reportRepository).should().countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+                eq(USER_TARGET_ID), eq(ReportTargetType.USER), eq(ReportStatus.RESOLVED), any());
+    }
+
+    // ── 신고 상태 정정 (오판 정정) ──────────────────────────────────────────
+
+    @Test
+    @DisplayName("신고 상태 정정 — RESOLVED→DISMISSED + RESTORE 이벤트 발행")
+    void updateReportStatus_RESOLVED_to_DISMISSED() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        report.resolve(ReportAction.DELETE, "처리함", "admin01");
+        Account admin = mock(Account.class);
+        given(admin.getNickname()).willReturn("admin01");
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(accountRepository.findById(ADMIN_ID)).willReturn(Optional.of(admin));
+
+        reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
+                new ReportStatusUpdateRequest(ReportStatus.DISMISSED, "오판 정정"));
+
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.DISMISSED);
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.POST_FREE, FREE_POST_ID, ReportAction.RESTORE));
+    }
+
+    @Test
+    @DisplayName("PENDING 신고 상태 정정 시도 → REPORT_INVALID_STATUS_TRANSITION")
+    void updateReportStatus_PENDING_rejected() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+
+        assertThatThrownBy(() -> reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
+                new ReportStatusUpdateRequest(ReportStatus.DISMISSED, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("DISMISSED 외 상태로 정정 시도 → REPORT_INVALID_STATUS_TRANSITION")
+    void updateReportStatus_nonDismissed_rejected() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        report.resolve(ReportAction.DELETE, "처리함", "admin01");
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+
+        assertThatThrownBy(() -> reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
+                new ReportStatusUpdateRequest(ReportStatus.PENDING, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_INVALID_STATUS_TRANSITION);
     }
 }

@@ -233,6 +233,8 @@ public enum ErrorCode {
     REPORT_TARGET_ALREADY_SUSPENDED(HttpStatus.CONFLICT,     "REPORT_008", "이미 정지된 계정입니다."),
     // REPORT_009: 제재 이력 없음 — 운영자 조기 해제 시 존재하지 않는 sanctionId
     SANCTION_NOT_FOUND(HttpStatus.NOT_FOUND,                 "REPORT_009", "존재하지 않는 제재 이력입니다."),
+    // REPORT_010: 허용되지 않는 신고 상태 전이 — 오판 정정은 RESOLVED→DISMISSED만 허용
+    REPORT_INVALID_STATUS_TRANSITION(HttpStatus.BAD_REQUEST, "REPORT_010", "허용되지 않는 신고 상태 변경입니다."),
 
     // ===== CS / FAQ (담당: 임하은) =====
     FAQ_NOT_FOUND(HttpStatus.NOT_FOUND,                     "FAQ_001", "존재하지 않는 FAQ입니다."),

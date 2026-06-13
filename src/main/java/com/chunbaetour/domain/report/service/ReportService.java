@@ -21,12 +21,15 @@ import com.chunbaetour.domain.place.PlaceReview;
 import com.chunbaetour.domain.place.PlaceReviewStatus;
 import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.shop.service.ShopService;
+import java.time.LocalDateTime;
+import java.time.Period;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
 import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.request.ReportStatusUpdateRequest;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
@@ -64,6 +67,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReportService {
+
+    /** 제재 누적 카운트 집계 윈도우 — 최근 1년 RESOLVED 신고만 집계 (오래된 신고 자동 만료). */
+    private static final Period SANCTION_COUNT_WINDOW = Period.ofYears(1);
 
     /** n건 이상 신고 시 콘텐츠 자동 숨김 임계값 — application.yml report.auto-hide.threshold (KAN-93) */
     @Value("${report.auto-hide.threshold:3}")
@@ -297,6 +303,38 @@ public class ReportService {
         }
     }
 
+    /**
+     * 신고 상태 정정 (관리자 오판 정정) — RESOLVED → DISMISSED 만 허용.
+     *
+     * <p>처리된 신고를 오판으로 판단해 기각 처리한다:
+     * <ul>
+     *   <li>콘텐츠 복원: {@code ReportContentActionEvent(RESTORE)} 발행 → 숨김 콘텐츠 ACTIVE 복구</li>
+     *   <li>누적 카운트: status가 DISMISSED가 되어 RESOLVED 집계에서 자동 제외 (유효 신고수 감소)</li>
+     *   <li>정지 해제는 자동 연동하지 않음 — 필요 시 관리자가 releaseSanction 별도 수행</li>
+     * </ul>
+     */
+    @Transactional
+    public ReportResolveResponse updateReportStatus(Long reportId, Long adminId,
+                                                    ReportStatusUpdateRequest request) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+
+        // 허용 전이: RESOLVED → DISMISSED 만
+        if (!report.isResolved() || request.status() != ReportStatus.DISMISSED) {
+            throw new BusinessException(ErrorCode.REPORT_INVALID_STATUS_TRANSITION);
+        }
+
+        String adminNickname = resolveNickname(adminId);
+        report.correctToDismissed(request.adminNote(), adminNickname, LocalDateTime.now());
+        reportRepository.saveAndFlush(report);
+
+        // 콘텐츠 복원 — 기각이므로 숨김 콘텐츠 되살림
+        eventPublisher.publishEvent(new ReportContentActionEvent(
+                reportId, report.getTargetType(), report.getTargetId(), ReportAction.RESTORE));
+
+        return ReportResolveResponse.of(report);
+    }
+
     // ── KAN-93: 자동 숨김 ─────────────────────────────────────────────────
 
     /**
@@ -361,8 +399,11 @@ public class ReportService {
             reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
         }
         if (reportedUserId == null) return;
-        long acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                reportedUserId, report.getTargetType(), ReportStatus.RESOLVED);
+        // 1년 롤링 윈도우: 최근 1년 RESOLVED 신고만 제재 단계 판정에 집계 (오래된 신고 자동 만료)
+        LocalDateTime windowStart = LocalDateTime.now().minus(SANCTION_COUNT_WINDOW);
+        long acceptedCount = reportRepository
+                .countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+                        reportedUserId, report.getTargetType(), ReportStatus.RESOLVED, windowStart);
         eventPublisher.publishEvent(new ReportAcceptedEvent(
                 report.getId(), reportedUserId, report.getTargetType(), acceptedCount));
     }

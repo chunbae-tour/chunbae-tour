@@ -136,4 +136,25 @@ public class Report extends BaseEntity {
     public boolean isPending() {
         return this.status == ReportStatus.PENDING;
     }
+
+    public boolean isResolved() {
+        return this.status == ReportStatus.RESOLVED;
+    }
+
+    /**
+     * 관리자 오판 정정 — RESOLVED 신고를 DISMISSED로 되돌린다.
+     * 콘텐츠 복원은 서비스 레이어에서 {@code ReportContentActionEvent(RESTORE)}로 별도 처리.
+     *
+     * <p>도메인 불변식: RESOLVED 상태에서만 호출 가능 (서비스에서도 검증).
+     */
+    public void correctToDismissed(String adminNote, String correctedBy, LocalDateTime correctedAt) {
+        if (!isResolved()) {
+            throw new IllegalStateException("RESOLVED 신고만 정정할 수 있습니다. reportId=" + this.id);
+        }
+        this.status = ReportStatus.DISMISSED;
+        this.action = ReportAction.RESTORE;
+        this.adminNote = adminNote;
+        this.resolvedBy = correctedBy;
+        this.resolvedAt = correctedAt;
+    }
 }
