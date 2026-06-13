@@ -176,4 +176,26 @@ public class CompanionService {
 
         return CompanionEndResponse.from(companion);
     }
+
+    // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존, 재시작 가능)
+    @Transactional
+    public void cancelCompanion(Long ownerId, Long roomId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        if (!chatRoom.isOwnedBy(ownerId)) {
+            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+
+        // PESSIMISTIC_WRITE — endCompanion/addParticipants와 동일 락으로 직렬화
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+
+        if (companion.getStatus() == CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
+        }
+
+        companionParticipantRepository.deleteByCompanionId(companion.getId());
+        companionRepository.delete(companion);
+    }
 }

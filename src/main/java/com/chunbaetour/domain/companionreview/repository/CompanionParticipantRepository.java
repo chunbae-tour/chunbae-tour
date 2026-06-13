@@ -3,6 +3,9 @@ package com.chunbaetour.domain.companionreview.repository;
 import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface CompanionParticipantRepository extends JpaRepository<CompanionParticipant, Long> {
 
@@ -11,4 +14,9 @@ public interface CompanionParticipantRepository extends JpaRepository<CompanionP
 
     // reviewer/target 동시 참여자 검증 — IN절 단일 쿼리로 참여 여부 확인(고도화 #25)
     long countByCompanionIdAndUserIdIn(Long companionId, List<Long> userIds);
+
+    // 동행 취소 시 참여자 전체 하드 삭제 — 벌크 DELETE
+    @Modifying
+    @Query("DELETE FROM CompanionParticipant cp WHERE cp.companionId = :companionId")
+    void deleteByCompanionId(@Param("companionId") Long companionId);
 }

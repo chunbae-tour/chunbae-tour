@@ -448,4 +448,116 @@ class CompanionServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.COMPANION_ALREADY_ENDED));
     }
+
+    // ===== cancelCompanion =====
+
+    // 정상 취소 — 참여자 전체 + Companion 하드 삭제, 204 No Content
+    @Test
+    void cancelCompanion_success_deletesCompanionAndParticipants() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion companion = Companion.builder().chatRoomId(roomId).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(companion));
+
+        companionService.cancelCompanion(ownerId, roomId);
+
+        verify(companionParticipantRepository).deleteByCompanionId(100L);
+        verify(companionRepository).delete(companion);
+    }
+
+    // 방 없음 → CHAT_001
+    @Test
+    void cancelCompanion_roomNotFound_throwsRoomNotFound() {
+        given(chatRoomRepository.findById(any())).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companionService.cancelCompanion(1L, 10L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_ROOM_NOT_FOUND));
+        verify(companionRepository, never()).delete(any());
+    }
+
+    // 방장 아님 → CHAT_006
+    @Test
+    void cancelCompanion_notOwner_throwsForbidden() {
+        Long ownerId = 1L;
+        Long otherUser = 2L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+
+        assertThatThrownBy(() -> companionService.cancelCompanion(otherUser, 10L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CHAT_SETTING_FORBIDDEN));
+        verify(companionRepository, never()).delete(any());
+    }
+
+    // 동행 없음 → CR_005
+    @Test
+    void cancelCompanion_companionNotFound_throwsNotFound() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companionService.cancelCompanion(ownerId, 10L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_NOT_FOUND));
+        verify(companionRepository, never()).delete(any());
+    }
+
+    // 이미 종료된 동행 → CR_006, 삭제되지 않음
+    @Test
+    void cancelCompanion_endedCompanion_throwsAlreadyEnded() {
+        Long ownerId = 1L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion endedCompanion = Companion.builder().chatRoomId(10L).build();
+        endedCompanion.end();
+
+        given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.of(endedCompanion));
+
+        assertThatThrownBy(() -> companionService.cancelCompanion(ownerId, 10L))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_ALREADY_ENDED));
+        verify(companionRepository, never()).delete(any());
+        verify(companionParticipantRepository, never()).deleteByCompanionId(any());
+    }
+
+    // 취소 후 동일 chatRoomId로 재시작 → CR_004/CR_007 없이 정상 생성 (uq_companions_chat_room_id는 하드 삭제로 비워짐)
+    @Test
+    void cancelCompanion_thenStartCompanion_recreatesSuccessfully() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        Companion ongoingCompanion = Companion.builder().chatRoomId(roomId).build();
+        ReflectionTestUtils.setField(ongoingCompanion, "id", 100L);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomIdWithLock(roomId)).willReturn(Optional.of(ongoingCompanion));
+
+        companionService.cancelCompanion(ownerId, roomId);
+
+        // 하드 삭제 후 재조회 — findByChatRoomId가 빈 결과를 반환하는 상태로 재현
+        Companion recreated = Companion.builder().chatRoomId(roomId).build();
+        ReflectionTestUtils.setField(recreated, "id", 200L);
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
+        given(companionRepository.save(any())).willReturn(recreated);
+        given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
+
+        CompanionStartResponse response = companionService.startCompanion(ownerId, roomId, new CompanionStartRequest(List.of()));
+
+        assertThat(response.status()).isEqualTo("ONGOING");
+        assertThat(response.companionId()).isEqualTo(200L);
+    }
 }
