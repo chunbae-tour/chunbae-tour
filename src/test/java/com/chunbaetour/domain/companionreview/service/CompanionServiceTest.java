@@ -3,7 +3,11 @@ package com.chunbaetour.domain.companionreview.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -25,14 +29,21 @@ import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProj
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.hibernate.exception.ConstraintViolationException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class CompanionServiceTest {
@@ -42,9 +53,24 @@ class CompanionServiceTest {
     @Mock private CompanionParticipantRepository companionParticipantRepository;
     @Mock private ChatRoomRepository chatRoomRepository;
     @Mock private ChatRoomMemberRepository chatRoomMemberRepository;
+    @Mock private RedissonClient redissonClient;
+    @Mock private PlatformTransactionManager transactionManager;
+    @Mock private RLock lock;
 
     private static final LocalDate TRIP_START = LocalDate.of(2026, 7, 1);
     private static final LocalDate TRIP_END = LocalDate.of(2026, 7, 5);
+
+    // 분산 락/트랜잭션 mock — 락 성공·즉시 커밋으로 본 로직만 검증 (락 자체 실패/타임아웃은 별도 테스트에서 override)
+    @BeforeEach
+    void setUp() throws InterruptedException {
+        lenient().when(redissonClient.getLock(anyString())).thenReturn(lock);
+        lenient().when(redissonClient.getMultiLock(any(RLock[].class))).thenReturn(lock);
+        lenient().when(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        lenient().when(lock.isHeldByCurrentThread()).thenReturn(true);
+
+        TransactionStatus txStatus = mock(TransactionStatus.class);
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(txStatus);
+    }
 
     // ===== createCompanion =====
 
@@ -304,6 +330,20 @@ class CompanionServiceTest {
                         .isEqualTo(ErrorCode.COMPANION_ALREADY_STARTED));
     }
 
+    // 분산 락 획득 실패 → CONCURRENT_UPDATE, save 호출 안 됨
+    @Test
+    void createCompanion_lockFailed_throwsConcurrentUpdate() throws InterruptedException {
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        assertThatThrownBy(() -> companionService.createCompanion(1L, 10L,
+                new CompanionCreateRequest(List.of(2L), TRIP_START, TRIP_END)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CONCURRENT_UPDATE));
+        verify(companionRepository, never()).save(any());
+    }
+
     // ===== addParticipants =====
 
     // 정상 추가 — DB 저장, 추가된 userId 목록 반환
@@ -503,6 +543,20 @@ class CompanionServiceTest {
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, roomId,
                 new CompanionAddParticipantsRequest(List.of(2L))))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // 분산 락 획득 실패 → CONCURRENT_UPDATE, saveAll 호출 안 됨
+    @Test
+    void addParticipants_lockFailed_throwsConcurrentUpdate() throws InterruptedException {
+        given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
+        given(lock.isHeldByCurrentThread()).willReturn(false);
+
+        assertThatThrownBy(() -> companionService.addParticipants(1L, 10L,
+                new CompanionAddParticipantsRequest(List.of(2L))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.CONCURRENT_UPDATE));
+        verify(companionParticipantRepository, never()).saveAll(any());
     }
 
     // ===== endCompanion =====
