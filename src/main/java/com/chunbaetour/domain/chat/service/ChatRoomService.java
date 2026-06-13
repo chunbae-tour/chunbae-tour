@@ -202,7 +202,8 @@ public class ChatRoomService {
         eventPublisher.publishEvent(new ChatOwnerTransferredEvent(roomId, newOwnerId));
     }
 
-    // 채팅방 퇴장 — OPEN/FULL 방의 방장은 다른 ACTIVE 멤버 있으면 위임 선행(CHAT_015), 단독이면 위임 없이 방 자동 CLOSED.
+    // 채팅방 퇴장 — OPEN/FULL 방의 방장은 다른 ACTIVE 멤버 있으면 위임 선행(CHAT_015),
+    // 단독이면 위임 없이 leave()+decrementMembers()로 본인도 MEMBER_LEFT 처리 후 방 자동 CLOSED.
     // CLOSED 방은 방장 권한이 무의미하므로 방장도 일반 멤버와 동일하게 퇴장 처리 (09_정책_결정_기록.md)
     @Transactional
     public void leaveRoom(Long userId, Long roomId) {
@@ -219,6 +220,10 @@ public class ChatRoomService {
                 throw new BusinessException(ErrorCode.CHAT_OWNER_CANNOT_LEAVE);
             }
 
+            // 단독 방장도 일반 퇴장과 동일하게 MEMBER_LEFT/currentMembers=0으로 정리 —
+            // CLOSED 방에서 같은 방장이 leaveRoom을 재호출할 때의 결과와 일치시킴
+            member.leave();
+            chatRoom.decrementMembers();
             chatRoom.close();
             saveClosedRoom(chatRoom, roomId);
             return;

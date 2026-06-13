@@ -26,7 +26,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.dao.ConcurrencyFailureException;
 
 @ExtendWith(MockitoExtension.class)
 class ChatRoomOwnerTransferServiceTest {
@@ -170,7 +170,7 @@ class ChatRoomOwnerTransferServiceTest {
                 .willReturn(Optional.of(currentOwner));
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, NEW_OWNER_ID))
                 .willReturn(Optional.of(newOwner));
-        willThrow(ObjectOptimisticLockingFailureException.class)
+        willThrow(ConcurrencyFailureException.class)
                 .given(chatRoomRepository).saveAndFlush(room);
 
         assertThatThrownBy(() -> chatRoomService.transferOwner(OWNER_ID, ROOM_ID, NEW_OWNER_ID))

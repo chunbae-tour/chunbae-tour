@@ -94,8 +94,8 @@ public class ChatRoomMember extends BaseEntity {
         return this.memberState == ChatMemberState.MEMBER_KICKED;
     }
 
-    // OPEN/FULL 방의 방장 leave는 ChatRoomService.leaveRoom()에서 위임/자동종료로 선행 처리되어 이 메서드에 도달하지 않음.
-    // CLOSED 방은 방장 권한이 무의미하므로 OWNER_ACTIVE도 일반 멤버처럼 MEMBER_LEFT 전환 허용한다 (09_정책_결정_기록.md).
+    // OWNER_ACTIVE도 일반 멤버처럼 MEMBER_LEFT 전환 허용 (09_정책_결정_기록.md) —
+    // CLOSED 방 방장의 자발적 퇴장, OPEN/FULL 방 단독 방장의 auto-close 양쪽에서 호출됨.
     // KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
         if (this.memberState == ChatMemberState.MEMBER_KICKED

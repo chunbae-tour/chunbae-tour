@@ -24,7 +24,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.dao.ConcurrencyFailureException;
 
 @ExtendWith(MockitoExtension.class)
 class ChatRoomLeaveServiceTest {
@@ -110,7 +110,7 @@ class ChatRoomLeaveServiceTest {
 
     @Test
     void leaveRoom_soleOwner_closesRoom() {
-        // 단독 방장(다른 ACTIVE 멤버 없음) 퇴장 시도 — 위임 없이 방 자동 CLOSED
+        // 단독 방장(다른 ACTIVE 멤버 없음) 퇴장 시도 — 위임 없이 leave()+decrementMembers() 후 방 자동 CLOSED
         ChatRoomMember member = mock(ChatRoomMember.class);
         given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
                 .willReturn(Optional.of(member));
@@ -119,10 +119,11 @@ class ChatRoomLeaveServiceTest {
 
         chatRoomService.leaveRoom(USER_ID, ROOM_ID);
 
-        verify(room).close();
-        verify(chatRoomRepository).saveAndFlush(room);
-        verify(member, never()).leave();
-        verify(room, never()).decrementMembers();
+        InOrder inOrder = inOrder(member, room, chatRoomRepository);
+        inOrder.verify(member).leave();
+        inOrder.verify(room).decrementMembers();
+        inOrder.verify(room).close();
+        inOrder.verify(chatRoomRepository).saveAndFlush(room);
     }
 
     @Test
@@ -133,7 +134,7 @@ class ChatRoomLeaveServiceTest {
                 .willReturn(Optional.of(member));
         given(member.isOwner()).willReturn(true);
         given(room.getCurrentMembers()).willReturn(1);
-        willThrow(ObjectOptimisticLockingFailureException.class)
+        willThrow(ConcurrencyFailureException.class)
                 .given(chatRoomRepository).saveAndFlush(room);
 
         assertThatThrownBy(() -> chatRoomService.leaveRoom(USER_ID, ROOM_ID))
@@ -169,7 +170,7 @@ class ChatRoomLeaveServiceTest {
         given(member.isOwner()).willReturn(true);
         given(room.getStatus()).willReturn(ChatRoomStatus.OPEN, ChatRoomStatus.CLOSED);
         given(room.getCurrentMembers()).willReturn(1);
-        willThrow(ObjectOptimisticLockingFailureException.class)
+        willThrow(ConcurrencyFailureException.class)
                 .given(chatRoomRepository).saveAndFlush(room);
 
         assertThatThrownBy(() -> chatRoomService.leaveRoom(USER_ID, ROOM_ID))
