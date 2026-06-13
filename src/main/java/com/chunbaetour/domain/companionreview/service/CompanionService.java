@@ -53,7 +53,8 @@ public class CompanionService {
     private final RedissonClient redissonClient;
     private final PlatformTransactionManager transactionManager;
 
-    // 동행 생성 — 방장+참여자 전원에 분산 락 건 뒤 본 로직 실행 (NOT_SUPPORTED로 외부 트랜잭션 중단, TransactionTemplate이 새 트랜잭션 생성)
+    // 동행 생성 — 락 획득 전 사전 검증(채팅방/방장/CLOSED/기존 동행/ACTIVE 멤버십) 후 방장+참여자 전원에 분산 락 건 뒤 본 로직 실행
+    // (NOT_SUPPORTED로 외부 트랜잭션 중단, TransactionTemplate이 새 트랜잭션 생성)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CompanionCreateResponse createCompanion(Long ownerId, Long roomId, CompanionCreateRequest request) {
         // tripEndDate < tripStartDate → 400 (KAN-296)
@@ -72,6 +73,9 @@ public class CompanionService {
             allParticipantIds.add(ownerId);
         }
 
+        // overlap TOCTOU와 무관한 검증은 락 획득 전에 끝내 불필요한 Redis 호출/락 점유 시간 줄임
+        validateCreatePreconditions(ownerId, roomId, allParticipantIds);
+
         // 방장+참여자 전원 lock — 동시에 겹치는 기간으로 동행 생성/참여 시도 시 overlap 체크(CR_010) TOCTOU 방지
         RLock lock = redissonClient.getMultiLock(buildUserLocks(allParticipantIds));
         try {
@@ -82,7 +86,7 @@ public class CompanionService {
             // 트랜잭션 커밋이 락 해제 전에 완료되도록 TransactionTemplate 사용
             return Objects.requireNonNull(
                     new TransactionTemplate(transactionManager).execute(
-                            status -> doCreateCompanion(ownerId, roomId, request, allParticipantIds)));
+                            status -> doCreateCompanion(roomId, request, allParticipantIds)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
@@ -93,9 +97,8 @@ public class CompanionService {
         }
     }
 
-    // 락 내부 실제 생성 로직 — 방장 검증, 중복 방지(CR_004/CR_007), 참여자 ACTIVE 멤버 검증, 기간 겹침 검증(CR_010)
-    private CompanionCreateResponse doCreateCompanion(Long ownerId, Long roomId, CompanionCreateRequest request,
-            List<Long> allParticipantIds) {
+    // 락 획득 전 사전 검증 — 채팅방 존재/방장 권한/CLOSED 여부, 기존 동행 존재(CR_004/CR_007), 참여자 ACTIVE 멤버십
+    private void validateCreatePreconditions(Long ownerId, Long roomId, List<Long> allParticipantIds) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
@@ -121,7 +124,11 @@ public class CompanionService {
         if (activeCount != allParticipantIds.size()) {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
         }
+    }
 
+    // 락 내부 — 기간 겹침 검증(CR_010) 후 저장
+    private CompanionCreateResponse doCreateCompanion(Long roomId, CompanionCreateRequest request,
+            List<Long> allParticipantIds) {
         // 방장+참여자 전원의 다른 ONGOING 동행과 기간 겹침 검증 — CR_010 (생성 전이므로 excludeCompanionId 없음)
         validateNoDateOverlap(allParticipantIds, request.tripStartDate(), request.tripEndDate(), null);
 
@@ -166,7 +173,8 @@ public class CompanionService {
         }
     }
 
-    // 동행 참여자 추가 — 추가 대상 전원에 분산 락 건 뒤 본 로직 실행 (NOT_SUPPORTED로 외부 트랜잭션 중단, TransactionTemplate이 새 트랜잭션 생성)
+    // 동행 참여자 추가 — 락 획득 전 사전 검증(채팅방/방장/CLOSED/ACTIVE 멤버십) 후 추가 대상 전원에 분산 락 건 뒤 본 로직 실행
+    // (NOT_SUPPORTED로 외부 트랜잭션 중단, TransactionTemplate이 새 트랜잭션 생성)
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CompanionAddParticipantsResponse addParticipants(Long ownerId, Long roomId,
             CompanionAddParticipantsRequest request) {
@@ -174,6 +182,9 @@ public class CompanionService {
         List<Long> distinctUserIds = request.userIds().stream()
                 .distinct()
                 .collect(Collectors.toList());
+
+        // overlap TOCTOU와 무관한 검증은 락 획득 전에 끝내 불필요한 Redis 호출/락 점유 시간 줄임
+        validateAddParticipantsPreconditions(ownerId, roomId, distinctUserIds);
 
         // 추가 대상 전원 lock — 동시에 겹치는 기간으로 동행 생성/참여 시도 시 overlap 체크(CR_010) TOCTOU 방지
         RLock lock = redissonClient.getMultiLock(buildUserLocks(distinctUserIds));
@@ -183,7 +194,7 @@ public class CompanionService {
             }
             return Objects.requireNonNull(
                     new TransactionTemplate(transactionManager).execute(
-                            status -> doAddParticipants(ownerId, roomId, request, distinctUserIds)));
+                            status -> doAddParticipants(roomId, distinctUserIds)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
@@ -194,9 +205,8 @@ public class CompanionService {
         }
     }
 
-    // 락 내부 실제 추가 로직 — 방장 검증, CLOSED 차단, ONGOING 확인(CR_006), ACTIVE 멤버 확인, 기간 겹침 검증(CR_010), 중복 시 CR_008
-    private CompanionAddParticipantsResponse doAddParticipants(Long ownerId, Long roomId,
-            CompanionAddParticipantsRequest request, List<Long> distinctUserIds) {
+    // 락 획득 전 사전 검증 — 채팅방 존재/방장 권한/CLOSED 여부, 추가 대상 ACTIVE 멤버십
+    private void validateAddParticipantsPreconditions(Long ownerId, Long roomId, List<Long> distinctUserIds) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
@@ -207,20 +217,23 @@ public class CompanionService {
             throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
         }
 
-        // PESSIMISTIC_WRITE — endCompanion과 동일 락으로 직렬화, ENDED 동행에 참여자 추가되는 race 방지
-        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
-
-        if (companion.getStatus() == CompanionStatus.ENDED) {
-            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
-        }
-
         // 추가 대상 ACTIVE 멤버십 일괄 검증 — IN절 단일 쿼리로 N+1 방지
         List<ChatMemberState> activeStates = List.of(ChatMemberState.OWNER_ACTIVE, ChatMemberState.MEMBER_ACTIVE);
         long activeCount = chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(
                 roomId, distinctUserIds, activeStates);
         if (activeCount != distinctUserIds.size()) {
             throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
+    }
+
+    // 락 내부 — ONGOING 확인(CR_006), 기간 겹침 검증(CR_010) 후 저장, 중복 시 CR_008
+    private CompanionAddParticipantsResponse doAddParticipants(Long roomId, List<Long> distinctUserIds) {
+        // PESSIMISTIC_WRITE — endCompanion과 동일 락으로 직렬화, ENDED 동행에 참여자 추가되는 race 방지
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+
+        if (companion.getStatus() == CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
         }
 
         // 추가 대상 전원의 다른 ONGOING 동행과 기간 겹침 검증 — CR_010 (본인 동행은 excludeCompanionId로 제외)

@@ -333,10 +333,18 @@ class CompanionServiceTest {
     // 분산 락 획득 실패 → CONCURRENT_UPDATE, save 호출 안 됨
     @Test
     void createCompanion_lockFailed_throwsConcurrentUpdate() throws InterruptedException {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(2L);
         given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
         given(lock.isHeldByCurrentThread()).willReturn(false);
 
-        assertThatThrownBy(() -> companionService.createCompanion(1L, 10L,
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, roomId,
                 new CompanionCreateRequest(List.of(2L), TRIP_START, TRIP_END)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
@@ -422,6 +430,8 @@ class CompanionServiceTest {
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
         given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
@@ -441,6 +451,8 @@ class CompanionServiceTest {
         endedCompanion.end();
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
         given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.of(endedCompanion));
 
         assertThatThrownBy(() -> companionService.addParticipants(ownerId, 10L,
@@ -456,11 +468,8 @@ class CompanionServiceTest {
     void addParticipants_participantNotMember_throwsNotJoined() {
         Long ownerId = 1L;
         ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
-        Companion companion = Companion.builder().chatRoomId(10L).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
-        ReflectionTestUtils.setField(companion, "id", 100L);
 
         given(chatRoomRepository.findById(10L)).willReturn(Optional.of(chatRoom));
-        given(companionRepository.findByChatRoomIdWithLock(10L)).willReturn(Optional.of(companion));
         given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
                 .willReturn(0L);
 
@@ -548,10 +557,17 @@ class CompanionServiceTest {
     // 분산 락 획득 실패 → CONCURRENT_UPDATE, saveAll 호출 안 됨
     @Test
     void addParticipants_lockFailed_throwsConcurrentUpdate() throws InterruptedException {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(1L);
         given(lock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).willReturn(false);
         given(lock.isHeldByCurrentThread()).willReturn(false);
 
-        assertThatThrownBy(() -> companionService.addParticipants(1L, 10L,
+        assertThatThrownBy(() -> companionService.addParticipants(ownerId, roomId,
                 new CompanionAddParticipantsRequest(List.of(2L))))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
