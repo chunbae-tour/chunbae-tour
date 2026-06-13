@@ -71,7 +71,8 @@ public class Companion extends BaseEntity {
     private Companion(Long chatRoomId, LocalDate tripStartDate, LocalDate tripEndDate) {
         if (chatRoomId == null) throw new IllegalArgumentException("chatRoomId is required");
         if (tripStartDate == null || tripEndDate == null) throw new IllegalArgumentException("tripStartDate, tripEndDate are required");
-        if (tripEndDate.isBefore(tripStartDate)) throw new IllegalArgumentException("tripEndDate must be on or after tripStartDate");
+        // 서비스에서 이미 검증하지만(COMMON_004), 다른 경로로 도메인만 호출될 경우 500 대신 400으로 방어
+        if (tripEndDate.isBefore(tripStartDate)) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         this.chatRoomId = chatRoomId;
         this.status = CompanionStatus.ONGOING;
         this.startedAt = LocalDateTime.now();

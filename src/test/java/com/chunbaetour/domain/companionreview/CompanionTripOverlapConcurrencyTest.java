@@ -87,6 +87,7 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
         List<CompletableFuture<Boolean>> futures = new ArrayList<>();
         List<ErrorCode> failedCodes = Collections.synchronizedList(new ArrayList<>());
 
+        boolean allReady;
         try {
             for (Long chatRoomId : chatRoomIds) {
                 futures.add(CompletableFuture.supplyAsync(() -> {
@@ -103,11 +104,14 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
                     }
                 }, executor));
             }
-            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
-            start.countDown();
+            allReady = ready.await(5, TimeUnit.SECONDS);
+            if (allReady) {
+                start.countDown();
+            }
+            assertThat(allReady).isTrue();
             CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).get(30, TimeUnit.SECONDS);
         } finally {
-            start.countDown();
+            // allReady == false면 워커 일부가 아직 start.await() 대기 중 — countDown 보류된 채로 shutdownNow()가 인터럽트 처리
             executor.shutdownNow();
             executor.awaitTermination(5, TimeUnit.SECONDS);
         }
@@ -182,11 +186,14 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
         }, executor);
 
         try {
-            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
-            start.countDown();
+            boolean allReady = ready.await(5, TimeUnit.SECONDS);
+            if (allReady) {
+                start.countDown();
+            }
+            assertThat(allReady).isTrue();
             CompletableFuture.allOf(futureA, futureB).get(30, TimeUnit.SECONDS);
         } finally {
-            start.countDown();
+            // allReady == false면 워커 일부가 아직 start.await() 대기 중 — countDown 보류된 채로 shutdownNow()가 인터럽트 처리
             executor.shutdownNow();
             executor.awaitTermination(5, TimeUnit.SECONDS);
         }
