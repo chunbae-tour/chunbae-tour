@@ -1,5 +1,7 @@
 package com.chunbaetour.domain.common.response;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
 import java.util.function.Function;
@@ -26,15 +28,16 @@ public record CursorPageResponse<T>(
      * @param <R>          응답 DTO 타입
      * @return content(최대 size개), nextCursor(다음 없으면 null), hasNext, 그리고 <b>요청 size를 그대로 echo</b>한
      *         size 필드로 구성된 응답. size는 실제 반환 개수(content.size())가 아니라 요청 페이지 크기다(팀 표준).
-     * @throws IllegalArgumentException size가 1 미만인 경우
+     * @throws BusinessException size가 1 미만인 경우 (COMMON_002 INVALID_REQUEST) — 팀 공통 예외로 통일
      */
     public static <E, R> CursorPageResponse<R> of(
             List<E> raw, int size, Function<E, R> mapper, ToLongFunction<E> idExtractor) {
         // 공통 진입점 fail-fast 가드 (KAN-295 리뷰): size=0이면 hasNext=true·page=[]가 되어 아래
         // page.get(page.size()-1) = get(-1)에서 IndexOutOfBoundsException(500). 호출자 @Min(1) 누락 시
         // 의미 불명의 500 대신 명시적 예외로 fail-fast 한다.
+        // 예외 타입은 팀 공통 BusinessException(INVALID_REQUEST)으로 통일 — 다른 size 가드(ChargeService 등)와 일관.
         if (size < 1) {
-            throw new IllegalArgumentException("size must be >= 1: " + size);
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
 
         // size+1 조회 결과로 다음 페이지 존재 여부 판별 → 초과분을 잘라 실제 노출 페이지 구성

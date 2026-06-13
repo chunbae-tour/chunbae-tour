@@ -3,6 +3,8 @@ package com.chunbaetour.domain.common.response;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -86,11 +88,13 @@ class CursorPageResponseTest {
     }
 
     @Test
-    @DisplayName("of — size<1이면 IllegalArgumentException으로 fail-fast (page.get(-1) 500 방지)")
+    @DisplayName("of — size<1이면 BusinessException(INVALID_REQUEST)으로 fail-fast (page.get(-1) 500 방지)")
     void of_sizeBelowOne_throws() {
         List<Item> raw = List.of(new Item(10L, "a"));
 
         assertThatThrownBy(() -> CursorPageResponse.of(raw, 0, Item::name, Item::getId))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 }
