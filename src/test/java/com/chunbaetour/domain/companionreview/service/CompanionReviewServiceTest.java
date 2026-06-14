@@ -126,6 +126,8 @@ class CompanionReviewServiceTest {
         companion.end();
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
         given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(100L, List.of(1L, 2L)))
+                .willReturn(2L);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(true);
 
@@ -147,9 +149,12 @@ class CompanionReviewServiceTest {
 
         given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
         given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(100L, List.of(1L, 2L)))
+                .willReturn(2L);
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
         given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
+        given(accountRepository.findById(1L)).willReturn(Optional.of(buildAccount(1L, 0.0, 0)));
         given(companionReviewRepository.save(any(CompanionReview.class))).willReturn(saved);
 
         CompanionReviewCreateResponse response = companionReviewService.createReview(1L, request);
@@ -158,6 +163,73 @@ class CompanionReviewServiceTest {
         assertThat(response.writerUserId()).isEqualTo(1L);
         assertThat(target.getCompanionReviewCount()).isEqualTo(1);
         assertThat(target.getCompanionScore()).isEqualTo(4.0);
+    }
+
+    // 한쪽만 endParticipation 완료 → CR_011 (고도화 #2)
+    @Test
+    void createReview_participantsNotBothEnded_throwsParticipantNotEnded() {
+        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
+        Companion companion = buildCompanion(100L, 10L);
+        companion.end();
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(100L, List.of(1L, 2L)))
+                .willReturn(1L);
+
+        assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_REVIEW_PARTICIPANT_NOT_ENDED));
+        verify(companionReviewRepository, never()).save(any());
+    }
+
+    // target 계정이 정지 상태 → CR_012 (고도화 #2)
+    @Test
+    void createReview_targetSuspended_throwsSuspendedAccount() {
+        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
+        Companion companion = buildCompanion(100L, 10L);
+        companion.end();
+        Account target = buildAccount(2L, 0.0, 0);
+        target.suspend();
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(100L, List.of(1L, 2L)))
+                .willReturn(2L);
+        given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
+                .willReturn(false);
+        given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
+        given(accountRepository.findById(1L)).willReturn(Optional.of(buildAccount(1L, 0.0, 0)));
+
+        assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_REVIEW_SUSPENDED_ACCOUNT));
+        verify(companionReviewRepository, never()).save(any());
+    }
+
+    // reviewer 계정이 정지 상태 → CR_012 (고도화 #2)
+    @Test
+    void createReview_reviewerSuspended_throwsSuspendedAccount() {
+        CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(10L, 2L, 5, null);
+        Companion companion = buildCompanion(100L, 10L);
+        companion.end();
+        Account target = buildAccount(2L, 0.0, 0);
+        Account reviewer = buildAccount(1L, 0.0, 0);
+        reviewer.suspend();
+        given(companionRepository.findByChatRoomId(10L)).willReturn(Optional.of(companion));
+        given(companionParticipantRepository.countByCompanionIdAndUserIdIn(100L, List.of(1L, 2L))).willReturn(2L);
+        given(companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(100L, List.of(1L, 2L)))
+                .willReturn(2L);
+        given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
+                .willReturn(false);
+        given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
+        given(accountRepository.findById(1L)).willReturn(Optional.of(reviewer));
+
+        assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_REVIEW_SUSPENDED_ACCOUNT));
+        verify(companionReviewRepository, never()).save(any());
     }
 
     // ===== getCompanionScore =====

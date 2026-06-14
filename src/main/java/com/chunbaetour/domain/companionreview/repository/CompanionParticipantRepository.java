@@ -6,11 +6,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface CompanionParticipantRepository extends JpaRepository<CompanionParticipant, Long> {
 
     // 동행 참여자 목록 — 시작/조회 응답 구성에 사용
     List<CompanionParticipant> findByCompanionId(Long companionId);
+
+    // endParticipation 호출자가 해당 동행의 참여자인지 확인(CR_013)
+    boolean existsByCompanionIdAndUserId(Long companionId, Long userId);
 
     // reviewer/target 동시 참여자 검증 — IN절 단일 쿼리로 참여 여부 확인(고도화 #25)
     long countByCompanionIdAndUserIdIn(Long companionId, List<Long> userIds);
@@ -19,6 +23,16 @@ public interface CompanionParticipantRepository extends JpaRepository<CompanionP
     @Modifying(clearAutomatically = true)
     @Query("DELETE FROM CompanionParticipant cp WHERE cp.companionId = :companionId")
     void deleteByCompanionId(@Param("companionId") Long companionId);
+
+    // reviewer/target 둘 다 endParticipation을 마쳤는지 검증(CR_011, 고도화 #2)
+    long countByCompanionIdAndUserIdInAndEndedAtIsNotNull(Long companionId, List<Long> userIds);
+
+    // 참여자 본인 동행 종료 — endedAt이 null일 때만 세팅, 영향 행 수 반환 (0이면 이미 종료 처리됨, CR_015)
+    @Transactional
+    @Modifying
+    @Query("UPDATE CompanionParticipant cp SET cp.endedAt = CURRENT_TIMESTAMP "
+            + "WHERE cp.companionId = :companionId AND cp.userId = :userId AND cp.endedAt IS NULL")
+    int endParticipationIfNotEnded(@Param("companionId") Long companionId, @Param("userId") Long userId);
 
     // 대상 유저들이 참여 중인 다른 ONGOING 동행의 여행 기간 — 기간 겹침 검증(CR_010)에 사용, excludeCompanionId는 본인 동행 제외용(없으면 null)
     @Query("""

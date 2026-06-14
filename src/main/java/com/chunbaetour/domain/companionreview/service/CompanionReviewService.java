@@ -2,6 +2,7 @@ package com.chunbaetour.domain.companionreview.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -65,6 +66,13 @@ public class CompanionReviewService {
             throw new BusinessException(ErrorCode.COMPANION_NOT_ENDED);
         }
 
+        // reviewer/target 둘 다 endParticipation을 마쳤는지 검증 (CR_011, 고도화 #2)
+        long endedCount = companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(
+                companion.getId(), List.of(reviewerId, request.targetUserId()));
+        if (endedCount != 2) {
+            throw new BusinessException(ErrorCode.COMPANION_REVIEW_PARTICIPANT_NOT_ENDED);
+        }
+
         if (companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(
                 reviewerId, request.targetUserId(), request.chatRoomId())) {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_ALREADY_EXISTS);
@@ -73,6 +81,13 @@ public class CompanionReviewService {
         // PESSIMISTIC_WRITE — 동시 리뷰 등록으로 인한 이중 점수 갱신 경합 방어
         Account target = accountRepository.findByIdWithLock(request.targetUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        // reviewer/target 둘 중 하나라도 정지 계정이면 리뷰 작성 차단 (CR_012, 고도화 #2)
+        Account reviewer = accountRepository.findById(reviewerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (target.getStatus() == AccountStatus.SUSPENDED || reviewer.getStatus() == AccountStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_REVIEW_SUSPENDED_ACCOUNT);
+        }
 
         CompanionReview review;
         try {

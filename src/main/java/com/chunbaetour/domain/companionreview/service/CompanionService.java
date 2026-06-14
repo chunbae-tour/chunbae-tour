@@ -11,7 +11,6 @@ import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipan
 import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
@@ -237,7 +236,7 @@ public class CompanionService {
 
     // 락 내부 — ONGOING 확인(CR_006), 기간 겹침 검증(CR_010) 후 저장, 중복 시 CR_008
     private CompanionAddParticipantsResponse doAddParticipants(Long roomId, List<Long> distinctUserIds) {
-        // PESSIMISTIC_WRITE — endCompanion과 동일 락으로 직렬화, ENDED 동행에 참여자 추가되는 race 방지
+        // PESSIMISTIC_WRITE — 동시 ENDED 전환(배치job)과 직렬화, ENDED 동행에 참여자 추가되는 race 방지
         Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
 
@@ -291,23 +290,31 @@ public class CompanionService {
                 .toArray(RLock[]::new);
     }
 
-    // 동행 종료 — 방장 검증, 동행 존재 확인, ONGOING 상태 확인(CR_006)
+    // 참여자 본인 동행 종료 — Companion.status==ENDED(여행 종료, 배치job 처리)일 때만 호출 가능
+    // 호출자가 참여자가 아니면 CR_013, status가 ENDED 아니면 CR_014, 이미 종료 처리됐으면 CR_015
     @Transactional
-    public CompanionEndResponse endCompanion(Long ownerId, Long roomId) {
-        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
-
-        if (!chatRoom.isOwnedBy(ownerId)) {
-            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
-        }
-
-        // PESSIMISTIC_WRITE — 동시 종료 요청 둘 다 ONGOING 읽고 end() 호출하는 경쟁 방어
-        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
+    public void endParticipation(Long userId, Long roomId) {
+        Companion companion = companionRepository.findByChatRoomId(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
 
-        companion.end();
+        if (!companionParticipantRepository.existsByCompanionIdAndUserId(companion.getId(), userId)) {
+            throw new BusinessException(ErrorCode.COMPANION_PARTICIPANT_NOT_FOUND);
+        }
 
-        return CompanionEndResponse.from(companion);
+        if (companion.getStatus() != CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_NOT_ENDED_FOR_PARTICIPATION);
+        }
+
+        // 조건부 UPDATE — 동시 중복 호출 시 한쪽만 성공, 나머지는 영향 행 0
+        if (companionParticipantRepository.endParticipationIfNotEnded(companion.getId(), userId) == 0) {
+            throw new BusinessException(ErrorCode.COMPANION_PARTICIPATION_ALREADY_ENDED);
+        }
+    }
+
+    // 동행 생애주기 자동화 배치job — tripEndDate < 오늘인 ONGOING 동행을 일괄 ENDED 전환 (CompanionStatusScheduler에서 매일 1회 호출)
+    @Transactional
+    public int endExpiredCompanions() {
+        return companionRepository.endExpiredCompanions(LocalDate.now());
     }
 
     // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)
@@ -321,7 +328,7 @@ public class CompanionService {
             throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
         }
 
-        // PESSIMISTIC_WRITE — endCompanion/addParticipants와 동일 락으로 직렬화
+        // PESSIMISTIC_WRITE — addParticipants/endExpiredCompanions(배치job)과 동일 락으로 직렬화
         Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
 
