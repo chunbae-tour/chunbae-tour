@@ -1,0 +1,74 @@
+{
+  "family": "chunbae-tour",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::310133718863:role/chunbae-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::310133718863:role/chunbae-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "chunbae-tour",
+      "image": "310133718863.dkr.ecr.ap-northeast-2.amazonaws.com/chunbae-tour:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8080, "protocol": "tcp" },
+        { "containerPort": 9090, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "SPRING_PROFILES_ACTIVE", "value": "prod" }
+      ],
+      "secrets": [
+        { "name": "DB_HOST", "valueFrom": "<SECRET_ARN>:DB_HOST::" },
+        { "name": "DB_NAME", "valueFrom": "<SECRET_ARN>:DB_NAME::" },
+        { "name": "DB_USERNAME", "valueFrom": "<SECRET_ARN>:DB_USERNAME::" },
+        { "name": "DB_PASSWORD", "valueFrom": "<SECRET_ARN>:DB_PASSWORD::" },
+        { "name": "REDIS_HOST", "valueFrom": "<SECRET_ARN>:REDIS_HOST::" },
+        { "name": "JWT_SECRET", "valueFrom": "<SECRET_ARN>:JWT_SECRET::" },
+        { "name": "JWT_ACCESS_TOKEN_TTL", "valueFrom": "<SECRET_ARN>:JWT_ACCESS_TOKEN_TTL::" },
+        { "name": "JWT_REFRESH_TOKEN_TTL", "valueFrom": "<SECRET_ARN>:JWT_REFRESH_TOKEN_TTL::" },
+        { "name": "COOKIE_SAMESITE", "valueFrom": "<SECRET_ARN>:COOKIE_SAMESITE::" },
+        { "name": "CORS_ALLOWED_ORIGINS", "valueFrom": "<SECRET_ARN>:CORS_ALLOWED_ORIGINS::" },
+        { "name": "ACCOUNT_ENCRYPTION_KEY", "valueFrom": "<SECRET_ARN>:ACCOUNT_ENCRYPTION_KEY::" },
+        { "name": "PORTONE_SECRET", "valueFrom": "<SECRET_ARN>:PORTONE_SECRET::" },
+        { "name": "PORTONE_WEBHOOK_SECRET", "valueFrom": "<SECRET_ARN>:PORTONE_WEBHOOK_SECRET::" },
+        { "name": "PORTONE_STORE_ID", "valueFrom": "<SECRET_ARN>:PORTONE_STORE_ID::" },
+        { "name": "PORTONE_CHANNEL_CARD", "valueFrom": "<SECRET_ARN>:PORTONE_CHANNEL_CARD::" },
+        { "name": "PORTONE_CHANNEL_KAKAO_PAY", "valueFrom": "<SECRET_ARN>:PORTONE_CHANNEL_KAKAO_PAY::" },
+        { "name": "PORTONE_CHANNEL_TOSS_PAY", "valueFrom": "<SECRET_ARN>:PORTONE_CHANNEL_TOSS_PAY::" },
+        { "name": "PORTONE_CHANNEL_FOREIGN_CARD", "valueFrom": "<SECRET_ARN>:PORTONE_CHANNEL_FOREIGN_CARD::" },
+        { "name": "REPORT_AUTO_HIDE_THRESHOLD", "valueFrom": "<SECRET_ARN>:REPORT_AUTO_HIDE_THRESHOLD::" },
+        { "name": "GOOGLE_TRANSLATION_API_KEY", "valueFrom": "<SECRET_ARN>:GOOGLE_TRANSLATION_API_KEY::" },
+        { "name": "KAKAO_MAP_API_KEY", "valueFrom": "<SECRET_ARN>:KAKAO_MAP_API_KEY::" },
+        { "name": "KAKAO_LOGIN_REST_API_KEY", "valueFrom": "<SECRET_ARN>:KAKAO_LOGIN_REST_API_KEY::" },
+        { "name": "KAKAO_LOGIN_CLIENT_SECRET", "valueFrom": "<SECRET_ARN>:KAKAO_LOGIN_CLIENT_SECRET::" },
+        { "name": "NAVER_CLIENT_ID", "valueFrom": "<SECRET_ARN>:NAVER_CLIENT_ID::" },
+        { "name": "NAVER_CLIENT_SECRET", "valueFrom": "<SECRET_ARN>:NAVER_CLIENT_SECRET::" },
+        { "name": "TOUR_API_SERVICE_KEY", "valueFrom": "<SECRET_ARN>:TOUR_API_SERVICE_KEY::" },
+        { "name": "TOUR_API_KOR_SERVICE_KEY", "valueFrom": "<SECRET_ARN>:TOUR_API_KOR_SERVICE_KEY::" },
+        { "name": "PUBLIC_DATA_MARKET_KEY", "valueFrom": "<SECRET_ARN>:PUBLIC_DATA_MARKET_KEY::" }
+      ],
+      "stopTimeout": 30,
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q -O - http://localhost:9090/actuator/health || exit 1"],
+        "interval": 15,
+        "timeout": 3,
+        "retries": 3,
+        "startPeriod": 90
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/chunbae-tour",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

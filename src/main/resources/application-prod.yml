@@ -12,10 +12,15 @@ spring:
 
   data:
     redis:
+      # 구성 엔드포인트(clustercfg.*) 주입. 단일 샤드라 useSingleServer로 직접 연결(RedisConfig 참고).
       host: ${REDIS_HOST}
       port: 6379
+      # ElastiCache(Valkey)는 AUTH 미설정 — 비번 없이 TLS만. 빈값이면 인증 스킵.
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
+      # 운영 ElastiCache는 in-transit encryption(TLS) 활성화 → rediss:// 강제(Lettuce 자동구성 + RedisConfig Redisson 둘 다 반영).
+      ssl:
+        enabled: true
 
 # 운영: Refresh 쿠키는 반드시 HTTPS에서만 전송되어야 함 (Secure=true)
 cookie:
@@ -50,7 +55,12 @@ ratelimit:
 management:
   server:
     port: 9090
-    address: 127.0.0.1
+    # ECS/ALB 전환(E4): ALB Target Group health check가 태스크 ENI IP의 9090/actuator/health를 직접 친다.
+    # loopback(127.0.0.1) 바인딩이면 LB가 도달 불가 → 0.0.0.0으로 바인딩한다.
+    # 외부 노출 차단은 "바인딩 차단 → SG 차단"으로 이동: app-sg가 9090을 alb-sg에서만 허용(E0/E5).
+    # ⚠️ release blocker #149(loopback 격리 가정)는 SG 격리로 대체됨 — ActuatorSecurityIntegrationTest의
+    #    prometheus 차단 케이스는 IP 기반 SecurityConfig 정책으로 계속 방어(바인딩과 독립).
+    address: 0.0.0.0
   # base application.yml의 exposure(health,info,prometheus)를 운영에서 명시적으로 재선언.
   # base yml이 향후 변경되어도 운영에서 예상치 못한 endpoint 노출이 발생하지 않도록 이중 안전.
   endpoints:
