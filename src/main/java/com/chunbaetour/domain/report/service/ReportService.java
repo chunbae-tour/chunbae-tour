@@ -21,6 +21,7 @@ import com.chunbaetour.domain.place.PlaceReview;
 import com.chunbaetour.domain.place.PlaceReviewStatus;
 import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.shop.service.ShopService;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.Period;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
@@ -90,6 +91,7 @@ public class ReportService {
     private final PlaceReviewRepository placeReviewRepository;
     private final ShopService shopService;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     // ── PR6: 미처리 신고 건수 ────────────────────────────────────────────
 
@@ -228,10 +230,11 @@ public class ReportService {
         if (reportedUserId == null) {
             return null;
         }
+        // 제재 활성 판정은 ended_at/released_at(UTC clock 기준)과 비교하므로 now(clock) 사용 (JVM tz 무관)
         return accountRepository.findById(reportedUserId)
                 .map(account -> ReportedUserSanctionInfo.of(account,
                         userSanctionRepository.findAllActiveSanctionsByUserId(
-                                reportedUserId, LocalDateTime.now())))
+                                reportedUserId, LocalDateTime.now(clock))))
                 .orElse(null);
     }
 
@@ -423,6 +426,7 @@ public class ReportService {
         }
         if (reportedUserId == null) return;
         // 1년 롤링 윈도우: 최근 1년 RESOLVED 신고만 제재 단계 판정에 집계 (오래된 신고 자동 만료)
+        // resolved_at(엔티티 LocalDateTime.now() 기준)과 비교하므로 윈도우 시작도 동일 기준 사용 (내부 일관)
         LocalDateTime windowStart = LocalDateTime.now().minus(SANCTION_COUNT_WINDOW);
         long acceptedCount = reportRepository
                 .countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(

@@ -62,6 +62,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.Spy;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
@@ -81,6 +82,7 @@ class ReportServiceTest {
     @Mock private AccountRepository accountRepository;
     @Mock private ShopService shopService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Spy private java.time.Clock clock = java.time.Clock.systemUTC();
 
     @InjectMocks
     private ReportService reportService;
