@@ -194,16 +194,7 @@ public class StorePurchaseService {
         List<StoreOrder> orders = storeOrderRepository.findOrdersByUserIdWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = orders.size() > size;
-        List<StoreOrder> page = hasNext ? orders.subList(0, size) : orders;
-
-        // 엔티티 → 응답 DTO 변환
-        List<StoreOrderResponse> content = page.stream()
-                .map(StoreOrderResponse::from)
-                .toList();
-
-        // 다음 커서: 마지막 항목 ID 인코딩, 없으면 null
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(orders, size, StoreOrderResponse::from, StoreOrder::getId);
     }
 }

@@ -139,6 +139,31 @@ Redis 장애로 fail-closed 처리한 빈도.
 - 분산 트레이싱 (Sleuth / OpenTelemetry) — 별도 Epic
 - 비즈니스 KPI (DAU, MAU, 매출) — 별도 도메인
 
+### Place Stats Sync (PlaceStatsSyncBatchService)
+
+#### `place.stats.sync.failure.total` (Counter)
+
+관광지 조회수/좋아요 Redis write-behind 배치 동기화 실패 횟수.
+
+| 태그 | 값 |
+|---|---|
+| `stage` | `scan` / `chunk` |
+
+**권장 쿼리**:
+- 전체 실패율: `rate(place_stats_sync_failure_total[5m])`
+- 실패 단계별 확인: `sum by (stage) (rate(place_stats_sync_failure_total[5m]))`
+
+**권장 알림**: `rate(place_stats_sync_failure_total[5m]) > 0` → Redis dirty set 또는 DB 동기화 정체 가능성 확인.
+
+#### `place.stats.sync.last.failure.epoch.millis` (Gauge)
+
+마지막 관광지 통계 동기화 실패 시각을 epoch milliseconds로 기록.
+
+**권장 쿼리**:
+- 마지막 실패 후 경과 시간: `(time() * 1000) - place_stats_sync_last_failure_epoch_millis`
+
+**권장 알림**: 실패 counter 증가와 함께 마지막 실패 시각이 최근이면 배치 로그와 Redis dirty set 크기 확인.
+
 ## Grafana 대시보드 (참고)
 
 본 슬라이스 범위 외. 권장 panel 구성:
