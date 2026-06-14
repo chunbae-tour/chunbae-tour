@@ -2,10 +2,10 @@ package com.chunbaetour.domain.companionreview.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
-import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "동행", description = "동행 시작/종료/취소/참여자 추가 (/api/v1/chat/rooms/{roomId}/companion)")
+@Tag(name = "동행", description = "동행 생성/종료/취소/참여자 추가 (/api/v1/chat/rooms/{roomId}/companion)")
 @RestController
 @RequiredArgsConstructor
 @Validated
@@ -32,14 +32,14 @@ public class CompanionController {
 
     private final CompanionService companionService;
 
-    // POST /api/v1/chat/rooms/{roomId}/companion — 동행 시작 (방장 전용)
-    @Operation(summary = "동행 시작")
+    // POST /api/v1/chat/rooms/{roomId}/companion — 동행 생성 (방장 전용)
+    @Operation(summary = "동행 생성")
     @PostMapping("/api/v1/chat/rooms/{roomId}/companion")
-    public ResponseEntity<ApiResponse<CompanionStartResponse>> startCompanion(
+    public ResponseEntity<ApiResponse<CompanionCreateResponse>> createCompanion(
             @AuthenticationPrincipal Long ownerId,
             @PathVariable @Positive Long roomId,
-            @Valid @RequestBody CompanionStartRequest request) {
-        CompanionStartResponse response = companionService.startCompanion(ownerId, roomId, request);
+            @Valid @RequestBody CompanionCreateRequest request) {
+        CompanionCreateResponse response = companionService.createCompanion(ownerId, roomId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 

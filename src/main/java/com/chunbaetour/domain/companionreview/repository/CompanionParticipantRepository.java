@@ -19,4 +19,17 @@ public interface CompanionParticipantRepository extends JpaRepository<CompanionP
     @Modifying(clearAutomatically = true)
     @Query("DELETE FROM CompanionParticipant cp WHERE cp.companionId = :companionId")
     void deleteByCompanionId(@Param("companionId") Long companionId);
+
+    // 대상 유저들이 참여 중인 다른 ONGOING 동행의 여행 기간 — 기간 겹침 검증(CR_010)에 사용, excludeCompanionId는 본인 동행 제외용(없으면 null)
+    @Query("""
+            SELECT cp.userId AS userId, c.tripStartDate AS tripStartDate, c.tripEndDate AS tripEndDate
+            FROM CompanionParticipant cp
+            JOIN Companion c ON c.id = cp.companionId
+            WHERE cp.userId IN :userIds
+              AND c.status = com.chunbaetour.domain.companionreview.type.CompanionStatus.ONGOING
+              AND (:excludeCompanionId IS NULL OR c.id <> :excludeCompanionId)
+            """)
+    List<CompanionTripPeriodProjection> findOngoingTripPeriodsByUserIds(
+            @Param("userIds") List<Long> userIds,
+            @Param("excludeCompanionId") Long excludeCompanionId);
 }

@@ -9,11 +9,12 @@ import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -35,6 +36,9 @@ import org.springframework.boot.test.context.SpringBootTest;
  */
 @SpringBootTest
 class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
+
+    private static final LocalDate TRIP_START = LocalDate.of(2026, 9, 1);
+    private static final LocalDate TRIP_END = LocalDate.of(2026, 9, 5);
 
     @Autowired private CompanionService companionService;
     @Autowired private CompanionRepository companionRepository;
@@ -64,7 +68,7 @@ class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
                 ChatRoom.createWithOwner(postId, owner.getId(), "취소 동시성 테스트 방", null, 5));
         Long roomId = chatRoom.getId();
 
-        companionService.startCompanion(owner.getId(), roomId, new CompanionStartRequest(List.of()));
+        companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
 
         int threadCount = 2;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
@@ -113,7 +117,7 @@ class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
     // 취소(하드 삭제) 후 같은 채팅방에서 동행 재생성 → uq_companions_chat_room_id 제약이 실제로 해제됨을 DB로 검증
     @Test
     @DisplayName("동행 취소 후 같은 채팅방에서 재생성 → uq_companions_chat_room_id 해제 확인")
-    void cancelCompanion_thenStartCompanion_dbConstraintReleased() {
+    void cancelCompanion_thenCreateCompanion_dbConstraintReleased() {
         Account owner = accountRepository.saveAndFlush(
                 Account.registerUser("cancel-recreate-owner@test.com", "hashedPw", "재생성테스트유저"));
         long postId = ThreadLocalRandom.current().nextLong(4_500_000L, 5_000_000L);
@@ -121,13 +125,13 @@ class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
                 ChatRoom.createWithOwner(postId, owner.getId(), "취소 재생성 테스트 방", null, 5));
         Long roomId = chatRoom.getId();
 
-        var firstResponse = companionService.startCompanion(owner.getId(), roomId, new CompanionStartRequest(List.of()));
+        var firstResponse = companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
         companionService.cancelCompanion(owner.getId(), roomId);
 
         assertThat(companionRepository.count()).isEqualTo(0);
         assertThat(companionParticipantRepository.count()).isEqualTo(0);
 
-        var secondResponse = companionService.startCompanion(owner.getId(), roomId, new CompanionStartRequest(List.of()));
+        var secondResponse = companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
 
         assertThat(secondResponse.companionId()).isNotEqualTo(firstResponse.companionId());
         assertThat(secondResponse.status()).isEqualTo("ONGOING");
