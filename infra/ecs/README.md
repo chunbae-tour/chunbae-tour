@@ -44,6 +44,16 @@ PORTONE_CHANNEL_FOREIGN_CARD, GOOGLE_TRANSLATION_API_KEY, KAKAO_MAP_API_KEY,
 KAKAO_LOGIN_REST_API_KEY, KAKAO_LOGIN_CLIENT_SECRET, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET,
 TOUR_API_SERVICE_KEY, TOUR_API_KOR_SERVICE_KEY, PUBLIC_DATA_MARKET_KEY.
 
+> ℹ️ **운영값 변경(hyeonmin02 리뷰)**: `CORS_ALLOWED_ORIGINS`는 "비밀값"보다 "환경설정값"에 가깝지만 시크릿으로 함께 관리한다.
+> 프론트 허용 도메인 추가/변경은 **코드(task-definition.json)가 아니라 Secrets Manager `chunbae-tour/prod`의 `CORS_ALLOWED_ORIGINS` 키**를 수정한 뒤 태스크 재배포로 반영한다.
+
+## ⚠️ Execution Role IAM 권한 체크리스트 (민교 — 콘솔)
+
+`chunbae-ecs-execution-role`에 아래 권한이 있어야 한다. 없으면 **태스크 등록은 성공하지만 시작 시 `ResourceInitializationError`**로 실패(디버깅 까다로운 실패 모드, hyeonmin02 리뷰).
+- [ ] `secretsmanager:GetSecretValue` — secrets 24키 valueFrom 주입에 필수. 리소스는 시크릿 ARN(`...:chunbae-tour/prod-*`)으로 한정 권장.
+- [ ] `kms:Decrypt` — 시크릿이 **고객 관리형 KMS 키**로 암호화돼 있으면 필요(AWS 관리형 기본키면 불필요할 수 있음). 해당 KMS 키 ARN으로 한정.
+- [ ] `logs:CreateLogGroup` / `logs:CreateLogStream` / `logs:PutLogEvents` — `awslogs-create-group: "true"` 자동 생성 + 로그 송출용.
+
 ## 포트 매핑 8080 + 9090
 
 - `8080`: 앱 트래픽(ALB Target Group forward 대상).
@@ -56,7 +66,7 @@ TOUR_API_SERVICE_KEY, TOUR_API_KOR_SERVICE_KEY, PUBLIC_DATA_MARKET_KEY.
 ## CloudWatch 로그 그룹 `/ecs/chunbae-tour`
 
 `awslogs-create-group: "true"`로 첫 태스크 기동 시 **자동 생성** — 수동 생성 불필요.
-(Execution Role에 `logs:CreateLogGroup`/`CreateLogStream`/`PutLogEvents` 권한 전제 — 권한 있다고 확인됨.)
+(Execution Role의 `logs:*` 권한 전제 — 위 *Execution Role IAM 권한 체크리스트* 참조.)
 
 ## JVM 메모리
 
