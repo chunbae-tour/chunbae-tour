@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
+import com.chunbaetour.domain.chat.dto.request.TransferOwnerRequest;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomMemberResponse;
@@ -31,7 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "채팅방", description = "채팅방 생성·조회·종료·퇴장·강퇴·메시지 조회 (/api/v1/chat/rooms/**)")
+@Tag(name = "채팅방", description = "채팅방 생성·조회·종료·퇴장·강퇴·방장위임·메시지 조회 (/api/v1/chat/rooms/**)")
 @RestController
 @RequestMapping("/api/v1/chat/rooms")
 @RequiredArgsConstructor
@@ -65,6 +66,16 @@ public class ChatRoomController {
             @AuthenticationPrincipal Long userId,
             @Min(1) @PathVariable Long roomId) {
         return ApiResponse.success(chatRoomService.getRoomDetail(userId, roomId));
+    }
+
+    @Operation(summary = "방장 위임")
+    @PatchMapping("/{roomId}/owner")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void transferOwner(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId,
+            @Valid @RequestBody TransferOwnerRequest request) {
+        chatRoomService.transferOwner(userId, roomId, request.newOwnerId());
     }
 
     @Operation(summary = "채팅방 종료")
