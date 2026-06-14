@@ -43,15 +43,14 @@ springdoc:
 ratelimit:
   enabled: true
 
-# 운영: Actuator(특히 /actuator/prometheus)는 main 포트와 분리해 외부 LB가 접근 못하도록 격리한다.
-# - port 9090: main 포트(8080)와 다른 포트로 binding → LB는 8080만 노출
-# - address 127.0.0.1: loopback에만 binding → 외부 IP에서 도달 불가
-# Prometheus scraper는 같은 호스트(sidecar) 또는 SSH 터널/VPN을 통해서만 접근 가능.
-# 운영 인프라(별도 호스트의 Prometheus 클러스터)에서 직접 scrape 필요해지면 address를 VPC 내부 IP로 조정.
-# ⚠️ TODO(infra): 운영 Prometheus 배포 토폴로지 확정 전까지는 sidecar/SSH 터널 가정. 별도 호스트 클러스터 채택 시
-#   1) 본 address를 VPC 내부 IP로 변경 + 2) SecurityConfig hasIpAddress 정책에 해당 CIDR 추가 + 3) ActuatorSecurityIntegrationTest의
-#   prometheus_isBlockedFromPrivateNetworkIp 케이스 재검토 (10.x.x.x 차단 가정 깨짐).
-# release blocker #149.
+# 운영: Actuator(특히 /actuator/prometheus)는 두 가지로 격리한다 (release blocker #149).
+# - 포트 분리: port 9090 → main(8080)과 다른 포트. ALB는 8080만 리스너로 노출하므로 actuator는 외부 트래픽 경로에 없다.
+# - 네트워크 격리(ECS E4): 바인딩은 0.0.0.0(아래 address 주석 참고 — ALB TG health check 도달용)이고,
+#   9090 외부 노출은 SG(app-sg 9090 ← alb-sg)가 차단한다. 즉 "loopback 바인딩 격리"에서 "SG 격리"로 이동했다.
+# Prometheus scraper가 직접 scrape하려면 app-sg에 진입 가능한 위치(같은 VPC sidecar/내부 호스트)에서 9090을 친다.
+# ⚠️ TODO(infra): 별도 호스트의 Prometheus 클러스터에서 직접 scrape 필요해지면
+#   1) redis-sg/app-sg에 해당 scraper CIDR의 9090 인바운드 허용 + 2) SecurityConfig hasIpAddress 정책에 해당 CIDR 추가 +
+#   3) ActuatorSecurityIntegrationTest의 prometheus_isBlockedFromPrivateNetworkIp 케이스 재검토(10.x.x.x 차단 가정 깨짐).
 management:
   server:
     port: 9090

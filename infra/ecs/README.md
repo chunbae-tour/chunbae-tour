@@ -7,10 +7,10 @@
 | placeholder | 무엇 | 상태 |
 |---|---|---|
 | ~~`<SECRET_ARN>`~~ | Secrets Manager 시크릿 ARN | ✅ 주입 완료: `arn:...:secret:chunbae-tour/prod-DFWHK4` |
-| `image: ...:latest` | 컨테이너 이미지 태그 | E8 CD가 `ecs-render-task-definition`으로 SHA 태그 주입 — 수동 등록 시엔 ECR 최신 SHA로 교체 |
+| `image: ...:<IMAGE_TAG>` | 컨테이너 이미지 태그 | E8 CD가 `ecs-render-task-definition`으로 SHA 태그 주입. 수동 등록 시 ECR 빌드 SHA로 교체. **일부러 비유효 placeholder** — 치환 누락 시 mutable `latest`로 엉뚱한 이미지를 당기지 않고 즉시 실패하게 함(재현성). |
 
 `<SECRET_ARN>` 예시 형식:
-```
+```text
 arn:aws:secretsmanager:ap-northeast-2:310133718863:secret:chunbae-tour/prod-aB3xZ9
 ```
 valueFrom 문법 `<ARN>:KEY::` = `시크릿ARN : JSON키 : (버전스테이지 공란) : (버전ID 공란)`.
