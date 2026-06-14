@@ -75,3 +75,12 @@ management:
   endpoint:
     health:
       show-details: always
+      # ALB Target Group 전용 health group (KAN-ECS E6): /actuator/health/lb.
+      # 서빙에 실제로 필요한 의존성(db·redis·ping)만으로 200/503을 판정한다 — diskSpace/ssl 등
+      # "서빙 가능 여부와 무관한" 인디케이터가 DOWN이어도 ALB가 멀쩡한 태스크를 unhealthy로 떨구지 않게 분리.
+      # ALB chunbae-tg health check 경로를 /actuator/health → /actuator/health/lb 로 설정(콘솔).
+      # 전체 /actuator/health(루트)는 show-details: always 유지 — 운영 디버깅/전체 상태 확인용.
+      group:
+        lb:
+          include: db, redis, ping
+          show-details: never
