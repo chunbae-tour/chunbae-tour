@@ -43,6 +43,7 @@ public class FestivalFetchService {
     private final TourApiClient      tourApiClient;
     private final FestivalRepository festivalRepository;
     private final FestivalCacheEvictUtil cacheEvict;
+    private final FestivalCacheWarmer cacheWarmer;
     private final LockProvider       lockProvider;
 
     @Autowired @Lazy private FestivalFetchService self;
@@ -114,6 +115,8 @@ public class FestivalFetchService {
         } finally {
             if (created > 0 || updated > 0) {
                 cacheEvict.evictAll();
+                // evict 직후 핫 경로 캐시 선채움 — 미스 폭주(stampede) 방지
+                cacheWarmer.warmUp();
             }
         }
 

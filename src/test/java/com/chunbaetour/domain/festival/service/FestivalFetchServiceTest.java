@@ -37,6 +37,7 @@ class FestivalFetchServiceTest {
     @Mock TourApiClient tourApiClient;
     @Mock FestivalRepository festivalRepository;
     @Mock FestivalCacheEvictUtil cacheEvict;
+    @Mock FestivalCacheWarmer cacheWarmer;
     @Mock LockProvider lockProvider;
     @Mock SimpleLock simpleLock;
     @InjectMocks FestivalFetchService fetchService;
@@ -167,6 +168,7 @@ class FestivalFetchServiceTest {
         fetchService.fetchNow();
 
         verify(cacheEvict, never()).evictAll();
+        verify(cacheWarmer, never()).warmUp();
     }
 
     @Test
@@ -178,6 +180,7 @@ class FestivalFetchServiceTest {
         fetchService.fetchNow();
 
         verify(cacheEvict).evictAll();
+        verify(cacheWarmer).warmUp();
     }
 
     @Test

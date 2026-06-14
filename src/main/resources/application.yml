@@ -251,6 +251,11 @@ tour-api:
   service-key: ${TOUR_API_SERVICE_KEY:}
   base-url: https://api.data.go.kr/openapi/tn_pubr_public_cltur_fstvl_api
   sync-cron: "0 0 2 * * *"
+  # 축제 수집 페이지 호출 재시도 — 외부 API 일시 장애(네트워크·5xx)에만 지수 백오프로 재시도.
+  # 비일시적(4xx, resultCode != 00)은 재시도 안 함.
+  retry:
+    max-attempts: 3
+    initial-backoff-millis: 500
 
   # KAN-221 관광지: 한국관광공사 국문 관광정보 서비스(KorService2).
   # 전용 키 분리 — 축제(TOUR_API_SERVICE_KEY)·전통시장(PUBLIC_DATA_MARKET_KEY)과 다른 data.go.kr 계정/활용신청을

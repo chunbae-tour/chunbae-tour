@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -24,14 +25,20 @@ public class TourApiClient {
     private final RestClient restClient;
     private final String serviceKey;
     private final String baseUrl;
+    private final int maxAttempts;
+    private final long initialBackoffMillis;
 
     public TourApiClient(
             @Qualifier("tourApiRestClient") RestClient restClient,
             @Value("${tour-api.service-key}") String serviceKey,
-            @Value("${tour-api.base-url}") String baseUrl) {
+            @Value("${tour-api.base-url}") String baseUrl,
+            @Value("${tour-api.retry.max-attempts}") int maxAttempts,
+            @Value("${tour-api.retry.initial-backoff-millis}") long initialBackoffMillis) {
         this.restClient = restClient;
         this.serviceKey = serviceKey;
         this.baseUrl = baseUrl;
+        this.maxAttempts = maxAttempts;
+        this.initialBackoffMillis = initialBackoffMillis;
     }
 
     public List<TourApiFestivalItem> fetchAll() {
@@ -56,32 +63,71 @@ public class TourApiClient {
         return result;
     }
 
+    // 일시적 장애(네트워크 단절, 5xx)는 지수 백오프로 재시도한다.
+    // 비일시적(4xx, resultCode != "00", 응답 형식 오류)은 재시도해도 동일 실패라 즉시 중단한다.
     private TourApiFestivalResponse fetchPage(int pageNo) {
         String uri = buildUri(pageNo);
-        try {
-            TourApiFestivalResponse response = restClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .body(TourApiFestivalResponse.class);
+        int attempt = 0;
+        while (true) {
+            attempt++;
+            try {
+                return requestAndValidate(uri);
+            } catch (RestClientResponseException e) {
+                // HTTP 상태 오류 — 5xx만 재시도, 4xx는 즉시 실패
+                if (isRetryable(e.getStatusCode()) && attempt < maxAttempts) {
+                    log.warn("TourAPI 5xx (status={}), 재시도 {}/{}", e.getStatusCode(), attempt, maxAttempts);
+                    backoff(attempt);
+                    continue;
+                }
+                log.error("TourAPI HTTP error: status={}, attempt={}", e.getStatusCode(), attempt);
+                throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+            } catch (RestClientException e) {
+                // 네트워크 오류(응답 없음) — 재시도 대상
+                if (attempt < maxAttempts) {
+                    log.warn("TourAPI 네트워크 오류, 재시도 {}/{}: {}", attempt, maxAttempts, e.getMessage());
+                    backoff(attempt);
+                    continue;
+                }
+                log.error("TourAPI network error after {} attempts", attempt, e);
+                throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+            }
+        }
+    }
 
-            if (response == null
-                    || response.response() == null
-                    || response.response().header() == null
-                    || response.response().body() == null) {
-                throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
-            }
-            String resultCode = response.response().header().resultCode();
-            if (!"00".equals(resultCode)) {
-                log.error("TourAPI error: resultCode={}, resultMsg={}",
-                        resultCode, response.response().header().resultMsg());
-                throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
-            }
-            return response;
-        } catch (RestClientResponseException e) {
-            log.error("TourAPI HTTP error: status={}", e.getStatusCode());
+    // HTTP 호출 + 응답 유효성 검증. 형식 오류·resultCode 오류는 비일시적이므로 BusinessException으로
+    // 던져 재시도 루프를 벗어난다(RestClient 예외가 아니라 catch되지 않음).
+    private TourApiFestivalResponse requestAndValidate(String uri) {
+        TourApiFestivalResponse response = restClient.get()
+                .uri(uri)
+                .retrieve()
+                .body(TourApiFestivalResponse.class);
+
+        if (response == null
+                || response.response() == null
+                || response.response().header() == null
+                || response.response().body() == null) {
             throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
-        } catch (RestClientException e) {
-            log.error("TourAPI network error", e);
+        }
+        String resultCode = response.response().header().resultCode();
+        if (!"00".equals(resultCode)) {
+            log.error("TourAPI error: resultCode={}, resultMsg={}",
+                    resultCode, response.response().header().resultMsg());
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
+        return response;
+    }
+
+    private boolean isRetryable(HttpStatusCode status) {
+        return status.is5xxServerError();
+    }
+
+    // 지수 백오프: initial * 2^(attempt-1) → 500, 1000, 2000ms ...
+    private void backoff(int attempt) {
+        long delay = initialBackoffMillis * (1L << (attempt - 1));
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
         }
     }
