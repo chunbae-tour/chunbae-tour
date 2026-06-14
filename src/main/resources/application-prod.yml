@@ -12,10 +12,15 @@ spring:
 
   data:
     redis:
+      # 구성 엔드포인트(clustercfg.*) 주입. 단일 샤드라 useSingleServer로 직접 연결(RedisConfig 참고).
       host: ${REDIS_HOST}
       port: 6379
+      # ElastiCache(Valkey)는 AUTH 미설정 — 비번 없이 TLS만. 빈값이면 인증 스킵.
       password: ${REDIS_PASSWORD:}
       timeout: 2000ms
+      # 운영 ElastiCache는 in-transit encryption(TLS) 활성화 → rediss:// 강제(Lettuce 자동구성 + RedisConfig Redisson 둘 다 반영).
+      ssl:
+        enabled: true
 
 # 운영: Refresh 쿠키는 반드시 HTTPS에서만 전송되어야 함 (Secure=true)
 cookie:
@@ -38,28 +43,35 @@ springdoc:
 ratelimit:
   enabled: true
 
-# 운영: Actuator(특히 /actuator/prometheus)는 main 포트와 분리해 외부 LB가 접근 못하도록 격리한다.
-# - port 9090: main 포트(8080)와 다른 포트로 binding → LB는 8080만 노출
-# - address 127.0.0.1: loopback에만 binding → 외부 IP에서 도달 불가
-# Prometheus scraper는 같은 호스트(sidecar) 또는 SSH 터널/VPN을 통해서만 접근 가능.
-# 운영 인프라(별도 호스트의 Prometheus 클러스터)에서 직접 scrape 필요해지면 address를 VPC 내부 IP로 조정.
-# ⚠️ TODO(infra): 운영 Prometheus 배포 토폴로지 확정 전까지는 sidecar/SSH 터널 가정. 별도 호스트 클러스터 채택 시
-#   1) 본 address를 VPC 내부 IP로 변경 + 2) SecurityConfig hasIpAddress 정책에 해당 CIDR 추가 + 3) ActuatorSecurityIntegrationTest의
-#   prometheus_isBlockedFromPrivateNetworkIp 케이스 재검토 (10.x.x.x 차단 가정 깨짐).
-# release blocker #149.
+# 운영 actuator 격리 (release blocker #149 + ECS E4 보안 회귀 반영, DGAZA-max 리뷰).
+# ⚠️ 핵심: management.server.port=9090(별도 포트)면 actuator는 별도 management 컨텍스트에서 뜨고,
+#    SecurityConfig의 SecurityFilterChain은 main 포트(8080)에만 적용된다 — 9090에는 적용되지 않는다.
+#    (ActuatorSecurityIntegrationTest javadoc의 "MockMvc 검증 범위 한계" 참조: 9090 포트 보안은 MockMvc로 검증 불가.)
+#    따라서 9090에 민감 endpoint(prometheus 등)를 열면 SecurityConfig IP allowlist로 못 막는다.
+# 방어 모델:
+# - 포트 분리: 9090 ≠ main(8080). ALB 리스너는 8080만 노출 → actuator는 외부 트래픽 경로에 없음.
+# - 바인딩 0.0.0.0(아래 address 주석 — ALB TG health check가 태스크 ENI IP:9090/actuator/health 도달 필요).
+#   9090 외부 노출은 SG(app-sg 9090 ← alb-sg)가 차단.
+# - 노출 endpoint 최소화: 운영에서는 health,info만 노출(아래 exposure). 비민감 endpoint라 9090이 SG 한 겹이어도 안전.
+#   prometheus(민감 메트릭)는 운영에서 노출하지 않는다 — 모니터링(S8) 착수 시 ① 관리포트 전용 SecurityFilterChain 또는
+#   ② 전용 scrape 경로/SG로 보안을 갖춘 뒤 재노출할 것.
 management:
   server:
     port: 9090
-    address: 127.0.0.1
-  # base application.yml의 exposure(health,info,prometheus)를 운영에서 명시적으로 재선언.
-  # base yml이 향후 변경되어도 운영에서 예상치 못한 endpoint 노출이 발생하지 않도록 이중 안전.
+    # ECS/ALB 전환(E4): ALB Target Group health check가 태스크 ENI IP의 9090/actuator/health를 직접 친다.
+    # loopback(127.0.0.1) 바인딩이면 LB가 도달 불가 → 0.0.0.0으로 바인딩한다.
+    # 외부 노출 차단은 "바인딩 차단 → SG 차단"으로 이동: app-sg가 9090을 alb-sg에서만 허용(E0/E5).
+    # ⚠️ SecurityConfig의 /actuator/** IP allowlist는 9090에 적용되지 않으므로(별도 컨텍스트),
+    #    9090 보안은 "비민감 endpoint만 노출(health,info) + SG"로 보장한다. prometheus는 위 주석대로 운영 미노출.
+    address: 0.0.0.0
+  # 운영 노출 endpoint: health,info만 (prometheus 제외 — 위 주석 사유). base application.yml 값을 운영에서 좁혀 재선언.
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
-  # 9090은 127.0.0.1 loopback 바인딩(LB는 8080만 노출)이라 외부 도달 불가 →
-  # health 컴포넌트 상세 노출해도 안전. CD health gate 실패 시 어느 indicator가
-  # DOWN인지 즉시 식별 가능하게 always로 설정.
+        include: health,info
+  # health 상세(show-details): CD health gate 실패 시 어느 indicator(db/redis 등)가 DOWN인지 즉시 식별하려고 always (#525).
+  # 노출 안전성 근거: 9090은 SG(app-sg 9090 ← alb-sg)로 격리되고 ALB는 health 본문을 외부 클라이언트로 프록시하지 않는다.
+  #   (ECS E4에서 바인딩이 0.0.0.0이 돼 "loopback이라 외부 도달 불가" 근거는 폐기 — SG 격리로 대체. 위 server.address 주석 참조.)
   endpoint:
     health:
       show-details: always
