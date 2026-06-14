@@ -94,17 +94,34 @@ public class ChatRoomMember extends BaseEntity {
         return this.memberState == ChatMemberState.MEMBER_KICKED;
     }
 
-    // OWNER는 leave() 불가 — close()로만 방 종료 가능. KICKED/LEFT 덮어쓰기 방지.
+    // OWNER_ACTIVE도 일반 멤버처럼 MEMBER_LEFT 전환 허용 (09_정책_결정_기록.md) —
+    // CLOSED 방 방장의 자발적 퇴장, OPEN/FULL 방 단독 방장의 auto-close 양쪽에서 호출됨.
+    // KICKED/LEFT 덮어쓰기 방지.
     public void leave() {
-        if (this.memberState == ChatMemberState.OWNER_ACTIVE) {
-            throw new BusinessException(ErrorCode.CHAT_OWNER_CANNOT_LEAVE);
-        }
         if (this.memberState == ChatMemberState.MEMBER_KICKED
                 || this.memberState == ChatMemberState.MEMBER_LEFT) {
             throw new BusinessException(ErrorCode.CHAT_MEMBER_ALREADY_INACTIVE);
         }
         this.memberState = ChatMemberState.MEMBER_LEFT;
         this.leftAt = LocalDateTime.now();
+    }
+
+    // 방장 위임 — 위임받는 멤버: MEMBER_ACTIVE만 OWNER_ACTIVE로 전환 가능 (본인·비활성 멤버는 차단)
+    public void promoteToOwner() {
+        if (this.memberState != ChatMemberState.MEMBER_ACTIVE) {
+            throw new BusinessException(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET);
+        }
+        this.memberState = ChatMemberState.OWNER_ACTIVE;
+    }
+
+    // 방장 위임 — 위임하는 멤버: OWNER_ACTIVE를 MEMBER_ACTIVE로 전환
+    // 호출 시점에 이미 ChatRoom.ownerId와 ChatRoomMember.memberState가 동기화돼있어야 하므로,
+    // 이 분기는 그 둘이 불일치하는 서버측 데이터 정합성 버그 — 클라이언트 요청 오류(400)가 아닌 서버 오류(500)로 처리
+    public void demoteFromOwner() {
+        if (this.memberState != ChatMemberState.OWNER_ACTIVE) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+        this.memberState = ChatMemberState.MEMBER_ACTIVE;
     }
 
     // MEMBER_LEFT 상태 유저 재참여 수락 시 호출 — 새 레코드 INSERT 대신 기존 레코드 업데이트
