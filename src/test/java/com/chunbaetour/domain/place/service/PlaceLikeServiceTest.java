@@ -1,35 +1,37 @@
 package com.chunbaetour.domain.place.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
+import com.chunbaetour.domain.place.event.PlaceLikeChangedEvent;
 import com.chunbaetour.domain.place.repository.PlaceQueryRepository;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
-import org.springframework.context.ApplicationEventPublisher;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-
-import java.util.Collections;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PlaceLikeServiceTest {
@@ -110,5 +112,47 @@ class PlaceLikeServiceTest {
         assertThatThrownBy(() -> placeLikeService.getUserLikedPlaces(userId, pageRequest))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("찜 추가 시 PlaceLikeChangedEvent 이벤트가 발행된다")
+    void addLike_PublishesEvent() {
+        // given
+        Long userId = 1L;
+        Long placeId = 100L;
+        Place mockPlace = mock(Place.class);
+        when(placeRepository.findById(placeId)).thenReturn(Optional.of(mockPlace));
+        when(mockPlace.getStatus()).thenReturn(PlaceStatus.ACTIVE);
+        when(mockPlace.getLikeCount()).thenReturn(0);
+        when(userLikeService.addLike(userId, LikeTargetType.PLACE, placeId)).thenReturn(true);
+
+        // when
+        placeLikeService.addLike(userId, placeId);
+
+        // then
+        verify(userLikeService).addLike(userId, LikeTargetType.PLACE, placeId);
+        verify(eventPublisher).publishEvent(argThat(
+                (PlaceLikeChangedEvent event) -> event.userId().equals(userId)));
+    }
+
+    @Test
+    @DisplayName("찜 취소 시 PlaceLikeChangedEvent 이벤트가 발행된다")
+    void removeLike_PublishesEvent() {
+        // given
+        Long userId = 1L;
+        Long placeId = 100L;
+        Place mockPlace = mock(Place.class);
+        when(placeRepository.findById(placeId)).thenReturn(Optional.of(mockPlace));
+        when(mockPlace.getStatus()).thenReturn(PlaceStatus.ACTIVE);
+        when(mockPlace.getLikeCount()).thenReturn(1);
+        when(userLikeService.removeLike(userId, LikeTargetType.PLACE, placeId)).thenReturn(true);
+
+        // when
+        placeLikeService.removeLike(userId, placeId);
+
+        // then
+        verify(userLikeService).removeLike(userId, LikeTargetType.PLACE, placeId);
+        verify(eventPublisher).publishEvent(argThat(
+                (PlaceLikeChangedEvent event) -> event.userId().equals(userId)));
     }
 }
