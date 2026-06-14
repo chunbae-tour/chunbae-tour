@@ -245,6 +245,25 @@ class RefundServiceTest {
     }
 
     @Test
+    @DisplayName("환불 내역 조회 — size+1 반환 시 hasNext=true, 절단, nextCursor는 노출 마지막 항목 id")
+    void getUserRefundHistory_hasNext_truncatesAndSetsCursor() {
+        // size=2 요청, size+1=3개 반환 → hasNext=true
+        Refund r1 = mockRefund(30L, RefundStatus.PENDING);
+        Refund r2 = mockRefund(20L, RefundStatus.PENDING);
+        Refund sentinel = mock(Refund.class); // hasNext 판별용 — DTO 변환·id 추출 대상 아님
+        given(refundRepository.findByUserIdWithFilter(eq(USER_ID), eq(null), eq(null), any(PageRequest.class)))
+                .willReturn(List.of(r1, r2, sentinel));
+
+        CursorPageResponse<UserRefundResponse> result =
+                refundService.getUserRefundHistory(USER_ID, null, null, 2);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isTrue();
+        // 노출 마지막 항목(r2=20L) id 인코딩 — sentinel(미노출) 아님
+        assertThat(CursorUtils.decode(result.nextCursor())).isEqualTo(20L);
+    }
+
+    @Test
     @DisplayName("잘못된 cursor → INVALID_CURSOR")
     void getUserRefundHistory_invalidCursor_throws() {
         assertThatThrownBy(() -> refundService.getUserRefundHistory(USER_ID, null, "not-valid-base64!!", 20))

@@ -62,17 +62,9 @@ public class AdminMerchantApplicationService {
                 : applicationRepository.findByStatusAndIdLessThanOrderByIdDesc(
                         status, parseCursor(cursor), pageable);
 
-        // size+1번째 항목이 존재하면 다음 페이지 있음 — 실제 응답에는 size개만 포함
-        boolean hasNext = applications.size() > size;
-        List<MerchantApplication> content = hasNext ? applications.subList(0, size) : applications;
-        // 다음 페이지 커서: 현재 페이지 마지막 항목(가장 작은 id)의 id를 인코딩
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
-
-        List<MerchantApplicationDetailResponse> responses = content.stream()
-                .map(MerchantApplicationDetailResponse::from)
-                .toList();
-
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(
+                applications, size, MerchantApplicationDetailResponse::from, MerchantApplication::getId);
     }
 
     /**

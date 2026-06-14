@@ -86,16 +86,7 @@ public class AdminSettlementService {
         List<Settlement> settlements = settlementRepository.findAllWithCursor(
                 cursorId, status, PageRequest.of(0, size + 1));
 
-        boolean hasNext = settlements.size() > size;
-        List<Settlement> page = hasNext ? settlements.subList(0, size) : settlements;
-
-        // 엔티티 → 응답 DTO 변환
-        List<AdminSettlementResponse> content = page.stream()
-                .map(AdminSettlementResponse::from)
-                .toList();
-
-        // 다음 커서: 마지막 항목 ID 인코딩
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(settlements, size, AdminSettlementResponse::from, Settlement::getId);
     }
 }
