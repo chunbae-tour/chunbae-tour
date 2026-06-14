@@ -32,4 +32,22 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 캐시 웜업 전용 실행기 (KAN-278).
+     *
+     * <p>서버 기동 직후 인기 관광지 ZSet·상세 캐시를 비동기로 선적재한다.
+     * 웜업은 1회성 단발 작업이고 부하 분산 인터벌(50ms/건)을 포함하므로 단일 스레드로 충분하다.
+     */
+    @Bean("cacheWarmupExecutor")
+    public Executor cacheWarmupExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(5);
+        executor.setThreadNamePrefix("cache-warmup-");
+        executor.setWaitForTasksToCompleteOnShutdown(false); // 웜업 미완료 시 서버 종료 대기 불필요
+        executor.initialize();
+        return executor;
+    }
 }

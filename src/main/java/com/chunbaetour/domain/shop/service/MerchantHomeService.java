@@ -2,7 +2,7 @@ package com.chunbaetour.domain.shop.service;
 
 import static com.chunbaetour.domain.common.redis.MerchantHomeCacheKeys.CACHE_KEY_PREFIX;
 
-import com.chunbaetour.domain.payment.entity.QrPayRequest;
+import com.chunbaetour.domain.payment.repository.CompletedQrPayView;
 import com.chunbaetour.domain.payment.repository.QrPayRequestRepository;
 import com.chunbaetour.domain.payment.type.QrPayStatus;
 import com.chunbaetour.domain.shop.dto.response.MerchantHomeResponse;
@@ -15,11 +15,11 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.util.Objects;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +40,13 @@ public class MerchantHomeService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(3);
     // 오늘 매출은 한국 영업일 기준으로 집계한다.
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+    // 최근 결제 목록 노출 건수.
+    private static final int RECENT_PAYMENT_LIMIT = 10;
+    // 시간대별 매출 분포 칸 수(0~23시).
+    private static final int HOURS_PER_DAY = 24;
+    // 미완료 카운터 집계 대상 상태: 상인 거절 + 타임아웃 만료. 사용자 취소(CANCELLED)는 제외.
+    private static final List<QrPayStatus> MISSED_STATUSES =
+            List.of(QrPayStatus.REJECTED, QrPayStatus.EXPIRED);
 
     private final ShopRepository shopRepository;
     private final QrPayRequestRepository qrPayRequestRepository;
@@ -105,34 +112,89 @@ public class MerchantHomeService {
         // 한국 영업일 기준 오늘 날짜를 먼저 구한다. 빈 가게 응답에도 같은 기준 날짜를 내려준다.
         LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
 
-        // 등록된 가게가 없으면 매출 0원, 최근 결제 빈 목록으로 응답한다.
+        // 등록된 가게가 없으면 모든 메트릭을 빈 값으로 응답한다. 시간대 분포는 0으로 채운 24칸을 유지한다.
         if (shopIds.isEmpty()) {
-            return new MerchantHomeResponse(0L, today, List.of());
+            return new MerchantHomeResponse(0L, 0L, today, emptyHourlySales(), 0L, List.of());
         }
 
-        // 한국 영업일 기준 오늘 00:00 이상, 내일 00:00 미만을 DB 저장 기준인 UTC LocalDateTime으로 변환한다.
-        ZonedDateTime startKst = today.atStartOfDay(BUSINESS_ZONE);
-        LocalDateTime startAt = startKst.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
-        LocalDateTime endAt = startKst.plusDays(1).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        // 한국 영업일 경계(어제 00:00 ~ 오늘 00:00 ~ 내일 00:00)를 DB 저장 기준 UTC LocalDateTime으로 변환한다.
+        ZonedDateTime todayStartKst = today.atStartOfDay(BUSINESS_ZONE);
+        LocalDateTime todayStart = toUtc(todayStartKst);
+        LocalDateTime todayEnd = toUtc(todayStartKst.plusDays(1));
+        LocalDateTime yesterdayStart = toUtc(todayStartKst.minusDays(1));
 
-        // 오늘 매출: 모든 내 가게의 COMPLETED QR 결제 금액을 합산한다.
-        long todaySalesAmount = Objects.requireNonNullElse(
+        // 오늘 완료된 결제 경량 목록을 한 번만 조회해 매출 합계·시간대 분포·최근 결제에 함께 재사용한다.
+        // [트레이드오프] 시간대 분포가 당일 완료 전건을 요구해 LIMIT 없이 적재한다(menu_items 제외 경량 뷰).
+        // 인덱스로 풀스캔은 해소됐으나 캐시 미스마다 적재량이 일 거래량에 비례 → 고거래 가게에서 힙/전송 부담.
+        // 후속 최적화: 합계·시간버킷을 DB GROUP BY HOUR(CONVERT_TZ) + SUM으로 내리고 최근 결제만 LIMIT 10 분리.
+        List<CompletedQrPayView> todayCompleted = qrPayRequestRepository
+                .findCompletedByShopsBetween(shopIds, QrPayStatus.COMPLETED, todayStart, todayEnd);
+
+        // 오늘 매출: 완료 결제 금액 합계.
+        long todaySalesAmount = todayCompleted.stream()
+                .mapToLong(CompletedQrPayView::getAmount)
+                .sum();
+
+        // 시간대별 매출 분포: KST 0~23시 24칸으로 버킷팅한다.
+        List<MerchantHomeResponse.HourlySales> hourlySales = toHourlySales(todayCompleted);
+
+        // 최근 결제: 이미 최신순으로 정렬된 목록에서 상위 10건만 사용한다.
+        List<MerchantHomeResponse.RecentPaymentResponse> recentPayments = todayCompleted.stream()
+                .limit(RECENT_PAYMENT_LIMIT)
+                .map(MerchantHomeResponse.RecentPaymentResponse::from)
+                .toList();
+
+        // 어제 매출: 어제 영업일 전체(어제 00:00 ~ 오늘 00:00) COMPLETED 합계. 오늘 대비 비교 기준값.
+        long yesterdaySalesAmount = Objects.requireNonNullElse(
                 qrPayRequestRepository.sumAmountByShopIdsAndStatusBetween(
-                        shopIds, QrPayStatus.COMPLETED, startAt, endAt),
+                        shopIds, QrPayStatus.COMPLETED, yesterdayStart, todayStart),
                 0L);
 
-        // 오늘 완료된 결제 중 최신 10건만 가져온다. 오늘 매출과 같은 날짜 범위를 유지한다.
-        List<QrPayRequest> recentPayments = qrPayRequestRepository
-                .findRecentCompletedByShops(
-                        shopIds, QrPayStatus.COMPLETED, startAt, endAt, PageRequest.of(0, 10));
+        // 미완료 카운터: 오늘(expiredAt 기준) 거절(REJECTED)+만료(EXPIRED)로 끝난 건수. 사용자 취소(CANCELLED)는 상인 귀책이 아니라 제외한다.
+        // expiredAt은 UTC로 저장돼 todayStart/todayEnd(UTC)와 존이 일관된다(createdAt은 KST라 사용 불가 — 쿼리 주석 참조).
+        // [경계 5분 오차 수용] expiredAt = 접수 +5분이라, createdAt 기준 대비 윈도우가 5분 뒤로 밀린다.
+        // KST 23:55~24:00 접수·거절 건은 expiredAt이 익일이라 당일 카운터에서 빠진다(일 경계 5분 엣지 — 무해로 수용).
+        long missedPaymentCount = qrPayRequestRepository.countByShopsAndStatusesBetween(
+                shopIds, MISSED_STATUSES, todayStart, todayEnd);
 
-        // 엔티티를 API 응답 DTO로 변환한다.
         return new MerchantHomeResponse(
                 todaySalesAmount,
+                yesterdaySalesAmount,
                 today,
-                recentPayments.stream()
-                        .map(MerchantHomeResponse.RecentPaymentResponse::from)
-                        .toList()
+                hourlySales,
+                missedPaymentCount,
+                recentPayments
         );
+    }
+
+    /** KST 영업일 시각을 DB 저장 기준 UTC LocalDateTime으로 변환한다. */
+    private static LocalDateTime toUtc(ZonedDateTime kst) {
+        return kst.withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+    }
+
+    /**
+     * 완료 결제 목록을 KST 기준 0~23시 24칸 매출 분포로 변환한다.
+     * completedAt은 UTC로 저장되므로 KST로 환산한 시(hour)에 금액을 누적하고, 매출이 없는 시간대도 0으로 채운다.
+     */
+    private static List<MerchantHomeResponse.HourlySales> toHourlySales(List<CompletedQrPayView> completed) {
+        long[] buckets = new long[HOURS_PER_DAY];
+        for (CompletedQrPayView view : completed) {
+            int hour = view.getCompletedAt()
+                    .atOffset(ZoneOffset.UTC)
+                    .atZoneSameInstant(BUSINESS_ZONE)
+                    .getHour();
+            buckets[hour] += view.getAmount();
+        }
+
+        List<MerchantHomeResponse.HourlySales> hourlySales = new ArrayList<>(HOURS_PER_DAY);
+        for (int hour = 0; hour < HOURS_PER_DAY; hour++) {
+            hourlySales.add(new MerchantHomeResponse.HourlySales(hour, buckets[hour]));
+        }
+        return hourlySales;
+    }
+
+    /** 가게가 없는 상인에게도 동일한 24칸 분포 구조를 유지하기 위한 0 채움 분포. */
+    private static List<MerchantHomeResponse.HourlySales> emptyHourlySales() {
+        return toHourlySales(List.of());
     }
 }

@@ -13,6 +13,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -49,6 +50,14 @@ public class Companion extends BaseEntity {
     @Column(name = "ended_at")
     private LocalDateTime endedAt;
 
+    // 동행 여행 시작일 — 다른 동행과의 기간 겹침 검증(CR_010)에 사용
+    @Column(name = "trip_start_date", nullable = false)
+    private LocalDate tripStartDate;
+
+    // 동행 여행 종료일 — tripStartDate 이상이어야 함 (요청 시점에 검증)
+    @Column(name = "trip_end_date", nullable = false)
+    private LocalDate tripEndDate;
+
     // 동행 종료 — ENDED 상태에서 호출 시 CR_006
     public void end() {
         if (this.status == CompanionStatus.ENDED) {
@@ -59,10 +68,15 @@ public class Companion extends BaseEntity {
     }
 
     @Builder
-    private Companion(Long chatRoomId) {
+    private Companion(Long chatRoomId, LocalDate tripStartDate, LocalDate tripEndDate) {
         if (chatRoomId == null) throw new IllegalArgumentException("chatRoomId is required");
+        if (tripStartDate == null || tripEndDate == null) throw new IllegalArgumentException("tripStartDate, tripEndDate are required");
+        // 서비스에서 이미 검증하지만(COMMON_004), 다른 경로로 도메인만 호출될 경우 500 대신 400으로 방어
+        if (tripEndDate.isBefore(tripStartDate)) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         this.chatRoomId = chatRoomId;
         this.status = CompanionStatus.ONGOING;
         this.startedAt = LocalDateTime.now();
+        this.tripStartDate = tripStartDate;
+        this.tripEndDate = tripEndDate;
     }
 }

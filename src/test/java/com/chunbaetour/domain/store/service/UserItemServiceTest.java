@@ -74,10 +74,11 @@ class UserItemServiceTest {
         // when
         CursorPageResponse<UserItemResponse> result = userItemService.getMyItems(USER_ID, null, 2);
 
-        // then — size=2만 반환, hasNext=true, nextCursor는 마지막 항목(item2) ID 기반
+        // then — size=2만 반환, hasNext=true, nextCursor는 노출된 마지막 항목(item2, id=2) 기반
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isTrue();
-        assertThat(result.nextCursor()).isNotNull();
+        // idExtractor 배선 검증: sentinel(item3)이 아니라 노출 마지막 항목(item2=2L) id를 인코딩해야 함
+        assertThat(CursorUtils.decode(result.nextCursor())).isEqualTo(2L);
     }
 
     @Test

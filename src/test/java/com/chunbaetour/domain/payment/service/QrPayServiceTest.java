@@ -553,7 +553,7 @@ class QrPayServiceTest {
         then(shopWallet).should().credit(AMOUNT);
         then(yeopjeonHistoryRepository).should(times(2)).save(any());
         assertThat(req.getStatus()).isEqualTo(QrPayStatus.COMPLETED);
-        then(redisTemplate).should().delete("merchant:home:v1:" + MERCHANT_USER_ID);
+        then(redisTemplate).should().delete("merchant:home:v2:" + MERCHANT_USER_ID);
         then(lock).should().unlock();
         // 데드락 방지 락 순서 고정: wallets → shop_wallets
         InOrder order = inOrder(walletRepository, shopWalletRepository);
@@ -587,6 +587,8 @@ class QrPayServiceTest {
         then(lock).should().unlock();
         assertThat(req.getStatus()).isEqualTo(QrPayStatus.REJECTED);
         assertThat(req.getRejectReason()).isEqualTo("재고 없음");
+        // 거절 시에도 상인 홈 미완료 카운터 즉시 반영 위해 캐시 무효화 (KAN-283)
+        then(redisTemplate).should().delete("merchant:home:v2:" + MERCHANT_USER_ID);
     }
 
     @Test

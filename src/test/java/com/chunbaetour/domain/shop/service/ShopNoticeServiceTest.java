@@ -9,6 +9,7 @@ import static org.mockito.BDDMockito.then;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.shop.dto.request.ShopNoticeCreateRequest;
 import com.chunbaetour.domain.shop.dto.response.ShopNoticeResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
@@ -64,6 +65,12 @@ class ShopNoticeServiceTest {
     private ShopNotice createNotice() {
         ShopNotice notice = ShopNotice.create(SHOP_ID, "공지 제목", "공지 내용");
         ReflectionTestUtils.setField(notice, "id", NOTICE_ID);
+        return notice;
+    }
+
+    private ShopNotice noticeWithId(long id) {
+        ShopNotice notice = ShopNotice.create(SHOP_ID, "공지 제목", "공지 내용");
+        ReflectionTestUtils.setField(notice, "id", id);
         return notice;
     }
 
@@ -135,6 +142,24 @@ class ShopNoticeServiceTest {
 
             assertThat(response.content()).hasSize(1);
             assertThat(response.hasNext()).isFalse();
+        }
+
+        @Test
+        @DisplayName("다음 페이지 존재 — hasNext=true, 절단, nextCursor는 노출 마지막 항목 id")
+        void getNotices_hasNext_truncatesAndSetsCursor() {
+            Shop shop = createActiveShop();
+            given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+            // size=2 요청, size+1=3개 반환 → hasNext=true
+            given(shopNoticeRepository.findByShopIdOrderByIdDesc(any(), any()))
+                    .willReturn(List.of(noticeWithId(30L), noticeWithId(20L), noticeWithId(10L)));
+
+            CursorPageResponse<ShopNoticeResponse> response =
+                    shopNoticeService.getNotices(USER_ID, SHOP_ID, null, 2);
+
+            assertThat(response.content()).hasSize(2);
+            assertThat(response.hasNext()).isTrue();
+            // 노출 마지막 항목(id=20) 인코딩 — sentinel(id=10) 아님
+            assertThat(CursorUtils.decode(response.nextCursor())).isEqualTo(20L);
         }
 
         @Test

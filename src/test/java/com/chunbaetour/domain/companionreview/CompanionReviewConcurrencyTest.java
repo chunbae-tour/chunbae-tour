@@ -14,6 +14,7 @@ import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
 import com.chunbaetour.domain.companionreview.service.CompanionReviewService;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -65,7 +66,8 @@ class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
                 Account.registerUser("cr-target@test.com", "hashedPw", "대상자"));
 
         // ENDED 동행 — 리뷰 작성 가능 상태
-        Companion companion = Companion.builder().chatRoomId(chatRoomId).build();
+        Companion companion = Companion.builder().chatRoomId(chatRoomId)
+                .tripStartDate(LocalDate.of(2026, 7, 1)).tripEndDate(LocalDate.of(2026, 7, 5)).build();
         companion.end();
         companionRepository.saveAndFlush(companion);
 

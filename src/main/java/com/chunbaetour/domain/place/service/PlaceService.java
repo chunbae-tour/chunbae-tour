@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,7 +50,7 @@ public class PlaceService {
     private final KakaoLocalApiClient kakaoLocalApiClient;
     private final PlaceDetailEnrichmentService placeDetailEnrichmentService;
 
-    private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(10);
+    private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES);
     private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
 
     @Transactional(readOnly = true)
@@ -128,6 +129,31 @@ public class PlaceService {
     private static final String UNLOCK_LUA_SCRIPT = 
             "if redis.call('get', KEYS[1]) == ARGV[1] then " +
             "return redis.call('del', KEYS[1]) else return 0 end";
+
+    private static final String SEED_AND_INCR_SCRIPT = 
+            "local key = KEYS[1];\n" +
+            "if redis.call('EXISTS', key) == 0 then\n" +
+            "  redis.call('SET', key, ARGV[1]);\n" +
+            "end;\n" +
+            "local result = redis.call('INCR', key);\n" +
+            "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
+            "return result;";
+
+    private static final String INCR_IF_EXISTS_SCRIPT = 
+            "local key = KEYS[1];\n" +
+            "if redis.call('EXISTS', key) == 1 then\n" +
+            "  local result = redis.call('INCR', key);\n" +
+            "  redis.call('SADD', KEYS[2], ARGV[1]);\n" +
+            "  return result;\n" +
+            "else\n" +
+            "  return -1;\n" +
+            "end;";
+
+    private static final DefaultRedisScript<Long> REDIS_SCRIPT_INCR =
+            new DefaultRedisScript<>(SEED_AND_INCR_SCRIPT, Long.class);
+
+    private static final DefaultRedisScript<Long> REDIS_SCRIPT_INCR_IF_EXISTS =
+            new DefaultRedisScript<>(INCR_IF_EXISTS_SCRIPT, Long.class);
 
     private PlaceDetailResponse resolveFromCacheOrDb(Long placeId, Long userId) {
         String cacheKey = PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId;
@@ -282,7 +308,26 @@ public class PlaceService {
 
     private void incrementViewCount(Long placeId) {
         try {
-            stringRedisTemplate.opsForValue().increment(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + placeId);
+            String key = PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + placeId;
+            String dirtyKey = PlaceRedisConstants.PLACE_DIRTY_STATS_KEY;
+            
+            // 1. 캐시에 있으면 즉시 원자적 INCR + SADD
+            Long result = stringRedisTemplate.execute(
+                    REDIS_SCRIPT_INCR_IF_EXISTS,
+                    java.util.Arrays.asList(key, dirtyKey),
+                    String.valueOf(placeId)
+            );
+
+            // 2. 캐시에 없으면(-1) 콜드 스타트로 간주, DB 1회 조회 후 원자적 SEED_AND_INCR + SADD
+            if (result != null && result == -1L) {
+                int dbViewCount = placeRepository.findViewCountById(placeId).orElse(0);
+                stringRedisTemplate.execute(
+                        REDIS_SCRIPT_INCR,
+                        java.util.Arrays.asList(key, dirtyKey),
+                        String.valueOf(dbViewCount),
+                        String.valueOf(placeId)
+                );
+            }
         } catch (Exception e) {
             log.warn("Place view count increment failed: placeId={}", placeId, e);
         }

@@ -38,7 +38,7 @@ public enum ErrorCode {
     INVALID_PASSWORD_FORMAT(HttpStatus.BAD_REQUEST, "AUTH_010", "비밀번호 형식이 올바르지 않습니다."),
     INVALID_EMAIL_FORMAT(HttpStatus.BAD_REQUEST, "AUTH_011", "이메일 형식이 올바르지 않습니다."),
     ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_012", "정지된 계정입니다."),
-    // AUTH_024: 도메인별 제재(POST/COMMENT 쓰기 차단) — 계정 전체 정지(AUTH_012)와 구분.
+    // AUTH_024: 도메인별 제재(POST/COMMENT/REVIEW 쓰기 차단) — 계정 전체 정지(AUTH_012)와 구분 (SanctionCheckInterceptor).
     DOMAIN_SANCTIONED(HttpStatus.FORBIDDEN, "AUTH_024", "해당 도메인에서 활동이 제한된 계정입니다."),
     // AUTH_013: 로그아웃 시 Access Token이 블랙리스트에 등록되며, 이후 같은 토큰으로 요청하면 거부된다.
     //           남은 만료 시간 동안만 블랙리스트에 머무르므로 자연 만료 후에는 같은 tokenId가 새로 발급될 가능성도 사라진다 (UUID).
@@ -210,10 +210,11 @@ public enum ErrorCode {
     CHAT_APPLICATION_ALREADY_PROCESSED(HttpStatus.CONFLICT, "CHAT_012", "이미 처리된 참여 신청입니다."),
     CHAT_ROOM_CLOSED(HttpStatus.CONFLICT,                   "CHAT_013", "이미 종료된 채팅방입니다."),
     CHAT_ROOM_DUPLICATE(HttpStatus.CONFLICT,                "CHAT_014", "해당 게시글에 이미 개설된 채팅방이 있습니다."),
-    CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 직접 퇴장할 수 없습니다."),
+    CHAT_OWNER_CANNOT_LEAVE(HttpStatus.FORBIDDEN,           "CHAT_015", "채팅방 개설자는 위임 후 퇴장할 수 있습니다."),
     CHAT_MEMBER_ALREADY_INACTIVE(HttpStatus.CONFLICT,       "CHAT_016", "이미 퇴장하거나 강퇴된 멤버입니다."),
     CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
     CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
+    CHAT_OWNER_TRANSFER_INVALID_TARGET(HttpStatus.BAD_REQUEST, "CHAT_019", "방장 위임 대상은 본인이 아닌 활성 참여자여야 합니다."),
 
     // ===== NOTIFICATION (담당: 임하은) =====
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
@@ -261,7 +262,9 @@ public enum ErrorCode {
     COMPANION_ALREADY_STARTED(HttpStatus.CONFLICT,          "CR_007", "이미 진행 중인 동행이 있습니다."),
     COMPANION_PARTICIPANT_ALREADY_EXISTS(HttpStatus.CONFLICT, "CR_008", "이미 동행에 참여 중인 멤버입니다."),
     // 동행 ENDED 전에는 리뷰 작성 불가 — 고도화 #25
-    COMPANION_NOT_ENDED(HttpStatus.CONFLICT,                "CR_009", "동행 종료 후에만 리뷰를 작성할 수 있습니다.");
+    COMPANION_NOT_ENDED(HttpStatus.CONFLICT,                "CR_009", "동행 종료 후에만 리뷰를 작성할 수 있습니다."),
+    // 동행 생성/참여자 추가 시 기간 겹침 검증 — 고도화 #1
+    COMPANION_DATE_OVERLAP(HttpStatus.CONFLICT,             "CR_010", "겹치는 기간에 진행 중인 동행이 있습니다.");
 
     private final HttpStatus status;
     private final String code;
