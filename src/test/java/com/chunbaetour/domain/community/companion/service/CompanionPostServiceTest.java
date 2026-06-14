@@ -323,10 +323,11 @@ class CompanionPostServiceTest {
     @Test
     void update_maxMembers가_currentMembers미만이면_INVALID_INPUT_VALUE() {
         CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        ReflectionTestUtils.setField(post, "currentMembers", 3);
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
-        // maxMembers=0 < currentMembers(생성 시 owner 1명)
+        // DTO 제약(@Min(2))은 통과하지만 현재 인원(3)보다 작음 — 서비스 규칙만 단독 검증
         CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
-                null, null, null, null, null, null, 0);
+                null, null, null, null, null, null, 2);
 
         assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID, request))
                 .isInstanceOf(BusinessException.class)

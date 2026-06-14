@@ -76,15 +76,8 @@ public class AdminAdApplicationService {
         PageRequest pageable = PageRequest.of(0, size + 1);
         List<AdApplication> applications = findApplications(cursorId, status, pageable);
 
-        boolean hasNext = applications.size() > size;
-        List<AdApplication> page = hasNext ? applications.subList(0, size) : applications;
-
-        List<AdminAdApplicationResponse> content = page.stream()
-                .map(AdminAdApplicationResponse::from)
-                .toList();
-
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(applications, size, AdminAdApplicationResponse::from, AdApplication::getId);
     }
 
     private List<AdApplication> findApplications(Long cursorId, AdApplicationStatus status, PageRequest pageable) {

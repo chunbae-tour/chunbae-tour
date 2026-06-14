@@ -112,19 +112,8 @@ public class AdminRefundService {
         // cursorId null이면 전체 첫 페이지, 값 있으면 해당 id 이전 데이터 조회
         List<Refund> refunds = refundRepository.findWithCursor(cursorId, pageable);
 
-        // size+1개 왔으면 다음 페이지 존재
-        boolean hasNext = refunds.size() > size;
-        // 실제 응답은 size개만 — size+1번째 원소는 hasNext 판단 후 제거
-        List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
-        // 다음 페이지 cursor — 마지막 원소의 id를 Base64URL로 인코딩해서 클라이언트에 전달
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
-
-        // Refund 엔티티를 관리자용 응답 DTO로 변환
-        List<RefundDetailResponse> responses = content.stream()
-            .map(RefundDetailResponse::from)
-            .toList();
-        // cursor 페이지 응답 조립 후 반환
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(refunds, size, RefundDetailResponse::from, Refund::getId);
     }
 
 }

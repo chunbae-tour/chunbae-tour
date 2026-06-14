@@ -138,7 +138,8 @@ class YeopjeonHistoryServiceTest {
         assertThat(response.content()).isEmpty();
         assertThat(response.hasNext()).isFalse();
         assertThat(response.nextCursor()).isNull();
-        assertThat(response.size()).isZero();
+        // size는 실제 반환 개수(0)가 아니라 요청 size(20)를 echo (팀 표준)
+        assertThat(response.size()).isEqualTo(20);
     }
 
     @Test
