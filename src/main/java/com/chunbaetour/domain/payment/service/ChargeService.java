@@ -215,16 +215,9 @@ public class ChargeService {
         List<PaymentOrder> orders = paymentOrderRepository.findByUserIdWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = orders.size() > size;
-        List<PaymentOrder> content = hasNext ? orders.subList(0, size) : orders;
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
-
-        List<PaymentHistoryResponse> responses = content.stream()
-                .map(PaymentHistoryResponse::from)
-                .toList();
-
-        // size 필드는 실제 반환 개수가 아니라 요청 size를 그대로 echo한다(팀 표준, KAN-295 일관).
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, size);
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        // size 필드는 실제 반환 개수가 아니라 요청 size를 그대로 echo한다(팀 표준).
+        return CursorPageResponse.of(orders, size, PaymentHistoryResponse::from, PaymentOrder::getId);
     }
 
     /** 충전 직렬화 락 획득 — 대기 시간 내 실패하거나 인터럽트되면 PAYMENT_PROCESSING(503)으로 재시도 유도. */
