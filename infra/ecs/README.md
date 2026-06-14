@@ -4,9 +4,9 @@
 
 ## 등록 전 반드시 치환할 placeholder 2개
 
-| placeholder | 무엇 | 출처 |
+| placeholder | 무엇 | 상태 |
 |---|---|---|
-| `<SECRET_ARN>` | Secrets Manager 시크릿 ARN (전체, 랜덤 6자 suffix 포함) | E3에서 생성한 `chunbae-tour/prod` 시크릿 ARN |
+| ~~`<SECRET_ARN>`~~ | Secrets Manager 시크릿 ARN | ✅ 주입 완료: `arn:...:secret:chunbae-tour/prod-DFWHK4` |
 | `image: ...:latest` | 컨테이너 이미지 태그 | E8 CD가 `ecs-render-task-definition`으로 SHA 태그 주입 — 수동 등록 시엔 ECR 최신 SHA로 교체 |
 
 `<SECRET_ARN>` 예시 형식:
