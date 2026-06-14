@@ -6,6 +6,11 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    # 로컬: develop보다 낮은 버전 브랜치 파일 적용 허용. 프로덕션에서는 false 유지.
+    out-of-order: true
+    # 로컬: 마이그레이션 파일 타임스탬프 수정 후 DB에 이전 버전이 남아도 기동 허용. 프로덕션에서는 false 유지.
+    ignore-missing-migrations: true
   jpa:
     # KAN-178: ddl-auto는 base application.yml에서 validate로 통일. 로컬도 Flyway migration 의존.
     # 로컬에서 entity 추가/변경 시 V{N+1} migration 파일 PR에 동봉 → 빈 DB testcontainers 부팅 시 자동 적용.
