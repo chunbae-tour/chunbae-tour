@@ -2,15 +2,19 @@ package com.chunbaetour.domain.store.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.store.dto.request.AdminProductCreateRequest;
 import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
+import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +37,25 @@ public class AdminProductService {
     private final ProductRepository productRepository;
     private final StringRedisTemplate redisTemplate;
     private final ProductMapper productMapper;
+
+    /**
+     * 관리자 상품 목록 조회 (KAN-300).
+     * 공개 목록과 달리 전체 status 노출 — HIDDEN(숨김 처리) 상품 포함해 관리/복구 가능.
+     * status 미지정 시 전체 상태, category 미지정 시 전체 카테고리. cursor 기반 keyset 페이징.
+     */
+    @Transactional(readOnly = true)
+    public CursorPageResponse<ProductSummaryResponse> getProducts(
+            ProductStatus status, String category, String cursor, int size) {
+        String normalizedCategory = (category == null || category.isBlank()) ? null : category.trim();
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+
+        // size+1 조회 → 다음 페이지 존재 여부 판별
+        List<Product> products = productRepository.findForAdmin(
+                status, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
+
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(products, size, productMapper::toSummary, Product::getId);
+    }
 
     /**
      * 상품 등록 — status = ON_SALE, originalStock = stock.

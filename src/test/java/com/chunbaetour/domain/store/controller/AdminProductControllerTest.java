@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.store.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +50,16 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("USER 역할로 상품 목록 조회 요청 시 403 Forbidden (KAN-300)")
+    void getProducts_asUser_returns403() throws Exception {
+        String token = loginAsUser();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     @DisplayName("USER 역할로 상품 등록 요청 시 403 Forbidden")
     void createProduct_asUser_returns403() throws Exception {
         String token = loginAsUser();
@@ -83,8 +94,11 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("비인증 접근 시 401 Unauthorized — POST/PATCH/DELETE 모두 검증")
+    @DisplayName("비인증 접근 시 401 Unauthorized — GET/POST/PATCH/DELETE 모두 검증")
     void allEndpoints_withoutToken_returns401() throws Exception {
+        mockMvc.perform(get(ENDPOINT))
+                .andExpect(status().isUnauthorized());
+
         mockMvc.perform(post(ENDPOINT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))

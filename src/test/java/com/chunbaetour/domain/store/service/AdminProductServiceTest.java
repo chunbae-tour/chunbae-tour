@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
@@ -11,9 +12,11 @@ import static org.mockito.Mockito.never;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.store.dto.request.AdminProductCreateRequest;
 import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
+import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
@@ -25,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -58,6 +62,55 @@ class AdminProductServiceTest {
                 .status(status).maxPerPerson(5).build();
         ReflectionTestUtils.setField(p, "id", id);
         return p;
+    }
+
+    @Test
+    @DisplayName("관리자 상품 목록 — HIDDEN 포함 전체 status 반환 (KAN-300)")
+    void getProducts_includesHiddenProducts() {
+        Product onSale = createProduct(10L, 50, ProductStatus.ON_SALE);
+        Product hidden = createProduct(9L, 0, ProductStatus.HIDDEN);
+        given(productRepository.findForAdmin(eq(null), eq(null), eq(null), any(Pageable.class)))
+                .willReturn(List.of(onSale, hidden));
+
+        CursorPageResponse<ProductSummaryResponse> result =
+                adminProductService.getProducts(null, null, null, 20);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.content()).extracting(ProductSummaryResponse::status)
+                .containsExactly(ProductStatus.ON_SALE, ProductStatus.HIDDEN);
+        assertThat(result.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("관리자 상품 목록 — status 필터를 레포지토리로 그대로 전달")
+    void getProducts_statusFilter_passedToRepository() {
+        given(productRepository.findForAdmin(eq(ProductStatus.HIDDEN), eq(null), eq(null), any(Pageable.class)))
+                .willReturn(List.of(createProduct(9L, 0, ProductStatus.HIDDEN)));
+
+        CursorPageResponse<ProductSummaryResponse> result =
+                adminProductService.getProducts(ProductStatus.HIDDEN, null, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).status()).isEqualTo(ProductStatus.HIDDEN);
+        then(productRepository).should()
+                .findForAdmin(eq(ProductStatus.HIDDEN), eq(null), eq(null), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("관리자 상품 목록 — size+1개 반환 시 hasNext=true, nextCursor 발급")
+    void getProducts_hasNext_whenExtraItemFetched() {
+        given(productRepository.findForAdmin(any(), any(), any(), any()))
+                .willReturn(List.of(
+                        createProduct(10L, 5, ProductStatus.ON_SALE),
+                        createProduct(9L, 5, ProductStatus.HIDDEN),
+                        createProduct(8L, 5, ProductStatus.SOLD_OUT))); // size=2 + 1개 초과
+
+        CursorPageResponse<ProductSummaryResponse> result =
+                adminProductService.getProducts(null, null, null, 2);
+
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.hasNext()).isTrue();
+        assertThat(result.nextCursor()).isNotNull();
     }
 
     @Test

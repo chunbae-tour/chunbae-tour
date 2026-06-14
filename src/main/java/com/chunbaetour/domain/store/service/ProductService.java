@@ -60,7 +60,7 @@ public class ProductService {
                 VISIBLE_STATUSES, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
 
         // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
-        return CursorPageResponse.of(products, size, this::toSummary, Product::getId);
+        return CursorPageResponse.of(products, size, productMapper::toSummary, Product::getId);
     }
 
     /**
@@ -111,16 +111,6 @@ public class ProductService {
         }
 
         return response;
-    }
-
-    /** 목록 조회용 경량 DTO 변환 — 이미지는 첫 번째 URL만, soldCount = originalStock - stock */
-    private ProductSummaryResponse toSummary(Product p) {
-        List<String> urls = productMapper.parseImageUrls(p.getImageUrls());
-        return new ProductSummaryResponse(
-                p.getId(), p.getName(), p.getCategory(), p.getPrice(), p.getOriginalPrice(),
-                urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
-                p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()),
-                p.getStatus());
     }
 
     /** 상세 조회용 풀 DTO 변환 — 이미지 전체 목록, description/validityDays/status 포함 */
