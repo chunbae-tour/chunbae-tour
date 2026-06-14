@@ -46,7 +46,8 @@ class ProductControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.data.content").isArray())
                 .andExpect(jsonPath("$.data.hasNext").value(false))
-                .andExpect(jsonPath("$.data.size").value(0));
+                // size는 실제 반환 개수가 아니라 요청 size(기본값 20)를 echo (팀 표준)
+                .andExpect(jsonPath("$.data.size").value(20));
     }
 
     @Test

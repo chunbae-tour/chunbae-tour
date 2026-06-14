@@ -76,19 +76,8 @@ public class ShopNoticeService {
             notices = shopNoticeRepository.findByShopIdAndIdLessThanOrderByIdDesc(shopId, cursorId, pageable);
         }
 
-        // hasNext 판별 후 size만큼 자르기
-        boolean hasNext = notices.size() > size;
-        List<ShopNotice> content = hasNext ? notices.subList(0, size) : notices;
-
-        // 다음 cursor = 마지막 항목 id 인코딩
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
-
-        return new CursorPageResponse<>(
-                content.stream().map(ShopNoticeResponse::from).toList(),
-                nextCursor,
-                hasNext,
-                content.size()
-        );
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(notices, size, ShopNoticeResponse::from, ShopNotice::getId);
     }
 
     /**
