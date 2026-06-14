@@ -11,6 +11,9 @@ import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
+import com.chunbaetour.domain.companionreview.entity.Companion;
+import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
@@ -206,6 +209,66 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
         assertThat(failedCodes).hasSize(1);
         assertThat(failedCodes).allSatisfy(code -> assertThat(code).isIn(
                 ErrorCode.COMPANION_DATE_OVERLAP, ErrorCode.CONCURRENT_UPDATE));
+    }
+
+    // 무관한 유저(X)가 겹치는 기간의 ONGOING 동행을 갖고 있어도, X를 참여자로 포함하지 않는 신규 동행 생성은 성공 — IN :userIds 스코핑(CR_010) 검증
+    @Test
+    @DisplayName("무관한 유저의 겹치는 ONGOING 동행이 있어도 해당 유저 미포함 신규 동행 생성은 성공 (IN :userIds 스코핑)")
+    void createCompanion_overlappingPeriodOfUnrelatedUser_succeeds() {
+        Account unrelatedUser = accountRepository.saveAndFlush(
+                Account.registerUser("trip-overlap-unrelated@test.com", "hashedPw", "무관유저"));
+        Account owner = accountRepository.saveAndFlush(
+                Account.registerUser("trip-overlap-owner2@test.com", "hashedPw", "오버랩테스트유저2"));
+
+        long unrelatedPostId = ThreadLocalRandom.current().nextLong(4_000_000L, 4_500_000L);
+        ChatRoom unrelatedRoom = chatRoomRepository.saveAndFlush(
+                ChatRoom.createWithOwner(unrelatedPostId, unrelatedUser.getId(), "무관 유저 동행방", null, 5));
+
+        // 무관한 유저의 ONGOING 동행 — owner가 생성할 기간과 동일하게 겹침
+        Companion unrelatedCompanion = companionRepository.saveAndFlush(
+                Companion.builder().chatRoomId(unrelatedRoom.getId()).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build());
+        companionParticipantRepository.saveAndFlush(
+                CompanionParticipant.builder().companionId(unrelatedCompanion.getId()).userId(unrelatedUser.getId()).build());
+
+        long ownerPostId = ThreadLocalRandom.current().nextLong(4_500_000L, 5_000_000L);
+        ChatRoom ownerRoom = chatRoomRepository.saveAndFlush(
+                ChatRoom.createWithOwner(ownerPostId, owner.getId(), "오버랩 테스트 방2", null, 5));
+
+        CompanionCreateResponse response = companionService.createCompanion(
+                owner.getId(), ownerRoom.getId(), new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+
+        assertThat(response).isNotNull();
+        assertThat(companionRepository.count()).isEqualTo(2);
+    }
+
+    // 같은 유저의 다른 방 ENDED 동행이 겹치는 기간이어도 신규 동행 생성은 성공 — status=ONGOING 필터(CR_010) 검증
+    @Test
+    @DisplayName("같은 유저의 다른 방 ENDED 동행이 겹치는 기간이어도 신규 동행 생성은 성공 (status=ONGOING 필터)")
+    void createCompanion_overlappingPeriodOfEndedCompanion_succeeds() {
+        Account owner = accountRepository.saveAndFlush(
+                Account.registerUser("trip-overlap-owner3@test.com", "hashedPw", "오버랩테스트유저3"));
+
+        long endedPostId = ThreadLocalRandom.current().nextLong(5_000_000L, 5_500_000L);
+        ChatRoom endedRoom = chatRoomRepository.saveAndFlush(
+                ChatRoom.createWithOwner(endedPostId, owner.getId(), "종료된 동행방", null, 5));
+
+        // 같은 유저의 ENDED 동행 — 신규 생성할 기간과 동일하게 겹침
+        Companion endedCompanion = Companion.builder()
+                .chatRoomId(endedRoom.getId()).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
+        endedCompanion.end();
+        companionRepository.saveAndFlush(endedCompanion);
+        companionParticipantRepository.saveAndFlush(
+                CompanionParticipant.builder().companionId(endedCompanion.getId()).userId(owner.getId()).build());
+
+        long newPostId = ThreadLocalRandom.current().nextLong(5_500_000L, 6_000_000L);
+        ChatRoom newRoom = chatRoomRepository.saveAndFlush(
+                ChatRoom.createWithOwner(newPostId, owner.getId(), "오버랩 테스트 방3", null, 5));
+
+        CompanionCreateResponse response = companionService.createCompanion(
+                owner.getId(), newRoom.getId(), new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+
+        assertThat(response).isNotNull();
+        assertThat(companionRepository.count()).isEqualTo(2);
     }
 
     // CountDownLatch.await() InterruptedException 래핑
