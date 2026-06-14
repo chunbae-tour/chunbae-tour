@@ -638,4 +638,26 @@ class ReportServiceTest {
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
         then(deletedUser).should(never()).suspend();
     }
+
+    @Test
+    @DisplayName("USER 이미정지(SUSPENDED) — DELETE resolve 시 409 REPORT_TARGET_ALREADY_SUSPENDED — R-5 일관")
+    void resolveReport_USER_이미정지_DELETE_409() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
+                ReportReason.HARASSMENT, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+
+        Account suspendedUser = mock(Account.class);
+        given(suspendedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(suspendedUser));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
+
+        assertThatThrownBy(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
+        then(suspendedUser).should(never()).suspend();
+    }
 }
