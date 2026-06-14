@@ -60,6 +60,14 @@ class CommentServiceTest {
         return account;
     }
 
+    // 작성자 매핑(WriterInfo.fromComment) 검증용 — id·nickname 제공
+    private Account mockAuthor(Long id) {
+        Account account = Mockito.mock(Account.class);
+        given(account.getId()).willReturn(id);
+        given(account.getNickname()).willReturn("작성자");
+        return account;
+    }
+
     private ReplyCount mockReplyCount(Long parentId, long count) {
         ReplyCount rc = Mockito.mock(ReplyCount.class);
         given(rc.getParentCommentId()).willReturn(parentId);
@@ -199,8 +207,9 @@ class CommentServiceTest {
                 buildComment(1L, null, CommentStatus.ACTIVE),
                 buildComment(2L, null, CommentStatus.ACTIVE),
                 buildComment(3L, null, CommentStatus.ACTIVE));
+        Account author = mockAuthor(AUTHOR_ID);
         given(commentRepository.findRootComments(any(), any(), any(), any(Pageable.class))).willReturn(roots);
-        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(accountRepository.findAllById(any())).willReturn(List.of(author));
         given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of());
 
         CursorPageResponse<CommentGetListResponse> result =
@@ -209,14 +218,18 @@ class CommentServiceTest {
         assertThat(result.hasNext()).isTrue();
         assertThat(result.content()).hasSize(size);
         assertThat(result.nextCursor()).isNotNull();
+        // ACTIVE 루트 댓글은 작성자가 매핑돼야 함 (null author → "탈퇴한 사용자" 마스킹이 아님)
+        assertThat(result.content().get(0).writer().userId()).isEqualTo(AUTHOR_ID);
+        assertThat(result.content().get(0).writer().nickname()).isEqualTo("작성자");
     }
 
     @Test
     void findAll_hasNext_false() {
         int size = 5;
         List<Comment> roots = List.of(buildComment(1L, null, CommentStatus.ACTIVE));
+        Account author = mockAuthor(AUTHOR_ID);
         given(commentRepository.findRootComments(any(), any(), any(), any(Pageable.class))).willReturn(roots);
-        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(accountRepository.findAllById(any())).willReturn(List.of(author));
         given(commentRepository.countRepliesByParentIds(any())).willReturn(List.of());
 
         CursorPageResponse<CommentGetListResponse> result =
@@ -224,6 +237,8 @@ class CommentServiceTest {
 
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
+        assertThat(result.content().get(0).writer().userId()).isEqualTo(AUTHOR_ID);
+        assertThat(result.content().get(0).writer().nickname()).isEqualTo("작성자");
     }
 
     @Test
@@ -283,14 +298,18 @@ class CommentServiceTest {
         Comment parent = buildComment(COMMENT_ID, null, CommentStatus.ACTIVE);
         Comment reply1 = buildComment(200L, COMMENT_ID, CommentStatus.ACTIVE);
         Comment reply2 = buildComment(201L, COMMENT_ID, CommentStatus.ACTIVE);
+        Account author = mockAuthor(AUTHOR_ID);
         given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.of(parent));
         given(commentRepository.findByParentCommentIdAndStatusOrderByIdAsc(COMMENT_ID, CommentStatus.ACTIVE))
                 .willReturn(List.of(reply1, reply2));
-        given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(accountRepository.findAllById(any())).willReturn(List.of(author));
 
         List<CommentGetListResponse> replies = commentService.findReplies(POST_ID, POST_TYPE, COMMENT_ID);
 
         assertThat(replies).hasSize(2);
+        // 대댓글 작성자도 매핑돼야 함
+        assertThat(replies.get(0).writer().userId()).isEqualTo(AUTHOR_ID);
+        assertThat(replies.get(0).writer().nickname()).isEqualTo("작성자");
     }
 
     @Test
