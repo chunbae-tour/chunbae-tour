@@ -101,13 +101,7 @@ public class CompanionPostService {
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
-        // placeId·placeName은 쌍으로 수정해야 함 — 한쪽만 보내면 데이터 불일치
-        if ((request.placeId() == null) != (request.placeName() == null)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (request.maxMembers() != null && request.maxMembers() < post.getCurrentMembers()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
+        // 입력 불변식(placeId·placeName 쌍, maxMembers >= currentMembers)은 엔티티 update에서 검증
         post.update(
                 request.title(), request.content(),
                 request.placeId(), request.placeName(),
