@@ -191,9 +191,12 @@ public class ShopService {
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
         List<Menu> menus = menuRepository.findByShopIdOrderByIdAsc(shopId);
 
-        // 실시간 영업여부 — operatingHours를 KST 현재시각과 비교해 조회 시점 산출 (저장하지 않음, B7 MVP)
-        BusinessStatus businessStatus = BusinessHours.statusAt(
-                shop.getOperatingHours(), LocalDateTime.now(clock.withZone(SEOUL_ZONE)));
+        // 실시간 영업여부 — operatingHours를 KST 현재시각과 비교해 조회 시점 산출 (저장하지 않음, B7 MVP).
+        // ShopStatus.CLOSED(폐업/영업종료 관리상태)는 영업시간과 무관하게 영업 안 함 → businessStatus도 CLOSED 강제.
+        // (SUSPENDED는 위에서 차단, 여기 도달하는 비ACTIVE는 CLOSED뿐) 폐업 가게가 "영업중"으로 표시되는 모순 방지.
+        BusinessStatus businessStatus = (shop.getStatus() == ShopStatus.ACTIVE)
+                ? BusinessHours.statusAt(shop.getOperatingHours(), LocalDateTime.now(clock.withZone(SEOUL_ZONE)))
+                : BusinessStatus.CLOSED;
 
         return ShopInfoResponse.from(shop, menus, businessStatus);
     }

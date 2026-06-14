@@ -336,6 +336,22 @@ class ShopServiceTest {
     }
 
     @Test
+    @DisplayName("가게 공개 정보 조회 — CLOSED(폐업) 가게는 영업시간 내라도 businessStatus=CLOSED (모순 방지, KAN-301)")
+    void getShopInfo_closedShop_businessStatusClosed_evenWithinHours() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        ReflectionTestUtils.setField(shop, "operatingHours", "09:00-18:00"); // KST 14:00이면 시간상 OPEN
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        // 폐업 가게는 영업시간 무관 CLOSED
+        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.CLOSED);
+    }
+
+    @Test
     @DisplayName("가게 공개 정보 조회 — operatingHours 없으면 businessStatus=UNKNOWN")
     void getShopInfo_businessStatusUnknown_whenNoHours() {
         Shop shop = createShop();
