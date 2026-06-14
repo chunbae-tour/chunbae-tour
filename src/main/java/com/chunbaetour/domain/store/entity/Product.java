@@ -3,6 +3,7 @@ package com.chunbaetour.domain.store.entity;
 import com.chunbaetour.domain.common.entity.BaseEntity;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.store.type.RedemptionScope;
 import jakarta.persistence.Column;
@@ -34,8 +35,9 @@ public class Product extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(nullable = false, length = 50)
-    private String category;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private ProductCategory category;
 
     @Column(nullable = false)
     private long price;
@@ -78,7 +80,7 @@ public class Product extends BaseEntity {
     private RedemptionScope redemptionScope;
 
     /** 관리자 상품 등록 팩토리 메서드 — 초기 status = ON_SALE */
-    public static Product create(String name, String description, String category,
+    public static Product create(String name, String description, ProductCategory category,
                                  long price, Long originalPrice, int stock,
                                  String imageUrlsJson, String merchantName,
                                  Integer validityDays, int maxPerPerson) {
@@ -101,7 +103,7 @@ public class Product extends BaseEntity {
      * status 미명시 시 stock 기준 자동 전환, 명시 시 명시값 우선.
      * 불변식(invariant): status=ON_SALE + stock=0 조합 금지.
      */
-    public void adminUpdate(String name, String description, String category,
+    public void adminUpdate(String name, String description, ProductCategory category,
                             Long price, Long originalPrice, Integer stock,
                             String imageUrlsJson, String merchantName,
                             Integer validityDays, Integer maxPerPerson, ProductStatus status) {
@@ -160,7 +162,7 @@ public class Product extends BaseEntity {
     }
 
     @Builder
-    private Product(String name, String description, String category, long price,
+    private Product(String name, String description, ProductCategory category, long price,
                     Long originalPrice, int stock, int originalStock, String imageUrls,
                     String merchantName, Integer validityDays, ProductStatus status,
                     int maxPerPerson, RedemptionScope redemptionScope) {

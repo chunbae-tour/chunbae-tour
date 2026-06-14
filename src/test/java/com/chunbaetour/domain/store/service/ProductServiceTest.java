@@ -11,8 +11,10 @@ import static org.mockito.Mockito.never;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.store.dto.response.ProductCategoryResponse;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.type.ProductStatus;
@@ -56,7 +58,7 @@ class ProductServiceTest {
         Product p = Product.builder()
                 .name("광화문 떡볶이 3000원 할인 쿠폰")
                 .description("광화문 떡볶이 할인 쿠폰")
-                .category("COUPON")
+                .category(ProductCategory.DISCOUNT_COUPON)
                 .price(2000L)
                 .originalPrice(3000L)
                 .stock(50)
@@ -139,7 +141,8 @@ class ProductServiceTest {
     @DisplayName("상품 상세 조회 — 캐시 히트, DB 조회 생략")
     void getProduct_cacheHit_skipsDb() throws Exception {
         String cachedJson = new ObjectMapper().writeValueAsString(
-                new ProductDetailResponse(PRODUCT_ID, "캐시 상품", null, "COUPON",
+                new ProductDetailResponse(PRODUCT_ID, "캐시 상품", null,
+                        ProductCategoryResponse.from(ProductCategory.DISCOUNT_COUPON),
                         2000L, null, List.of(), null, 50, 50, null, ProductStatus.ON_SALE));
 
         given(redisTemplate.opsForValue()).willReturn(valueOps);
@@ -197,7 +200,7 @@ class ProductServiceTest {
     void getProducts_onSaleWithZeroStock_visibleInList() {
         Product p = Product.builder()
                 .name("재고 소진 쿠폰")
-                .category("COUPON")
+                .category(ProductCategory.DISCOUNT_COUPON)
                 .price(1000L)
                 .stock(0)
                 .originalStock(10)
