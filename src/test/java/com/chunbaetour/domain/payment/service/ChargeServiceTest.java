@@ -76,6 +76,9 @@ class ChargeServiceTest {
         // 단위 테스트는 트랜잭션 밖이라 charge()가 finally 즉시해제 분기를 탄다.
         lenient().when(redissonClient.getLock(anyString())).thenReturn(chargeLock);
         lenient().when(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).thenReturn(true);
+        // unlockIfHeld는 isHeldByCurrentThread()가 true일 때만 unlock — 미스텁 시 기본 false라
+        // finally 해제 분기가 한 번도 실행되지 않아 락 해제 계약이 검증 공백으로 남는다.
+        lenient().when(chargeLock.isHeldByCurrentThread()).thenReturn(true);
     }
 
     @Test
@@ -106,6 +109,7 @@ class ChargeServiceTest {
         verify(paymentOrderRepository).save(any(PaymentOrder.class));
         verify(paymentGatewayClient).preRegister(anyString(), anyLong());
         verify(idempotencyService, never()).unmark(anyString());
+        verify(chargeLock).unlock(); // 정상 경로에서 락 해제 계약 핀 (트랜잭션 밖 finally 분기)
     }
 
     @Test
@@ -165,6 +169,7 @@ class ChargeServiceTest {
                 .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
 
         verify(idempotencyService).unmark("key");
+        verify(chargeLock).unlock(); // 예외 경로(preRegister 실패)에서도 락 해제 보장
     }
 
     @Test

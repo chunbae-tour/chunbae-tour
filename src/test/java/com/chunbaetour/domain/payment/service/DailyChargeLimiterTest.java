@@ -74,14 +74,14 @@ class DailyChargeLimiterTest {
     }
 
     @Test
-    @DisplayName("한도 일자는 KST 자정 경계로 산정해 UTC 범위로 변환한다 (KST 변환 핀)")
-    void assertWithinDailyLimit_usesKstDayBoundsInUtc() {
+    @DisplayName("한도 일자는 KST 자정 경계(naive)로 산정해 UTC 변환 없이 조회한다 (KST naive 핀)")
+    void assertWithinDailyLimit_usesKstNaiveDayBounds() {
         given(paymentOrderRepository.sumChargedAmountForDailyLimit(eq(USER_ID), eq(START_AT), eq(END_AT)))
                 .willReturn(0L);
 
         dailyChargeLimiter.assertWithinDailyLimit(USER_ID, 10_000L);
 
-        // KST 2026-06-12 영업일 → UTC [06-11 15:00, 06-12 15:00) 로 조회되는지 고정
+        // KST 2026-06-12 영업일 → KST naive [06-12 00:00, 06-13 00:00) 로 조회되는지 고정 (UTC 변환 금지)
         verify(paymentOrderRepository).sumChargedAmountForDailyLimit(USER_ID, START_AT, END_AT);
     }
 }

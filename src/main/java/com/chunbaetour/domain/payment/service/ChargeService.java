@@ -38,7 +38,9 @@ public class ChargeService {
     private static final long UNIT_AMOUNT = 1_000L;
     /** 사용자 단위 충전 직렬화 락 키 — 동시 충전의 일일 한도 TOCTOU 차단 (KAN-293). */
     private static final String CHARGE_LOCK_KEY = "charge:lock:%d";
-    private static final int CHARGE_LOCK_WAIT_SECONDS = 3;
+    // 락 대기 상한 — 임계구역 내 PortOne preRegister read 타임아웃(5s, PortOneConfig)보다 크게 잡아
+    // 락 보유자가 PG 응답을 정상 대기하는 동안 같은 사용자의 후속 요청이 PAY_008(503)로 새지 않게 한다 (KAN-293 리뷰 M1).
+    private static final int CHARGE_LOCK_WAIT_SECONDS = 7;
 
     private final IdempotencyService idempotencyService;
     private final PaymentGatewayClient paymentGatewayClient;

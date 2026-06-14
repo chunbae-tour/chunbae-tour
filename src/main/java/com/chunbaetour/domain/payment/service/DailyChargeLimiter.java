@@ -3,6 +3,7 @@ package com.chunbaetour.domain.payment.service;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.payment.exception.PaymentException;
 import com.chunbaetour.domain.payment.repository.PaymentOrderRepository;
+import jakarta.annotation.PostConstruct;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -54,6 +55,24 @@ public class DailyChargeLimiter {
 
     private final PaymentOrderRepository paymentOrderRepository;
     private final Clock clock;
+
+    /**
+     * 부팅 시 JVM 기본 시간대가 KST인지 검증해 환경 의존을 코드로 고정한다 (KAN-293 리뷰 M2).
+     *
+     * <p>한도 일자 경계({@code today.atStartOfDay()})는 ZoneId 없이 JVM 기본 존을 묵시 사용하고,
+     * created_at(@CreatedDate)도 같은 JVM 기본 존으로 KST wall-clock 저장된다는 전제 위에서만 정확하다.
+     * ECS 등 새 태스크 정의가 {@code -Duser.timezone=Asia/Seoul}을 누락하면 둘 다 UTC로 어긋나 한도 리셋이
+     * 자정이 아닌 15:00 KST가 되는 9h skew가 조용히 재발한다(컴파일·단위테스트 모두 통과). 기동 시점에 차단한다.
+     */
+    @PostConstruct
+    void verifyJvmTimeZoneIsKst() {
+        ZoneId systemZone = ZoneId.systemDefault();
+        if (!KST.equals(systemZone)) {
+            throw new IllegalStateException(
+                    "일일 충전 한도는 JVM 기본 시간대가 %s여야 정확하다. 현재: %s. -Duser.timezone=Asia/Seoul(또는 TZ=Asia/Seoul)을 설정하라."
+                            .formatted(KST, systemZone));
+        }
+    }
 
     /**
      * 충전 요청 시 일일 한도를 검증한다. 오늘 충전 누적액 + 이번 요청액이 한도를 넘으면 차단한다.
