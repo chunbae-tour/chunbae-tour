@@ -27,7 +27,9 @@ import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRep
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProjection;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +37,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -676,6 +679,24 @@ class CompanionServiceTest {
 
         assertThat(updated).isEqualTo(3);
         verify(companionRepository).endExpiredCompanions(any());
+    }
+
+    // UTC 기준 00:30(2026-06-15T00:30Z = 한국시간 09:30) → UTC/KST 모두 같은 날짜라 경계 미검증되므로,
+    // KST 00:30(UTC 전날 15:30)을 사용해 UTC라면 전날 날짜가 나올 상황에서 KST 날짜(다음날)가 전달되는지 검증
+    @Test
+    void endExpiredCompanions_usesBusinessZoneDate_notUtcDate() {
+        // 2026-06-14T15:30:00Z == 2026-06-15T00:30:00+09:00 (Asia/Seoul)
+        Instant nearMidnightUtc = Instant.parse("2026-06-14T15:30:00Z");
+        given(clock.withZone(ZoneId.of("Asia/Seoul")))
+                .willReturn(Clock.fixed(nearMidnightUtc, ZoneId.of("Asia/Seoul")));
+        given(companionRepository.endExpiredCompanions(any())).willReturn(0);
+
+        companionService.endExpiredCompanions();
+
+        ArgumentCaptor<LocalDate> dateCaptor = ArgumentCaptor.forClass(LocalDate.class);
+        verify(companionRepository).endExpiredCompanions(dateCaptor.capture());
+        // UTC라면 2026-06-14가 전달되지만, Asia/Seoul 기준이므로 2026-06-15가 전달되어야 함
+        assertThat(dateCaptor.getValue()).isEqualTo(LocalDate.of(2026, 6, 15));
     }
 
     // ===== cancelCompanion =====

@@ -154,7 +154,7 @@ class CompanionReviewServiceTest {
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
         given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
-        given(accountRepository.findById(1L)).willReturn(Optional.of(buildAccount(1L, 0.0, 0)));
+        given(accountRepository.findByIdWithLock(1L)).willReturn(Optional.of(buildAccount(1L, 0.0, 0)));
         given(companionReviewRepository.save(any(CompanionReview.class))).willReturn(saved);
 
         CompanionReviewCreateResponse response = companionReviewService.createReview(1L, request);
@@ -198,7 +198,7 @@ class CompanionReviewServiceTest {
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
         given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
-        given(accountRepository.findById(1L)).willReturn(Optional.of(buildAccount(1L, 0.0, 0)));
+        given(accountRepository.findByIdWithLock(1L)).willReturn(Optional.of(buildAccount(1L, 0.0, 0)));
 
         assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
                 .isInstanceOf(BusinessException.class)
@@ -223,7 +223,7 @@ class CompanionReviewServiceTest {
         given(companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(1L, 2L, 10L))
                 .willReturn(false);
         given(accountRepository.findByIdWithLock(2L)).willReturn(Optional.of(target));
-        given(accountRepository.findById(1L)).willReturn(Optional.of(reviewer));
+        given(accountRepository.findByIdWithLock(1L)).willReturn(Optional.of(reviewer));
 
         assertThatThrownBy(() -> companionReviewService.createReview(1L, request))
                 .isInstanceOf(BusinessException.class)
