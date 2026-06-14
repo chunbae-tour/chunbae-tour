@@ -309,4 +309,27 @@ public class CompanionService {
 
         return CompanionEndResponse.from(companion);
     }
+
+    // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)
+    // CLOSED 체크 없음(의도) — 채팅방 상태와 무관하게 ONGOING 동행은 항상 취소 가능해야 함
+    @Transactional
+    public void cancelCompanion(Long ownerId, Long roomId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        if (!chatRoom.isOwnedBy(ownerId)) {
+            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+
+        // PESSIMISTIC_WRITE — endCompanion/addParticipants와 동일 락으로 직렬화
+        Companion companion = companionRepository.findByChatRoomIdWithLock(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+
+        if (companion.getStatus() == CompanionStatus.ENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_ALREADY_ENDED);
+        }
+
+        companionParticipantRepository.deleteByCompanionId(companion.getId());
+        companionRepository.delete(companion);
+    }
 }
