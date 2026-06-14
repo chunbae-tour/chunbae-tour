@@ -95,4 +95,32 @@ class CompanionControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(companionService);
     }
+
+    // 채팅방 미존재 → CHAT_001(404)
+    @Test
+    @DisplayName("동행 취소 채팅방 미존재 → 404")
+    void cancelCompanion_roomNotFound_returns404() throws Exception {
+        willThrow(new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND))
+                .given(companionService).cancelCompanion(1L, 999L);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "owner@test.com");
+
+        mockMvc.perform(delete("/api/v1/chat/rooms/999/companion")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.CHAT_ROOM_NOT_FOUND.getCode()));
+    }
+
+    // 동행 미존재 → CR_005(404)
+    @Test
+    @DisplayName("동행 취소 동행 미존재 → 404")
+    void cancelCompanion_companionNotFound_returns404() throws Exception {
+        willThrow(new BusinessException(ErrorCode.COMPANION_NOT_FOUND))
+                .given(companionService).cancelCompanion(1L, 10L);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "owner@test.com");
+
+        mockMvc.perform(delete("/api/v1/chat/rooms/10/companion")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.COMPANION_NOT_FOUND.getCode()));
+    }
 }

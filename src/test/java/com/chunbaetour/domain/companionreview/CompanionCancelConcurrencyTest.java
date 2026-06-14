@@ -89,8 +89,6 @@ class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
                     } catch (BusinessException e) {
                         failedCodes.add(e.getErrorCode());
                         return false;
-                    } catch (Exception e) {
-                        return false;
                     }
                 }, executor));
             }
