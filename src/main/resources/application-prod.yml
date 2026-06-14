@@ -57,3 +57,9 @@ management:
     web:
       exposure:
         include: health,info,prometheus
+  # 9090은 127.0.0.1 loopback 바인딩(LB는 8080만 노출)이라 외부 도달 불가 →
+  # health 컴포넌트 상세 노출해도 안전. CD health gate 실패 시 어느 indicator가
+  # DOWN인지 즉시 식별 가능하게 always로 설정.
+  endpoint:
+    health:
+      show-details: always
