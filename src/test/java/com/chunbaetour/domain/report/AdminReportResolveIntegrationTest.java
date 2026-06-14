@@ -138,7 +138,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("target@test.com", PASSWORD, "피신고자", Role.USER, AccountStatus.ACTIVE);
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
-                    ReportReason.HARASSMENT, "욕설"));
+                    ReportReason.HARASSMENT, "욕설", null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -164,7 +164,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             LocalDate.now().plusDays(7), 4));
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.POST_COMPANION, post.getId(),
-                    ReportReason.SPAM, null));
+                    ReportReason.SPAM, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -188,7 +188,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     FreePost.create(author.getId(), "자유게시글", "내용", List.of()));
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.POST_FREE, post.getId(),
-                    ReportReason.OBSCENE, null));
+                    ReportReason.OBSCENE, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -213,7 +213,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     Comment.create(1L, PostType.FREE, author.getId(), "부적절한 댓글"));
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.COMMENT, comment.getId(),
-                    ReportReason.HARASSMENT, null));
+                    ReportReason.HARASSMENT, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -231,7 +231,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("distarget@test.com", PASSWORD, "기각피신고자", Role.USER, AccountStatus.ACTIVE);
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
-                    ReportReason.OTHER, null));
+                    ReportReason.OTHER, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -253,7 +253,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("duptarget@test.com", PASSWORD, "중복피신고", Role.USER, AccountStatus.ACTIVE);
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
-                    ReportReason.SPAM, null));
+                    ReportReason.SPAM, null, null));
             report.resolve(ReportAction.WARNING, null, "admin");  // already resolved, valid action required
             reportRepository.save(report);
             String adminToken = adminToken();
@@ -273,7 +273,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account merchant = seedFactory.seedMerchant("mtarget@test.com", PASSWORD, "가게주인");
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
-                    ReportReason.ILLEGAL, null));
+                    ReportReason.ILLEGAL, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -291,7 +291,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("ss_target@test.com", PASSWORD, "이미정지된유저", Role.USER, AccountStatus.SUSPENDED);
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
-                    ReportReason.HARASSMENT, null));
+                    ReportReason.HARASSMENT, null, target.getId()));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -309,7 +309,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("ds_target@test.com", PASSWORD, "이미정지된유저D", Role.USER, AccountStatus.SUSPENDED);
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
-                    ReportReason.HARASSMENT, null));
+                    ReportReason.HARASSMENT, null, target.getId()));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
@@ -350,7 +350,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     .shopName("기각가게").category("FOOD").address("서울시 테스트구").build());
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, shop.getId(),
-                    ReportReason.OTHER, null));
+                    ReportReason.OTHER, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve/merchant")
@@ -372,7 +372,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     .shopName("강등가게").category("FOOD").address("서울시 테스트구").build());
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, shop.getId(),
-                    ReportReason.ILLEGAL, "사기"));
+                    ReportReason.ILLEGAL, "사기", null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve/merchant")
@@ -397,7 +397,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                     .shopName("숨김가게").category("FOOD").address("서울시 테스트구").build());
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, shop.getId(),
-                    ReportReason.SPAM, null));
+                    ReportReason.SPAM, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve/merchant")
@@ -416,7 +416,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("wtarget@test.com", PASSWORD, "잘못된엔드포인트피신고", Role.USER, AccountStatus.ACTIVE);
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
-                    ReportReason.HARASSMENT, null));
+                    ReportReason.HARASSMENT, null, null));
             String adminToken = adminToken();
 
             mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve/merchant")
@@ -434,7 +434,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account merchant = seedFactory.seedMerchant("ar2merchant@test.com", PASSWORD, "중복가게주인");
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
-                    ReportReason.SPAM, null));
+                    ReportReason.SPAM, null, null));
             report.dismiss(null, "admin");
             reportRepository.save(report);
             String adminToken = adminToken();

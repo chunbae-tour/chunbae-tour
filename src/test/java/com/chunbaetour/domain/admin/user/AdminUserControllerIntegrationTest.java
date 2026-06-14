@@ -111,7 +111,7 @@ class AdminUserControllerIntegrationTest extends AbstractIntegrationTest {
         Account target = seedFactory.seed("target@test.com", PASSWORD, "상세대상", Role.USER, AccountStatus.ACTIVE);
         Account reporter = seedFactory.seed("reporter@test.com", PASSWORD, "신고자", Role.USER, AccountStatus.ACTIVE);
         reportRepository.save(Report.create(
-                reporter.getId(), ReportTargetType.USER, target.getId(), ReportReason.HARASSMENT, null));
+                reporter.getId(), ReportTargetType.USER, target.getId(), ReportReason.HARASSMENT, null, null));
 
         mockMvc.perform(get("/api/v1/admin/users/" + target.getId())
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))

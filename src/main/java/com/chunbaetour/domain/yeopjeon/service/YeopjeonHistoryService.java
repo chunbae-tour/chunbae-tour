@@ -35,18 +35,8 @@ public class YeopjeonHistoryService {
     public CursorPageResponse<YeopjeonHistoryResponse> getHistories(Long userId, String cursor, int size) {
         List<YeopjeonHistory> histories = fetchHistories(userId, cursor, size);
 
-        // size+1 요청 결과로 다음 페이지 존재 여부 판단
-        boolean hasNext = histories.size() > size;
-        List<YeopjeonHistory> content = hasNext ? histories.subList(0, size) : histories;
-
-        // 다음 페이지 있으면 마지막 항목 id를 cursor로 인코딩
-        String nextCursor = hasNext ? encodeCursor(content.get(content.size() - 1).getId()) : null;
-
-        List<YeopjeonHistoryResponse> responses = content.stream()
-                .map(YeopjeonHistoryResponse::from)
-                .toList();
-
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(histories, size, YeopjeonHistoryResponse::from, YeopjeonHistory::getId);
     }
 
     /**
@@ -61,10 +51,6 @@ public class YeopjeonHistoryService {
         }
         Long cursorId = decodeCursor(cursor);
         return yeopjeonHistoryRepository.findByUserIdAndIdLessThanOrderByIdDesc(userId, cursorId, pageable);
-    }
-
-    private String encodeCursor(Long id) {
-        return CursorUtils.encode(id);
     }
 
     // 잘못된 cursor 또는 음수 id 전달 시 COMMON_002(INVALID_REQUEST) 반환

@@ -70,5 +70,8 @@ public enum AdminActionType {
     BANNER_UPDATE,
 
     /** S09 배너 삭제 — Banner.delete()(→DELETED soft delete). */
-    BANNER_DELETE;
+    BANNER_DELETE,
+
+    /** 제재 조기 해제 — 관리자가 UserSanction을 수동 해제. */
+    SANCTION_RELEASE;
 }

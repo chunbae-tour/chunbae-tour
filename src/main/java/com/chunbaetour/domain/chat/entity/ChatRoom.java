@@ -39,6 +39,8 @@ public class ChatRoom extends BaseEntity {
     @Column(name = "post_id", nullable = false)
     private Long postId;
 
+    // CLOSED 방의 ownerId는 별도로 갱신되지 않음 — 방장이 leaveRoom()으로 퇴장(OWNER_ACTIVE → MEMBER_LEFT)해도
+    // "이력상 마지막 방장"을 가리키는 값으로 그대로 유지된다 (09_정책_결정_기록.md)
     @Column(name = "owner_id", nullable = false)
     private Long ownerId;
 
@@ -112,6 +114,14 @@ public class ChatRoom extends BaseEntity {
         if (this.status == ChatRoomStatus.FULL) {
             throw new BusinessException(ErrorCode.CHAT_ROOM_FULL);
         }
+    }
+
+    // 방장 위임 — ownerId 교체. 멤버 상태(OWNER_ACTIVE/MEMBER_ACTIVE) 교체는 서비스에서 ChatRoomMember 양쪽에 별도 적용
+    public void transferOwner(Long newOwnerId) {
+        if (this.ownerId.equals(newOwnerId)) {
+            throw new BusinessException(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET);
+        }
+        this.ownerId = newOwnerId;
     }
 
     public void close() {

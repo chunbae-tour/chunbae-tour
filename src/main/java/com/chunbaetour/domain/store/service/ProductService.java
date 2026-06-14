@@ -59,15 +59,8 @@ public class ProductService {
         List<Product> products = productRepository.findVisibleProducts(
                 VISIBLE_STATUSES, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = products.size() > size;
-        List<Product> page = hasNext ? products.subList(0, size) : products;
-
-        List<ProductSummaryResponse> content = page.stream()
-                .map(this::toSummary)
-                .toList();
-
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(products, size, this::toSummary, Product::getId);
     }
 
     /**
