@@ -4,13 +4,21 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.AccountSeedFactory;
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
+import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.util.UUID;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +50,8 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ProductRepository productRepository;
     @Autowired private AccountRepository accountRepository;
+    @Autowired private AccountSeedFactory seedFactory;
+    @Autowired private TokenIssuer tokenIssuer;
 
     @AfterEach
     void cleanup() {
@@ -111,6 +121,52 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
 
         mockMvc.perform(delete(ENDPOINT + "/1"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("ADMIN 토큰으로 상품 목록 조회 → 200, HIDDEN 포함 전체 반환 (KAN-300)")
+    void getProducts_asAdmin_returns200WithHidden() throws Exception {
+        saveProduct("판매중 쿠폰", ProductStatus.ON_SALE);
+        saveProduct("숨김 쿠폰", ProductStatus.HIDDEN);
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.content.length()").value(2))
+                // 공개 목록과 달리 HIDDEN 상품이 응답에 포함되는지 검증
+                .andExpect(jsonPath("$.data.content[*].status", Matchers.hasItem("HIDDEN")));
+    }
+
+    @Test
+    @DisplayName("ADMIN + status=HIDDEN 필터 → 숨김 상품만 반환 (enum 파라미터 바인딩 검증, KAN-300)")
+    void getProducts_asAdmin_statusFilter_returnsOnlyHidden() throws Exception {
+        saveProduct("판매중 쿠폰", ProductStatus.ON_SALE);
+        saveProduct("숨김 쿠폰", ProductStatus.HIDDEN);
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("status", "HIDDEN")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("HIDDEN"))
+                .andExpect(jsonPath("$.data.content[0].name").value("숨김 쿠폰"));
+    }
+
+    /** ADMIN 계정 seed 후 access 토큰 발급 — 로그인 흐름 없이 직접 발급 */
+    private String adminToken() {
+        Account admin = seedFactory.seedAdmin("admin_" + UUID.randomUUID() + "@test.com", PASSWORD, "관리자");
+        return tokenIssuer.issueAccess(admin.getId(), admin.getRole(), admin.getEmail());
+    }
+
+    private void saveProduct(String name, ProductStatus status) {
+        productRepository.save(Product.builder()
+                .name(name).description("설명").category("COUPON")
+                .price(2000L).originalPrice(3000L).stock(status == ProductStatus.SOLD_OUT ? 0 : 10)
+                .originalStock(10).imageUrls(null).merchantName("상인")
+                .validityDays(30).status(status).maxPerPerson(5).build());
     }
 
     private String loginAsUser() throws Exception {
