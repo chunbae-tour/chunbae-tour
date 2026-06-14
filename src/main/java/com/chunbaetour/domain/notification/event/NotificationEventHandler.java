@@ -2,6 +2,7 @@ package com.chunbaetour.domain.notification.event;
 
 import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
+import com.chunbaetour.domain.chat.event.ChatOwnerTransferredEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
@@ -112,6 +113,25 @@ public class NotificationEventHandler {
         } catch (RuntimeException e) {
             log.error("알림 저장 실패 — chatRoomId={}, kickedUserId={}",
                     event.chatRoomId(), event.kickedUserId(), e);
+        }
+    }
+
+    // 방장 위임 — 신규 방장에게 CHAT_OWNER_TRANSFERRED 알림
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handleChatOwnerTransferred(ChatOwnerTransferredEvent event) {
+        try {
+            Notification notification = notificationService.createNotification(
+                    event.newOwnerId(),
+                    NotificationType.CHAT_OWNER_TRANSFERRED,
+                    "방장 위임",
+                    "채팅방 방장이 되었어요.",
+                    NotificationReferenceType.CHAT_ROOM,
+                    event.chatRoomId());
+            pushNotification(notification);
+        } catch (RuntimeException e) {
+            log.error("알림 저장 실패 — chatRoomId={}, newOwnerId={}",
+                    event.chatRoomId(), event.newOwnerId(), e);
         }
     }
 

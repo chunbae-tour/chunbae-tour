@@ -10,6 +10,7 @@ import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
+import com.chunbaetour.domain.chat.event.ChatOwnerTransferredEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
@@ -26,9 +27,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -108,12 +109,15 @@ public class ChatRoomService {
         // 종료 이후에도 기존 멤버가 이전 메시지 이력을 조회할 수 있어야 하므로 의도적으로 멤버 상태를 변경하지 않음
         // 이미 CLOSED 상태면 close() 내부에서 CHAT_013 예외 발생 (트랜잭션 커밋 전 도메인 레벨 검증)
         chatRoom.close();
+        saveClosedRoom(chatRoom, roomId);
+    }
 
-        // saveAndFlush로 커밋 전 DB 쓰기를 강제해 낙관적 잠금 실패를 메서드 내부에서 처리
+    // chatRoom.close() 후 공통 저장 — saveAndFlush로 커밋 전 DB 쓰기를 강제해 낙관적 잠금 실패를 메서드 내부에서 처리.
+    // 충돌 시 재조회해 CLOSED 경쟁(동시 close 먼저 완료 → CHAT_013)과 그 외 필드 충돌(CONCURRENT_UPDATE)을 구분
+    private void saveClosedRoom(ChatRoom chatRoom, Long roomId) {
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
-            // 재조회로 실제 상태 확인 — 동시 close()가 먼저 완료됐으면 CHAT_013, 그 외 필드 충돌이면 CONCURRENT_UPDATE
+        } catch (ConcurrencyFailureException e) {
             ChatRoom refreshed = chatRoomRepository.findById(roomId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
             if (refreshed.getStatus() == ChatRoomStatus.CLOSED) {
@@ -150,7 +154,7 @@ public class ChatRoomService {
 
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ConcurrencyFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
 
@@ -158,17 +162,75 @@ public class ChatRoomService {
         eventPublisher.publishEvent(new ChatMemberKickedEvent(chatRoomId, targetUserId));
     }
 
-    // 채팅방 퇴장 — 방장 퇴장 불가(CHAT_015), leave() 후 currentMembers -1
+    // 방장 위임 — 현재 방장만 가능, 대상은 같은 방의 MEMBER_ACTIVE만 허용. ownerId + 멤버 상태 양쪽 갱신
+    @Transactional
+    public void transferOwner(Long ownerId, Long roomId, Long newOwnerId) {
+        ChatRoom chatRoom = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
+
+        if (!chatRoom.isOwnedBy(ownerId)) {
+            throw new BusinessException(ErrorCode.CHAT_SETTING_FORBIDDEN);
+        }
+
+        if (chatRoom.getStatus() == ChatRoomStatus.CLOSED) {
+            throw new BusinessException(ErrorCode.CHAT_ROOM_CLOSED);
+        }
+
+        // 현재 방장의 멤버 레코드가 없으면 ChatRoom.ownerId와 ChatRoomMember 상태가 불일치하는
+        // 서버측 데이터 정합성 버그 — 클라이언트 요청 오류(403)가 아닌 서버 오류(500)로 처리 (demoteFromOwner()와 동일 기준)
+        ChatRoomMember currentOwner = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, ownerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR));
+
+        // 위임 대상이 같은 방의 멤버가 아니면 CHAT_019 — 본인·강퇴·퇴장 멤버는 promoteToOwner()에서 추가 차단
+        ChatRoomMember newOwner = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, newOwnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_OWNER_TRANSFER_INVALID_TARGET));
+
+        newOwner.promoteToOwner();
+        currentOwner.demoteFromOwner();
+        chatRoom.transferOwner(newOwnerId);
+
+        // saveAndFlush로 커밋 전 DB 쓰기를 강제해 충돌을 메서드 내부에서 처리
+        // ConcurrencyFailureException — @Version 낙관적 잠금 실패뿐 아니라, 동시 transferOwner/kickMember가
+        // chat_rooms/chat_room_members 행을 서로 다른 순서로 잠그며 발생하는 DB 데드락(CannotAcquireLockException)도 포괄
+        try {
+            chatRoomRepository.saveAndFlush(chatRoom);
+        } catch (ConcurrencyFailureException e) {
+            throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        }
+
+        // 트랜잭션 커밋 후 신규 방장에게 알림 — AFTER_COMMIT 리스너가 REQUIRES_NEW 트랜잭션으로 저장
+        eventPublisher.publishEvent(new ChatOwnerTransferredEvent(roomId, newOwnerId));
+    }
+
+    // 채팅방 퇴장 — OPEN/FULL 방의 방장은 다른 ACTIVE 멤버 있으면 위임 선행(CHAT_015),
+    // 단독이면 위임 없이 leave()+decrementMembers()로 본인도 MEMBER_LEFT 처리 후 방 자동 CLOSED.
+    // CLOSED 방은 방장 권한이 무의미하므로 방장도 일반 멤버와 동일하게 퇴장 처리 (09_정책_결정_기록.md)
     @Transactional
     public void leaveRoom(Long userId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
         // 해당 방에서 요청자의 멤버 레코드 조회 — ACTIVE/INACTIVE 관계없이 레코드 존재 여부 먼저 확인
-        // 상태별 검증(OWNER_ACTIVE → CHAT_015, LEFT/KICKED → CHAT_016)은 leave() 내부에서 수행됨
         ChatRoomMember member = chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_NOT_JOINED));
 
+        // OPEN/FULL 방의 방장 퇴장 — 다른 ACTIVE 멤버 있으면 위임 선행 필요(CHAT_015), 단독이면 위임 없이 방 자동 CLOSED
+        if (member.isOwner() && chatRoom.getStatus() != ChatRoomStatus.CLOSED) {
+            if (chatRoom.getCurrentMembers() > 1) {
+                throw new BusinessException(ErrorCode.CHAT_OWNER_CANNOT_LEAVE);
+            }
+
+            // 단독 방장도 일반 퇴장과 동일하게 MEMBER_LEFT/currentMembers=0으로 정리 —
+            // CLOSED 방에서 같은 방장이 leaveRoom을 재호출할 때의 결과와 일치시킴
+            member.leave();
+            chatRoom.decrementMembers();
+            chatRoom.close();
+            saveClosedRoom(chatRoom, roomId);
+            return;
+        }
+
+        // 상태별 검증(LEFT/KICKED → CHAT_016)은 leave() 내부에서 수행됨
+        // CLOSED 방 방장도 이 경로로 처리 — leave()가 OWNER_ACTIVE → MEMBER_LEFT 전환을 허용
         member.leave();
 
         // 퇴장으로 현재 인원 감소 — FULL 상태였으면 자동으로 OPEN 전환
@@ -178,7 +240,7 @@ public class ChatRoomService {
         // closeRoom과 동일한 패턴 — 트랜잭션 커밋 시 래핑 예외로 매핑 누락되는 케이스 방지
         try {
             chatRoomRepository.saveAndFlush(chatRoom);
-        } catch (ObjectOptimisticLockingFailureException e) {
+        } catch (ConcurrencyFailureException e) {
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
         }
     }
