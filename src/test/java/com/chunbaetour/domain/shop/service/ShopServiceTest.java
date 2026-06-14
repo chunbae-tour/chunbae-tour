@@ -22,8 +22,12 @@ import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.type.BusinessStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import tools.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -48,6 +53,10 @@ class ShopServiceTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    // @Mock Clock 금지(withZone→null NPE) — @Spy 고정 Clock 사용. 2026-06-15T05:00:00Z = KST 14:00
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-06-15T05:00:00Z"), ZoneOffset.UTC);
 
     @InjectMocks
     private ShopService shopService;
@@ -309,6 +318,34 @@ class ShopServiceTest {
         ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
         assertThat(response.menus()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — operatingHours 영업시간 내(KST 14:00) → businessStatus=OPEN (B7, KAN-301)")
+    void getShopInfo_businessStatusOpen() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        ReflectionTestUtils.setField(shop, "operatingHours", "09:00-18:00");
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        // 고정 Clock = KST 14:00 → 09:00-18:00 영업중
+        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.OPEN);
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — operatingHours 없으면 businessStatus=UNKNOWN")
+    void getShopInfo_businessStatusUnknown_whenNoHours() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.UNKNOWN);
     }
 
     @Test

@@ -14,15 +14,20 @@ import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
+import com.chunbaetour.domain.shop.businesshours.BusinessHours;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
+import com.chunbaetour.domain.shop.type.BusinessStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +52,10 @@ public class ShopService {
     private final ObjectMapper objectMapper;
     private final PlaceRepository placeRepository;
     private final TraditionalMarketRepository traditionalMarketRepository;
+    private final Clock clock;
+
+    // operatingHours는 KST wall-clock 기준 — Clock 빈은 systemUTC이므로 영업여부 판정 시 KST로 환산 필수
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
 
     /**
      * 내 가게 목록 조회.
@@ -182,7 +191,11 @@ public class ShopService {
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
         List<Menu> menus = menuRepository.findByShopIdOrderByIdAsc(shopId);
 
-        return ShopInfoResponse.from(shop, menus);
+        // 실시간 영업여부 — operatingHours를 KST 현재시각과 비교해 조회 시점 산출 (저장하지 않음, B7 MVP)
+        BusinessStatus businessStatus = BusinessHours.statusAt(
+                shop.getOperatingHours(), LocalDateTime.now(clock.withZone(SEOUL_ZONE)));
+
+        return ShopInfoResponse.from(shop, menus, businessStatus);
     }
 
     /**
