@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -29,6 +30,7 @@ import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
+import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -768,6 +770,59 @@ class ReportServiceTest {
         ReportDetailResponse result = reportService.getReport(REPORT_ID);
 
         assertThat(result.targetContent()).isEqualTo("(삭제됨)");
+    }
+
+    // ── 관리자 목록 필터 + 제재 뱃지 ────────────────────────────────────────
+
+    @Test
+    @DisplayName("관리자 목록 — 필터 전달 + 피신고 유저 제재 뱃지(계정 레벨) 매핑")
+    void getReports_filter_and_sanction_badge() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportQueryRepository.findByFilter(
+                eq(ReportStatus.RESOLVED), eq(ReportTargetType.POST_FREE), eq(ReportReason.SPAM),
+                eq(USER_TARGET_ID), isNull(), eq(20)))
+                .willReturn(java.util.List.of(report));
+        Account reporter = mock(Account.class);
+        given(reporter.getId()).willReturn(REPORTER_ID);
+        given(reporter.getNickname()).willReturn("신고자");
+        Account reportedUser = mock(Account.class);
+        given(reportedUser.getId()).willReturn(USER_TARGET_ID);
+        given(reportedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
+        given(reportedUser.getSanctionType()).willReturn(SanctionType.SUSPEND_30D);
+        given(accountRepository.findAllById(any())).willReturn(java.util.List.of(reporter, reportedUser));
+
+        CursorPageResponse<ReportResponse> result = reportService.getReports(
+                "RESOLVED", ReportTargetType.POST_FREE, ReportReason.SPAM, USER_TARGET_ID, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        ReportResponse r = result.content().get(0);
+        assertThat(r.reporterNickname()).isEqualTo("신고자");
+        assertThat(r.reportedUserStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(r.reportedUserSanctionType()).isEqualTo(SanctionType.SUSPEND_30D);
+        assertThat(result.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("관리자 목록 — reportedUserId null이면 제재 뱃지 null")
+    void getReports_no_reportedUser_null_badge() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportQueryRepository.findByFilter(isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+                .willReturn(java.util.List.of(report));
+        Account reporter = mock(Account.class);
+        given(reporter.getId()).willReturn(REPORTER_ID);
+        given(reporter.getNickname()).willReturn("신고자");
+        given(accountRepository.findAllById(any())).willReturn(java.util.List.of(reporter));
+
+        CursorPageResponse<ReportResponse> result = reportService.getReports(
+                null, null, null, null, null, 20);
+
+        ReportResponse r = result.content().get(0);
+        assertThat(r.reportedUserStatus()).isNull();
+        assertThat(r.reportedUserSanctionType()).isNull();
     }
 
     // ── 미처리 신고 건수 (PR6) ────────────────────────────────────────────

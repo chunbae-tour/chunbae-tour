@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -316,6 +317,52 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    // ── PATCH /status — 신고 상태 정정 (오판 정정) ──────────────────────────
+
+    @Nested
+    @DisplayName("PATCH /admin/reports/{id}/status")
+    class UpdateStatus {
+
+        @Test
+        @DisplayName("RESOLVED → DISMISSED 정정 시 200, status=DISMISSED")
+        void resolved_to_dismissed() throws Exception {
+            Account reporter = seedFactory.seed("ust_reporter@test.com", PASSWORD, "정정신고자", Role.USER, AccountStatus.ACTIVE);
+            Account target = seedFactory.seed("ust_target@test.com", PASSWORD, "정정대상", Role.USER, AccountStatus.ACTIVE);
+            Report report = Report.create(reporter.getId(), ReportTargetType.USER, target.getId(),
+                    ReportReason.SPAM, null, target.getId());
+            report.resolve(ReportAction.WARNING, "처리함", "admin");
+            reportRepository.saveAndFlush(report);
+            String adminToken = adminToken();
+
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", "오판 정정")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DISMISSED"));
+
+            Report updated = reportRepository.findById(report.getId()).orElseThrow();
+            assertThat(updated.getStatus()).isEqualTo(ReportStatus.DISMISSED);
+        }
+
+        @Test
+        @DisplayName("PENDING 신고 정정 시도 → 400 REPORT_010")
+        void pending_rejected() throws Exception {
+            Account reporter = seedFactory.seed("ust_r2@test.com", PASSWORD, "정정신고자2", Role.USER, AccountStatus.ACTIVE);
+            Account target = seedFactory.seed("ust_t2@test.com", PASSWORD, "정정대상2", Role.USER, AccountStatus.ACTIVE);
+            Report report = reportRepository.save(Report.create(reporter.getId(), ReportTargetType.USER,
+                    target.getId(), ReportReason.SPAM, null, target.getId()));  // PENDING
+            String adminToken = adminToken();
+
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", null)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("REPORT_010"));
+        }
+    }
+
     // ── POST /resolve/merchant — 가게 신고 처리 ────────────────────────────
 
     @Nested
@@ -446,6 +493,15 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         return body.get("data").get("accessToken").asString();
+    }
+
+    private String statusBody(String status, String adminNote) throws Exception {
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("status", status);
+        if (adminNote != null) {
+            body.put("adminNote", adminNote);
+        }
+        return objectMapper.writeValueAsString(body);
     }
 
     private String resolveBody(String action, String adminNote) throws Exception {
