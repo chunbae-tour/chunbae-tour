@@ -54,6 +54,11 @@ public class SanctionService {
                                      long acceptedCount) {
         LocalDateTime now = LocalDateTime.now(clock);
 
+        // 0. 동시 처리 직렬화 — 같은 유저의 제재 평가가 동시에 일어나면(관리자 2명 동시 처리)
+        //    highest 계산이 서로의 미커밋 제재를 못 봐 중복 제재·크로스도메인 오집계 발생.
+        //    피신고 유저 Account 행에 PESSIMISTIC_WRITE 락을 잡아 유저 단위로 직렬화.
+        accountRepository.findByIdWithLock(userId);
+
         // 1. 이벤트에서 전달받은 누적 RESOLVED 건수로 제재 단계 계산
         SanctionType calculated = SanctionType.fromCount(acceptedCount);
         if (calculated == SanctionType.NONE) return;

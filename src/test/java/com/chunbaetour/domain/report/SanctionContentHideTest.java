@@ -74,6 +74,17 @@ class SanctionContentHideTest {
     }
 
     @Test
+    void handleReportAccepted_acquires_user_pessimistic_lock() {
+        // 동시 처리 직렬화 — 유저 Account 행에 비관 락 획득 검증
+        noHigherExistingSanction(ReportTargetType.POST_FREE);
+        noCrossDomain();
+
+        sanctionService.handleReportAccepted(REPORT_ID, USER_ID, ReportTargetType.POST_FREE, 3);
+
+        verify(accountRepository).findByIdWithLock(USER_ID);
+    }
+
+    @Test
     void suspend7d_postFree_hides_reported_post() {
         noHigherExistingSanction(ReportTargetType.POST_FREE);
         noCrossDomain();
