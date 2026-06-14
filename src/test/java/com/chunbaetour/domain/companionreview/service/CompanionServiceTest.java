@@ -26,6 +26,7 @@ import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProjection;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -57,6 +58,7 @@ class CompanionServiceTest {
     @Mock private RedissonClient redissonClient;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private RLock lock;
+    @Mock private Clock clock;
 
     private static final LocalDate TRIP_START = LocalDate.of(2026, 7, 1);
     private static final LocalDate TRIP_END = LocalDate.of(2026, 7, 5);
@@ -664,9 +666,10 @@ class CompanionServiceTest {
 
     // ===== endExpiredCompanions =====
 
-    // tripEndDate < today인 ONGOING 동행을 일괄 ENDED 전환 — 영향 행 수 반환
+    // tripEndDate < today(Asia/Seoul)인 ONGOING 동행을 일괄 ENDED 전환 — 영향 행 수 반환
     @Test
     void endExpiredCompanions_delegatesToRepository() {
+        given(clock.withZone(any())).willReturn(Clock.systemUTC());
         given(companionRepository.endExpiredCompanions(any())).willReturn(3);
 
         int updated = companionService.endExpiredCompanions();

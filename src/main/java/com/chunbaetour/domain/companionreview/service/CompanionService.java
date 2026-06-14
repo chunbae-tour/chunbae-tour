@@ -17,7 +17,9 @@ import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRep
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProjection;
 import com.chunbaetour.domain.companionreview.type.CompanionStatus;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -42,6 +44,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Transactional(readOnly = true)
 public class CompanionService {
 
+    // 동행 생애주기(ENDED 전환) 기준 시간대 — MerchantHomeService/AdminUserService와 동일
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
+
     // userId 단위 락 — 같은 유저가 겹치는 기간으로 동시에 동행 생성/참여 시 overlap 체크(CR_010) TOCTOU 방지
     private static final String USER_TRIP_LOCK_KEY_FORMAT = "companion:trip-overlap:user:%d";
     private static final long LOCK_WAIT_SECONDS = 3L;
@@ -56,6 +61,7 @@ public class CompanionService {
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final RedissonClient redissonClient;
     private final PlatformTransactionManager transactionManager;
+    private final Clock clock;
 
     // 동행 생성 — 락 획득 전 사전 검증(채팅방/방장/CLOSED/기존 동행/ACTIVE 멤버십) 후 방장+참여자 전원에 분산 락 건 뒤 본 로직 실행
     // (NOT_SUPPORTED로 외부 트랜잭션 중단, TransactionTemplate이 새 트랜잭션 생성)
@@ -311,10 +317,10 @@ public class CompanionService {
         }
     }
 
-    // 동행 생애주기 자동화 배치job — tripEndDate < 오늘인 ONGOING 동행을 일괄 ENDED 전환 (CompanionStatusScheduler에서 매일 1회 호출)
+    // 동행 생애주기 자동화 배치job — tripEndDate < 오늘(Asia/Seoul)인 ONGOING 동행을 일괄 ENDED 전환 (CompanionStatusScheduler에서 매일 1회 호출)
     @Transactional
     public int endExpiredCompanions() {
-        return companionRepository.endExpiredCompanions(LocalDate.now());
+        return companionRepository.endExpiredCompanions(LocalDate.now(clock.withZone(BUSINESS_ZONE)));
     }
 
     // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)

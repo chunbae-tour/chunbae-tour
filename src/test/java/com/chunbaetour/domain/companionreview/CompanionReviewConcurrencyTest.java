@@ -75,9 +75,9 @@ class CompanionReviewConcurrencyTest extends AbstractIntegrationTest {
                 CompanionParticipant.builder().companionId(companion.getId()).userId(reviewer.getId()).build());
         companionParticipantRepository.saveAndFlush(
                 CompanionParticipant.builder().companionId(companion.getId()).userId(target.getId()).build());
-        // 양쪽 모두 endParticipation 완료 — 리뷰 작성 자격(CR_011) 충족
-        companionParticipantRepository.endParticipationIfNotEnded(companion.getId(), reviewer.getId());
-        companionParticipantRepository.endParticipationIfNotEnded(companion.getId(), target.getId());
+        // 양쪽 모두 endParticipation 완료 — 리뷰 작성 자격(CR_011) 충족 (반환값 1 검증 — 사전 조건 세팅 실패를 동시성 실패와 구분)
+        assertThat(companionParticipantRepository.endParticipationIfNotEnded(companion.getId(), reviewer.getId())).isEqualTo(1);
+        assertThat(companionParticipantRepository.endParticipationIfNotEnded(companion.getId(), target.getId())).isEqualTo(1);
 
         CompanionReviewCreateRequest request = new CompanionReviewCreateRequest(chatRoomId, target.getId(), 5, "동시성 테스트 리뷰");
 
