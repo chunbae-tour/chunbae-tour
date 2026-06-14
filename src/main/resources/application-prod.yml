@@ -69,3 +69,9 @@ management:
     web:
       exposure:
         include: health,info
+  # health 상세(show-details): CD health gate 실패 시 어느 indicator(db/redis 등)가 DOWN인지 즉시 식별하려고 always (#525).
+  # 노출 안전성 근거: 9090은 SG(app-sg 9090 ← alb-sg)로 격리되고 ALB는 health 본문을 외부 클라이언트로 프록시하지 않는다.
+  #   (ECS E4에서 바인딩이 0.0.0.0이 돼 "loopback이라 외부 도달 불가" 근거는 폐기 — SG 격리로 대체. 위 server.address 주석 참조.)
+  endpoint:
+    health:
+      show-details: always

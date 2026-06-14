@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.chat.event.ChatMemberKickedEvent;
 import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
+import com.chunbaetour.domain.chat.event.ChatOwnerTransferredEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestApprovedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestCreatedEvent;
 import com.chunbaetour.domain.chat.event.JoinRequestRejectedEvent;
@@ -166,6 +167,33 @@ class NotificationEventHandlerTest {
                 eq(CHAT_ROOM_ID));
         verify(notificationRedisPubSubService).publish(
                 eq(KICKED_USER_ID),
+                any(NotificationResponse.class));
+    }
+
+    // 방장 위임 이벤트 — 신규 방장에게 CHAT_OWNER_TRANSFERRED 알림 저장 + Redis Push 검증
+    @Test
+    void handleChatOwnerTransferred_notifiesNewOwner_andPushes() {
+        Notification notification = buildNotification(104L, APPLICANT_USER_ID, NotificationType.CHAT_OWNER_TRANSFERRED, NotificationReferenceType.CHAT_ROOM, CHAT_ROOM_ID);
+        given(notificationService.createNotification(
+                eq(APPLICANT_USER_ID),
+                eq(NotificationType.CHAT_OWNER_TRANSFERRED),
+                eq("방장 위임"),
+                eq("채팅방 방장이 되었어요."),
+                eq(NotificationReferenceType.CHAT_ROOM),
+                eq(CHAT_ROOM_ID))).willReturn(notification);
+
+        handler.handleChatOwnerTransferred(
+                new ChatOwnerTransferredEvent(CHAT_ROOM_ID, APPLICANT_USER_ID));
+
+        verify(notificationService).createNotification(
+                eq(APPLICANT_USER_ID),
+                eq(NotificationType.CHAT_OWNER_TRANSFERRED),
+                eq("방장 위임"),
+                eq("채팅방 방장이 되었어요."),
+                eq(NotificationReferenceType.CHAT_ROOM),
+                eq(CHAT_ROOM_ID));
+        verify(notificationRedisPubSubService).publish(
+                eq(APPLICANT_USER_ID),
                 any(NotificationResponse.class));
     }
 

@@ -2,10 +2,10 @@ package com.chunbaetour.domain.companionreview.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipantsRequest;
-import com.chunbaetour.domain.companionreview.dto.request.CompanionStartRequest;
+import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionStartResponse;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,13 +16,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "동행", description = "동행 시작/종료/참여자 추가 (/api/v1/chat/rooms/{roomId}/companion)")
+@Tag(name = "동행", description = "동행 생성/종료/취소/참여자 추가 (/api/v1/chat/rooms/{roomId}/companion)")
 @RestController
 @RequiredArgsConstructor
 @Validated
@@ -30,14 +32,14 @@ public class CompanionController {
 
     private final CompanionService companionService;
 
-    // POST /api/v1/chat/rooms/{roomId}/companion — 동행 시작 (방장 전용)
-    @Operation(summary = "동행 시작")
+    // POST /api/v1/chat/rooms/{roomId}/companion — 동행 생성 (방장 전용)
+    @Operation(summary = "동행 생성")
     @PostMapping("/api/v1/chat/rooms/{roomId}/companion")
-    public ResponseEntity<ApiResponse<CompanionStartResponse>> startCompanion(
+    public ResponseEntity<ApiResponse<CompanionCreateResponse>> createCompanion(
             @AuthenticationPrincipal Long ownerId,
             @PathVariable @Positive Long roomId,
-            @Valid @RequestBody CompanionStartRequest request) {
-        CompanionStartResponse response = companionService.startCompanion(ownerId, roomId, request);
+            @Valid @RequestBody CompanionCreateRequest request) {
+        CompanionCreateResponse response = companionService.createCompanion(ownerId, roomId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 
@@ -63,5 +65,18 @@ public class CompanionController {
             @PathVariable @Positive Long roomId) {
         CompanionEndResponse response = companionService.endCompanion(ownerId, roomId);
         return ResponseEntity.ok(ApiResponse.success(response));
+    }
+
+    // DELETE /api/v1/chat/rooms/{roomId}/companion — 동행 취소 (방장 전용)
+    @Operation(
+            summary = "동행 취소",
+            description = "진행 중인(ONGOING) 동행을 취소합니다. Companion과 참여자 전체가 하드 삭제되며(이력 미보존), 취소 후 같은 채팅방에서 새 동행을 생성할 수 있습니다. 방장 전용이며, 이미 종료된(ENDED) 동행은 거부됩니다."
+    )
+    @DeleteMapping("/api/v1/chat/rooms/{roomId}/companion")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelCompanion(
+            @AuthenticationPrincipal Long ownerId,
+            @PathVariable @Positive Long roomId) {
+        companionService.cancelCompanion(ownerId, roomId);
     }
 }

@@ -47,9 +47,7 @@ public class UserItemService {
 
     /** 내 보유 아이템 조회 — cursor keyset 페이징 (id DESC) */
     public CursorPageResponse<UserItemResponse> getMyItems(Long userId, String cursor, int size) {
-        if (size <= 0) {
-            return new CursorPageResponse<>(List.of(), null, false, 0);
-        }
+        // size 검증은 of()가 단일 책임으로 처리한다(size<1 → BusinessException). 별도 가드 제거 (KAN-295 리뷰)
         // cursor 디코딩 — null이면 첫 페이지
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
@@ -57,15 +55,8 @@ public class UserItemService {
         List<UserItem> items = userItemRepository.findItemsByUserIdWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = items.size() > size;
-        List<UserItem> page = hasNext ? items.subList(0, size) : items;
-
-        List<UserItemResponse> content = page.stream()
-                .map(UserItemResponse::from)
-                .toList();
-
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(items, size, UserItemResponse::from, UserItem::getId);
     }
 
     public UserItemQrResponse issueQr(Long userId, Long itemId) {

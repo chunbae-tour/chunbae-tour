@@ -138,11 +138,19 @@ jobs:
             # prod는 management 포트 9090 + address 127.0.0.1(컨테이너 loopback)이라
             # 호스트 포트매핑으론 도달 불가 → 컨테이너 내부에서 검사(docker exec).
             # jre-alpine 런타임 이미지엔 busybox wget 포함.
-            for i in $(seq 1 30); do
+            for i in $(seq 1 45); do
               if docker exec chunbae-app wget -q -O - http://127.0.0.1:9090/actuator/health 2>/dev/null \
                    | grep -q '"status":"UP"'; then
                 echo "✅ health UP ($i)"; exit 0
               fi
-              echo "기동 대기... ($i/30)"; sleep 2
+              echo "기동 대기... ($i/45)"; sleep 2
             done
-            echo "❌ health 실패 — 최근 로그:"; docker logs --tail 50 chunbae-app; exit 1
+            echo "❌ health 실패 — health 요약(민감정보 마스킹):"
+            HEALTH_BODY="$(docker exec chunbae-app wget -q -O - http://127.0.0.1:9090/actuator/health 2>/dev/null || true)"
+            if [ -z "$HEALTH_BODY" ]; then
+              echo "(health 엔드포인트 응답 없음 — 9090 미기동/네트워크)"
+            else
+              echo "$HEALTH_BODY" \
+                | sed -E 's/("?(password|secret|token|key)"?[[:space:]]*:[[:space:]]*)"[^"]*"/\1"***"/Ig'
+            fi
+            echo ""; echo "❌ 최근 로그:"; docker logs --tail 50 chunbae-app; exit 1
