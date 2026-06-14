@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -26,6 +27,7 @@ import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -465,8 +467,10 @@ class CompanionServiceTest {
 
         companionService.cancelCompanion(ownerId, roomId);
 
-        verify(companionParticipantRepository).deleteByCompanionId(100L);
-        verify(companionRepository).delete(companion);
+        // FK 제약(fk_companion_participants_companion RESTRICT) 위반 방지 — 참여자 삭제가 Companion 삭제보다 먼저 실행돼야 함
+        InOrder order = inOrder(companionParticipantRepository, companionRepository);
+        order.verify(companionParticipantRepository).deleteByCompanionId(100L);
+        order.verify(companionRepository).delete(companion);
     }
 
     // 방 없음 → CHAT_001

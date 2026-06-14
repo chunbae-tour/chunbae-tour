@@ -15,8 +15,8 @@ public interface CompanionParticipantRepository extends JpaRepository<CompanionP
     // reviewer/target 동시 참여자 검증 — IN절 단일 쿼리로 참여 여부 확인(고도화 #25)
     long countByCompanionIdAndUserIdIn(Long companionId, List<Long> userIds);
 
-    // 동행 취소 시 참여자 전체 하드 삭제 — 벌크 DELETE
-    @Modifying
+    // 동행 취소 시 참여자 전체 하드 삭제 — 벌크 DELETE, 1차 캐시 stale 엔티티 방지 위해 clearAutomatically
+    @Modifying(clearAutomatically = true)
     @Query("DELETE FROM CompanionParticipant cp WHERE cp.companionId = :companionId")
     void deleteByCompanionId(@Param("companionId") Long companionId);
 }

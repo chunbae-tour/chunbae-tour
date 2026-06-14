@@ -177,7 +177,7 @@ public class CompanionService {
         return CompanionEndResponse.from(companion);
     }
 
-    // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존, 재시작 가능)
+    // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)
     @Transactional
     public void cancelCompanion(Long ownerId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)

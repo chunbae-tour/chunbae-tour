@@ -70,7 +70,7 @@ public class CompanionController {
     // DELETE /api/v1/chat/rooms/{roomId}/companion — 동행 취소 (방장 전용)
     @Operation(
             summary = "동행 취소",
-            description = "진행 중인(ONGOING) 동행을 취소합니다. Companion과 참여자 전체가 하드 삭제되며, 취소 후 같은 채팅방에서 동행을 다시 시작할 수 있습니다. 방장 전용이며, 이미 종료된(ENDED) 동행은 거부됩니다."
+            description = "진행 중인(ONGOING) 동행을 취소합니다. Companion과 참여자 전체가 하드 삭제되며(이력 미보존), 취소 후 같은 채팅방에서 새 동행을 생성할 수 있습니다. 방장 전용이며, 이미 종료된(ENDED) 동행은 거부됩니다."
     )
     @DeleteMapping("/api/v1/chat/rooms/{roomId}/companion")
     @ResponseStatus(HttpStatus.NO_CONTENT)
