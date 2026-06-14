@@ -25,8 +25,10 @@ public class RedisConfig {
     private String redisPassword;
 
     // 전송 중 암호화(TLS) 토글. 운영 ElastiCache(Valkey)는 in-transit encryption ON이라 rediss:// 필요(ECS E2/E4).
-    // 로컬/CI(평문 단일 Redis)는 기본 false → 기존 redis:// 그대로. Lettuce 쪽은 spring.data.redis.ssl.enabled가
-    // Spring Boot 자동구성으로 동일하게 반영되지만, Redisson은 수동 구성이라 같은 프로퍼티를 별도로 읽어 스킴을 맞춘다.
+    // 로컬/CI(평문 단일 Redis)는 기본 false → 기존 redis:// 그대로.
+    // ⚠️ Lettuce(자동구성)와 Redisson(수동구성)이 SSL을 따로 켜는 게 아니라, 둘 다 동일 키
+    //   `spring.data.redis.ssl.enabled` 하나를 출처로 읽는다(Lettuce=DataRedisProperties.ssl.enabled, Redisson=아래 @Value).
+    //   단일 출처라 두 경로가 "한쪽만 TLS"로 어긋날 수 없다(DGAZA-max 리뷰 — 어긋남 방지 장치 = 동일 키 바인딩).
     @Value("${spring.data.redis.ssl.enabled:false}")
     private boolean redisSslEnabled;
 

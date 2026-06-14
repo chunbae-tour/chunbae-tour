@@ -47,9 +47,11 @@ TOUR_API_SERVICE_KEY, TOUR_API_KOR_SERVICE_KEY, PUBLIC_DATA_MARKET_KEY.
 ## 포트 매핑 8080 + 9090
 
 - `8080`: 앱 트래픽(ALB Target Group forward 대상).
-- `9090`: actuator(health/prometheus). ALB TG health check가 태스크 ENI IP의 `9090/actuator/health`를 친다.
+- `9090`: actuator. ALB TG health check가 태스크 ENI IP의 `9090/actuator/health`를 친다.
   - 이 때문에 `application-prod.yml`의 `management.server.address`를 `127.0.0.1` → `0.0.0.0`으로 변경(같은 PR).
-  - 외부 노출 차단은 `app-sg`가 9090을 `alb-sg`에서만 허용하는 SG 규칙으로 유지(E0/E5).
+  - ⚠️ **보안(DGAZA-max 리뷰 반영)**: 별도 management port(9090)는 별도 컨텍스트라 SecurityConfig 필터체인(8080 전용)이 적용 안 됨.
+    그래서 운영은 9090에 **prometheus를 노출하지 않고**(`exposure=health,info`) 비민감 endpoint만 둔다. 9090 외부 노출은
+    `app-sg`가 9090을 `alb-sg`에서만 허용하는 SG로 차단(E0/E5). prometheus 스크레이프는 모니터링(S8)에서 관리포트 보안 갖춰 재도입.
 
 ## CloudWatch 로그 그룹 `/ecs/chunbae-tour`
 
@@ -66,8 +68,14 @@ TOUR_API_SERVICE_KEY, TOUR_API_KOR_SERVICE_KEY, PUBLIC_DATA_MARKET_KEY.
 현행 "앱 부팅 시 Flyway 자동 migrate" 유지(epic E8 결정). `spring-boot-flyway` 모듈 + `flyway.enabled=true`.
 desired=2여도 Flyway DB 락으로 경합 안전. 단독 migrate one-off task 분리는 후속(E8 주석 참조).
 
-## graceful shutdown
+## graceful shutdown / 타임아웃 순서
 
-`stopTimeout: 30` = graceful 20s(`spring.lifecycle.timeout-per-shutdown-phase`) + 여유.
-Dockerfile exec-form ENTRYPOINT로 SIGTERM이 PID1(JVM)에 직접 전달 → graceful 실동작(KAN-226).
-ALB deregistration delay(드레인)는 30s 권장(E5).
+`stopTimeout: 35` > ALB deregistration delay(드레인) 30s > graceful 20s(`spring.lifecycle.timeout-per-shutdown-phase`).
+- ECS가 SIGTERM 후 `stopTimeout`(35s) 뒤 SIGKILL. 드레인(30s)이 끝날 때까지 컨테이너가 살아있어야 막판 in-flight 요청이
+  SIGKILL과 겹치지 않음 → stopTimeout을 드레인보다 크게(35 > 30) 둠(DGAZA-max 리뷰 반영, 기존 30=30 동률 제거).
+- Dockerfile exec-form ENTRYPOINT로 SIGTERM이 PID1(JVM)에 직접 전달 → graceful 실동작(KAN-226).
+
+## healthCheck
+
+컨테이너 `healthCheck.timeout: 5`(s) — JVM 콜드스타트/GC 순간에 actuator 응답이 3s를 넘겨 멀쩡한 태스크가 unhealthy로
+오판·강제종료되는 것 방지(AWS 권장 최소 5s, DGAZA-max 리뷰 반영). `startPeriod: 90`은 부팅 지연만 봐주고 per-check timeout은 늘려주지 않음.

@@ -48,11 +48,11 @@
         { "name": "TOUR_API_KOR_SERVICE_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:310133718863:secret:chunbae-tour/prod-DFWHK4:TOUR_API_KOR_SERVICE_KEY::" },
         { "name": "PUBLIC_DATA_MARKET_KEY", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:310133718863:secret:chunbae-tour/prod-DFWHK4:PUBLIC_DATA_MARKET_KEY::" }
       ],
-      "stopTimeout": 30,
+      "stopTimeout": 35,
       "healthCheck": {
         "command": ["CMD-SHELL", "wget -q -O - http://localhost:9090/actuator/health || exit 1"],
         "interval": 15,
-        "timeout": 3,
+        "timeout": 5,
         "retries": 3,
         "startPeriod": 90
       },
