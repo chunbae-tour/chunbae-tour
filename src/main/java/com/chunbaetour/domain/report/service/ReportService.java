@@ -351,13 +351,21 @@ public class ReportService {
                 }
                 post.hide();
             }, () -> log.warn("deleteTargetContent: POST_FREE not found, targetId={}", targetId));
-            case COMMENT -> commentRepository.findById(targetId).ifPresentOrElse(
-                comment -> comment.delete(),
-                () -> log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId));
+            case COMMENT -> commentRepository.findById(targetId).ifPresentOrElse(comment -> {
+                if (comment.getStatus() == CommentStatus.DELETED) {
+                    log.warn("deleteTargetContent: COMMENT already DELETED, targetId={}", targetId);
+                    return;
+                }
+                comment.delete();
+            }, () -> log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId));
             case USER -> accountRepository.findById(targetId).ifPresentOrElse(acc -> {
                 if (acc.getStatus() == AccountStatus.DELETED) {
                     log.warn("deleteTargetContent: USER already DELETED(탈퇴), targetId={}", targetId);
                     return;
+                }
+                // R-5 일관: 이미 정지된 USER 재정지 차단 (suspendTargetAuthor와 동일 가드)
+                if (acc.getStatus() == AccountStatus.SUSPENDED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
                 }
                 acc.suspend();
             }, () -> log.warn("deleteTargetContent: USER not found, targetId={}", targetId));
@@ -385,6 +393,9 @@ public class ReportService {
             if (acc.getStatus() == AccountStatus.DELETED) {
                 log.warn("suspendTargetAuthor: 탈퇴 계정 정지 생략, authorId={}", authorId);
                 return;
+            }
+            if (acc.getStatus() == AccountStatus.SUSPENDED) {
+                throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
             }
             acc.suspend();
         }, () -> log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId));
