@@ -38,7 +38,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code POST /api/v1/auth/logout} — 인증 필요 (S4)</li>
  *   <li>{@code /api/v1/auth/**} — 공통 토큰 API (reissue 등, permitAll)</li>
  *   <li>{@code /actuator/health}, {@code /actuator/info} — permitAll (LB health check).
- *       {@code /actuator/prometheus}는 IP allowlist (loopback only) + 운영에서는 별도 management port(9090) + loopback 바인딩으로 이중 보호 (#149).
+ *       {@code /actuator/prometheus}는 IP allowlist (loopback only) + 운영에서는 별도 management port(9090) 분리 + SG(9090 ← alb-sg)로 이중 보호 (#149; ECS E4에서 loopback 바인딩 → SG 격리로 이동).
  *       그 외 {@code /actuator/**}는 denyAll로 차단 (env/beans/mappings 등 정보 노출 방지).</li>
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
@@ -132,7 +132,9 @@ public class SecurityConfig {
                         // 방어적으로 SecurityConfig에서도 명시 거부해 향후 exposure가 잘못 확장돼도 노출 방지 (이중 안전).
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         // /actuator/prometheus 이중 방어 (#149):
-                        // - 운영(application-prod.yml): management.server.port=9090 + address=127.0.0.1 → main 포트 도달 자체 차단
+                        // - 운영(application-prod.yml): management.server.port=9090 → main 포트(8080)와 분리. prometheus는 8080에 노출 안 됨.
+                        //   바인딩은 ECS 전환(E4)에서 127.0.0.1 → 0.0.0.0(ALB TG health check 도달용)으로 변경됐고,
+                        //   9090 외부 노출 차단은 SG(9090 ← alb-sg)가 담당(바인딩 차단 → SG 차단으로 이동).
                         // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용 → 차단 응답:
                         //   * 익명 사용자(일반 시나리오): 401 AUTH_006 (RestAuthenticationEntryPoint가 인증 요구로 해석)
                         //   * 인증된 사용자(role mismatch): 403 (RestAccessDeniedHandler)
