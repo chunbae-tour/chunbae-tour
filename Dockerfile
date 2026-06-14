@@ -43,7 +43,8 @@ ENV JDK_JAVA_OPTIONS="-XX:MaxRAMPercentage=70.0 -XX:+ExitOnOutOfMemoryError -Dus
 # actuator가 8080에 붙어 아래 9090 HEALTHCHECK가 영구 unhealthy가 된다. 로컬 실행 시엔 -e SPRING_PROFILES_ACTIVE로 오버라이드.
 ENV SPRING_PROFILES_ACTIVE=prod
 
-EXPOSE 8080
+# 8080=앱 트래픽, 9090=actuator(management.server.port, ALB health check). EXPOSE는 문서용 — task-definition portMappings와 일치.
+EXPOSE 8080 9090
 
 # HEALTHCHECK: 운영 actuator는 prod 프로파일에서 main(8080)과 분리된 별도 포트 9090에 뜬다(application-prod.yml management.server.port=9090). 9090을 본다.
 #   - 컨테이너 내부 loopback 호출이라, ECS 전환(E4)으로 바인딩이 0.0.0.0이 되어도(외부 노출은 SG로 차단) localhost로 도달 가능.
