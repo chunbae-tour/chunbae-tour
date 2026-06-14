@@ -23,24 +23,26 @@ sed 's|<SECRET_ARN>|arn:aws:secretsmanager:ap-northeast-2:310133718863:secret:ch
 aws ecs register-task-definition --cli-input-json file:///tmp/td.json --region ap-northeast-2
 ```
 
-## ⚠️ secrets 키 = 28개 (시크릿 실제 27개와 대조 필요)
+## secrets 키 = 24개 (시크릿 실제 키와 대조 완료)
 
-현재 배열은 `application.yml`/`application-prod.yml`의 `${ENV}` placeholder에서 역산한 **28개**다.
-시크릿엔 27개라 했으니 **1개 초과** — 등록 전 1:1 대조 필수.
+`secrets` 배열 = Secrets Manager에 실제 입력된 키 중 **앱이 env로 받아야 하는 24개**.
+(시크릿 자체엔 더 많은 키가 있으나 아래 항목은 Task Definition에 주입하지 않는다 — 무해.)
 
-- 존재하지 않는 키를 secrets에 두면 → 태스크가 `ResourceNotFoundException`으로 기동 실패.
-- 앱이 부팅에 필요한 키가 빠지면 → fail-fast 부팅 실패(기본값 없는 키).
-
-**의도적으로 제외한 항목**(prod에서 env 불필요):
+**주입 안 함**:
+- `SPRING_PROFILES_ACTIVE` → `environment`로 `prod` 리터럴 주입(민감정보 아님, Dockerfile ENV에도 고정). secrets+environment 중복 정의는 ECS가 거부하므로 environment 한 곳만.
 - `DB_PORT` / `REDIS_PORT` — prod.yml에 3306/6379 하드코딩
-- `REDIS_PASSWORD` — ElastiCache AUTH 미설정(TLS만). 비번 없음 → 주입 불필요
-- `RATELIMIT_ENABLED` — prod.yml에 `enabled: true` 리터럴
-- `PUBLIC_DATA_MARKET_URL` — yml에 기본 URL 있음(키만 주입)
+- `REDIS_PASSWORD` — ElastiCache AUTH 미설정(TLS만). 비번 없음
 
-**기본값 있어 시크릿에서 빠졌을 후보**(빠졌으면 secrets 배열에서도 제거):
-`JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL`, `COOKIE_SAMESITE`, `REPORT_AUTO_HIDE_THRESHOLD`, `PUBLIC_DATA_MARKET_KEY`(전통시장 기능 미사용 시).
+**앱은 받지만 시크릿에 없는 키**(yml 기본값으로 동작 — 주입 불필요):
+`JWT_ACCESS_TOKEN_TTL`(PT30M), `JWT_REFRESH_TOKEN_TTL`(P7D), `COOKIE_SAMESITE`(Lax), `REPORT_AUTO_HIDE_THRESHOLD`(3).
+운영에서 이 값을 바꾸려면 시크릿에 키 추가 후 secrets 배열에 1줄 추가.
 
-→ 실제 27개 키 이름을 확인해 배열을 정확히 맞춰주세요(키 이름은 비밀 아님).
+주입 24키: DB_HOST, DB_NAME, DB_USERNAME, DB_PASSWORD, REDIS_HOST, JWT_SECRET,
+CORS_ALLOWED_ORIGINS, ACCOUNT_ENCRYPTION_KEY, PORTONE_SECRET, PORTONE_WEBHOOK_SECRET,
+PORTONE_STORE_ID, PORTONE_CHANNEL_CARD, PORTONE_CHANNEL_KAKAO_PAY, PORTONE_CHANNEL_TOSS_PAY,
+PORTONE_CHANNEL_FOREIGN_CARD, GOOGLE_TRANSLATION_API_KEY, KAKAO_MAP_API_KEY,
+KAKAO_LOGIN_REST_API_KEY, KAKAO_LOGIN_CLIENT_SECRET, NAVER_CLIENT_ID, NAVER_CLIENT_SECRET,
+TOUR_API_SERVICE_KEY, TOUR_API_KOR_SERVICE_KEY, PUBLIC_DATA_MARKET_KEY.
 
 ## 포트 매핑 8080 + 9090
 
