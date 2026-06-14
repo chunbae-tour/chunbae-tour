@@ -370,6 +370,8 @@ class ChargeServiceTest {
         assertThat(result.content().get(0).orderUid()).isEqualTo("order-10");
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
+        // size 필드는 반환 개수(2)가 아니라 요청 size(20)를 echo한다 — 팀 표준 회귀 가드 (KAN-295 일관)
+        assertThat(result.size()).isEqualTo(20);
     }
 
     @Test

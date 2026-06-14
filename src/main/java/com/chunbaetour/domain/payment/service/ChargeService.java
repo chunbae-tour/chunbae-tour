@@ -222,7 +222,8 @@ public class ChargeService {
                 .map(PaymentHistoryResponse::from)
                 .toList();
 
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // size 필드는 실제 반환 개수가 아니라 요청 size를 그대로 echo한다(팀 표준, KAN-295 일관).
+        return new CursorPageResponse<>(responses, nextCursor, hasNext, size);
     }
 
     /** 충전 직렬화 락 획득 — 대기 시간 내 실패하거나 인터럽트되면 PAYMENT_PROCESSING(503)으로 재시도 유도. */
