@@ -363,6 +363,10 @@ public class ReportService {
                     log.warn("deleteTargetContent: USER already DELETED(탈퇴), targetId={}", targetId);
                     return;
                 }
+                // R-5 일관: 이미 정지된 USER 재정지 차단 (suspendTargetAuthor와 동일 가드)
+                if (acc.getStatus() == AccountStatus.SUSPENDED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
+                }
                 acc.suspend();
             }, () -> log.warn("deleteTargetContent: USER not found, targetId={}", targetId));
             default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
