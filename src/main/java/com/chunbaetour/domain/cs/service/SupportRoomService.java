@@ -20,6 +20,7 @@ import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import com.chunbaetour.domain.cs.storage.SupportFileStorage;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -42,6 +43,7 @@ public class SupportRoomService {
     private final SupportMessageRepository supportMessageRepository;
     private final AccountRepository accountRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final SupportFileStorage supportFileStorage;
 
     // 상담방 생성 (USER·MERCHANT) — 활성 방 중복 차단(앱 레벨 선체크 + DB unique 제약 이중 방어)
     @Transactional
@@ -203,9 +205,16 @@ public class SupportRoomService {
                 supportRoomId, cursorId, PageRequest.of(0, size + 1));
 
         boolean hasNext = page.size() > size;
-        List<SupportMessageResponse> content = page.stream().limit(size).map(SupportMessageResponse::from).toList();
+        List<SupportMessageResponse> content = page.stream().limit(size)
+                .map(m -> SupportMessageResponse.from(m, resolveFileUrl(m)))
+                .toList();
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).messageId()) : null;
 
         return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+    }
+
+    // SupportMessage.fileUrl(S3 객체 키) → presigned GET URL 변환. TEXT는 fileUrl이 없어 그대로 null 반환.
+    private String resolveFileUrl(SupportMessage message) {
+        return message.getFileUrl() != null ? supportFileStorage.presignedGetUrl(message.getFileUrl()) : null;
     }
 }

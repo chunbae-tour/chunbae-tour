@@ -10,6 +10,8 @@ import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.event.SupportMessageSentEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import com.chunbaetour.domain.cs.storage.SupportFileKeys;
+import com.chunbaetour.domain.cs.storage.SupportFileStorage;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
@@ -36,6 +38,7 @@ public class SupportMessageService {
     private final SupportRedisPubSubService supportRedisPubSubService;
     private final RateLimiter rateLimiter;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final SupportFileStorage supportFileStorage;
 
     // 메시지 전송 — rate limit 선검증, 방 상태·발신 권한 검증, 길이 검증, DB 저장, Redis 발행 (커밋 이후)
     @Transactional
@@ -72,25 +75,36 @@ public class SupportMessageService {
             senderRole = SupportSenderRole.CUSTOMER;
         }
 
-        // STOMP @Payload는 Bean Validation 미적용 — 서비스에서 명시적 검증
-        if (request.content() == null || request.content().isBlank()) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (request.content().length() > 1000) {
-            throw new BusinessException(ErrorCode.MESSAGE_TOO_LONG);
-        }
+        // messageType 미지정 시 TEXT(기존 클라이언트 호환)
+        SupportMessageType messageType = request.messageType() != null ? request.messageType() : SupportMessageType.TEXT;
 
-        SupportMessage message = SupportMessage.builder()
+        SupportMessage.SupportMessageBuilder messageBuilder = SupportMessage.builder()
                 .supportRoomId(supportRoomId)
                 .senderId(userId)
                 .senderRole(senderRole)
-                .messageType(SupportMessageType.TEXT)
-                .content(request.content())
-                .fileUrl(null)
-                .build();
+                .messageType(messageType)
+                .content(request.content());
 
-        SupportMessage saved = supportMessageRepository.save(message);
-        SupportMessageResponse response = SupportMessageResponse.from(saved);
+        if (messageType == SupportMessageType.TEXT) {
+            // STOMP @Payload는 Bean Validation 미적용 — 서비스에서 명시적 검증
+            if (request.content() == null || request.content().isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+            if (request.content().length() > 1000) {
+                throw new BusinessException(ErrorCode.MESSAGE_TOO_LONG);
+            }
+        } else {
+            // fileUrl(객체 키)이 이 상담방 업로드(POST .../files)로 발급된 키인지 검증 — 타 방 키 전송 차단(IDOR)
+            if (!SupportFileKeys.belongsToSupportRoom(request.fileUrl(), supportRoomId)) {
+                throw new BusinessException(ErrorCode.SUPPORT_FILE_OWNERSHIP_INVALID);
+            }
+            messageBuilder.fileUrl(request.fileUrl())
+                    .fileName(request.fileName())
+                    .fileSize(request.fileSize());
+        }
+
+        SupportMessage saved = supportMessageRepository.save(messageBuilder.build());
+        SupportMessageResponse response = SupportMessageResponse.from(saved, resolveFileUrl(saved));
 
         // 알림 이벤트 발행 — ADMIN 발신 시에만 방 소유자(USER·MERCHANT)에게 알림
         // USER/MERCHANT 발신 → ADMIN은 알림 인프라 미구축으로 skip
@@ -110,5 +124,11 @@ public class SupportMessageService {
             // 트랜잭션 없는 컨텍스트(단위 테스트 등)에서만 진입 — 프로덕션에서 도달하지 않음
             supportRedisPubSubService.publish(supportRoomId, response);
         }
+    }
+
+    // SupportMessage.fileUrl(S3 객체 키) → presigned GET URL 변환. TEXT는 fileUrl이 없어 그대로 null 반환.
+    // presign 발급은 로컬 서명 연산(네트워크 호출 없음)이라 메시지별 호출해도 N+1 문제 없음.
+    private String resolveFileUrl(SupportMessage message) {
+        return message.getFileUrl() != null ? supportFileStorage.presignedGetUrl(message.getFileUrl()) : null;
     }
 }

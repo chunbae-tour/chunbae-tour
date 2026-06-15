@@ -142,6 +142,18 @@ ratelimit:
       path: /api/v1/merchants/me/shops/*/images
       limit: 20
       window: PT1H
+    # 상담 채팅 파일/이미지 업로드(KAN-310): shop-image-upload와 동일한 이유 — 업로드와 메시지 전송이 분리된
+    #   2-step 구조라 전송 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
+    - id: support-file-upload
+      method: POST
+      path: /api/v1/support/rooms/*/files
+      limit: 20
+      window: PT1H
+    - id: admin-support-file-upload
+      method: POST
+      path: /api/v1/admin/support/rooms/*/files
+      limit: 20
+      window: PT1H
     # 토큰 재발급: permitAll + 자동 전송 refresh 쿠키만으로 호출 가능한 경로라 무제한 노출되면
     #   (1) 프론트 인터셉터의 401→reissue 재시도 루프 오작동, (2) 탈취 refresh 쿠키 brute 시도를 막지 못한다.
     #   IP당 분당 20회 — 정상 SPA의 access TTL 만료 주기(분 단위 1회)에 비해 충분히 여유 있으면서 폭주는 차단.

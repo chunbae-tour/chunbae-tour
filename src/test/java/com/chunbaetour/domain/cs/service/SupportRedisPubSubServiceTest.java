@@ -45,7 +45,7 @@ class SupportRedisPubSubServiceTest {
 
     private static final SupportMessageResponse RESPONSE = new SupportMessageResponse(
             1L, 10L, SupportSenderRole.CUSTOMER, SupportMessageType.TEXT,
-            "문의드립니다", null, LocalDateTime.of(2024, 1, 1, 0, 0));
+            "문의드립니다", null, null, null, LocalDateTime.of(2024, 1, 1, 0, 0));
 
     @BeforeEach
     void setUp() {
