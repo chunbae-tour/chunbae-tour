@@ -20,7 +20,10 @@ import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
+import com.chunbaetour.domain.shop.storage.ShopImageKeys;
+import com.chunbaetour.domain.shop.storage.ShopImageStorage;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import java.util.ArrayList;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import java.util.List;
@@ -47,6 +50,7 @@ public class ShopService {
     private final ObjectMapper objectMapper;
     private final PlaceRepository placeRepository;
     private final TraditionalMarketRepository traditionalMarketRepository;
+    private final ShopImageStorage imageStorage;
 
     /**
      * 내 가게 목록 조회.
@@ -54,9 +58,11 @@ public class ShopService {
      * SUSPENDED/CLOSED 가게도 포함 — 본인 가게 상태 확인 가능해야 함.
      */
     public List<ShopResponse> getMyShops(Long userId) {
-        // userId로 내 가게 목록 조회
+        // userId로 내 가게 목록 조회. imageUrls(키)는 presigned GET URL로 변환해 응답.
         return shopRepository.findAllByUserId(userId)
-                .stream().map(ShopResponse::from).toList();
+                .stream()
+                .map(shop -> ShopResponse.from(shop, presignImageUrls(shop.getImageUrls(), shop.getId())))
+                .toList();
     }
 
     /**
@@ -69,7 +75,7 @@ public class ShopService {
         Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        return ShopResponse.from(shop);
+        return ShopResponse.from(shop, presignImageUrls(shop.getImageUrls(), shop.getId()));
     }
 
     /**
@@ -92,13 +98,13 @@ public class ShopService {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
 
-        // imageUrls JSON 유효성 검사 — 형식 오류 시 DB flush에서 MySQL 5xx 발생하므로 사전 차단
-        validateImageUrls(request.imageUrls());
+        // imageUrls JSON 유효성 + 키 소유권(prefix) 검사 — 형식 오류 사전 차단 + 타 가게/임의 객체 키 저장 차단(IDOR)
+        validateImageUrls(request.imageUrls(), shopId);
 
         // 수정 가능한 필드 업데이트 (위치 제외)
         shop.update(request);
 
-        return ShopResponse.from(shop);
+        return ShopResponse.from(shop, presignImageUrls(shop.getImageUrls(), shop.getId()));
     }
 
     /**
@@ -312,22 +318,60 @@ public class ShopService {
         return shopRepository.findById(shopId).map(Shop::getUserId);
     }
 
-    /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */
-    private void validateImageUrls(String imageUrls) {
+    /**
+     * imageUrls 검사 — null이면 통과(수정 안 함), JSON 배열이어야 하고 원소는 비어있지 않은 문자열,
+     * 그리고 각 원소는 <b>해당 가게 소유 키({@code shops/{shopId}/...})</b>여야 한다.
+     * 마지막 조건이 IDOR 방지(hyeonmin02 리뷰) — 타 가게/임의 S3 객체 키를 저장해 PR3 조회 시 presign되는 것을 차단.
+     */
+    private void validateImageUrls(String imageUrls, Long shopId) {
         if (imageUrls == null) return;
         try {
             var node = objectMapper.readTree(imageUrls);
             if (!node.isArray()) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-            // S3 URL 배열이므로 원소는 반드시 문자열이어야 함 — [1, true, null, {...}] 등 거부
             for (var item : node) {
                 if (!item.isTextual() || item.asText().isBlank()) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+                // 키 소유권: 자기 가게 prefix 아닌 키(타 가게/임의 객체)는 거부
+                if (!ShopImageKeys.belongsToShop(item.asText(), shopId)) {
                     throw new BusinessException(ErrorCode.INVALID_REQUEST);
                 }
             }
         } catch (JacksonException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+    }
+
+    /**
+     * 저장된 imageUrls(S3 객체 키 JSON 배열) → presigned GET URL JSON 배열로 변환(E10 PR3).
+     * null/blank는 그대로 반환. 방어적으로 <b>해당 가게 소유 prefix 키만</b> presign한다(IDOR 2중 방어 —
+     * 저장 검증을 우회한 키가 있어도 presign 안 함).
+     */
+    private String presignImageUrls(String imageUrls, Long shopId) {
+        if (imageUrls == null || imageUrls.isBlank()) {
+            return imageUrls;
+        }
+        try {
+            var node = objectMapper.readTree(imageUrls);
+            if (!node.isArray()) {
+                return imageUrls;
+            }
+            List<String> urls = new ArrayList<>();
+            for (var item : node) {
+                if (!item.isTextual()) {
+                    continue;
+                }
+                String key = item.asText();
+                if (ShopImageKeys.belongsToShop(key, shopId)) {
+                    urls.add(imageStorage.presignedGetUrl(key));
+                }
+            }
+            return objectMapper.writeValueAsString(urls);
+        } catch (JacksonException e) {
+            // 저장 시 검증을 통과한 값이라 정상 경로에선 도달 안 함. 방어적으로 원본 유지.
+            return imageUrls;
         }
     }
 }

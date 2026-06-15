@@ -20,7 +20,20 @@ public final class ShopImageKeys {
 
     /** content-type → 객체 키. 허용 타입(jpeg/png/webp) 외에는 호출되지 않는다(서비스가 선검증). */
     public static String objectKey(Long shopId, String contentType) {
-        return "shops/" + shopId + "/" + UUID.randomUUID() + "." + extensionFor(contentType);
+        return prefix(shopId) + UUID.randomUUID() + "." + extensionFor(contentType);
+    }
+
+    /** 가게별 키 prefix({@code shops/{shopId}/}). */
+    public static String prefix(Long shopId) {
+        return "shops/" + shopId + "/";
+    }
+
+    /**
+     * 키가 해당 가게 소유 prefix({@code shops/{shopId}/})에 속하는지.
+     * imageUrls 저장 검증·presign 발급 시 타 가게/임의 객체 키 차단(IDOR 방지, hyeonmin02 리뷰).
+     */
+    public static boolean belongsToShop(String key, Long shopId) {
+        return key != null && key.startsWith(prefix(shopId));
     }
 
     private static String extensionFor(String contentType) {
