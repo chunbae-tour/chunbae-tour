@@ -4,6 +4,7 @@ import com.chunbaetour.domain.community.comment.entity.Comment;
 import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.common.PostType;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -55,7 +56,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     // 특정 루트 댓글의 대댓글 전체 조회 (더보기)
     List<Comment> findByParentCommentIdAndStatusOrderByIdAsc(Long parentCommentId, CommentStatus status);
 
-    @Modifying
-    @Query("UPDATE Comment c SET c.status = com.chunbaetour.domain.community.comment.entity.CommentStatus.HIDDEN WHERE c.authorId = :authorId AND c.status = com.chunbaetour.domain.community.comment.entity.CommentStatus.ACTIVE")
-    void hideAllActiveByAuthorId(@Param("authorId") Long authorId);
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Comment c SET c.status = com.chunbaetour.domain.community.comment.entity.CommentStatus.HIDDEN, c.updatedAt = :now WHERE c.authorId = :authorId AND c.status = com.chunbaetour.domain.community.comment.entity.CommentStatus.ACTIVE")
+    void hideAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
 }

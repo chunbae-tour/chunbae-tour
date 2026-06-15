@@ -28,6 +28,8 @@ public class ReportQueryRepository {
      */
     public List<Report> findByFilter(ReportStatus status, ReportTargetType targetType,
             ReportReason reason, Long reportedUserId, Long cursorId, int size) {
+        // 컨트롤러(@Min(1)@Max(100))로 검증되지만, 직접 호출 대비 하한 방어 — size<1이면 limit이 1 이하가 되어 오작동.
+        int safeSize = Math.max(size, 1);
         return queryFactory
                 .selectFrom(report)
                 .where(
@@ -38,7 +40,7 @@ public class ReportQueryRepository {
                         cursorIdLt(cursorId)
                 )
                 .orderBy(report.id.desc())
-                .limit(size + 1)
+                .limit(safeSize + 1)
                 .fetch();
     }
 

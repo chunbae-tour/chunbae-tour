@@ -98,10 +98,10 @@ public class Report extends BaseEntity {
      * <p>도메인 불변식 보호: PENDING 상태가 아니면 IllegalStateException.
      * 서비스 레이어에서도 체크하지만 엔티티 자체도 방어.
      *
-     * <p>TODO(Clock): LocalDateTime.now() 직접 사용 — 테스트에서 시간 제어 불가.
-     * 추후 Clock 주입 방식으로 개선 가능 (엔티티 Clock 주입은 복잡도 증가로 MVP 범위 제외).
+     * <p>resolvedAt은 서비스가 주입한 시각({@code now(clock)}, UTC)을 받는다 —
+     * 시스템 전역 시간 기준을 통일해 제재 집계·만료 비교의 정합성을 보장한다.
      */
-    public void resolve(ReportAction action, String adminNote, String resolvedBy) {
+    public void resolve(ReportAction action, String adminNote, String resolvedBy, LocalDateTime resolvedAt) {
         if (!isPending()) {
             throw new IllegalStateException("이미 처리된 신고입니다. reportId=" + this.id);
         }
@@ -112,7 +112,7 @@ public class Report extends BaseEntity {
         this.action = action;
         this.adminNote = adminNote;
         this.resolvedBy = resolvedBy;
-        this.resolvedAt = LocalDateTime.now();
+        this.resolvedAt = resolvedAt;
     }
 
     /**
@@ -122,7 +122,7 @@ public class Report extends BaseEntity {
      * <p>도메인 불변식 보호: 서비스 레이어에서 isPending() 체크를 하더라도
      * 엔티티 자체도 방어 — 잘못된 직접 호출 시 상태 덮어쓰기 방지.
      */
-    public void dismiss(String adminNote, String resolvedBy) {
+    public void dismiss(String adminNote, String resolvedBy, LocalDateTime resolvedAt) {
         if (!isPending()) {
             throw new IllegalStateException("이미 처리된 신고입니다. reportId=" + this.id);
         }
@@ -130,7 +130,7 @@ public class Report extends BaseEntity {
         this.action = ReportAction.DISMISS;
         this.adminNote = adminNote;
         this.resolvedBy = resolvedBy;
-        this.resolvedAt = LocalDateTime.now();
+        this.resolvedAt = resolvedAt;
     }
 
     public boolean isPending() {
@@ -146,13 +146,14 @@ public class Report extends BaseEntity {
      * 콘텐츠 복원은 서비스 레이어에서 {@code ReportContentActionEvent(RESTORE)}로 별도 처리.
      *
      * <p>도메인 불변식: RESOLVED 상태에서만 호출 가능 (서비스에서도 검증).
+     * <p>{@code action}은 원래 취한 조치(DELETE/SUSPEND 등) 그대로 보존한다 —
+     * 정정 여부는 {@code status=DISMISSED}와 adminNote로 표현하고, action 필드는 오염시키지 않는다.
      */
     public void correctToDismissed(String adminNote, String correctedBy, LocalDateTime correctedAt) {
         if (!isResolved()) {
             throw new IllegalStateException("RESOLVED 신고만 정정할 수 있습니다. reportId=" + this.id);
         }
         this.status = ReportStatus.DISMISSED;
-        this.action = ReportAction.RESTORE;
         this.adminNote = adminNote;
         this.resolvedBy = correctedBy;
         this.resolvedAt = correctedAt;

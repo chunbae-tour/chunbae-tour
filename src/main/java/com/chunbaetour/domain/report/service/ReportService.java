@@ -274,10 +274,11 @@ public class ReportService {
             }
 
             String adminNickname = resolveNickname(adminId);
+            LocalDateTime now = LocalDateTime.now(clock);
             if (action == ReportAction.DISMISS || action == ReportAction.RESTORE) {
-                report.dismiss(request.adminNote(), adminNickname);
+                report.dismiss(request.adminNote(), adminNickname, now);
             } else {
-                report.resolve(action, request.adminNote(), adminNickname);
+                report.resolve(action, request.adminNote(), adminNickname, now);
             }
             reportRepository.saveAndFlush(report);
             publishReportAcceptedEventIfNeeded(report, action);
@@ -315,10 +316,11 @@ public class ReportService {
             applyMerchantAction(action, report.getTargetId());
 
             String adminNickname = resolveNickname(adminId);
+            LocalDateTime now = LocalDateTime.now(clock);
             if (action == ReportAction.DISMISS) {
-                report.dismiss(request.adminNote(), adminNickname);
+                report.dismiss(request.adminNote(), adminNickname, now);
             } else {
-                report.resolve(action, request.adminNote(), adminNickname);
+                report.resolve(action, request.adminNote(), adminNickname, now);
             }
             reportRepository.saveAndFlush(report);
             publishReportAcceptedEventIfNeeded(report, action);
@@ -351,7 +353,7 @@ public class ReportService {
         }
 
         String adminNickname = resolveNickname(adminId);
-        report.correctToDismissed(request.adminNote(), adminNickname, LocalDateTime.now());
+        report.correctToDismissed(request.adminNote(), adminNickname, LocalDateTime.now(clock));
         reportRepository.saveAndFlush(report);
 
         // 콘텐츠 복원 — 기각이므로 숨김 콘텐츠 되살림
@@ -419,15 +421,16 @@ public class ReportService {
     }
 
     private void publishReportAcceptedEventIfNeeded(Report report, ReportAction action) {
-        if (action == ReportAction.DISMISS) return;
+        // DISMISS·RESTORE는 신고를 DISMISSED로 종결(무효 처리) → 제재 카운트에 미집계, 이벤트 미발행.
+        if (action == ReportAction.DISMISS || action == ReportAction.RESTORE) return;
         Long reportedUserId = report.getReportedUserId();
         if (reportedUserId == null) {
             reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
         }
         if (reportedUserId == null) return;
         // 1년 롤링 윈도우: 최근 1년 RESOLVED 신고만 제재 단계 판정에 집계 (오래된 신고 자동 만료)
-        // resolved_at(엔티티 LocalDateTime.now() 기준)과 비교하므로 윈도우 시작도 동일 기준 사용 (내부 일관)
-        LocalDateTime windowStart = LocalDateTime.now().minus(SANCTION_COUNT_WINDOW);
+        // resolved_at(서비스가 now(clock) 주입, UTC)과 비교하므로 윈도우 시작도 동일 기준 사용
+        LocalDateTime windowStart = LocalDateTime.now(clock).minus(SANCTION_COUNT_WINDOW);
         long acceptedCount = reportRepository
                 .countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
                         reportedUserId, report.getTargetType(), ReportStatus.RESOLVED, windowStart);

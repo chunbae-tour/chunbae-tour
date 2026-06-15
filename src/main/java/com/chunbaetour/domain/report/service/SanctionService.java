@@ -99,7 +99,7 @@ public class SanctionService {
 
         // 6. PERMANENT → 해당 유저 전체 콘텐츠 숨김
         if (calculated == SanctionType.PERMANENT) {
-            hideAllContentByUser(userId);
+            hideAllContentByUser(userId, now);
         }
 
         // 7. 2+ 활성 도메인 → 계정 전체 정지
@@ -129,9 +129,9 @@ public class SanctionService {
         Long targetId = report.getTargetId();
         switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findById(targetId)
-                    .ifPresent(p -> { if (!p.getStatus().name().equals("DELETED")) p.hide(); });
+                    .ifPresent(p -> { if (p.getStatus() != com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.DELETED) p.hide(); });
             case POST_FREE -> freePostRepository.findById(targetId)
-                    .ifPresent(p -> { if (!p.getStatus().name().equals("DELETED")) p.hide(); });
+                    .ifPresent(p -> { if (p.getStatus() != com.chunbaetour.domain.community.free.entity.FreePostStatus.DELETED) p.hide(); });
             case COMMENT -> commentRepository.findById(targetId)
                     .ifPresent(c -> { if (c.getStatus() != com.chunbaetour.domain.community.comment.entity.CommentStatus.DELETED) c.hide(); });
             case REVIEW -> placeReviewRepository.findById(targetId)
@@ -142,10 +142,13 @@ public class SanctionService {
     }
 
     /** PERMANENT 제재 시 해당 유저의 전체 콘텐츠 숨김. */
-    private void hideAllContentByUser(Long userId) {
-        companionPostRepository.hideAllActiveByAuthorId(userId);
-        freePostRepository.hideAllActiveByAuthorId(userId);
-        commentRepository.hideAllActiveByAuthorId(userId);
+    private void hideAllContentByUser(Long userId, LocalDateTime now) {
+        // 벌크 UPDATE는 JPA Auditing(@LastModifiedDate)을 우회하므로 updatedAt을 명시적으로 갱신.
+        companionPostRepository.hideAllActiveByAuthorId(userId, now);
+        freePostRepository.hideAllActiveByAuthorId(userId, now);
+        commentRepository.hideAllActiveByAuthorId(userId, now);
+        // PlaceReview는 HIDDEN 상태가 없어 soft-delete(DELETED)로 숨김 — hideReportedContent의 REVIEW 처리와 동일.
+        placeReviewRepository.deleteAllActiveByAuthorId(userId, now);
         log.info("[영구 정지 전체 숨김] userId={}", userId);
     }
 

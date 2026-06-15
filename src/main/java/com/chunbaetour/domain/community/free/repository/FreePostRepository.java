@@ -3,6 +3,7 @@ package com.chunbaetour.domain.community.free.repository;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -35,7 +36,7 @@ public interface FreePostRepository extends JpaRepository<FreePost, Long> {
             Pageable pageable
     );
 
-    @Modifying
-    @Query("UPDATE FreePost p SET p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.HIDDEN WHERE p.authorId = :authorId AND p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.ACTIVE")
-    void hideAllActiveByAuthorId(@Param("authorId") Long authorId);
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE FreePost p SET p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.HIDDEN, p.updatedAt = :now WHERE p.authorId = :authorId AND p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.ACTIVE")
+    void hideAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
 }

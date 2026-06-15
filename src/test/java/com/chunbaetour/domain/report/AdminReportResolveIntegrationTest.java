@@ -33,6 +33,7 @@ import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -255,7 +256,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
                     ReportReason.SPAM, null, null));
-            report.resolve(ReportAction.WARNING, null, "admin");  // already resolved, valid action required
+            report.resolve(ReportAction.WARNING, null, "admin", LocalDateTime.now());  // already resolved, valid action required
             reportRepository.save(report);
             String adminToken = adminToken();
 
@@ -348,7 +349,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account target = seedFactory.seed("ust_target@test.com", PASSWORD, "정정대상", Role.USER, AccountStatus.ACTIVE);
             Report report = Report.create(reporter.getId(), ReportTargetType.USER, target.getId(),
                     ReportReason.SPAM, null, target.getId());
-            report.resolve(ReportAction.WARNING, "처리함", "admin");
+            report.resolve(ReportAction.WARNING, "처리함", "admin", LocalDateTime.now());
             reportRepository.saveAndFlush(report);
             String adminToken = adminToken();
 
@@ -482,7 +483,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
                     ReportReason.SPAM, null, null));
-            report.dismiss(null, "admin");
+            report.dismiss(null, "admin", LocalDateTime.now());
             reportRepository.save(report);
             String adminToken = adminToken();
 

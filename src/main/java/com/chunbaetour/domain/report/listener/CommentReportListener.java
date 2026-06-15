@@ -7,6 +7,7 @@ import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.entity.SanctionType;
 import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +37,7 @@ public class CommentReportListener {
                     if (acc.getStatus() == AccountStatus.SUSPENDED) {
                         throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
                     }
-                    acc.suspend();
+                    acc.applySystemSanction(SanctionType.PERMANENT, null);
                 });
             } else if (event.action() == ReportAction.RESTORE) {
                 comment.restore();

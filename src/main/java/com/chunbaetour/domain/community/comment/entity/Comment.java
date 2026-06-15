@@ -79,6 +79,9 @@ public class Comment extends BaseEntity {
     }
 
     public void hide() {
+        if (this.status == CommentStatus.DELETED) {
+            throw new IllegalStateException("삭제된 댓글은 숨김 처리할 수 없습니다. commentId=" + this.id);
+        }
         this.status = CommentStatus.HIDDEN;
     }
 

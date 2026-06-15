@@ -4,6 +4,7 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -36,7 +37,7 @@ public interface CompanionPostRepository extends JpaRepository<CompanionPost, Lo
             Pageable pageable
     );
 
-    @Modifying
-    @Query("UPDATE CompanionPost p SET p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.HIDDEN WHERE p.authorId = :authorId AND p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.ACTIVE")
-    void hideAllActiveByAuthorId(@Param("authorId") Long authorId);
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE CompanionPost p SET p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.HIDDEN, p.updatedAt = :now WHERE p.authorId = :authorId AND p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.ACTIVE")
+    void hideAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
 }

@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.report.dto.request;
 
 import com.chunbaetour.domain.report.entity.ReportStatus;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -16,4 +17,11 @@ public record ReportStatusUpdateRequest(
         ReportStatus status,
         @Size(max = 500, message = "정정 사유는 500자 이하로 입력해 주세요.")
         String adminNote
-) {}
+) {
+
+    /** 정정 대상 상태는 DISMISSED만 허용 — 그 외 값은 DB 왕복 없이 즉시 400. (status null은 @NotNull이 처리) */
+    @AssertTrue(message = "상태 정정은 DISMISSED로만 가능합니다.")
+    public boolean isDismissedTarget() {
+        return status == null || status == ReportStatus.DISMISSED;
+    }
+}

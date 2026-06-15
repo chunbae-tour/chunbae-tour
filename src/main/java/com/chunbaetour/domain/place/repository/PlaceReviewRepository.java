@@ -7,9 +7,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -66,4 +68,13 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM PlaceReview r WHERE r.id = :id")
     Optional<PlaceReview> findByIdForUpdate(@Param("id") Long id);
+
+    /**
+     * 영구 정지 유저의 ACTIVE 리뷰 일괄 soft-delete (DELETED).
+     * PlaceReview는 HIDDEN 상태가 없어 게시글·댓글의 hideAllActiveByAuthorId와 달리 DELETED로 처리.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE PlaceReview r SET r.status = com.chunbaetour.domain.place.PlaceReviewStatus.DELETED, r.updatedAt = :now "
+            + "WHERE r.author.id = :authorId AND r.status = com.chunbaetour.domain.place.PlaceReviewStatus.ACTIVE")
+    void deleteAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
 }

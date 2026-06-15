@@ -62,7 +62,7 @@ public class AdminReportController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) ReportTargetType targetType,
             @RequestParam(required = false) ReportReason reason,
-            @RequestParam(required = false) Long reportedUserId,
+            @RequestParam(required = false) @Positive Long reportedUserId,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {

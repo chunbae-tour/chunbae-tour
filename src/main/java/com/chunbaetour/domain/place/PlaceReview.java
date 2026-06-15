@@ -125,4 +125,9 @@ public class PlaceReview {
     public void delete() {
         this.status = PlaceReviewStatus.DELETED;
     }
+
+    /** soft delete 복구 — 숨김(DELETED) 리뷰를 ACTIVE로 되돌린다 (신고 RESTORE 처리용). */
+    public void restore() {
+        this.status = PlaceReviewStatus.ACTIVE;
+    }
 }

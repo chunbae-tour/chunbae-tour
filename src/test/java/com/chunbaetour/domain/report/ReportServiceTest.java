@@ -57,6 +57,7 @@ import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.shop.service.ShopService;
 import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -899,7 +900,7 @@ class ReportServiceTest {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
                 ReportReason.SPAM, null, 2L);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-        report.resolve(ReportAction.DELETE, "처리함", "admin01");
+        report.resolve(ReportAction.DELETE, "처리함", "admin01", LocalDateTime.now());
         Account admin = mock(Account.class);
         given(admin.getNickname()).willReturn("admin01");
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
@@ -909,6 +910,7 @@ class ReportServiceTest {
                 new ReportStatusUpdateRequest(ReportStatus.DISMISSED, "오판 정정"));
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.DISMISSED);
+        then(reportRepository).should().saveAndFlush(report);
         then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
                 REPORT_ID, ReportTargetType.POST_FREE, FREE_POST_ID, ReportAction.RESTORE));
     }
@@ -933,7 +935,7 @@ class ReportServiceTest {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
                 ReportReason.SPAM, null, 2L);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-        report.resolve(ReportAction.DELETE, "처리함", "admin01");
+        report.resolve(ReportAction.DELETE, "처리함", "admin01", LocalDateTime.now());
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
 
         assertThatThrownBy(() -> reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
