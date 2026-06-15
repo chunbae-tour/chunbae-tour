@@ -138,6 +138,11 @@ class AdminMarketControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(market.getId()))
                 .andExpect(jsonPath("$.data.name").value("광장시장"))
+                .andExpect(jsonPath("$.data.address").value("서울특별시 어딘가 1-1"))
+                .andExpect(jsonPath("$.data.lat").value(37.5701))
+                .andExpect(jsonPath("$.data.lng").value(126.9997))
+                .andExpect(jsonPath("$.data.sigungu").value("종로구"))
+                .andExpect(jsonPath("$.data.createdAt").exists())
                 .andExpect(jsonPath("$.data.sido").value("서울특별시"))
                 .andExpect(jsonPath("$.data.marketType").value("상설장"));
     }
@@ -150,6 +155,50 @@ class AdminMarketControllerIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PLACE_002"));
+    }
+
+    @Test
+    @DisplayName("GET 상세 marketId=0 → 400 COMMON_002 (@Positive 위반)")
+    void getMarket_nonPositiveId_returns400() throws Exception {
+        String token = adminToken();
+        mockMvc.perform(get(ENDPOINT + "/0")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    @DisplayName("GET 상세 비인증 → 401")
+    void getMarket_noToken_returns401() throws Exception {
+        TraditionalMarket market = seedMarket("광장시장", "서울특별시");
+        mockMvc.perform(get(ENDPOINT + "/" + market.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("GET 상세 USER 토큰 → 403 AUTH_007")
+    void getMarket_userToken_forbidden() throws Exception {
+        TraditionalMarket market = seedMarket("광장시장", "서울특별시");
+        seedFactory.seed("user-market-detail@test.com", PASSWORD, "유저", Role.USER, AccountStatus.ACTIVE);
+        String userToken = loginAndGetToken("/api/v1/users/auth/login", "user-market-detail@test.com");
+
+        mockMvc.perform(get(ENDPOINT + "/" + market.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    @DisplayName("GET 목록 — 데이터 없으면 빈 content + hasNext=false + nextCursor 없음")
+    void getMarkets_empty_returnsEmptyPage() throws Exception {
+        String token = adminToken();
+        mockMvc.perform(get(ENDPOINT)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isArray())
+                .andExpect(jsonPath("$.data.content.length()").value(0))
+                .andExpect(jsonPath("$.data.hasNext").value(false))
+                .andExpect(jsonPath("$.data.nextCursor").value(Matchers.nullValue()));
     }
 
     @Test

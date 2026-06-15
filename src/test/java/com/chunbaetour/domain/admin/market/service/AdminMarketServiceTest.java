@@ -77,6 +77,31 @@ class AdminMarketServiceTest {
     }
 
     @Test
+    @DisplayName("getMarkets — keyword의 LIKE 와일드카드(% _ \\) 이스케이프 후 %...% 래핑해 전달 (KAN-308)")
+    void getMarkets_escapesKeywordWildcards() {
+        given(traditionalMarketRepository.searchForAdmin(eq("%50\\%\\_x%"), isNull(), isNull(), any(Pageable.class)))
+                .willReturn(List.of());
+
+        adminMarketService.getMarkets("50%_x", null, null, 20);
+
+        // 리터럴화된 keyword가 repository로 넘어가는지 핀 — 의도치 않은 패턴 매칭/전체 스캔 방지
+        then(traditionalMarketRepository).should()
+                .searchForAdmin(eq("%50\\%\\_x%"), isNull(), isNull(), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("getMarkets — 공백 keyword/sido는 null로 정규화해 전달 (전체 조회)")
+    void getMarkets_blankParams_normalizedToNull() {
+        given(traditionalMarketRepository.searchForAdmin(isNull(), isNull(), isNull(), any(Pageable.class)))
+                .willReturn(List.of());
+
+        adminMarketService.getMarkets("   ", "  ", null, 20);
+
+        then(traditionalMarketRepository).should()
+                .searchForAdmin(isNull(), isNull(), isNull(), any(Pageable.class));
+    }
+
+    @Test
     @DisplayName("getMarket — 존재 시 상세 반환")
     void getMarket_found() {
         given(traditionalMarketRepository.findById(10L)).willReturn(Optional.of(market(10L, "동대문시장")));
