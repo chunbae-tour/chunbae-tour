@@ -23,9 +23,11 @@ public interface CompanionRepository extends JpaRepository<Companion, Long> {
 
     // 매일 1회 배치job — tripEndDate < today인 ONGOING 동행을 일괄 ENDED 전환 (고도화 #2)
     // clearAutomatically — bulk update 후 1차 캐시에 남은 stale Companion 제거
+    // updatedAt 명시적 갱신 — JPQL 벌크 UPDATE는 JPA Auditing 우회 (audit L3)
     @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Companion c SET c.status = com.chunbaetour.domain.companionreview.type.CompanionStatus.ENDED, c.endedAt = CURRENT_TIMESTAMP "
+    @Query("UPDATE Companion c SET c.status = com.chunbaetour.domain.companionreview.type.CompanionStatus.ENDED, "
+            + "c.endedAt = CURRENT_TIMESTAMP, c.updatedAt = CURRENT_TIMESTAMP "
             + "WHERE c.status = com.chunbaetour.domain.companionreview.type.CompanionStatus.ONGOING AND c.tripEndDate < :today")
     int endExpiredCompanions(@Param("today") LocalDate today);
 }

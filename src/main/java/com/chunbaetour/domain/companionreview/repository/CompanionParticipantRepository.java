@@ -28,9 +28,10 @@ public interface CompanionParticipantRepository extends JpaRepository<CompanionP
     long countByCompanionIdAndUserIdInAndEndedAtIsNotNull(Long companionId, List<Long> userIds);
 
     // 참여자 본인 동행 종료 — endedAt이 null일 때만 세팅, 영향 행 수 반환 (0이면 이미 종료 처리됨, CR_015)
+    // updatedAt 명시적 갱신 — JPQL 벌크 UPDATE는 JPA Auditing 우회 (audit L3)
     @Transactional
     @Modifying
-    @Query("UPDATE CompanionParticipant cp SET cp.endedAt = CURRENT_TIMESTAMP "
+    @Query("UPDATE CompanionParticipant cp SET cp.endedAt = CURRENT_TIMESTAMP, cp.updatedAt = CURRENT_TIMESTAMP "
             + "WHERE cp.companionId = :companionId AND cp.userId = :userId AND cp.endedAt IS NULL")
     int endParticipationIfNotEnded(@Param("companionId") Long companionId, @Param("userId") Long userId);
 
