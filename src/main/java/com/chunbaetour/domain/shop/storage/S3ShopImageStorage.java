@@ -7,6 +7,7 @@ import java.io.IOException;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -41,8 +42,9 @@ public class S3ShopImageStorage implements ShopImageStorage {
                 .build();
         try {
             s3Client.putObject(request, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
-        } catch (IOException | RuntimeException e) {
-            // 네트워크/권한/IO 실패 — 외부 서비스 오류로 매핑(컨트롤러 5xx). 키는 저장하지 않음(고아 객체 없음).
+        } catch (IOException | SdkException e) {
+            // 외부 서비스(S3) 오류·IO 실패만 503으로 매핑. RuntimeException 전체를 잡지 않아 내부 버그(NPE 등)는
+            // 그대로 전파돼 500으로 드러난다(모니터링서 외부 장애와 구분, lim-haeun·hyeonmin02 리뷰). 키 미저장(고아 객체 없음).
             throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
         }
         return key;

@@ -75,7 +75,10 @@ public class ShopImageService {
         }
     }
 
-    /** 파일 앞부분 매직바이트가 허용 이미지(JPEG/PNG/WebP) 시그니처인지 검사. */
+    /**
+     * 매직바이트가 declared content-type과 <b>같은 포맷</b>인지 검사(hyeonmin02 리뷰).
+     * "허용 포맷 중 하나"가 아니라 "선언값과 일치"를 봐야 declared=png/실제=jpeg 같은 불일치(확장자·S3 Content-Type 메타 오염)를 막는다.
+     */
     private static boolean isAllowedImageSignature(MultipartFile file) {
         byte[] h;
         try {
@@ -83,7 +86,16 @@ public class ShopImageService {
         } catch (IOException e) {
             return false;
         }
-        return isJpeg(h) || isPng(h) || isWebp(h);
+        String contentType = file.getContentType();
+        if (contentType == null) {
+            return false;
+        }
+        return switch (contentType) {
+            case "image/jpeg" -> isJpeg(h);
+            case "image/png" -> isPng(h);
+            case "image/webp" -> isWebp(h);
+            default -> false;
+        };
     }
 
     // JPEG: FF D8 FF

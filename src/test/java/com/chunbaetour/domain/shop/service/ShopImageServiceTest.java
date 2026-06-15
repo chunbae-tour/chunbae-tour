@@ -139,4 +139,17 @@ class ShopImageServiceTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
     }
+
+    @Test
+    @DisplayName("이미지 업로드 — declared image/png 인데 실제 바이트는 JPEG(포맷 불일치) → SHOP_IMAGE_TYPE_UNSUPPORTED")
+    void uploadImage_declaredPngButJpegBytes_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
+        // declared=image/png 이지만 실제 시그니처는 JPEG(FF D8 FF) → declared↔magic 매칭 검증서 거부(hyeonmin02 리뷰)
+        MockMultipartFile mismatch = new MockMultipartFile("file", "x.png", "image/png", jpegBytes(1024));
+
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, mismatch))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
+    }
 }
