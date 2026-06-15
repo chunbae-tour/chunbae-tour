@@ -348,6 +348,10 @@ public class ShopService {
      * 저장된 imageUrls(S3 객체 키 JSON 배열) → presigned GET URL JSON 배열로 변환(E10 PR3).
      * null/blank는 그대로 반환. 방어적으로 <b>해당 가게 소유 prefix 키만</b> presign한다(IDOR 2중 방어 —
      * 저장 검증을 우회한 키가 있어도 presign 안 함).
+     *
+     * <p><b>graceful degrade</b>: 개별 키 presign 실패(S3 장애·자격증명 등)는 해당 이미지만 빼고 진행한다.
+     * presign이 매 조회의 주 경로라, 예외를 그대로 던지면 이미지 한 장 때문에 가게 조회 전체가 503이 된다 — 가게
+     * 데이터는 멀쩡하므로 부분 실패로 격하(자가검증 반영).
      */
     private String presignImageUrls(String imageUrls, Long shopId) {
         if (imageUrls == null || imageUrls.isBlank()) {
@@ -364,8 +368,14 @@ public class ShopService {
                     continue;
                 }
                 String key = item.asText();
-                if (ShopImageKeys.belongsToShop(key, shopId)) {
+                if (!ShopImageKeys.belongsToShop(key, shopId)) {
+                    continue;
+                }
+                try {
                     urls.add(imageStorage.presignedGetUrl(key));
+                } catch (RuntimeException e) {
+                    // 개별 키 presign 실패 → 그 이미지만 제외, 조회는 성공. 전체 503 방지.
+                    log.warn("이미지 presign 실패 — 해당 키 제외. shopId={}, key={}", shopId, key, e);
                 }
             }
             return objectMapper.writeValueAsString(urls);

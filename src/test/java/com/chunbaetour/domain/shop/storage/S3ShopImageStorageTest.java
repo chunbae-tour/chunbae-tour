@@ -96,4 +96,17 @@ class S3ShopImageStorageTest {
         assertThat(captor.getValue().getObjectRequest().bucket()).isEqualTo("test-bucket");
         assertThat(captor.getValue().getObjectRequest().key()).isEqualTo("shops/10/x.jpg");
     }
+
+    @Test
+    @DisplayName("presignedGetUrl — presign 중 SdkException → EXTERNAL_SERVICE_ERROR 매핑")
+    void presignedGetUrl_s3Error_mapsToExternalServiceError() {
+        given(s3Presigner.presignGetObject(
+                any(software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.class)))
+                .willThrow(S3Exception.builder().message("boom").build());
+
+        assertThatThrownBy(() -> storage().presignedGetUrl("shops/10/x.jpg"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
+    }
 }

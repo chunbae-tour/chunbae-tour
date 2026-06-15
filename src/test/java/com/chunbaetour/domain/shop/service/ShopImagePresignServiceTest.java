@@ -113,4 +113,46 @@ class ShopImagePresignServiceTest {
 
         assertThat(response.imageUrls()).isEqualTo("[\"https://signed/shops/10/ok.jpg\"]");
     }
+
+    @Test
+    @DisplayName("조회 — presign 실패는 해당 이미지만 제외하고 조회 성공(전체 503 아님, graceful degrade)")
+    void getMyShop_presignFailure_degradesNot503() {
+        Shop shop = activeShop();
+        ReflectionTestUtils.setField(shop, "imageUrls", "[\"shops/10/a.jpg\",\"shops/10/b.jpg\"]");
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        // a.jpg는 성공, b.jpg는 S3 장애로 실패 → b만 빠지고 조회는 성공해야 함
+        given(imageStorage.presignedGetUrl("shops/10/a.jpg")).willReturn("https://signed/a");
+        given(imageStorage.presignedGetUrl("shops/10/b.jpg"))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
+
+        ShopResponse response = shopService.getMyShop(USER_ID, SHOP_ID);
+
+        assertThat(response.imageUrls()).isEqualTo("[\"https://signed/a\"]"); // b 제외, 예외 전파 안 됨
+    }
+
+    @Test
+    @DisplayName("조회 — imageUrls 빈 배열 → 빈 배열 반환")
+    void getMyShop_emptyArray() {
+        Shop shop = activeShop();
+        ReflectionTestUtils.setField(shop, "imageUrls", "[]");
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopResponse response = shopService.getMyShop(USER_ID, SHOP_ID);
+
+        assertThat(response.imageUrls()).isEqualTo("[]");
+    }
+
+    @Test
+    @DisplayName("목록 조회 — 여러 가게 각각 자기 키 presign")
+    void getMyShops_presignsEachShop() {
+        Shop shop = activeShop();
+        ReflectionTestUtils.setField(shop, "imageUrls", "[\"shops/10/a.jpg\"]");
+        given(shopRepository.findAllByUserId(USER_ID)).willReturn(java.util.List.of(shop));
+        given(imageStorage.presignedGetUrl(anyString())).willAnswer(inv -> "https://signed/" + inv.getArgument(0));
+
+        var responses = shopService.getMyShops(USER_ID);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).imageUrls()).isEqualTo("[\"https://signed/shops/10/a.jpg\"]");
+    }
 }
