@@ -214,6 +214,23 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("upsertChunk의 기존 관광지 갱신은 커밋 후 상세 캐시(place:{id})를 무효화한다 (B10)")
+    void upsertChunkUpdateEvictsDetailCache() {
+        batchService.upsertChunk(List.of(
+                item("720", "옛이름", "127.1", "36.8"),
+                item("721", "다른관광지", "127.2", "36.9")));
+        Long placeId = placeRepository.findByExternalId("720").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        batchService.upsertChunk(List.of(
+                item("720", "새이름", "127.3", "37.0"),
+                item("721", "다른관광지", "127.2", "36.9")));
+
+        assertThat(detailCacheExists(placeId)).isFalse();
+    }
+
+    @Test
     @DisplayName("운영자가 숨김(HIDDEN)한 관광지는 showflag 삭제(markDeleted)가 와도 건드리지 않고 SKIPPED")
     void markDeletedSkipsHidden() {
         batchService.upsertItem(item("600", "숨김관광지", "127.1", "36.8"));

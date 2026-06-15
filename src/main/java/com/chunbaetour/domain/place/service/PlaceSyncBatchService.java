@@ -126,11 +126,10 @@ public class PlaceSyncBatchService {
         } catch (OptimisticLockingFailureException e) {
             // 낙관락 충돌(KAN-304/B12) — Tier-2 enrich 등 동시 UPDATE가 먼저 커밋해 version이 바뀐 경우.
             // DataAccessException 하위지만 인프라 장애가 아니라 일시적 경합이므로 fail-fast(배치 중단) 대상이 아니다.
-            // 반드시 아래 DataAccessException catch보다 위에 둬야 per-item으로 처리된다.
-            // 부분 갱신 유입 방지를 위해 롤백 전용 표시 후 SKIPPED — 다음 run의 증분 재수집에서 자연 복구된다.
-            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
-            log.warn("관광지 낙관락 충돌 — skip(다음 run 재수집): contentId={}", item.contentId());
-            return UpsertResult.SKIPPED;
+            // 반드시 아래 DataAccessException catch보다 위에서 상위로 전파해야 PlaceSyncService가
+            // minFailedModified를 충돌 item 이전으로 캡하고 다음 run 재수집을 보장한다.
+            log.warn("관광지 낙관락 충돌 — 다음 run 재수집 대상으로 전파: contentId={}", item.contentId());
+            throw e;
         } catch (DataAccessException e) {
             // DB/인프라 장애(락 획득 실패·쿼리 타임아웃·커넥션 풀 고갈 등) — 은닉하지 않고 전파(배치 전체 중단).
             // market #390 계약과 동일: per-item skip으로 흡수하면 DB 다운 상태로 전 item을 'skipped 성공'으로 돌게 된다.
