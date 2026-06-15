@@ -288,6 +288,43 @@ class ChargeServiceTest {
         verify(dailyChargeLimiter, never()).assertWithinDailyLimit(anyLong(), anyLong());
     }
 
+    @Test
+    @DisplayName("충전 락 획득 실패(tryLock=false) 시 PAY_008(PAYMENT_PROCESSING)을 던지고 키 점유·PG 호출을 하지 않는다")
+    void charge_lockNotAcquired_throws_PAY_008() throws InterruptedException {
+        // 대기 시간 내 락을 못 잡음 — 같은 사용자의 충전이 임계구역 점유 중
+        given(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(false);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
+
+        // 락 실패는 임계구역 진입 전 차단 — 자원 미소모, 잡지 못한 락은 해제도 하지 않음
+        verify(idempotencyService, never()).checkAndMark(anyString());
+        verify(paymentGatewayClient, never()).preRegister(anyString(), anyLong());
+        verify(chargeLock, never()).unlock();
+    }
+
+    @Test
+    @DisplayName("충전 락 대기 중 인터럽트 시 PAY_008을 던지고 인터럽트 상태를 복원한다")
+    void charge_lockInterrupted_throws_PAY_008_and_restoresInterrupt() throws InterruptedException {
+        given(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).willThrow(new InterruptedException());
+
+        try {
+            assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                    .isInstanceOf(PaymentException.class)
+                    .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                    .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
+
+            // InterruptedException을 삼키지 않고 인터럽트 플래그를 복원한다 (호출 스레드 취소 신호 보존)
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(idempotencyService, never()).checkAndMark(anyString());
+        } finally {
+            // 테스트 스레드 인터럽트 플래그를 비워 후속 테스트로 누수 방지
+            Thread.interrupted();
+        }
+    }
+
     // ── cancelCharge (KAN-252) ────────────────────────────────────────────────
 
     private PaymentOrder pendingOrder(Long userId) {
