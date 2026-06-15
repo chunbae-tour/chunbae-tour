@@ -38,5 +38,6 @@ class CompanionStatusSchedulerTest {
 
         assertThatCode(() -> companionStatusScheduler.endExpiredCompanions())
                 .doesNotThrowAnyException();
+        verify(companionService).endExpiredCompanions();
     }
 }
