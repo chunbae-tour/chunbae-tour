@@ -206,8 +206,12 @@ public class PlaceSyncBatchService {
         placeRepository.saveAll(newPlaces);
         placeRepository.flush();
         // 갱신분 상세 캐시(place:{id}, TTL 10분)를 커밋 후 일괄 무효화 — 신규(created)는 캐시가 없어 대상 아님(B10).
+        // 단건 DEL을 N번 반복하면 네트워크 라운드트립이 N번 → 다중 키 DEL 한 번으로 묶는다(KAN-303 리뷰).
         if (!updatedIds.isEmpty()) {
-            registerAfterCommit(() -> updatedIds.forEach(this::evictDetailCache));
+            List<String> cacheKeys = updatedIds.stream()
+                    .map(id -> PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + id)
+                    .toList();
+            registerAfterCommit(() -> evictDetailCaches(cacheKeys));
         }
         return new ChunkResult(created, updated, skipped);
     }
@@ -271,6 +275,18 @@ public class PlaceSyncBatchService {
             stringRedisTemplate.delete(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId);
         } catch (Exception e) {
             log.warn("관광지 상세 캐시 무효화 실패 — placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * 상세 캐시 키 다중 삭제 — 청크 갱신분을 단일 DEL 요청으로 묶어 N번 라운드트립을 1번으로 줄인다(KAN-303 리뷰).
+     * 삭제 실패는 자연 TTL(10분) 만료에 위임하고 warn 로그만 남긴다(동기화 차단 없음).
+     */
+    private void evictDetailCaches(List<String> cacheKeys) {
+        try {
+            stringRedisTemplate.delete(cacheKeys);
+        } catch (Exception e) {
+            log.warn("관광지 상세 캐시 일괄 무효화 실패 — count={}", cacheKeys.size(), e);
         }
     }
 
