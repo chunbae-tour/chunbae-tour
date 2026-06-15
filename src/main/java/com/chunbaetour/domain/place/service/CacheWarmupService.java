@@ -147,7 +147,7 @@ public class CacheWarmupService {
                 tuples.add(new DefaultTypedTuple<>(String.valueOf(place.getId()), score));
             }
 
-            String tmpKey = key + ":tmp:" + lockToken;
+            String tmpKey = "{" + key + "}:tmp:" + lockToken;
             try {
                 // 임시 키에 완전한 데이터를 구성하고 원자적으로 교체(rename)하여 불완전 복구 방지
                 stringRedisTemplate.opsForZSet().add(tmpKey, tuples);

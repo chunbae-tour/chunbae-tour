@@ -3,8 +3,11 @@ package com.chunbaetour.domain.shop.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.response.ShopImageResponse;
+import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
+import com.chunbaetour.domain.shop.type.ShopStatus;
+import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,18 +15,18 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.Set;
 
 /**
- * 가게 사진 업로드 서비스 (KAN-188).
- * 파일 유효성 검사 + ShopImageStorage 위임 구조 — S3 통합 시 NoOpShopImageStorage를 S3ShopImageStorage로 교체.
+ * 가게 사진 업로드 서비스 (KAN-188, E10).
+ * 파일 유효성 검사 + ShopImageStorage 위임 구조 — 운영=S3ShopImageStorage(@Profile prod), 그 외=LocalDiskShopImageStorage.
+ * 반환값은 접근 URL이 아니라 <b>객체 키</b>다(조회 시 presigned GET으로 변환 — PR3).
  *
  * [트랜잭션 경계]
  * uploadImage()는 DB 변경 없이 조회(소유권 확인) + 외부 저장소 업로드만 수행하므로 @Transactional 불필요.
- * S3 통합 후 imageUrl을 Shop 또는 별도 엔티티에 저장한다면 그 시점에 @Transactional 추가 검토.
- * 단, S3 업로드는 트랜잭션 밖에서 처리해 "업로드 성공 + DB 저장 실패" 시 S3 고아 파일 문제를 명시적으로 설계해야 함.
+ * 키 영속화는 별도 가게 수정 API(imageUrls)가 담당 — 업로드는 키만 반환한다(고아 객체 문제는 키 미저장으로 회피).
  *
- * [보안 경계 — TODO]
- * SECURITY(KAN-188): MultipartFile.getContentType()은 브라우저 선언값(user-supplied)으로 .exe를
- * image/jpeg로 위장 가능. S3 통합 전 Apache Tika 또는 URLConnection.guessContentTypeFromStream()으로
- * magic-byte sniffing 추가 필수. 현재는 stub이므로 S3에 저장되지 않아 위협 없음.
+ * [보안 경계]
+ * SECURITY(KAN-188): MultipartFile.getContentType()은 브라우저 선언값(user-supplied)이라 .exe를 image/jpeg로 위장 가능.
+ * declared content-type 화이트리스트 + magic-byte 시그니처 검사(JPEG/PNG/WebP)를 함께 적용해 위장 업로드를 차단한다
+ * (경량 시그니처 검사 — Apache Tika 미사용).
  */
 @Service
 @RequiredArgsConstructor
@@ -40,24 +43,25 @@ public class ShopImageService {
 
     /**
      * 가게 사진 업로드.
-     * 소유권 확인 + 파일 유효성 검사 후 imageStorage에 위임.
-     * 현재 stub(NoOpShopImageStorage) — S3 통합 전까지 EXTERNAL_SERVICE_ERROR(503) 반환.
-     *
-     * [파일명 정책 — TODO]
-     * PATH TRAVERSAL: 후속 S3 통합 시 originalFilename은 절대 key 경로에 사용 금지.
-     * 반드시 UUID.randomUUID().toString() + 확장자만 사용할 것:
-     *   String key = "shops/" + shopId + "/" + UUID.randomUUID() + extractExtension(file);
+     * 소유권 확인 + 파일 유효성 검사(크기·content-type·magic-byte) 후 imageStorage에 위임하고 객체 키를 반환한다.
+     * 파일명은 originalFilename을 쓰지 않고 ShopImageKeys가 UUID로 재생성한다(path traversal 차단).
      */
     public ShopImageResponse uploadImage(Long userId, Long shopId, MultipartFile file) {
         // 소유권 확인 — 타인 가게 이미지 업로드 차단
-        shopRepository.findByIdAndUserId(shopId, userId)
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // 비활성(SUSPENDED/CLOSED) 가게 업로드 차단 — 가게 수정 API(imageUrls 저장)는 ACTIVE만 허용하므로,
+        // 업로드만 되고 키 저장이 막혀 S3 고아 객체가 확정 발생하는 것을 사전 차단(hyeonmin02 리뷰).
+        if (shop.getStatus() != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
 
         // 파일 유효성 검사
         validateFile(file);
 
-        String url = imageStorage.upload(shopId, file);
-        return new ShopImageResponse(url);
+        String objectKey = imageStorage.upload(shopId, file);
+        return new ShopImageResponse(objectKey);
     }
 
     private void validateFile(MultipartFile file) {
@@ -68,11 +72,54 @@ public class ShopImageService {
         if (file.getSize() > MAX_FILE_SIZE) {
             throw new BusinessException(ErrorCode.SHOP_IMAGE_FILE_TOO_LARGE);
         }
-        // Content-Type은 user-supplied — magic-byte sniffing으로 보강 필요 (상단 TODO 참고)
-        // null 방어: per-part Content-Type 헤더 없으면 getContentType()이 null 반환 → Set.contains(null) NPE 차단
+        // 1차: declared Content-Type 화이트리스트. null 방어: per-part 헤더 없으면 getContentType()=null.
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             throw new BusinessException(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
         }
+        // 2차: magic-byte 시그니처 — declared가 image/jpeg여도 실제 바이트가 이미지가 아니면 거부(.exe 위장 차단, KAN-188).
+        if (!isAllowedImageSignature(file)) {
+            throw new BusinessException(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
+        }
+    }
+
+    /**
+     * 매직바이트가 declared content-type과 <b>같은 포맷</b>인지 검사(hyeonmin02 리뷰).
+     * "허용 포맷 중 하나"가 아니라 "선언값과 일치"를 봐야 declared=png/실제=jpeg 같은 불일치(확장자·S3 Content-Type 메타 오염)를 막는다.
+     */
+    private static boolean isAllowedImageSignature(MultipartFile file) {
+        byte[] h;
+        try {
+            h = file.getInputStream().readNBytes(12);
+        } catch (IOException e) {
+            return false;
+        }
+        String contentType = file.getContentType();
+        if (contentType == null) {
+            return false;
+        }
+        return switch (contentType) {
+            case "image/jpeg" -> isJpeg(h);
+            case "image/png" -> isPng(h);
+            case "image/webp" -> isWebp(h);
+            default -> false;
+        };
+    }
+
+    // JPEG: FF D8 FF
+    private static boolean isJpeg(byte[] b) {
+        return b.length >= 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF;
+    }
+
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    private static boolean isPng(byte[] b) {
+        return b.length >= 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G'
+                && (b[4] & 0xFF) == 0x0D && (b[5] & 0xFF) == 0x0A && (b[6] & 0xFF) == 0x1A && (b[7] & 0xFF) == 0x0A;
+    }
+
+    // WebP: 'R''I''F''F' [4바이트 크기] 'W''E''B''P'
+    private static boolean isWebp(byte[] b) {
+        return b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F'
+                && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P';
     }
 }
