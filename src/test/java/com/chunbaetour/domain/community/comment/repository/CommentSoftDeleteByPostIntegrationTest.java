@@ -58,4 +58,29 @@ class CommentSoftDeleteByPostIntegrationTest extends AbstractIntegrationTest {
         assertThat(commentRepository.findById(otherPost.getId()).orElseThrow().getStatus())
                 .isEqualTo(CommentStatus.ACTIVE);
     }
+
+    @Test
+    @Transactional
+    @DisplayName("softDeleteByPost — 루트 댓글과 대댓글(parentCommentId != null) 모두 일괄 삭제 + updatedAt 갱신")
+    void softDeleteByPost_includesRepliesAndTouchesUpdatedAt() {
+        Comment root = commentRepository.save(Comment.create(10L, PostType.COMPANION, 1L, "root"));
+        Comment reply = commentRepository.save(
+                Comment.create(10L, PostType.COMPANION, 2L, "reply", root.getId()));
+        em.flush();
+
+        LocalDateTime now = LocalDateTime.now();
+        int affected = commentRepository.softDeleteByPost(10L, PostType.COMPANION, now);
+
+        // 루트 + 대댓글 모두 삭제 (쿼리에 parentCommentId 필터 없음)
+        assertThat(affected).isEqualTo(2);
+
+        em.clear();
+        Comment deletedReply = commentRepository.findById(reply.getId()).orElseThrow();
+        assertThat(deletedReply.getStatus()).isEqualTo(CommentStatus.DELETED);
+        assertThat(deletedReply.getParentCommentId()).isEqualTo(root.getId());
+        // 벌크 UPDATE가 Auditing을 우회하므로 쿼리에서 직접 updatedAt을 갱신했는지 확인.
+        // deletedAt·updatedAt 모두 같은 :now 파라미터라 저장값이 동일해야 한다(정밀도 무관).
+        assertThat(deletedReply.getUpdatedAt()).isNotNull();
+        assertThat(deletedReply.getUpdatedAt()).isEqualTo(deletedReply.getDeletedAt());
+    }
 }

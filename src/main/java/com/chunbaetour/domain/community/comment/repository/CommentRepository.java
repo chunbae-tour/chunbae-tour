@@ -57,12 +57,13 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     List<Comment> findByParentCommentIdAndStatusOrderByIdAsc(Long parentCommentId, CommentStatus status);
 
     // 게시글 삭제 시 해당 게시글의 ACTIVE 댓글 일괄 soft-delete — PostDeletedEvent 처리용.
-    // 벌크 UPDATE는 영속성 컨텍스트를 우회하므로 별도 조회 캐시와 분리된 짧은 트랜잭션에서만 호출한다.
+    // 벌크 UPDATE는 영속성 컨텍스트·JPA Auditing(@LastModifiedDate)을 우회하므로 updatedAt도 직접 SET한다.
     @Modifying(clearAutomatically = true)
     @Query("""
             UPDATE Comment c
                SET c.status = com.chunbaetour.domain.community.comment.entity.CommentStatus.DELETED,
-                   c.deletedAt = :now
+                   c.deletedAt = :now,
+                   c.updatedAt = :now
              WHERE c.postId = :postId
                AND c.postType = :postType
                AND c.status = com.chunbaetour.domain.community.comment.entity.CommentStatus.ACTIVE

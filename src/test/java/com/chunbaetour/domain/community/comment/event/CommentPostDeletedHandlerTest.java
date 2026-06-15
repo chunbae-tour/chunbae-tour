@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.community.comment.event;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -41,5 +42,18 @@ class CommentPostDeletedHandlerTest {
 
         then(commentRepository).should()
                 .softDeleteByPost(eq(20L), eq(PostType.FREE), any(LocalDateTime.class));
+    }
+
+    @Test
+    void 일괄삭제_실패시_예외_전파안하고_삼킴_best_effort() {
+        given(commentRepository.softDeleteByPost(any(), any(), any(LocalDateTime.class)))
+                .willThrow(new RuntimeException("DB error"));
+
+        // best-effort: 실패해도 예외를 전파하지 않고 log.error로만 남긴다
+        assertThatCode(() -> handler.handlePostDeleted(new PostDeletedEvent(10L, PostType.COMPANION)))
+                .doesNotThrowAnyException();
+
+        then(commentRepository).should()
+                .softDeleteByPost(eq(10L), eq(PostType.COMPANION), any(LocalDateTime.class));
     }
 }
