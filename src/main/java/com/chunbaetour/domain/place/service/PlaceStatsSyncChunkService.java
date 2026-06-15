@@ -87,6 +87,13 @@ public class PlaceStatsSyncChunkService {
         }
     }
 
+    /**
+     * Reads a single Redis counter key.
+     *
+     * <p>Redis Cluster cannot MGET arbitrary place counters because different place IDs map to
+     * different slots. Single-key GET keeps this path cluster-safe and returns {@code null} for
+     * missing keys.
+     */
     private String getCounterValue(String prefix, Long id) {
         return stringRedisTemplate.opsForValue().get(prefix + id);
     }
@@ -155,16 +162,38 @@ public class PlaceStatsSyncChunkService {
             return;
         }
 
-        stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, placeId);
+        try {
+            stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, placeId);
 
-        // Redis Cluster에서는 counter key와 dirty set을 한 Lua/transaction으로 묶을 수 없다.
-        // SREM 직후 값을 다시 확인해, 동시 증가가 끼어든 경우 dirty marker를 복구한다.
-        if (!matchesExpected(stringRedisTemplate.opsForValue().get(viewKey), expectedViewStr)
-                || !matchesExpected(stringRedisTemplate.opsForValue().get(likeKey), expectedLikeStr)) {
-            stringRedisTemplate.opsForSet().add(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, placeId);
+            // Redis Cluster에서는 counter key와 dirty set을 한 Lua/transaction으로 묶을 수 없다.
+            // SREM 직후 값을 다시 확인해, 동시 증가가 끼어든 경우 dirty marker를 복구한다.
+            if (!matchesExpected(stringRedisTemplate.opsForValue().get(viewKey), expectedViewStr)
+                    || !matchesExpected(stringRedisTemplate.opsForValue().get(likeKey), expectedLikeStr)) {
+                restoreDirtyMarker(placeId);
+            }
+        } catch (RuntimeException e) {
+            try {
+                restoreDirtyMarker(placeId);
+            } catch (RuntimeException restoreException) {
+                e.addSuppressed(restoreException);
+                log.error("Place stats dirty cleanup failed and marker restore also failed. placeId={}", placeId, e);
+                throw e;
+            }
+            log.error("Place stats dirty cleanup failed after sync. Restored marker for retry. placeId={}", placeId, e);
+            throw e;
         }
     }
 
+    private void restoreDirtyMarker(String placeId) {
+        stringRedisTemplate.opsForSet().add(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, placeId);
+    }
+
+    /**
+     * Compares a Redis counter with the value that was just written to DB.
+     *
+     * <p>An empty expected value means the counter was absent during sync, so only a {@code null}
+     * Redis value still matches. This keeps later-created counters dirty for the next batch.
+     */
     private boolean matchesExpected(String actual, String expected) {
         return expected.isEmpty() ? actual == null : expected.equals(actual);
     }

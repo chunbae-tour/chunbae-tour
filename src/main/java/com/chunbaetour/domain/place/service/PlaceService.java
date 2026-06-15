@@ -323,10 +323,24 @@ public class PlaceService {
                 );
             }
             if (result != null && result >= 0L) {
-                stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+                addDirtyStatsMarker(dirtyKey, placeId);
             }
         } catch (Exception e) {
             log.warn("Place view count increment failed: placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * Marks a place stat as dirty after the Redis counter has already changed.
+     *
+     * <p>If this write fails, the counter value may not be discovered by the write-behind sync
+     * batch. Keep the request path tolerant, but log at ERROR so operations can alert and repair.
+     */
+    private void addDirtyStatsMarker(String dirtyKey, Long placeId) {
+        try {
+            stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+        } catch (RuntimeException e) {
+            log.error("Place dirty stats marker add failed after view counter update. placeId={}", placeId, e);
         }
     }
 

@@ -135,6 +135,26 @@ class PlaceStatsSyncChunkServiceTest {
     }
 
     @Test
+    @DisplayName("cleanup failure restores dirty marker and fails the chunk")
+    void syncChunk_restoresDirtyMarkerWhenCleanupFails() {
+        // given
+        RuntimeException redisFailure = new RuntimeException("Redis read failed");
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(stringRedisTemplate.opsForSet()).willReturn(setOperations);
+        given(valueOperations.get("place:view:1")).willReturn("100", "100").willThrow(redisFailure);
+        given(valueOperations.get("place:like:1")).willReturn("10", "10");
+        given(transactionManager.getTransaction(any(DefaultTransactionDefinition.class))).willReturn(transactionStatus);
+        given(jdbcTemplate.batchUpdate(anyString(), any(BatchPreparedStatementSetter.class))).willReturn(new int[] {1});
+
+        // when & then
+        assertThatThrownBy(() -> placeStatsSyncChunkService.syncChunk(List.of("1")))
+                .isSameAs(redisFailure);
+
+        verify(setOperations).remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, "1");
+        verify(setOperations).add(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, "1");
+    }
+
+    @Test
     @DisplayName("batchUpdate failure rolls back transaction and keeps dirty marker")
     void syncChunk_rollsBackTransactionWhenBatchUpdateFails() {
         // given

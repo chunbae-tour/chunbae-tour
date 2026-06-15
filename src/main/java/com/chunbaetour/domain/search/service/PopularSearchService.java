@@ -344,6 +344,7 @@ public class PopularSearchService {
             // 오늘 검색이 한 건도 없었던 경우, 이전 랭킹 기준이 무의미하므로 스냅샷을 제거한다.
             // (다음 날 조회 시 이전 랭킹이 없어져 모두 NEW로 표시되도록 하는 올바른 설계 동작)
             stringRedisTemplate.delete(SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
+            stringRedisTemplate.delete(SearchRedisKeys.POPULAR_RANKING_PREV_LEGACY_KEY);
             log.warn("[PopularSearch] 오늘 검색 없음. 이전 스냅샷({})을 제거하여 stale 데이터 방지.", SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
         }
     }
@@ -367,8 +368,11 @@ public class PopularSearchService {
      * @return keyword를 키, 1-based 이전 순위를 값으로 하는 맵. 스냅샷 없으면 빈 맵.
      */
     private Map<String, Integer> buildPrevRankMap() {
-        Set<String> prevKeywords = stringRedisTemplate.opsForZSet()
-                .reverseRange(SearchRedisKeys.POPULAR_RANKING_PREV_KEY, 0, topN - 1);
+        Set<String> prevKeywords = readPrevRanking(SearchRedisKeys.POPULAR_RANKING_PREV_KEY);
+
+        if (prevKeywords == null || prevKeywords.isEmpty()) {
+            prevKeywords = readPrevRanking(SearchRedisKeys.POPULAR_RANKING_PREV_LEGACY_KEY);
+        }
 
         if (prevKeywords == null || prevKeywords.isEmpty()) {
             return Collections.emptyMap(); // 이전 랭킹 없음 → 전부 NEW 처리
@@ -381,6 +385,17 @@ public class PopularSearchService {
             prevRankMap.put(keyword, rank++);
         }
         return prevRankMap;
+    }
+
+    /**
+     * Reads a single previous-ranking key.
+     *
+     * <p>The legacy-key fallback is intentionally read-only. It prevents a deploy-time gap where
+     * {@code search:ranking:prev} already has yesterday's snapshot, but the new cluster-safe
+     * {@code {search:ranking}:prev} key has not been created by the midnight reset yet.
+     */
+    private Set<String> readPrevRanking(String key) {
+        return stringRedisTemplate.opsForZSet().reverseRange(key, 0, topN - 1);
     }
 
     /**

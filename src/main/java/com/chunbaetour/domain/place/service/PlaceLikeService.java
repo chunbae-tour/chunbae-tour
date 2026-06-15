@@ -146,7 +146,7 @@ public class PlaceLikeService {
                     String.valueOf(dbLikeCount)
             );
             if (result != null) {
-                stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+                addDirtyStatsMarker(dirtyKey, placeId, "increment");
             }
         } catch (Exception e) {
             log.warn("Place like count seed+increment failed: placeId={}", placeId, e);
@@ -167,10 +167,29 @@ public class PlaceLikeService {
                     String.valueOf(dbLikeCount)
             );
             if (result != null) {
-                stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+                addDirtyStatsMarker(dirtyKey, placeId, "decrement");
             }
         } catch (Exception e) {
             log.warn("Place like count seed+decrement failed: placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * Marks a place like stat as dirty after the Redis counter has already changed.
+     *
+     * <p>If this write fails, the updated like counter may not be discovered by the write-behind
+     * sync batch. Keep the user action tolerant, but log at ERROR so operations can alert and repair.
+     */
+    private void addDirtyStatsMarker(String dirtyKey, Long placeId, String operation) {
+        try {
+            stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+        } catch (RuntimeException e) {
+            log.error(
+                    "Place dirty stats marker add failed after like counter {}. placeId={}",
+                    operation,
+                    placeId,
+                    e
+            );
         }
     }
 

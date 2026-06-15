@@ -203,7 +203,7 @@ public class TypoCorrectionService {
 
         Set<String> candidates = new HashSet<>();
         for (String gram : grams) {
-            String key = gramPrefix + gram;
+            String key = gramPrefix + encodeGramForKey(gram);
             Set<String> members = stringRedisTemplate.opsForSet().members(key);
             if (members != null) {
                 candidates.addAll(members);
@@ -314,7 +314,7 @@ public class TypoCorrectionService {
                 if (!StringUtils.hasText(word)) continue;
                 List<String> grams = extractGrams(word);
                 for (String gram : grams) {
-                    String realKey = gramPrefix + gram;
+                    String realKey = gramPrefix + encodeGramForKey(gram);
                     String tempKey = tempKeyForSameSlot(realKey, buildToken);
                     tempKeysByRealKey.put(realKey, tempKey);
                     stringRedisTemplate.opsForSet().add(tempKey, word);
@@ -335,6 +335,21 @@ public class TypoCorrectionService {
     private String tempKeyForSameSlot(String realKey, String buildToken) {
         // Redis Cluster RENAME은 source/dest가 같은 hash slot이어야 하므로 real key 자체를 hash tag로 사용한다.
         return "{" + realKey + "}:temp:" + buildToken;
+    }
+
+    /**
+     * Encodes Redis hash-tag control characters before a gram is used as a key suffix.
+     *
+     * <p>Place and festival names are user/admin controlled data. If a raw gram contains
+     * {@code {}} characters, the temp-key hash tag used for cluster-safe RENAME can be parsed
+     * differently from the destination key and CROSSSLOT can recur. Encoding keeps the key
+     * deterministic while preventing input data from becoming Redis hash-tag syntax.
+     */
+    String encodeGramForKey(String gram) {
+        return gram
+                .replace("%", "%25")
+                .replace("{", "%7B")
+                .replace("}", "%7D");
     }
 
     /**
