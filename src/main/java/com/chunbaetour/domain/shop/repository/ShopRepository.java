@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -16,6 +17,21 @@ public interface ShopRepository extends JpaRepository<Shop, Long> {
 
     /** userId로 내 가게 목록 전체 조회 — 다중 가게 지원 */
     List<Shop> findAllByUserId(Long userId);
+
+    /**
+     * 운영자 가게 목록 검색 (KAN-307) — keyword(가게명 LIKE) + status 옵션 필터 + id DESC cursor 페이징.
+     * keyword/status null이면 해당 필터 미적용. cursorId null이면 첫 페이지. 와일드카드 이스케이프는 서비스에서 처리(ESCAPE '\').
+     * size+1 sentinel로 다음 페이지 존재를 추가 쿼리 없이 판단(AdminPlaceService.searchForAdmin 패턴 미러).
+     */
+    @Query("SELECT s FROM Shop s WHERE "
+            + "(:keyword IS NULL OR s.shopName LIKE :keyword ESCAPE '\\') "
+            + "AND (:status IS NULL OR s.status = :status) "
+            + "AND (:cursorId IS NULL OR s.id < :cursorId) "
+            + "ORDER BY s.id DESC")
+    List<Shop> searchForAdmin(@Param("keyword") String keyword,
+                              @Param("status") ShopStatus status,
+                              @Param("cursorId") Long cursorId,
+                              Pageable pageable);
 
     /** placeId 목록으로 소속 가게 조회 — 통합검색 Place→Shop 연결 (KAN-217). */
     List<Shop> findByPlaceIdIn(Collection<Long> placeIds);

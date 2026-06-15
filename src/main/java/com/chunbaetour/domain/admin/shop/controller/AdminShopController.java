@@ -5,13 +5,18 @@ import com.chunbaetour.domain.admin.audit.AdminTargetType;
 import com.chunbaetour.domain.admin.audit.LogAdminAction;
 import com.chunbaetour.domain.admin.shop.dto.request.AdminShopUpdateRequest;
 import com.chunbaetour.domain.admin.shop.dto.response.AdminShopDetailResponse;
+import com.chunbaetour.domain.admin.shop.dto.response.AdminShopListResponse;
 import com.chunbaetour.domain.admin.shop.service.AdminShopService;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.shop.type.ShopStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +26,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -46,7 +52,19 @@ public class AdminShopController {
 
     private final AdminShopService adminShopService;
 
-    @Operation(summary = "가게 단건 상세 조회 (기본 정보 + 인증 + 리뷰 집계)")
+    @Operation(summary = "가게 목록 조회 (keyword/status 필터 + cursor 페이징, 연결 장소·시장 포함)",
+            description = "keyword=가게명 부분일치, status 미지정 시 전체. 응답에 연결 placeId/placeName·traditionalMarketId/traditionalMarketName 포함.")
+    @GetMapping
+    public ApiResponse<CursorPageResponse<AdminShopListResponse>> getShops(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) ShopStatus status,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ApiResponse.success(adminShopService.getShops(keyword, status, cursor, size));
+    }
+
+    @Operation(summary = "가게 단건 상세 조회 (기본 정보 + 인증 + 리뷰 집계 + 연결 장소/시장)")
     @GetMapping("/{shopId}")
     public ApiResponse<AdminShopDetailResponse> getShop(@PathVariable @Positive Long shopId) {
         return ApiResponse.success(adminShopService.getShop(shopId));
