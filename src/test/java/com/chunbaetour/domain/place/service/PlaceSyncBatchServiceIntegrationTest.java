@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 @SpringBootTest
@@ -184,6 +186,41 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("존재하지 않는 contentId의 삭제 요청은 SKIPPED")
     void markDeletedNotFound() {
         assertThat(batchService.markDeleted("999")).isEqualTo(UpsertResult.SKIPPED);
+    }
+
+    @Test
+    @DisplayName("UPDATE 롤백 시 afterCommit 미발화 → 상세 캐시가 evict되지 않는다 (B10 일관성, KAN-303 리뷰)")
+    void rollbackDoesNotEvictDetailCache() {
+        batchService.upsertItem(item("730", "옛이름", "127.1", "36.8"));
+        Long placeId = placeRepository.findByExternalId("730").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        // 같은 contentId 재수집(UPDATE)인데 name이 컬럼 한도(varchar 100) 초과 → flush 시 제약 위반으로 롤백.
+        // evict는 saveAndFlush 성공 이후(afterCommit)에만 등록되므로, 롤백 경로에선 캐시가 그대로 남아야 한다.
+        String tooLongName = "가".repeat(150);
+        assertThatThrownBy(() -> batchService.upsertItem(item("730", tooLongName, "127.2", "36.9")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // 롤백 → afterCommit 미발화 → 캐시 키 유지(stale은 자연 TTL로 치유)
+        assertThat(detailCacheExists(placeId)).isTrue();
+    }
+
+    @Test
+    @DisplayName("upsertChunk 갱신분이 없으면(전부 SKIP) evict를 등록하지 않는다 — 캐시 그대로 (updatedIds.isEmpty 가드)")
+    void upsertChunkNoUpdates_doesNotEvict() {
+        // HIDDEN 관광지는 upsertChunk가 SKIP(updatedIds 미포함) → evict 미등록
+        batchService.upsertItem(item("740", "숨김관광지", "127.1", "36.8"));
+        Place hidden = placeRepository.findByExternalId("740").orElseThrow();
+        hidden.hide();
+        placeRepository.saveAndFlush(hidden);
+        Long placeId = hidden.getId();
+        seedDetailCache(placeId);
+
+        batchService.upsertChunk(List.of(item("740", "갱신시도", "127.2", "36.9")));
+
+        // 갱신분 0건 → evict 미등록 → 캐시 유지
+        assertThat(detailCacheExists(placeId)).isTrue();
     }
 
     @Test
