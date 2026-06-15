@@ -33,14 +33,14 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * <p>
  * Redis ZSet({@code search:ranking})을 1차 데이터 저장소로 사용한다.
  * 검색이 발생할 때마다 {@link incrementSearchCount(String)}를 호출해 score를 증가시키고,
- * 이 서비스에서는 상위 N개를 조회하여 이전 순위({@code search:ranking:prev})와 비교해 응답을 반환한다.
+ * 이 서비스에서는 상위 N개를 조회하여 이전 순위({@code {search:ranking}:prev})와 비교해 응답을 반환한다.
  * </p>
  *
  * <p>
  * <b>SA 기능 명세서 F-SEARCH-002 동작 방식</b>:
  * <ol>
  *   <li>Redis ZSet {@code ZREVRANGE search:ranking 0 N WITHSCORES}</li>
- *   <li>이전 순위 {@code search:ranking:prev}와 비교하여 changeType 계산</li>
+ *   <li>이전 순위 {@code {search:ranking}:prev}와 비교하여 changeType 계산</li>
  * </ol>
  * </p>
  *
@@ -138,13 +138,13 @@ public class PopularSearchService {
      * 인기 검색어 상위 N 조회.
      * <p>
      * 1. {@code ZREVRANGE search:ranking 0 N WITHSCORES}로 현재 순위 조회<br>
-     * 2. {@code ZREVRANGE search:ranking:prev 0 N}로 이전 순위 조회 (topN 범위로 제한)<br>
+     * 2. {@code ZREVRANGE {search:ranking}:prev 0 N}로 이전 순위 조회 (topN 범위로 제한)<br>
      * 3. 각 키워드별 {@link RankingChangeType} 계산 후 응답 목록 반환
      * </p>
      *
      * <p>
      * <b>Known Limitation (자정 경계 비일관성)</b>: 1번 조회(현재 랭킹)와 2번 조회(이전 랭킹) 사이에
-     * {@code resetDailyRanking()}이 실행되면, 이전 랭킹 키({@code search:ranking:prev})에 방금 읽은
+     * {@code resetDailyRanking()}이 실행되면, 이전 랭킹 키({@code {search:ranking}:prev})에 방금 읽은
      * 현재 랭킹과 동일한 데이터가 들어가 모든 변동 타입이 {@code SAME}으로 잘못 계산될 수 있다.
      * 자정 경계의 수십 ms 창에서만 발생하는 극히 드문 케이스이며, Redis Pipeline으로 두 조회를
      * 원자적으로 묶으면 해소되나 현재 구현 복잡도를 고려해 수용 가능 수준으로 판단한다.
@@ -256,13 +256,13 @@ public class PopularSearchService {
     // ──────────────────────────────────────────────────────────────────────────
 
     /**
-     * 매일 자정 실행: 오늘 랭킹({@code search:ranking})을 이전 랭킹({@code search:ranking:prev})으로
+     * 매일 자정 실행: 오늘 랭킹({@code search:ranking})을 이전 랭킹({@code {search:ranking}:prev})으로
      * 원자적으로 교체(RENAME)하여 일간 집계를 초기화한다.
      *
      * <p>
      * <b>RENAME을 사용하는 이유</b>: Redis RENAME 명령은 아래 두 작업을 <b>원자적으로</b> 수행한다.
      * <ol>
-     *   <li>대상 키({@code search:ranking:prev})가 존재하면 자동으로 삭제(교체)</li>
+     *   <li>대상 키({@code {search:ranking}:prev})가 존재하면 자동으로 삭제(교체)</li>
      *   <li>소스 키({@code search:ranking})를 대상 키로 이름 변경</li>
      * </ol>
      * 따라서 별도의 {@code delete(RANKING_PREV_KEY)} 선행 step이 불필요하며,
@@ -271,7 +271,7 @@ public class PopularSearchService {
      *
      * <p>
      * <b>검색 0건 처리</b>: 오늘 검색이 없어 {@code search:ranking}이 존재하지 않으면
-     * {@code search:ranking:prev}를 명시적으로 삭제하여 stale 데이터 잔류를 방지한다.
+     * {@code {search:ranking}:prev}를 명시적으로 삭제하여 stale 데이터 잔류를 방지한다.
      * (prev가 없으면 다음 날 전 키워드가 {@code NEW}로 표시 — 이것이 올바른 동작)
      * </p>
      *
@@ -335,7 +335,7 @@ public class PopularSearchService {
         Boolean rankingExists = stringRedisTemplate.hasKey(SearchRedisKeys.POPULAR_RANKING_KEY);
 
         if (Boolean.TRUE.equals(rankingExists)) {
-            // RENAME: search:ranking → search:ranking:prev
+            // RENAME: search:ranking → {search:ranking}:prev
             // - 원자적 연산: prev가 이미 존재하면 자동 교체 (별도 delete 불필요)
             // - 실행 후 search:ranking 키는 소멸 → 당일 집계 초기화 완료
             stringRedisTemplate.rename(SearchRedisKeys.POPULAR_RANKING_KEY, SearchRedisKeys.POPULAR_RANKING_PREV_KEY);

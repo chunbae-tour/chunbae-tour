@@ -135,16 +135,12 @@ public class PlaceService {
             "if redis.call('EXISTS', key) == 0 then\n" +
             "  redis.call('SET', key, ARGV[1]);\n" +
             "end;\n" +
-            "local result = redis.call('INCR', key);\n" +
-            "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
-            "return result;";
+            "return redis.call('INCR', key);";
 
     private static final String INCR_IF_EXISTS_SCRIPT = 
             "local key = KEYS[1];\n" +
             "if redis.call('EXISTS', key) == 1 then\n" +
-            "  local result = redis.call('INCR', key);\n" +
-            "  redis.call('SADD', KEYS[2], ARGV[1]);\n" +
-            "  return result;\n" +
+            "  return redis.call('INCR', key);\n" +
             "else\n" +
             "  return -1;\n" +
             "end;";
@@ -311,22 +307,23 @@ public class PlaceService {
             String key = PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + placeId;
             String dirtyKey = PlaceRedisConstants.PLACE_DIRTY_STATS_KEY;
             
-            // 1. 캐시에 있으면 즉시 원자적 INCR + SADD
+            // 1. 캐시에 있으면 즉시 원자적 INCR 후 SADD
             Long result = stringRedisTemplate.execute(
                     REDIS_SCRIPT_INCR_IF_EXISTS,
-                    java.util.Arrays.asList(key, dirtyKey),
-                    String.valueOf(placeId)
+                    java.util.Collections.singletonList(key)
             );
 
-            // 2. 캐시에 없으면(-1) 콜드 스타트로 간주, DB 1회 조회 후 원자적 SEED_AND_INCR + SADD
+            // 2. 캐시에 없으면(-1) 콜드 스타트로 간주, DB 1회 조회 후 원자적 SEED_AND_INCR 후 SADD
             if (result != null && result == -1L) {
                 int dbViewCount = placeRepository.findViewCountById(placeId).orElse(0);
-                stringRedisTemplate.execute(
+                result = stringRedisTemplate.execute(
                         REDIS_SCRIPT_INCR,
-                        java.util.Arrays.asList(key, dirtyKey),
-                        String.valueOf(dbViewCount),
-                        String.valueOf(placeId)
+                        java.util.Collections.singletonList(key),
+                        String.valueOf(dbViewCount)
                 );
+            }
+            if (result != null && result >= 0L) {
+                stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
             }
         } catch (Exception e) {
             log.warn("Place view count increment failed: placeId={}", placeId, e);

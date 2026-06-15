@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -23,29 +22,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class PlaceStatsSyncChunkService {
 
-    private static final DefaultRedisScript<Long> ATOMIC_CLEANUP_SCRIPT =
-            new DefaultRedisScript<>(
-                    "local viewKey = KEYS[1];\n" +
-                    "local likeKey = KEYS[2];\n" +
-                    "local dirtyKey = KEYS[3];\n" +
-                    "local expectedView = ARGV[1];\n" +
-                    "local expectedLike = ARGV[2];\n" +
-                    "local placeId = ARGV[3];\n" +
-                    "local actualView = redis.call('get', viewKey);\n" +
-                    "local viewMatch = false;\n" +
-                    "if expectedView == '' then viewMatch = (not actualView) else viewMatch = (actualView == expectedView) end;\n" +
-                    "local actualLike = redis.call('get', likeKey);\n" +
-                    "local likeMatch = false;\n" +
-                    "if expectedLike == '' then likeMatch = (not actualLike) else likeMatch = (actualLike == expectedLike) end;\n" +
-                    "if viewMatch and likeMatch then\n" +
-                    "  redis.call('srem', dirtyKey, placeId);\n" +
-                    "  return 1;\n" +
-                    "else\n" +
-                    "  return 0;\n" +
-                    "end;",
-                    Long.class
-            );
-
     private final StringRedisTemplate stringRedisTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -62,33 +38,17 @@ public class PlaceStatsSyncChunkService {
     }
 
     public void syncChunk(List<String> dirtyIds) {
-        List<String> viewKeys = new ArrayList<>();
-        List<String> likeKeys = new ArrayList<>();
-
-        for (String id : dirtyIds) {
-            viewKeys.add(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + id);
-            likeKeys.add(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + id);
-        }
-
-        List<String> viewCounts = stringRedisTemplate.opsForValue().multiGet(viewKeys);
-        List<String> likeCounts = stringRedisTemplate.opsForValue().multiGet(likeKeys);
-
-        if (viewCounts == null || likeCounts == null) {
-            throw new IllegalStateException("Redis multiGet returned null for place stats keys.");
-        }
-
         List<StatsUpdateDto> updates = new ArrayList<>();
         int emptyCounterCount = 0;
 
-        for (int i = 0; i < dirtyIds.size(); i++) {
-            String idStr = dirtyIds.get(i);
-            String vcStr = viewCounts.get(i);
-            String lcStr = likeCounts.get(i);
-
+        for (String idStr : dirtyIds) {
             Long id = parseDirtyIdOrRemove(idStr);
             if (id == null) {
                 continue;
             }
+
+            String vcStr = getCounterValue(PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX, id);
+            String lcStr = getCounterValue(PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX, id);
 
             if (vcStr == null && lcStr == null) {
                 emptyCounterCount++;
@@ -125,6 +85,10 @@ public class PlaceStatsSyncChunkService {
             stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, idStr);
             return null;
         }
+    }
+
+    private String getCounterValue(String prefix, Long id) {
+        return stringRedisTemplate.opsForValue().get(prefix + id);
     }
 
     private Integer parseNullableCounter(String value) {
@@ -177,22 +141,32 @@ public class PlaceStatsSyncChunkService {
         for (StatsUpdateDto dto : updates) {
             String expectedViewStr = dto.viewCount() != null ? String.valueOf(dto.viewCount()) : "";
             String expectedLikeStr = dto.likeCount() != null ? String.valueOf(dto.likeCount()) : "";
-            executeLuaCleanup(dto.id(), expectedViewStr, expectedLikeStr);
+            cleanupDirtyMarkerIfUnchanged(dto.id(), expectedViewStr, expectedLikeStr);
         }
     }
 
-    private void executeLuaCleanup(Long id, String expectedViewStr, String expectedLikeStr) {
-        stringRedisTemplate.execute(
-                ATOMIC_CLEANUP_SCRIPT,
-                java.util.Arrays.asList(
-                        PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + id,
-                        PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + id,
-                        PlaceRedisConstants.PLACE_DIRTY_STATS_KEY
-                ),
-                expectedViewStr,
-                expectedLikeStr,
-                String.valueOf(id)
-        );
+    private void cleanupDirtyMarkerIfUnchanged(Long id, String expectedViewStr, String expectedLikeStr) {
+        String viewKey = PlaceRedisConstants.PLACE_VIEW_COUNT_PREFIX + id;
+        String likeKey = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + id;
+        String placeId = String.valueOf(id);
+
+        if (!matchesExpected(stringRedisTemplate.opsForValue().get(viewKey), expectedViewStr)
+                || !matchesExpected(stringRedisTemplate.opsForValue().get(likeKey), expectedLikeStr)) {
+            return;
+        }
+
+        stringRedisTemplate.opsForSet().remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, placeId);
+
+        // Redis Cluster에서는 counter key와 dirty set을 한 Lua/transaction으로 묶을 수 없다.
+        // SREM 직후 값을 다시 확인해, 동시 증가가 끼어든 경우 dirty marker를 복구한다.
+        if (!matchesExpected(stringRedisTemplate.opsForValue().get(viewKey), expectedViewStr)
+                || !matchesExpected(stringRedisTemplate.opsForValue().get(likeKey), expectedLikeStr)) {
+            stringRedisTemplate.opsForSet().add(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, placeId);
+        }
+    }
+
+    private boolean matchesExpected(String actual, String expected) {
+        return expected.isEmpty() ? actual == null : expected.equals(actual);
     }
 
     private record StatsUpdateDto(Long id, Integer viewCount, Integer likeCount) {}

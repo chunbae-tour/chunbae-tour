@@ -2,15 +2,12 @@ package com.chunbaetour.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
-import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,11 +15,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -54,29 +50,10 @@ class PlaceStatsSyncChunkServiceTest {
     private TransactionStatus transactionStatus;
 
     @Test
-    @DisplayName("Redis multiGet이 null이면 청크 실패로 드러나도록 예외를 던진다")
-    void syncChunk_throwsWhenRedisMultiGetReturnsNull() {
-        // given
-        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
-        given(valueOperations.multiGet(List.of("place:view:1"))).willReturn(null);
-        given(valueOperations.multiGet(List.of("place:like:1"))).willReturn(List.of("10"));
-
-        // when & then
-        assertThatThrownBy(() -> placeStatsSyncChunkService.syncChunk(List.of("1")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Redis multiGet returned null");
-
-        verify(jdbcTemplate, never()).batchUpdate(anyString(), any(BatchPreparedStatementSetter.class));
-    }
-
-    @Test
-    @DisplayName("dirty ID 파싱 실패만 poison entry로 보고 더티 set에서 제거한다")
+    @DisplayName("dirty ID parsing failure removes only the poison entry")
     void syncChunk_removesOnlyInvalidDirtyId() {
         // given
-        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
         given(stringRedisTemplate.opsForSet()).willReturn(setOperations);
-        given(valueOperations.multiGet(List.of("place:view:not-a-place-id"))).willReturn(List.of("10"));
-        given(valueOperations.multiGet(List.of("place:like:not-a-place-id"))).willReturn(List.of("3"));
 
         // when
         placeStatsSyncChunkService.syncChunk(List.of("not-a-place-id"));
@@ -87,12 +64,12 @@ class PlaceStatsSyncChunkServiceTest {
     }
 
     @Test
-    @DisplayName("카운터 값 파싱 실패는 정상 ID를 더티 set에 남겨 다음 주기에 재처리한다")
+    @DisplayName("counter parsing failure keeps the dirty marker for retry")
     void syncChunk_keepsDirtyMarkerWhenCounterParsingFails() {
         // given
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
-        given(valueOperations.multiGet(List.of("place:view:1"))).willReturn(List.of("2147483648"));
-        given(valueOperations.multiGet(List.of("place:like:1"))).willReturn(List.of("3"));
+        given(valueOperations.get("place:view:1")).willReturn("2147483648");
+        given(valueOperations.get("place:like:1")).willReturn("3");
 
         // when
         placeStatsSyncChunkService.syncChunk(List.of("1"));
@@ -100,16 +77,15 @@ class PlaceStatsSyncChunkServiceTest {
         // then
         verify(stringRedisTemplate, never()).opsForSet();
         verify(jdbcTemplate, never()).batchUpdate(anyString(), any(BatchPreparedStatementSetter.class));
-        verify(stringRedisTemplate, never()).execute(any(RedisScript.class), anyList(), any());
     }
 
     @Test
-    @DisplayName("카운터 키가 모두 없으면 eviction 가능성을 고려해 더티 marker를 유지한다")
+    @DisplayName("missing counters keep the dirty marker for retry")
     void syncChunk_keepsDirtyMarkerWhenCountersAreMissing() {
         // given
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
-        given(valueOperations.multiGet(List.of("place:view:1"))).willReturn(Collections.singletonList(null));
-        given(valueOperations.multiGet(List.of("place:like:1"))).willReturn(Collections.singletonList(null));
+        given(valueOperations.get("place:view:1")).willReturn(null);
+        given(valueOperations.get("place:like:1")).willReturn(null);
 
         // when
         placeStatsSyncChunkService.syncChunk(List.of("1"));
@@ -117,16 +93,16 @@ class PlaceStatsSyncChunkServiceTest {
         // then
         verify(stringRedisTemplate, never()).opsForSet();
         verify(jdbcTemplate, never()).batchUpdate(anyString(), any(BatchPreparedStatementSetter.class));
-        verify(stringRedisTemplate, never()).execute(any(RedisScript.class), anyList(), any());
     }
 
     @Test
-    @DisplayName("정상 동기화 후에는 읽은 Redis 값과 같은 경우에만 제거되도록 조건부 cleanup을 실행한다")
-    void syncChunk_executesConditionalCleanupWithExpectedValues() {
+    @DisplayName("synced dirty marker is removed when counters are unchanged")
+    void syncChunk_removesDirtyMarkerWhenCountersAreUnchanged() {
         // given
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
-        given(valueOperations.multiGet(List.of("place:view:1"))).willReturn(List.of("100"));
-        given(valueOperations.multiGet(List.of("place:like:1"))).willReturn(Collections.singletonList(null));
+        given(stringRedisTemplate.opsForSet()).willReturn(setOperations);
+        given(valueOperations.get("place:view:1")).willReturn("100");
+        given(valueOperations.get("place:like:1")).willReturn(null);
         given(transactionManager.getTransaction(any(DefaultTransactionDefinition.class))).willReturn(transactionStatus);
         given(jdbcTemplate.batchUpdate(anyString(), any(BatchPreparedStatementSetter.class))).willReturn(new int[] {1});
 
@@ -135,23 +111,36 @@ class PlaceStatsSyncChunkServiceTest {
 
         // then
         verify(jdbcTemplate).batchUpdate(anyString(), any(BatchPreparedStatementSetter.class));
-        verify(stringRedisTemplate).execute(
-                any(RedisScript.class),
-                eq(List.of("place:view:1", "place:like:1", PlaceRedisConstants.PLACE_DIRTY_STATS_KEY)),
-                eq("100"),
-                eq(""),
-                eq("1")
-        );
+        verify(setOperations).remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, "1");
         verify(transactionManager).commit(transactionStatus);
     }
 
     @Test
-    @DisplayName("batchUpdate 실패 시 트랜잭션을 롤백하고 dirty marker를 유지한다")
+    @DisplayName("dirty marker is restored when counters change during cleanup")
+    void syncChunk_restoresDirtyMarkerWhenCountersChangeDuringCleanup() {
+        // given
+        given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
+        given(stringRedisTemplate.opsForSet()).willReturn(setOperations);
+        given(valueOperations.get("place:view:1")).willReturn("100", "100", "101");
+        given(valueOperations.get("place:like:1")).willReturn("10");
+        given(transactionManager.getTransaction(any(DefaultTransactionDefinition.class))).willReturn(transactionStatus);
+        given(jdbcTemplate.batchUpdate(anyString(), any(BatchPreparedStatementSetter.class))).willReturn(new int[] {1});
+
+        // when
+        placeStatsSyncChunkService.syncChunk(List.of("1"));
+
+        // then
+        verify(setOperations).remove(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, "1");
+        verify(setOperations).add(PlaceRedisConstants.PLACE_DIRTY_STATS_KEY, "1");
+    }
+
+    @Test
+    @DisplayName("batchUpdate failure rolls back transaction and keeps dirty marker")
     void syncChunk_rollsBackTransactionWhenBatchUpdateFails() {
         // given
         given(stringRedisTemplate.opsForValue()).willReturn(valueOperations);
-        given(valueOperations.multiGet(List.of("place:view:1"))).willReturn(List.of("100"));
-        given(valueOperations.multiGet(List.of("place:like:1"))).willReturn(List.of("10"));
+        given(valueOperations.get("place:view:1")).willReturn("100");
+        given(valueOperations.get("place:like:1")).willReturn("10");
         given(transactionManager.getTransaction(any(DefaultTransactionDefinition.class))).willReturn(transactionStatus);
         given(jdbcTemplate.batchUpdate(anyString(), any(BatchPreparedStatementSetter.class)))
                 .willThrow(new DataAccessException("DB connection failed") {});
@@ -161,6 +150,6 @@ class PlaceStatsSyncChunkServiceTest {
                 .isInstanceOf(DataAccessException.class);
 
         verify(transactionManager).rollback(transactionStatus);
-        verify(stringRedisTemplate, never()).execute(any(RedisScript.class), anyList(), any());
+        verify(stringRedisTemplate, never()).opsForSet();
     }
 }
