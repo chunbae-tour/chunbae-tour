@@ -56,6 +56,17 @@ class BusinessHoursTest {
     }
 
     @Test
+    @DisplayName("24시간 영업 — open==close 는 모든 시각 OPEN (open.equals(close) 분기 회귀 가드)")
+    void open_24h_whenOpenEqualsClose() {
+        // 00:00-00:00 → 자정 경계 무관 항상 영업
+        assertThat(BusinessHours.statusAt("00:00-00:00", at(0, 0))).isEqualTo(BusinessStatus.OPEN);
+        assertThat(BusinessHours.statusAt("00:00-00:00", at(12, 0))).isEqualTo(BusinessStatus.OPEN);
+        assertThat(BusinessHours.statusAt("00:00-00:00", at(23, 59))).isEqualTo(BusinessStatus.OPEN);
+        // 00:00 외 동일 시각도 24시간 영업으로 해석 (09:00-09:00)
+        assertThat(BusinessHours.statusAt("09:00-09:00", at(3, 0))).isEqualTo(BusinessStatus.OPEN);
+    }
+
+    @Test
     @DisplayName("정보 없음/파싱 불가 — null·blank·연중무휴·휴무 → UNKNOWN")
     void unknown_whenUnparseable() {
         assertThat(BusinessHours.statusAt(null, at(12, 0))).isEqualTo(BusinessStatus.UNKNOWN);
