@@ -3,6 +3,7 @@ package com.chunbaetour.domain.community.companion.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -22,6 +23,7 @@ import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateResponse;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
@@ -31,13 +33,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class CompanionPostServiceTest {
 
     @Mock CompanionPostRepository postRepository;
+    @Mock CompanionPostQueryRepository postQueryRepository;
     @Mock AccountRepository accountRepository;
     @Mock ChatRoomRepository chatRoomRepository;
     @InjectMocks CompanionPostService postService;
@@ -208,7 +210,7 @@ class CompanionPostServiceTest {
                 buildPost(1L, CompanionPostStatus.ACTIVE),
                 buildPost(2L, CompanionPostStatus.ACTIVE),
                 buildPost(3L, CompanionPostStatus.ACTIVE));
-        given(postRepository.findByFilters(any(), any(), any(), any(), any(Pageable.class)))
+        given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
@@ -224,7 +226,7 @@ class CompanionPostServiceTest {
     void findAll_hasNext_false() {
         int size = 5;
         List<CompanionPost> posts = List.of(buildPost(1L, CompanionPostStatus.ACTIVE));
-        given(postRepository.findByFilters(any(), any(), any(), any(), any(Pageable.class)))
+        given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
@@ -241,7 +243,7 @@ class CompanionPostServiceTest {
         CompanionPost post = buildPost(1L, CompanionPostStatus.ACTIVE);
         ChatRoom chatRoom = ChatRoom.createWithOwner(1L, 99L, "채팅방", null, 4);
         ReflectionTestUtils.setField(chatRoom, "id", 10L);
-        given(postRepository.findByFilters(any(), any(), any(), any(), any(Pageable.class)))
+        given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(List.of(post));
         given(accountRepository.findAllById(any())).willReturn(List.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of(chatRoom));
@@ -254,7 +256,7 @@ class CompanionPostServiceTest {
     @Test
     void findAll_채팅방없는_게시글_chatRoomId_null() {
         CompanionPost post = buildPost(1L, CompanionPostStatus.ACTIVE);
-        given(postRepository.findByFilters(any(), any(), any(), any(), any(Pageable.class)))
+        given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(List.of(post));
         given(accountRepository.findAllById(any())).willReturn(List.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
