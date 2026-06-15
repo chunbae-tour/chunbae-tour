@@ -18,6 +18,8 @@ import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
+import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
@@ -69,6 +71,7 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired private AccountSeedFactory seedFactory;
     @Autowired private ShopRepository shopRepository;
     @Autowired private PlaceRepository placeRepository;
+    @Autowired private TraditionalMarketRepository traditionalMarketRepository;
     @Autowired private AdminActionLogRepository adminActionLogRepository;
     @Autowired private TokenIssuer tokenIssuer;
 
@@ -77,6 +80,7 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
         adminActionLogRepository.deleteAll();
         shopRepository.deleteAll();
         placeRepository.deleteAll();
+        traditionalMarketRepository.deleteAll();
         accountRepository.deleteAll();
     }
 
@@ -288,6 +292,26 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET 목록 — 시장 연결 가게는 traditionalMarketId/Name 노출, 미연결은 null (KAN-307)")
+    void getShops_mapsTraditionalMarket() throws Exception {
+        String adminToken = adminToken();
+        TraditionalMarket market = traditionalMarketRepository.save(TraditionalMarket.builder()
+                .name("광장시장").address("서울 종로구 창경궁로 88")
+                .lat(new BigDecimal("37.5701")).lng(new BigDecimal("126.9997")).build());
+        seedShopLinkedMarket(market.getId());  // 시장 연결 가게
+        seedShop(ShopStatus.ACTIVE);           // 미연결 가게
+
+        mockMvc.perform(get("/api/v1/admin/shops")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(2))
+                // 연결 가게: 시장 id·이름 노출 / 미연결 가게: 이름 null — 둘 다 응답에 존재
+                .andExpect(jsonPath("$.data.content[*].traditionalMarketId", Matchers.hasItem(market.getId().intValue())))
+                .andExpect(jsonPath("$.data.content[*].traditionalMarketName", Matchers.hasItem("광장시장")))
+                .andExpect(jsonPath("$.data.content[*].traditionalMarketName", Matchers.hasItem(Matchers.nullValue())));
+    }
+
+    @Test
     @DisplayName("GET 목록 status=SUSPENDED 필터 → 해당 상태만 (KAN-307)")
     void getShops_statusFilter() throws Exception {
         String adminToken = adminToken();
@@ -450,6 +474,18 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
         } else if (status == ShopStatus.CLOSED) {
             ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
         }
+        return shopRepository.save(shop);
+    }
+
+    /** 전통시장(traditionalMarketId) 연결 가게 seed — 목록 응답의 traditionalMarketName 매핑 검증용 (KAN-307). */
+    private Shop seedShopLinkedMarket(Long marketId) {
+        Shop shop = Shop.builder()
+                .userId(9001L).applicationId(System.nanoTime())
+                .shopName("시장연결가게").category("FOOD")
+                .address("서울시 종로구").lat(new BigDecimal("37.5701000"))
+                .lng(new BigDecimal("126.9997000"))
+                .phone("02-0000-0000").description("시장 연결 소개")
+                .traditionalMarketId(marketId).build();
         return shopRepository.save(shop);
     }
 

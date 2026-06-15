@@ -161,11 +161,13 @@ class AdminShopServiceTest {
         given(market.getName()).willReturn("광장시장");
         given(traditionalMarketRepository.findAllById(anyList())).willReturn(List.of(market));
 
+        // size=5 요청, 2건만 반환 → 마지막 페이지. size 필드는 반환 개수(2)가 아니라 요청 size(5)를 echo해야 함(팀 표준).
         CursorPageResponse<AdminShopListResponse> result =
-                adminShopService.getShops(null, null, null, 2);
+                adminShopService.getShops(null, null, null, 5);
 
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isFalse();
+        assertThat(result.size()).isEqualTo(5);
         // 연결 가게는 이름 매핑, 미연결 가게는 id·name 모두 null
         AdminShopListResponse r1 = result.content().get(0);
         assertThat(r1.placeId()).isEqualTo(100L);

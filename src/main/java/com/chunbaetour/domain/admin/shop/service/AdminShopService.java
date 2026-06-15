@@ -60,23 +60,17 @@ public class AdminShopService {
         List<Shop> shops = shopRepository.searchForAdmin(
                 normalizedKeyword, status, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = shops.size() > size;
-        List<Shop> content = hasNext ? shops.subList(0, size) : shops;
+        // 연결 장소/시장 이름 — 페이지(+sentinel) id를 모아 한 번에 배치 조회(N+1 회피). 미연결/미존재는 Map 누락 → null.
+        // sentinel 1건이 섞여도 무방 — of()가 매핑을 trim된 content에만 적용한다.
+        Map<Long, String> placeNames = fetchPlaceNames(shops);
+        Map<Long, String> marketNames = fetchMarketNames(shops);
 
-        // 연결 장소/시장 이름 — 페이지 내 id를 모아 한 번에 배치 조회(N+1 회피). 미연결/미존재는 자연히 Map에서 누락 → null.
-        Map<Long, String> placeNames = fetchPlaceNames(content);
-        Map<Long, String> marketNames = fetchMarketNames(content);
-
-        List<AdminShopListResponse> responses = content.stream()
-                .map(shop -> AdminShopListResponse.from(shop,
+        // 공통 팩토리 of()로 위임 (KAN-295) — hasNext 판별·nextCursor 인코딩·size 요청값 echo·size<1 fail-fast 일관.
+        return CursorPageResponse.of(shops, size,
+                shop -> AdminShopListResponse.from(shop,
                         shop.getPlaceId() == null ? null : placeNames.get(shop.getPlaceId()),
-                        shop.getTraditionalMarketId() == null ? null : marketNames.get(shop.getTraditionalMarketId())))
-                .toList();
-
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
-                : null;
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+                        shop.getTraditionalMarketId() == null ? null : marketNames.get(shop.getTraditionalMarketId())),
+                Shop::getId);
     }
 
     /** 가게 단건 상세 — 기본 정보 + 인증 + 리뷰 집계 + 연결 장소/시장. 없으면 SHOP_NOT_FOUND(404). */
