@@ -88,4 +88,5 @@ desired=2여도 Flyway DB 락으로 경합 안전. 단독 migrate one-off task �
 ## healthCheck
 
 컨테이너 `healthCheck.timeout: 5`(s) — JVM 콜드스타트/GC 순간에 actuator 응답이 3s를 넘겨 멀쩡한 태스크가 unhealthy로
-오판·강제종료되는 것 방지(AWS 권장 최소 5s, DGAZA-max 리뷰 반영). `startPeriod: 90`은 부팅 지연만 봐주고 per-check timeout은 늘려주지 않음.
+오판·강제종료되는 것 방지(AWS 권장 최소 5s, DGAZA-max 리뷰 반영). `startPeriod: 300`은 부팅 지연(앱 2분+ + Flyway migrate)을 봐주는 구간 — 이 동안의 health 실패는 카운트 안 됨. per-check timeout은 늘려주지 않음.
+(초기 90s는 콜드스타트보다 짧아 안정화 전 circuit breaker 롤백을 유발 → 300s로 상향. 인프라 측 ALB healthy threshold 3 + ECS grace 420과 합산해 부팅 여유 확보.)
