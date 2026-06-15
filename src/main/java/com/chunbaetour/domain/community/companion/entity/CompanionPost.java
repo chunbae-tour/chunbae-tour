@@ -88,7 +88,8 @@ public class CompanionPost extends BaseEntity {
         if ((placeId == null) != (placeName == null)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
-        if (maxMembers != null && maxMembers < this.currentMembers) {
+        // 하한 2명(create와 동일) + 현재 인원 미만 불가 — 정원 1명짜리 동행글 방지
+        if (maxMembers != null && (maxMembers < 2 || maxMembers < this.currentMembers)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         if (title != null) this.title = title;

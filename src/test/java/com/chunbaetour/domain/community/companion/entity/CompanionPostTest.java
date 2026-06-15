@@ -7,6 +7,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CompanionPostTest {
 
@@ -36,6 +37,13 @@ class CompanionPostTest {
         assertThat(post.getMaxMembers()).isEqualTo(4);
     }
 
+    @Test
+    void create_maxMembers_2면_성공_하한경계() {
+        CompanionPost post = CompanionPost.create(1L, "제목", "내용", 100L, "장소명", "서울", MEETING_DATE, 2);
+
+        assertThat(post.getMaxMembers()).isEqualTo(2);
+    }
+
     // ── update 불변식 ───────────────────────────────────────────────────────
 
     @Test
@@ -63,6 +71,39 @@ class CompanionPostTest {
         CompanionPost post = active(); // currentMembers = 1
 
         assertThatThrownBy(() -> post.update(null, null, null, null, null, null, 0))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    void update_maxMembers_2미만이면_INVALID_INPUT_VALUE_하한() {
+        CompanionPost post = active(); // currentMembers = 1
+
+        // maxMembers=1은 currentMembers(1) 미만은 아니지만 하한(2) 위반
+        assertThatThrownBy(() -> post.update(null, null, null, null, null, null, 1))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+    }
+
+    @Test
+    void update_maxMembers가_currentMembers와_같으면_성공_경계() {
+        CompanionPost post = active();
+        ReflectionTestUtils.setField(post, "currentMembers", 3); // 참여자 누적 가정
+
+        post.update(null, null, null, null, null, null, 3); // == currentMembers, >= 2
+
+        assertThat(post.getMaxMembers()).isEqualTo(3);
+    }
+
+    @Test
+    void update_maxMembers가_currentMembers미만이면_INVALID_INPUT_VALUE_경계() {
+        CompanionPost post = active();
+        ReflectionTestUtils.setField(post, "currentMembers", 3);
+
+        // maxMembers=2는 하한(2) 통과하지만 currentMembers(3) 미만
+        assertThatThrownBy(() -> post.update(null, null, null, null, null, null, 2))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
