@@ -128,6 +128,20 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("@Version — upsertItem UPDATE 시 낙관락 version이 1 증가한다 (KAN-304/B12)")
+    void versionIncrementsOnUpdate() {
+        batchService.upsertItem(item("910", "옛이름", "127.1", "36.8"));
+        Long v0 = placeRepository.findByExternalId("910").orElseThrow().getVersion();
+
+        batchService.upsertItem(item("910", "새이름", "127.2", "36.9"));
+        Long v1 = placeRepository.findByExternalId("910").orElseThrow().getVersion();
+
+        // version 컬럼이 매 UPDATE마다 증가 → 동시 UPDATE 시 한쪽이 OptimisticLockingFailureException으로 차단됨
+        assertThat(v0).isZero();
+        assertThat(v1).isEqualTo(v0 + 1);
+    }
+
+    @Test
     @DisplayName("좌표가 없으면 SKIPPED 처리되고 저장되지 않는다")
     void skipMissingCoords() {
         UpsertResult result = batchService.upsertItem(item("300", "좌표없음", "", ""));

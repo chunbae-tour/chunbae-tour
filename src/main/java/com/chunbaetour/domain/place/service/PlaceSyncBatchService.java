@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -121,6 +122,14 @@ public class PlaceSyncBatchService {
             // 흘러들어간다 → 결과는 SKIPPED인데 DB는 일부만 바뀌는 불일치. 트랜잭션을 롤백 전용으로 표시해 차단.
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             log.warn("관광지 데이터 품질 오류 — skip: contentId={}, reason={}", item.contentId(), e.getMessage());
+            return UpsertResult.SKIPPED;
+        } catch (OptimisticLockingFailureException e) {
+            // 낙관락 충돌(KAN-304/B12) — Tier-2 enrich 등 동시 UPDATE가 먼저 커밋해 version이 바뀐 경우.
+            // DataAccessException 하위지만 인프라 장애가 아니라 일시적 경합이므로 fail-fast(배치 중단) 대상이 아니다.
+            // 반드시 아래 DataAccessException catch보다 위에 둬야 per-item으로 처리된다.
+            // 부분 갱신 유입 방지를 위해 롤백 전용 표시 후 SKIPPED — 다음 run의 증분 재수집에서 자연 복구된다.
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            log.warn("관광지 낙관락 충돌 — skip(다음 run 재수집): contentId={}", item.contentId());
             return UpsertResult.SKIPPED;
         } catch (DataAccessException e) {
             // DB/인프라 장애(락 획득 실패·쿼리 타임아웃·커넥션 풀 고갈 등) — 은닉하지 않고 전파(배치 전체 중단).
