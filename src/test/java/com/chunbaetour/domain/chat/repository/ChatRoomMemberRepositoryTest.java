@@ -7,7 +7,7 @@ import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,20 +33,20 @@ class ChatRoomMemberRepositoryTest extends AbstractIntegrationTest {
         Long userId = 1L;
 
         ChatRoom ownerRoom = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), userId, "owner-room", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), userId, "owner-room", "desc", 10));
 
         ChatRoom memberRoom = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), 999L, "member-room", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), 999L, "member-room", "desc", 10));
         chatRoomMemberRepository.save(ChatRoomMember.ofMember(memberRoom, userId));
 
         ChatRoom leftRoom = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), 999L, "left-room", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), 999L, "left-room", "desc", 10));
         ChatRoomMember leftMember = ChatRoomMember.ofMember(leftRoom, userId);
         leftMember.leave();
         chatRoomMemberRepository.save(leftMember);
 
         ChatRoom kickedRoom = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), 999L, "kicked-room", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), 999L, "kicked-room", "desc", 10));
         ChatRoomMember kickedMember = ChatRoomMember.ofMember(kickedRoom, userId);
         kickedMember.kick();
         chatRoomMemberRepository.save(kickedMember);
@@ -66,11 +66,11 @@ class ChatRoomMemberRepositoryTest extends AbstractIntegrationTest {
         Long userId = 2L;
 
         ChatRoom room1 = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), userId, "room-1", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), userId, "room-1", "desc", 10));
         ChatRoom room2 = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), userId, "room-2", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), userId, "room-2", "desc", 10));
         ChatRoom room3 = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), userId, "room-3", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), userId, "room-3", "desc", 10));
 
         List<ChatRoomMember> result = chatRoomMemberRepository.findMyRoomsWithCursor(
                 userId, ChatMemberState.activeStates(), room3.getId(), PageRequest.of(0, 10));
@@ -85,7 +85,7 @@ class ChatRoomMemberRepositoryTest extends AbstractIntegrationTest {
         Long userId = 3L;
 
         ChatRoom room = chatRoomRepository.save(
-                ChatRoom.createWithOwner(randomPostId(), 999L, "no-active-room", "desc", 10));
+                ChatRoom.createWithOwner(nextPostId(), 999L, "no-active-room", "desc", 10));
         ChatRoomMember member = ChatRoomMember.ofMember(room, userId);
         member.leave();
         chatRoomMemberRepository.save(member);
@@ -96,7 +96,9 @@ class ChatRoomMemberRepositoryTest extends AbstractIntegrationTest {
         assertThat(result).isEmpty();
     }
 
-    private static long randomPostId() {
-        return ThreadLocalRandom.current().nextLong(1_000_000L, 100_000_000L);
+    private static final AtomicLong POST_ID_SEQUENCE = new AtomicLong(1_000_000L);
+
+    private static long nextPostId() {
+        return POST_ID_SEQUENCE.incrementAndGet();
     }
 }
