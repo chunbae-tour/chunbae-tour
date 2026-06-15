@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -29,9 +30,13 @@ class ChatFileKeysTest {
     @DisplayName("objectKey — 허용되지 않은 content-type → CHAT_FILE_TYPE_UNSUPPORTED")
     void objectKey_unsupported_throws() {
         assertThatThrownBy(() -> ChatFileKeys.objectKey(10L, "image/gif"))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_FILE_TYPE_UNSUPPORTED);
         assertThatThrownBy(() -> ChatFileKeys.objectKey(10L, null))
-                .isInstanceOf(BusinessException.class);
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_FILE_TYPE_UNSUPPORTED);
     }
 
     @Test

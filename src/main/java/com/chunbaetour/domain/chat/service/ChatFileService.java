@@ -12,9 +12,15 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.poifs.filesystem.DocumentEntry;
+import org.apache.poi.poifs.filesystem.DocumentInputStream;
+import org.apache.poi.poifs.filesystem.Entry;
+import org.apache.poi.poifs.filesystem.POIFSFileSystem;
 import org.apache.tika.Tika;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,12 +78,18 @@ public class ChatFileService {
     /**
      * HWP 5.0(현재 표준, OLE2 복합 문서 포맷)은 Tika mimetypes상 application/x-hwp-v5로
      * "sub-class-of application/x-tika-msoffice"일 뿐 별도 magic이 없어, 실제 감지 결과는
-     * application/x-tika-msoffice(OLE2 제너릭)로 나온다(직접 검증, TikaCheck). declared=application/x-hwp일 때
-     * 이를 허용한다 — "완전 동일 비교" 대신 "OLE2 컨테이너군 일치" 검사로, zip/PDF/스크립트 등 비-OLE2 위장은 여전히 차단된다.
+     * application/x-tika-msoffice(OLE2 제너릭)로 나온다(직접 검증, TikaCheck). 단, 이 제너릭 타입은
+     * .doc/.xls/.ppt 등 다른 OLE2 문서도 동일하게 감지되므로(magic-byte만으로는 구분 불가),
+     * declared=application/x-hwp이고 detected==application/x-tika-msoffice인 경우
+     * {@link #isHwpV5(MultipartFile)}로 POIFS 디렉토리 엔트리("FileHeader" 스트림 + HWP 시그니처)를
+     * 추가 검증한다 — 위장된 .doc/.xls/.ppt는 이 단계에서 차단된다.
      * application/x-hwp(HWP v5 이전, 문자열 시그니처 "HWP Document File V")는 Tika가 직접 감지 가능 — 그대로 매칭.
      */
-    private static final Set<String> OLE2_CONTAINER_TYPES = Set.of(
-            "application/x-hwp", "application/x-tika-msoffice");
+    private static final String TIKA_OLE2_GENERIC = "application/x-tika-msoffice";
+
+    /** HWP v5 OLE2 컨테이너의 "FileHeader" 스트림 시작 바이트(32바이트 시그니처 필드의 앞부분) */
+    private static final byte[] HWP_V5_FILEHEADER_SIGNATURE =
+            "HWP Document File".getBytes(StandardCharsets.US_ASCII);
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
@@ -173,12 +185,32 @@ public class ChatFileService {
         if (contentType.equals(detected)) {
             return true;
         }
-        // HWP는 OLE2 컨테이너군 일치로 판정(OLE2_CONTAINER_TYPES 주석 참고)
-        if (contentType.equals("application/x-hwp") && OLE2_CONTAINER_TYPES.contains(detected)) {
-            return true;
+        // HWP v5(OLE2 제너릭 감지)는 POIFS 구조 검증으로 위장 .doc/.xls/.ppt를 추가 차단(TIKA_OLE2_GENERIC 주석 참고)
+        if (contentType.equals("application/x-hwp") && TIKA_OLE2_GENERIC.equals(detected)) {
+            return isHwpV5(file);
         }
         // docx/xlsx/pptx는 OOXML 컨테이너군 일치로 판정(OOXML_CONTENT_TYPES 주석 참고)
         return OOXML_CONTENT_TYPES.contains(contentType) && TIKA_OOXML_GENERIC.equals(detected);
+    }
+
+    /**
+     * OLE2 컨테이너의 "FileHeader" 스트림을 열어 HWP v5 시그니처("HWP Document File")로 시작하는지 확인.
+     * 위장된 .doc/.xls/.ppt는 "FileHeader" 스트림이 없거나(POI가 FileNotFoundException) 시그니처가 달라 차단된다.
+     */
+    private static boolean isHwpV5(MultipartFile file) {
+        try (InputStream in = file.getInputStream();
+                POIFSFileSystem fs = new POIFSFileSystem(in)) {
+            Entry entry = fs.getRoot().getEntry("FileHeader");
+            if (!(entry instanceof DocumentEntry documentEntry)) {
+                return false;
+            }
+            try (DocumentInputStream header = new DocumentInputStream(documentEntry)) {
+                byte[] signature = header.readNBytes(HWP_V5_FILEHEADER_SIGNATURE.length);
+                return Arrays.equals(signature, HWP_V5_FILEHEADER_SIGNATURE);
+            }
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     // JPEG: FF D8 FF

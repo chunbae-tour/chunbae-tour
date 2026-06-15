@@ -97,6 +97,29 @@ class ChatMessageServiceTest {
         then(eventPublisher).should().publishEvent(any(ChatMessageSentEvent.class));
     }
 
+    // messageType null → TEXT로 기본 처리(하위호환 계약) 회귀 가드
+    @Test
+    void sendMessage_nullMessageType_defaultsTo_TEXT() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInAndUserIdNot(
+                eq(ROOM_ID), any(), eq(USER_ID))).willReturn(List.of());
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
+
+        Message saved = mock(Message.class);
+        given(saved.getId()).willReturn(1L);
+        given(saved.getChatRoomId()).willReturn(ROOM_ID);
+        given(saved.getSenderId()).willReturn(USER_ID);
+        given(saved.getMessageType()).willReturn(MessageType.TEXT);
+        given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 6, 16, 12, 0));
+        given(messageRepository.save(any())).willReturn(saved);
+
+        chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(null, "안녕하세요", null, null, null));
+
+        then(messageRepository).should().save(any(Message.class));
+    }
+
     // 수신 대상 없음(혼자 있는 방 등) — 알림 이벤트 미발행, Redis 발행은 정상 진행
     @Test
     void sendMessage_noRecipients_doesNotPublishNotificationEvent() {

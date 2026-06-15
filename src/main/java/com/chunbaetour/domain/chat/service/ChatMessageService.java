@@ -85,6 +85,10 @@ public class ChatMessageService {
                 .content(request.content());
 
         if (messageType == MessageType.IMAGE || messageType == MessageType.FILE) {
+            // fileUrl 누락은 필수 필드 누락(INVALID_REQUEST) — belongsToChatRoom의 null→false와 구분해 정확한 에러코드 반환
+            if (request.fileUrl() == null || request.fileUrl().isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
             // fileUrl(객체 키)이 이 채팅방 업로드(POST .../files)로 발급된 키인지 검증 — 타 방 키 전송 차단(IDOR)
             if (!ChatFileKeys.belongsToChatRoom(request.fileUrl(), chatRoomId)) {
                 throw new BusinessException(ErrorCode.CHAT_FILE_OWNERSHIP_INVALID);

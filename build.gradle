@@ -96,6 +96,12 @@ dependencies {
 	// 식별됨 — ChatFileService의 OOXML_CONTENT_TYPES 컨테이너군 일치 검사 참고.
 	implementation 'org.apache.tika:tika-core:2.9.2'
 
+	// Apache POI(POIFS) — HWP v5(OLE2 컨테이너) 위장 업로드 차단 (KAN-309).
+	// tika-core는 OLE2 매직바이트(D0CF11E0...)만으로 application/x-tika-msoffice를 반환해
+	// 실제 .doc/.xls/.ppt도 동일하게 감지됨 — POIFS로 디렉토리 엔트리("FileHeader" 스트림 + HWP 시그니처)를
+	// 직접 검사해야 진짜 HWP v5만 통과시킬 수 있음. Spring Boot BOM이 버전을 관리하지 않아 직접 명시.
+	implementation 'org.apache.poi:poi:5.3.0'
+
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	annotationProcessor 'org.projectlombok:lombok'
