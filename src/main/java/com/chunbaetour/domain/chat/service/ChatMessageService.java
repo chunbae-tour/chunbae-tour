@@ -10,6 +10,8 @@ import com.chunbaetour.domain.chat.event.ChatMessageSentEvent;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.repository.MessageRepository;
+import com.chunbaetour.domain.chat.storage.ChatFileKeys;
+import com.chunbaetour.domain.chat.storage.ChatFileStorage;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -48,6 +50,7 @@ public class ChatMessageService {
     private final ChatRedisPubSubService chatRedisPubSubService;
     private final RateLimiter rateLimiter;
     private final ApplicationEventPublisher eventPublisher;
+    private final ChatFileStorage chatFileStorage;
 
     // 메시지 전송 — rate limit 선검증 후 ACTIVE 멤버 확인, DB 저장 및 Redis 발행
     @Transactional
@@ -69,16 +72,32 @@ public class ChatMessageService {
         Account sender = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        // 1000자 초과·빈 content 검증은 Message 도메인 메서드에서 수행 (MESSAGE_TOO_LONG, INVALID_REQUEST)
-        Message message = Message.builder()
+        // messageType 미지정 시 TEXT(기존 클라이언트 호환). SYSTEM은 클라이언트가 지정 불가(서버 전용 타입).
+        MessageType messageType = request.messageType() != null ? request.messageType() : MessageType.TEXT;
+        if (messageType == MessageType.SYSTEM) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        Message.MessageBuilder messageBuilder = Message.builder()
                 .chatRoomId(chatRoomId)
                 .senderId(userId)
-                .messageType(MessageType.TEXT)
-                .content(request.content())
-                .build();
+                .messageType(messageType)
+                .content(request.content());
 
-        Message saved = messageRepository.save(message);
-        ChatMessageResponse response = ChatMessageResponse.from(saved, sender);
+        if (messageType == MessageType.IMAGE || messageType == MessageType.FILE) {
+            // fileUrl(객체 키)이 이 채팅방 업로드(POST .../files)로 발급된 키인지 검증 — 타 방 키 전송 차단(IDOR)
+            if (!ChatFileKeys.belongsToChatRoom(request.fileUrl(), chatRoomId)) {
+                throw new BusinessException(ErrorCode.CHAT_FILE_OWNERSHIP_INVALID);
+            }
+            messageBuilder.fileUrl(request.fileUrl())
+                    .fileName(request.fileName())
+                    .fileSize(request.fileSize());
+        }
+
+        // 1000자 초과·빈 content·fileUrl/fileName/fileSize 누락 검증은 Message 도메인 메서드에서 수행
+        // (MESSAGE_TOO_LONG, INVALID_REQUEST)
+        Message saved = messageRepository.save(messageBuilder.build());
+        ChatMessageResponse response = ChatMessageResponse.from(saved, sender, resolveFileUrl(saved));
 
         // 알림 수신 대상 — ACTIVE 멤버 중 발신자 제외, AFTER_COMMIT 리스너가 각자에게 알림 생성
         // 수신자 없으면(혼자 있는 방 등) 이벤트 미발행 — REQUIRES_NEW 트랜잭션 낭비 방지
@@ -136,11 +155,17 @@ public class ChatMessageService {
 
         return new CursorPageResponse<>(
                 page.stream()
-                        .map(m -> ChatMessageResponse.from(m, accountMap.get(m.getSenderId())))
+                        .map(m -> ChatMessageResponse.from(m, accountMap.get(m.getSenderId()), resolveFileUrl(m)))
                         .toList(),
                 nextCursor,
                 hasNext,
                 size
         );
+    }
+
+    // Message.fileUrl(S3 객체 키) → presigned GET URL 변환. TEXT/SYSTEM은 fileUrl이 없어 그대로 null 반환.
+    // presign 발급은 로컬 서명 연산(네트워크 호출 없음)이라 메시지별 호출해도 N+1 문제 없음.
+    private String resolveFileUrl(Message message) {
+        return message.getFileUrl() != null ? chatFileStorage.presignedGetUrl(message.getFileUrl()) : null;
     }
 }

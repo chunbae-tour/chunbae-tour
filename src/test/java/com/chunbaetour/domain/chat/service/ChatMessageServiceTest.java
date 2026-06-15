@@ -59,6 +59,9 @@ class ChatMessageServiceTest {
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private com.chunbaetour.domain.chat.storage.ChatFileStorage chatFileStorage;
+
     @InjectMocks
     private ChatMessageService chatMessageService;
 
@@ -87,7 +90,7 @@ class ChatMessageServiceTest {
         given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 26, 12, 0));
         given(messageRepository.save(any())).willReturn(saved);
 
-        chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("안녕하세요"));
+        chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, "안녕하세요", null, null, null));
 
         then(messageRepository).should().save(any(Message.class));
         then(chatRedisPubSubService).should().publish(any(), any());
@@ -114,7 +117,7 @@ class ChatMessageServiceTest {
         given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 5, 26, 12, 0));
         given(messageRepository.save(any())).willReturn(saved);
 
-        chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("안녕하세요"));
+        chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, "안녕하세요", null, null, null));
 
         then(chatRedisPubSubService).should().publish(any(), any());
         then(eventPublisher).should(never())
@@ -127,7 +130,7 @@ class ChatMessageServiceTest {
         given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.denied(java.time.Duration.ofSeconds(5)));
 
         assertThatThrownBy(() ->
-                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("hello")))
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, "hello", null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.TOO_MANY_REQUESTS);
@@ -141,7 +144,7 @@ class ChatMessageServiceTest {
                 eq(ROOM_ID), eq(USER_ID), any())).willReturn(false);
 
         assertThatThrownBy(() ->
-                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("hello")))
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, "hello", null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHAT_NOT_JOINED);
@@ -156,7 +159,7 @@ class ChatMessageServiceTest {
         given(accountRepository.findById(USER_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("hello")))
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, "hello", null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
@@ -171,7 +174,7 @@ class ChatMessageServiceTest {
         given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
 
         assertThatThrownBy(() ->
-                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest("")))
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, "", null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
@@ -187,10 +190,106 @@ class ChatMessageServiceTest {
         String over1000 = "가".repeat(1001);
 
         assertThatThrownBy(() ->
-                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(over1000)))
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.TEXT, over1000, null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.MESSAGE_TOO_LONG);
+    }
+
+    @Test
+    void sendMessage_systemMessageTypeFromClient_throws_INVALID_REQUEST() {
+        // SYSTEM은 서버 전용 타입 — 클라이언트가 지정하면 INVALID_REQUEST
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
+
+        assertThatThrownBy(() ->
+                chatMessageService.sendMessage(USER_ID, ROOM_ID, new ChatSendMessageRequest(MessageType.SYSTEM, "공지", null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    void sendMessage_imageMessage_fileUrlNotBelongToRoom_throws_CHAT_FILE_OWNERSHIP_INVALID() {
+        // 타 채팅방(또는 임의) 객체 키로 IMAGE 메시지 전송 → IDOR 차단
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
+
+        ChatSendMessageRequest request = new ChatSendMessageRequest(
+                MessageType.IMAGE, null, "chat-rooms/999/uuid.jpg", null, null);
+
+        assertThatThrownBy(() -> chatMessageService.sendMessage(USER_ID, ROOM_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.CHAT_FILE_OWNERSHIP_INVALID);
+    }
+
+    @Test
+    void sendMessage_imageMessage_valid_savesAndResolvesFileUrl() {
+        // 본인 채팅방 업로드 객체 키 → 저장 성공 + presigned GET URL로 변환해 발행
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInAndUserIdNot(
+                eq(ROOM_ID), any(), eq(USER_ID))).willReturn(List.of());
+        Account sender = mock(Account.class);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(sender));
+
+        Message saved = mock(Message.class);
+        given(saved.getId()).willReturn(1L);
+        given(saved.getChatRoomId()).willReturn(ROOM_ID);
+        given(saved.getSenderId()).willReturn(USER_ID);
+        given(saved.getMessageType()).willReturn(MessageType.IMAGE);
+        given(saved.getFileUrl()).willReturn("chat-rooms/100/uuid.jpg");
+        given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 6, 16, 12, 0));
+        given(messageRepository.save(any())).willReturn(saved);
+        given(chatFileStorage.presignedGetUrl("chat-rooms/100/uuid.jpg")).willReturn("https://signed/chat-rooms/100/uuid.jpg");
+
+        ChatSendMessageRequest request = new ChatSendMessageRequest(
+                MessageType.IMAGE, null, "chat-rooms/100/uuid.jpg", null, null);
+        chatMessageService.sendMessage(USER_ID, ROOM_ID, request);
+
+        org.mockito.ArgumentCaptor<ChatMessageResponse> captor = org.mockito.ArgumentCaptor.forClass(ChatMessageResponse.class);
+        then(chatRedisPubSubService).should().publish(eq(ROOM_ID), captor.capture());
+        assertThat(captor.getValue().fileUrl()).isEqualTo("https://signed/chat-rooms/100/uuid.jpg");
+        assertThat(captor.getValue().messageType()).isEqualTo(MessageType.IMAGE);
+    }
+
+    @Test
+    void sendMessage_fileMessage_valid_savesWithFileNameAndSize() {
+        // FILE 타입 — fileName/fileSize도 함께 빌더에 전달되는지 확인
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(29));
+        given(chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                eq(ROOM_ID), eq(USER_ID), any())).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndMemberStateInAndUserIdNot(
+                eq(ROOM_ID), any(), eq(USER_ID))).willReturn(List.of());
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(mock(Account.class)));
+
+        Message saved = mock(Message.class);
+        given(saved.getId()).willReturn(1L);
+        given(saved.getChatRoomId()).willReturn(ROOM_ID);
+        given(saved.getSenderId()).willReturn(USER_ID);
+        given(saved.getMessageType()).willReturn(MessageType.FILE);
+        given(saved.getFileUrl()).willReturn("chat-rooms/100/uuid.pdf");
+        given(saved.getFileName()).willReturn("문서.pdf");
+        given(saved.getFileSize()).willReturn(1024L);
+        given(saved.getCreatedAt()).willReturn(LocalDateTime.of(2026, 6, 16, 12, 0));
+        given(messageRepository.save(any())).willReturn(saved);
+        given(chatFileStorage.presignedGetUrl("chat-rooms/100/uuid.pdf")).willReturn("https://signed/chat-rooms/100/uuid.pdf");
+
+        ChatSendMessageRequest request = new ChatSendMessageRequest(
+                MessageType.FILE, null, "chat-rooms/100/uuid.pdf", "문서.pdf", 1024L);
+        chatMessageService.sendMessage(USER_ID, ROOM_ID, request);
+
+        org.mockito.ArgumentCaptor<Message> messageCaptor = org.mockito.ArgumentCaptor.forClass(Message.class);
+        then(messageRepository).should().save(messageCaptor.capture());
+        assertThat(messageCaptor.getValue().getFileUrl()).isEqualTo("chat-rooms/100/uuid.pdf");
+        assertThat(messageCaptor.getValue().getFileName()).isEqualTo("문서.pdf");
+        assertThat(messageCaptor.getValue().getFileSize()).isEqualTo(1024L);
     }
 
     // ===== getMessages =====
@@ -328,6 +427,48 @@ class ChatMessageServiceTest {
         CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
 
         assertThat(result.content().get(0).senderNickname()).isNull();
+    }
+
+    @Test
+    void getMessages_imageMessage_resolvesFileUrlViaPresignedGetUrl() {
+        // IMAGE 메시지 — fileUrl(객체 키)을 presigned GET URL로 변환해 응답
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.isActiveMember()).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message imageMsg = mock(Message.class);
+        given(imageMsg.getId()).willReturn(30L);
+        given(imageMsg.getChatRoomId()).willReturn(ROOM_ID);
+        given(imageMsg.getSenderId()).willReturn(USER_ID);
+        given(imageMsg.getMessageType()).willReturn(MessageType.IMAGE);
+        given(imageMsg.getFileUrl()).willReturn("chat-rooms/100/uuid.jpg");
+        given(imageMsg.getCreatedAt()).willReturn(LocalDateTime.of(2026, 6, 16, 12, 0));
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(imageMsg));
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of());
+        given(chatFileStorage.presignedGetUrl("chat-rooms/100/uuid.jpg")).willReturn("https://signed/chat-rooms/100/uuid.jpg");
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
+
+        assertThat(result.content().get(0).fileUrl()).isEqualTo("https://signed/chat-rooms/100/uuid.jpg");
+    }
+
+    @Test
+    void getMessages_textMessage_fileUrlIsNull() {
+        // TEXT 메시지 — fileUrl이 없으므로 presignedGetUrl 미호출, 응답 fileUrl=null
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.isActiveMember()).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message msg = stubMessage(40L);
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(msg));
+        given(accountRepository.findAllById(any())).willReturn(List.of());
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
+
+        assertThat(result.content().get(0).fileUrl()).isNull();
+        then(chatFileStorage).should(never()).presignedGetUrl(any());
     }
 
     private Message stubMessage(Long id) {
