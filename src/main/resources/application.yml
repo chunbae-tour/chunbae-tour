@@ -273,3 +273,12 @@ search:
     # 기본값: 매일 자정 (0 0 0 * * *)
     # 재배포 없이 변경 가능하도록 yml로 외부화
     reset-cron: "0 0 0 * * *"
+
+# S3 업로드/조회 (E10). 버킷명·리전은 비밀 아님 → 평문 + env override.
+# 자격증명은 운영 ECS task-role 자동(DefaultCredentialsProvider) — 액세스키 설정/하드코딩 없음.
+# 버킷 chunbae-tour-uploads는 완전 비공개(public access block all) → 조회는 presigned GET(만료 10분).
+aws:
+  s3:
+    bucket: ${AWS_S3_BUCKET:chunbae-tour-uploads}
+    region: ${AWS_REGION:ap-northeast-2}
+    presign-expiry: ${AWS_S3_PRESIGN_EXPIRY:PT10M}
