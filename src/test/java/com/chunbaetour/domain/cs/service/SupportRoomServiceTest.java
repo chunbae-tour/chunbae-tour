@@ -31,6 +31,7 @@ import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import com.chunbaetour.domain.cs.storage.SupportFileStorage;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,7 @@ class SupportRoomServiceTest {
     @Mock private SupportMessageRepository supportMessageRepository;
     @Mock private AccountRepository accountRepository;
     @Mock private ApplicationEventPublisher applicationEventPublisher;
+    @Mock private SupportFileStorage supportFileStorage;
 
     // ===== createRoom =====
 

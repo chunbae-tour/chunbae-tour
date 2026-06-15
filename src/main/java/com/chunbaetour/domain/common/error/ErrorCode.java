@@ -250,6 +250,12 @@ public enum ErrorCode {
     SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
     // CS_005: 이미 배정된 상담방 — 중복 배정 차단
     SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다."),
+    // CS_006~010: 상담 파일/이미지 업로드 검증 (KAN-309) — CHAT_020~024 대응
+    SUPPORT_FILE_EMPTY(HttpStatus.BAD_REQUEST,              "CS_006", "업로드할 파일이 비어 있습니다."),
+    SUPPORT_FILE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,   "CS_007", "지원하지 않는 파일 형식입니다. (이미지: JPEG/PNG/WebP, 문서: PDF/DOCX/XLSX/PPTX/HWP)"),
+    SUPPORT_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,    "CS_008", "이미지 크기가 최대 허용 용량(5MB)을 초과합니다."),
+    SUPPORT_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,          "CS_009", "파일 크기가 최대 허용 용량(10MB)을 초과합니다."),
+    SUPPORT_FILE_OWNERSHIP_INVALID(HttpStatus.FORBIDDEN,    "CS_010", "해당 상담방에 업로드되지 않은 파일입니다."),
 
     // ===== COMPANION / COMPANION REVIEW (담당: 임하은, CR 프리픽스 공유) =====
     COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),

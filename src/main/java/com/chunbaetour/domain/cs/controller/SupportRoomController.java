@@ -3,9 +3,11 @@ package com.chunbaetour.domain.cs.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCreateRequest;
+import com.chunbaetour.domain.cs.dto.response.SupportFileUploadResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
+import com.chunbaetour.domain.cs.service.SupportFileService;
 import com.chunbaetour.domain.cs.service.SupportRoomService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -15,6 +17,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "Support", description = "고객센터 상담 (/api/v1/support/**)")
 @RestController
@@ -34,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SupportRoomController {
 
     private final SupportRoomService supportRoomService;
+    private final SupportFileService supportFileService;
 
     // 상담방 생성 — initialMessage 선택 제공 시 첫 메시지 함께 저장 (USER·MERCHANT 공용)
     @Operation(summary = "상담방 생성 (USER·MERCHANT)")
@@ -65,5 +70,16 @@ public class SupportRoomController {
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return ApiResponse.success(supportRoomService.getMessages(userId, supportRoomId, cursor, size));
+    }
+
+    // 상담 채팅 파일/이미지 업로드 (S3) — 본인 방만 가능 (USER·MERCHANT)
+    @Operation(summary = "상담 채팅 파일/이미지 업로드 (USER·MERCHANT)")
+    @PostMapping(value = "/{supportRoomId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<SupportFileUploadResponse> uploadFile(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable @Positive Long supportRoomId,
+            @RequestParam("file") MultipartFile file) {
+        return ApiResponse.success(supportFileService.uploadFile(userId, supportRoomId, false, file));
     }
 }

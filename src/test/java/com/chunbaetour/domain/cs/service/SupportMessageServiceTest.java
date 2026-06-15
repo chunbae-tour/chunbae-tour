@@ -21,6 +21,7 @@ import com.chunbaetour.domain.cs.entity.SupportMessage;
 import com.chunbaetour.domain.cs.entity.SupportMessageType;
 import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import com.chunbaetour.domain.cs.storage.SupportFileStorage;
 import java.time.Duration;
 import java.util.Optional;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,6 +40,7 @@ class SupportMessageServiceTest {
     @Mock private SupportRedisPubSubService supportRedisPubSubService;
     @Mock private RateLimiter rateLimiter;
     @Mock private ApplicationEventPublisher applicationEventPublisher;
+    @Mock private SupportFileStorage supportFileStorage;
 
     // rate limit 초과 → TOO_MANY_REQUESTS, 이후 DB 조회 없음
     @Test
@@ -182,6 +184,33 @@ class SupportMessageServiceTest {
         verify(applicationEventPublisher).publishEvent(new SupportMessageSentEvent(1L, 99L));
     }
 
+    // IMAGE 메시지 — 본인 상담방 키 → save·presign 변환·publish 확인 (KAN-309 CS)
+    @Test
+    void sendMessage_whenImageWithOwnFileKey_savesAndPublishes() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+        given(supportMessageRepository.save(any())).willReturn(buildImageMessage(102L, 1L, "support-rooms/1/uuid.jpg"));
+        given(supportFileStorage.presignedGetUrl("support-rooms/1/uuid.jpg")).willReturn("https://signed-url");
+
+        supportMessageService.sendMessage(1L, 1L, false, fileReq("support-rooms/1/uuid.jpg"));
+
+        verify(supportMessageRepository).save(any(SupportMessage.class));
+        verify(supportRedisPubSubService).publish(eq(1L), any());
+    }
+
+    // IMAGE 메시지 — 타 상담방 키 전송 → SUPPORT_FILE_OWNERSHIP_INVALID (IDOR 방지)
+    @Test
+    void sendMessage_whenImageWithOtherRoomFileKey_throwsOwnershipInvalid() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+
+        assertThatThrownBy(() -> supportMessageService.sendMessage(1L, 1L, false, fileReq("support-rooms/999/uuid.jpg")))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.SUPPORT_FILE_OWNERSHIP_INVALID));
+        verify(supportMessageRepository, never()).save(any());
+    }
+
     // USER 발신 — 이벤트 발행 없음 (ADMIN 알림 인프라 미구축)
     @Test
     void sendMessage_whenOwnerSends_doesNotPublishEvent() {
@@ -195,7 +224,30 @@ class SupportMessageServiceTest {
     }
 
     private SupportSendMessageRequest req(String content) {
-        return new SupportSendMessageRequest(content);
+        return new SupportSendMessageRequest(SupportMessageType.TEXT, content, null, null, null);
+    }
+
+    private SupportSendMessageRequest fileReq(String fileUrl) {
+        return new SupportSendMessageRequest(SupportMessageType.IMAGE, null, fileUrl, null, null);
+    }
+
+    private SupportMessage buildImageMessage(Long id, Long roomId, String fileUrl) {
+        SupportMessage msg = SupportMessage.builder()
+                .supportRoomId(roomId)
+                .senderId(1L)
+                .senderRole(SupportSenderRole.CUSTOMER)
+                .messageType(SupportMessageType.IMAGE)
+                .content(null)
+                .fileUrl(fileUrl)
+                .build();
+        try {
+            var field = SupportMessage.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(msg, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return msg;
     }
 
     private SupportMessage buildMessage(Long id, Long roomId) {

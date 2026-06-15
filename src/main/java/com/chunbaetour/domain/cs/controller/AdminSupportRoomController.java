@@ -5,9 +5,11 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.cs.dto.request.SupportRoomCloseRequest;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse;
+import com.chunbaetour.domain.cs.dto.response.SupportFileUploadResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.dto.response.SupportRoomResponse;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
+import com.chunbaetour.domain.cs.service.SupportFileService;
 import com.chunbaetour.domain.cs.service.SupportRoomService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,6 +18,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,7 +27,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "Admin Support", description = "고객센터 상담 관리 (/api/v1/admin/support/**)")
 @RestController
@@ -33,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminSupportRoomController {
 
     private final SupportRoomService supportRoomService;
+    private final SupportFileService supportFileService;
 
     // 전체 상담방 목록 cursor 페이징 — status 필터 선택 (ADMIN 전용)
     @Operation(summary = "전체 상담방 목록 조회 (ADMIN)")
@@ -70,5 +77,16 @@ public class AdminSupportRoomController {
             @PathVariable @Positive Long supportRoomId,
             @Valid @RequestBody SupportRoomCloseRequest request) {
         return ApiResponse.success(supportRoomService.closeRoom(supportRoomId, request));
+    }
+
+    // 상담 채팅 파일/이미지 업로드 (S3) — 배정된 ADMIN만 가능 (ADMIN 전용)
+    @Operation(summary = "상담 채팅 파일/이미지 업로드 (ADMIN)")
+    @PostMapping(value = "/{supportRoomId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<SupportFileUploadResponse> uploadFile(
+            @AuthenticationPrincipal Long adminId,
+            @PathVariable @Positive Long supportRoomId,
+            @RequestParam("file") MultipartFile file) {
+        return ApiResponse.success(supportFileService.uploadFile(adminId, supportRoomId, true, file));
     }
 }

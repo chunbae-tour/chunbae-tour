@@ -51,27 +51,39 @@ public class SupportMessage {
     @Column(name = "file_url", length = 500)
     private String fileUrl;
 
+    // FILE 타입에만 사용 — 메시지 표시용 원본 파일명 (KAN-309 CS)
+    @Column(name = "file_name", length = 255)
+    private String fileName;
+
+    // FILE 타입에만 사용 — 파일 크기(bytes) (KAN-309 CS)
+    @Column(name = "file_size")
+    private Long fileSize;
+
     @CreatedDate
     @Column(name = "sent_at", nullable = false, updatable = false)
     private LocalDateTime sentAt;
 
     @Builder
     private SupportMessage(Long supportRoomId, Long senderId, SupportSenderRole senderRole,
-                           SupportMessageType messageType, String content, String fileUrl) {
+                           SupportMessageType messageType, String content, String fileUrl,
+                           String fileName, Long fileSize) {
         if (supportRoomId == null) throw new IllegalArgumentException("supportRoomId must not be null");
         if (senderId == null) throw new IllegalArgumentException("senderId must not be null");
         if (senderRole == null) throw new IllegalArgumentException("senderRole must not be null");
         if (messageType == null) throw new IllegalArgumentException("messageType must not be null");
-        validatePayload(messageType, content, fileUrl);
+        validatePayload(messageType, content, fileUrl, fileName, fileSize);
         this.supportRoomId = supportRoomId;
         this.senderId = senderId;
         this.senderRole = senderRole;
         this.messageType = messageType;
         this.content = content;
         this.fileUrl = fileUrl;
+        this.fileName = fileName;
+        this.fileSize = fileSize;
     }
 
-    private static void validatePayload(SupportMessageType messageType, String content, String fileUrl) {
+    private static void validatePayload(SupportMessageType messageType, String content, String fileUrl,
+                                          String fileName, Long fileSize) {
         if (messageType == SupportMessageType.TEXT) {
             if (content == null || content.isBlank()) {
                 throw new IllegalArgumentException("TEXT 메시지는 content가 필요합니다.");
@@ -83,6 +95,10 @@ public class SupportMessage {
         if ((messageType == SupportMessageType.IMAGE || messageType == SupportMessageType.FILE)
                 && (fileUrl == null || fileUrl.isBlank())) {
             throw new IllegalArgumentException("IMAGE/FILE 메시지는 fileUrl이 필요합니다.");
+        }
+        if (messageType == SupportMessageType.FILE
+                && (fileName == null || fileName.isBlank() || fileSize == null || fileSize <= 0)) {
+            throw new IllegalArgumentException("FILE 메시지는 fileName/fileSize가 필요합니다.");
         }
     }
 }
