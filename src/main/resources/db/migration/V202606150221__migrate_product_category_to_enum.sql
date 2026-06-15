@@ -6,8 +6,3 @@
 UPDATE products SET category = 'DISCOUNT_COUPON'  WHERE category = 'COUPON';
 UPDATE products SET category = 'ADMISSION_TICKET' WHERE category = 'TICKET';
 UPDATE products SET category = 'LOCAL_PRODUCT'    WHERE category = 'GOODS';
-
--- 방어: enum 5종에 없는 잔여 값은 DISCOUNT_COUPON으로 수렴 — JPA enum 역직렬화 실패(IllegalArgument) 방지.
--- 운영 반영 전 미매핑 값 존재 여부 사전 점검 권장.
-UPDATE products SET category = 'DISCOUNT_COUPON'
- WHERE category NOT IN ('ADMISSION_TICKET', 'TOUR_PASS', 'EXPERIENCE', 'DISCOUNT_COUPON', 'LOCAL_PRODUCT');
