@@ -114,6 +114,31 @@ class AdminProductServiceTest {
     }
 
     @Test
+    @DisplayName("관리자 상품 목록 — 공백 카테고리(\"   \")는 null로 정규화해 레포지토리에 전달 (전체 카테고리)")
+    void getProducts_blankCategory_normalizedToNull() {
+        given(productRepository.findForAdmin(eq(null), eq(null), eq(null), any(Pageable.class)))
+                .willReturn(List.of(createProduct(10L, 5, ProductStatus.ON_SALE)));
+
+        // 공백만 있는 카테고리는 필터 미적용(null)과 동일하게 처리되어야 한다
+        adminProductService.getProducts(null, "   ", null, 20);
+
+        then(productRepository).should()
+                .findForAdmin(eq(null), eq(null), eq(null), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("관리자 상품 목록 — 카테고리 앞뒤 공백은 trim 후 레포지토리에 전달")
+    void getProducts_categoryTrimmed_passedToRepository() {
+        given(productRepository.findForAdmin(eq(null), eq("COUPON"), eq(null), any(Pageable.class)))
+                .willReturn(List.of(createProduct(10L, 5, ProductStatus.ON_SALE)));
+
+        adminProductService.getProducts(null, "  COUPON  ", null, 20);
+
+        then(productRepository).should()
+                .findForAdmin(eq(null), eq("COUPON"), eq(null), any(Pageable.class));
+    }
+
+    @Test
     @DisplayName("상품 등록 — ProductDetailResponse 반환, status = ON_SALE")
     void createProduct_success_returnsDetail() {
         AdminProductCreateRequest req = new AdminProductCreateRequest(

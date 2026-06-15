@@ -155,6 +155,92 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].name").value("숨김 쿠폰"));
     }
 
+    @Test
+    @DisplayName("ADMIN + category 필터 → 해당 카테고리 상품만 반환 (KAN-300)")
+    void getProducts_asAdmin_categoryFilter_returnsOnlyMatching() throws Exception {
+        saveProduct("음식 쿠폰", ProductStatus.ON_SALE, "FOOD");
+        saveProduct("일반 쿠폰", ProductStatus.ON_SALE, "COUPON");
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("category", "FOOD")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].name").value("음식 쿠폰"));
+    }
+
+    @Test
+    @DisplayName("ADMIN + 일치 상품 없는 category 필터 → 200 + 빈 content (KAN-300)")
+    void getProducts_asAdmin_noMatch_returnsEmptyContent() throws Exception {
+        saveProduct("일반 쿠폰", ProductStatus.ON_SALE, "COUPON");
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("category", "NONEXISTENT")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.content").isArray())
+                .andExpect(jsonPath("$.data.content.length()").value(0))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("ADMIN 페이징 계약 — size 초과 상품 시 content=size, hasNext=true, nextCursor 발급 (KAN-300)")
+    void getProducts_asAdmin_pagingContract_hasNextAndCursor() throws Exception {
+        saveProduct("상품A", ProductStatus.ON_SALE);
+        saveProduct("상품B", ProductStatus.ON_SALE);
+        saveProduct("상품C", ProductStatus.ON_SALE);
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("size", "2")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(2))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").isNotEmpty())
+                // size는 실제 반환 개수가 아니라 요청 size를 echo (팀 표준)
+                .andExpect(jsonPath("$.data.size").value(2));
+    }
+
+    @Test
+    @DisplayName("ADMIN size=0 요청 → 400 COMMON_002 (@Min 검증)")
+    void getProducts_asAdmin_size0_returns400() throws Exception {
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("size", "0")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    @DisplayName("ADMIN size=101 요청 → 400 COMMON_002 (@Max 검증)")
+    void getProducts_asAdmin_size101_returns400() throws Exception {
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("size", "101")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    @DisplayName("ADMIN 유효하지 않은 cursor → 400 COMMON_008 (INVALID_CURSOR)")
+    void getProducts_asAdmin_invalidCursor_returns400() throws Exception {
+        String token = adminToken();
+
+        mockMvc.perform(get(ENDPOINT)
+                        .param("cursor", "!!!")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_008"));
+    }
+
     /** ADMIN 계정 seed 후 access 토큰 발급 — 로그인 흐름 없이 직접 발급 */
     private String adminToken() {
         Account admin = seedFactory.seedAdmin("admin_" + UUID.randomUUID() + "@test.com", PASSWORD, "관리자");
@@ -162,8 +248,12 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     }
 
     private void saveProduct(String name, ProductStatus status) {
+        saveProduct(name, status, "COUPON");
+    }
+
+    private void saveProduct(String name, ProductStatus status, String category) {
         productRepository.save(Product.builder()
-                .name(name).description("설명").category("COUPON")
+                .name(name).description("설명").category(category)
                 .price(2000L).originalPrice(3000L).stock(status == ProductStatus.SOLD_OUT ? 0 : 10)
                 .originalStock(10).imageUrls(null).merchantName("상인")
                 .validityDays(30).status(status).maxPerPerson(5).build());
