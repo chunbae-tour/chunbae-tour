@@ -35,8 +35,9 @@ public class FestivalLikeService {
 
     @Transactional
     public void removeLike(Long userId, Long festivalId) {
-        festivalRepository.findById(festivalId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND));
+        if (!festivalRepository.existsById(festivalId)) {
+            throw new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND);
+        }
 
         boolean success = userLikeService.removeLike(userId, LikeTargetType.FESTIVAL, festivalId);
         if (!success) {
