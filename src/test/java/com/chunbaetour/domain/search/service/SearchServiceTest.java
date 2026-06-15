@@ -319,7 +319,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(null, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", null);
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(null, null, null, null, null, size, "127.0.0.1", true, null);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -354,7 +354,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size)).thenReturn(mockResult);
 
         // when
-        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", true, null);
 
         // then
         assertThat(response.content().get(0).festivalId()).isEqualTo(3L);
@@ -378,7 +378,7 @@ class SearchServiceTest {
         String longKeyword = "가".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1", null))
+        assertThatThrownBy(() -> searchService.searchFestivals(longKeyword, null, null, null, null, 10, "127.0.0.1", true, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -400,7 +400,7 @@ class SearchServiceTest {
 
         // when
         TypoCorrectedSearchResponse<SearchFestivalResponse> response =
-                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1", null);
+                searchService.searchFestivals(null, startDate, null, null, null, size, "127.0.0.1", true, null);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -424,7 +424,7 @@ class SearchServiceTest {
 
         // when
         TypoCorrectedSearchResponse<SearchFestivalResponse> response =
-                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1", null);
+                searchService.searchFestivals(null, null, endDate, null, null, size, "127.0.0.1", true, null);
 
         // then
         assertThat(response.content()).hasSize(1);
@@ -446,7 +446,7 @@ class SearchServiceTest {
         when(festivalQueryRepository.searchFestivals(correction, null, null, null, null, size)).thenReturn(List.of());
 
         // when
-        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", null);
+        TypoCorrectedSearchResponse<SearchFestivalResponse> response = searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", true, null);
 
         // then
         assertThat(response.content()).isEmpty();
@@ -467,7 +467,7 @@ class SearchServiceTest {
                 .thenReturn(List.of(mockFestival));
 
         // when
-        searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", "community-place-selector");
+        searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", true, "community-place-selector");
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -525,6 +525,25 @@ class SearchServiceTest {
 
         // when
         searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", false, null, null);
+
+        // then
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("track=false면 축제 검색 결과가 있어도 인기 검색어를 증가시키지 않는다")
+    void searchFestivals_DoesNotIncrementPopularSearch_WhenTrackIsFalse() {
+        // given
+        String keyword = "festival";
+        int size = 10;
+        Festival mockFestival = Festival.create("festival", "desc", "Seoul", "address",
+                LocalDate.now(), LocalDate.now().plusDays(5), "http://url.com", null, FestivalStatus.ACTIVE);
+        org.springframework.test.util.ReflectionTestUtils.setField(mockFestival, "id", 1L);
+        when(festivalQueryRepository.searchFestivals(keyword, null, null, null, null, size))
+                .thenReturn(List.of(mockFestival));
+
+        // when
+        searchService.searchFestivals(keyword, null, null, null, null, size, "127.0.0.1", false, null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());

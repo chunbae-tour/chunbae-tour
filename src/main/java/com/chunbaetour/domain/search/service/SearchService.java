@@ -222,10 +222,11 @@ public class SearchService {
      * @return 커서 페이지네이션이 적용된 축제 검색 결과.
      *         결과 0건이고 오타 후보가 있으면 {@code didYouMean}에 교정 키워드를 포함한다.
      */
-    public TypoCorrectedSearchResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
+    public TypoCorrectedSearchResponse<SearchFestivalResponse> searchFestivals(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, boolean track, String source) {
         SearchSource searchSource = SearchSource.from(source);
+        boolean shouldTrackSearch = track && searchSource.isTrackable();
         log.info("[SearchService] 축제 검색 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
-                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
+                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), shouldTrackSearch);
 
         // 검색 시작일/종료일 유효성 선검증
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
@@ -259,7 +260,7 @@ public class SearchService {
                 .map(item -> SearchFestivalResponse.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                 .toList();
 
-        if (searchSource.isTrackable() && StringUtils.hasText(normalized) && !updatedItems.isEmpty() && cursorId == null) {
+        if (shouldTrackSearch && StringUtils.hasText(normalized) && !updatedItems.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
@@ -289,7 +290,7 @@ public class SearchService {
                         }
 
                         // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
-                        if (searchSource.isTrackable()) {
+                        if (shouldTrackSearch) {
                             popularSearchService.incrementSearchCount(correction, clientIp);
                         }
 
@@ -311,10 +312,11 @@ public class SearchService {
      * {@code GET /api/v1/search/festivals} 하위 호환용. 쿼리 로직은 v2와 동일하며 오타 교정도 동일하게 적용된다.
      * </p>
      */
-    public TypoCorrectedSearchResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, String source) {
+    public TypoCorrectedSearchResponse<SearchFestivalV1Response> searchFestivalsV1(String keyword, LocalDate startDate, LocalDate endDate, String region, Long cursorId, int size, String clientIp, boolean track, String source) {
         SearchSource searchSource = SearchSource.from(source);
+        boolean shouldTrackSearch = track && searchSource.isTrackable();
         log.info("[SearchService] 축제 검색 v1 요청 - keywordLength: {}, startDate: {}, endDate: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
-                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
+                keyword != null ? keyword.length() : 0, startDate, endDate, region, cursorId, size, searchSource.name(), shouldTrackSearch);
 
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new BusinessException(ErrorCode.SEARCH_INVALID_DATE_RANGE);
@@ -342,7 +344,7 @@ public class SearchService {
                 .map(item -> SearchFestivalV1Response.from(item, FestivalProgressStatus.of(item.getStartDate(), item.getEndDate(), today)))
                 .toList();
 
-        if (searchSource.isTrackable() && StringUtils.hasText(normalized) && !v1Items.isEmpty() && cursorId == null) {
+        if (shouldTrackSearch && StringUtils.hasText(normalized) && !v1Items.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
@@ -373,7 +375,7 @@ public class SearchService {
                         }
 
                         // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
-                        if (searchSource.isTrackable()) {
+                        if (shouldTrackSearch) {
                             popularSearchService.incrementSearchCount(correction, clientIp);
                         }
 

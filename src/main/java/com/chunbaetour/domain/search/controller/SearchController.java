@@ -79,8 +79,9 @@ public class SearchController {
             @RequestParam(name = "type", defaultValue = "ALL") String type,
             @RequestParam(name = "cursor", required = false) String cursor,
             @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) int size,
-            @Parameter(description = "Set false to skip popular search tracking. Default is true.")
+            @Parameter(description = "false 전달 시 인기 검색어 집계를 건너뜁니다. 기본값은 true입니다.")
             @RequestParam(name = "track", defaultValue = "true") boolean track,
+            @Parameter(description = "검색 출처 (동행/커뮤니티 선택용 검색은 'companion-place-selector' 또는 'community-place-selector' 전달 시 집계 제외)")
             @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
@@ -145,7 +146,7 @@ public class SearchController {
             @Parameter(description = "이전 응답의 nextCursor 값. 응답 목록의 마지막 placeId를 직접 계산해 전달하면 안 됩니다.")
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
-            @Parameter(description = "Set false to skip popular search tracking. Default is true.")
+            @Parameter(description = "false 전달 시 인기 검색어 집계를 건너뜁니다. 기본값은 true입니다.")
             @RequestParam(name = "track", defaultValue = "true") boolean track,
             @Parameter(description = "검색 출처 (동행/커뮤니티 장소 선택 검색은 'companion-place-selector' 또는 'community-place-selector' 전달 시 집계 제외)")
             @RequestParam(name = "source", required = false) String source,
@@ -183,12 +184,14 @@ public class SearchController {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @Parameter(description = "false 전달 시 인기 검색어 집계를 건너뜁니다. 기본값은 true입니다.")
+            @RequestParam(name = "track", defaultValue = "true") boolean track,
             @Parameter(description = "검색 출처 (축제 선택 검색 시 'companion-place-selector' 등 전달 시 집계 제외)")
             @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp, source));
+        return ApiResponse.success(searchService.searchFestivalsV1(q, startDate, endDate, region, cursor, size, clientIp, track, source));
     }
 
     /**
