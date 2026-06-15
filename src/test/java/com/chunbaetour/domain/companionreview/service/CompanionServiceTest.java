@@ -681,8 +681,7 @@ class CompanionServiceTest {
         verify(companionRepository).endExpiredCompanions(any());
     }
 
-    // UTC 기준 00:30(2026-06-15T00:30Z = 한국시간 09:30) → UTC/KST 모두 같은 날짜라 경계 미검증되므로,
-    // KST 00:30(UTC 전날 15:30)을 사용해 UTC라면 전날 날짜가 나올 상황에서 KST 날짜(다음날)가 전달되는지 검증
+    // KST 00:30(=UTC 전날 15:30) 시각에 LocalDate.now()를 호출하면 UTC 기준은 전날, KST 기준은 다음날 — KST 날짜가 전달되는지 검증
     @Test
     void endExpiredCompanions_usesBusinessZoneDate_notUtcDate() {
         // 2026-06-14T15:30:00Z == 2026-06-15T00:30:00+09:00 (Asia/Seoul)
