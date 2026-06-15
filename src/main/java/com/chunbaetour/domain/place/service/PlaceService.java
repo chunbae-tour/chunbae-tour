@@ -52,6 +52,7 @@ public class PlaceService {
 
     private static final Duration PLACE_DETAIL_TTL = Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES);
     private static final Duration NEARBY_CATEGORY_TTL = Duration.ofMinutes(30);
+    private static final int MAP_MARKER_LIMIT = 30;
 
     @Transactional(readOnly = true)
     public NearbyPlacePageResponse findNearby(double lat, double lng, double radius,
@@ -398,19 +399,18 @@ public class PlaceService {
      */
     @Transactional(readOnly = true)
     public MapMarkerPageResponse getMapMarkers(MapMarkerRequest request) {
-        int limit = 500;
         List<MapMarkerResponse> markers = placeQueryRepository.findMarkersInBoundingBox(
                 request.swLat().doubleValue(), request.swLng().doubleValue(),
                 request.neLat().doubleValue(), request.neLng().doubleValue()
         );
 
         boolean truncated = false;
-        if (markers.size() > limit) {
+        if (markers.size() > MAP_MARKER_LIMIT) {
             truncated = true;
-            markers = markers.subList(0, limit);
+            markers = markers.subList(0, MAP_MARKER_LIMIT);
         }
 
-        return new MapMarkerPageResponse(markers, truncated, limit);
+        return new MapMarkerPageResponse(markers, truncated, MAP_MARKER_LIMIT);
     }
 
     /**
