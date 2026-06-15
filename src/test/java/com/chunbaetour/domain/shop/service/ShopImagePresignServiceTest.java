@@ -131,6 +131,34 @@ class ShopImagePresignServiceTest {
     }
 
     @Test
+    @DisplayName("조회 — presign이 EXTERNAL_SERVICE_ERROR 아닌 예외면 전파(내부 결함 가시화)")
+    void getMyShop_nonExternalError_propagates() {
+        Shop shop = activeShop();
+        ReflectionTestUtils.setField(shop, "imageUrls", "[\"shops/10/a.jpg\"]");
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+        // 외부 의존 실패가 아닌 내부 결함(다른 ErrorCode) → 격하하지 않고 전파해야 함
+        given(imageStorage.presignedGetUrl("shops/10/a.jpg"))
+                .willThrow(new BusinessException(ErrorCode.INVALID_REQUEST));
+
+        assertThatThrownBy(() -> shopService.getMyShop(USER_ID, SHOP_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("조회 — imageUrls가 깨진 JSON이면 키 노출 없이 빈 배열 반환")
+    void getMyShop_malformedJson_returnsEmpty() {
+        Shop shop = activeShop();
+        ReflectionTestUtils.setField(shop, "imageUrls", "{not-an-array");
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
+
+        ShopResponse response = shopService.getMyShop(USER_ID, SHOP_ID);
+
+        assertThat(response.imageUrls()).isEqualTo("[]"); // 원본(키) 노출 안 함
+    }
+
+    @Test
     @DisplayName("조회 — imageUrls 빈 배열 → 빈 배열 반환")
     void getMyShop_emptyArray() {
         Shop shop = activeShop();

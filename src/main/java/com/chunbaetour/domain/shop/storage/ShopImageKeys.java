@@ -33,7 +33,8 @@ public final class ShopImageKeys {
      * imageUrls 저장 검증·presign 발급 시 타 가게/임의 객체 키 차단(IDOR 방지, hyeonmin02 리뷰).
      */
     public static boolean belongsToShop(String key, Long shopId) {
-        return key != null && key.startsWith(prefix(shopId));
+        // shopId null이면 prefix("shops/null/")로 오인 매칭될 수 있어 명시 차단(불변식 고정, DGAZA-max 리뷰).
+        return key != null && shopId != null && key.startsWith(prefix(shopId));
     }
 
     private static String extensionFor(String contentType) {

@@ -34,5 +34,6 @@ class ShopImageKeysTest {
         assertThat(ShopImageKeys.belongsToShop("arbitrary-key", 10L)).isFalse();      // 임의 객체
         assertThat(ShopImageKeys.belongsToShop("shops/100/uuid.jpg", 10L)).isFalse(); // prefix 부분일치 방지
         assertThat(ShopImageKeys.belongsToShop(null, 10L)).isFalse();
+        assertThat(ShopImageKeys.belongsToShop("shops/null/uuid.jpg", null)).isFalse(); // shopId null 오인 매칭 차단
     }
 }

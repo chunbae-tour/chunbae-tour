@@ -369,19 +369,26 @@ public class ShopService {
                 }
                 String key = item.asText();
                 if (!ShopImageKeys.belongsToShop(key, shopId)) {
+                    // 정상 경로면 저장 검증을 통과했어야 함 — 여기 걸리면 DB 직접수정/마이그레이션/IDOR 시도 신호 → 관찰 위해 로깅(DGAZA-max 리뷰).
+                    log.warn("presign 건너뜀 — 소유권 불일치 키. shopId={}, key={}", shopId, key);
                     continue;
                 }
                 try {
                     urls.add(imageStorage.presignedGetUrl(key));
-                } catch (RuntimeException e) {
-                    // 개별 키 presign 실패 → 그 이미지만 제외, 조회는 성공. 전체 503 방지.
+                } catch (BusinessException e) {
+                    // 외부 의존(S3 presign) 실패만 부분 실패로 격하. 그 외 내부 결함은 전파해 가시화(CodeRabbit 리뷰).
+                    if (e.getErrorCode() != ErrorCode.EXTERNAL_SERVICE_ERROR) {
+                        throw e;
+                    }
                     log.warn("이미지 presign 실패 — 해당 키 제외. shopId={}, key={}", shopId, key, e);
                 }
             }
             return objectMapper.writeValueAsString(urls);
         } catch (JacksonException e) {
-            // 저장 시 검증을 통과한 값이라 정상 경로에선 도달 안 함. 방어적으로 원본 유지.
-            return imageUrls;
+            // 정상 경로(저장 검증 통과 JSON)에선 도달 안 함. 도달 시 "원본"은 URL이 아니라 S3 키 배열이라
+            // 그대로 반환하면 내부 키 구조가 노출됨 → 빈 배열로 차단 + 로깅(DGAZA-max 리뷰).
+            log.warn("imageUrls presign 변환 실패 — 빈 배열 반환. shopId={}", shopId, e);
+            return "[]";
         }
     }
 }
