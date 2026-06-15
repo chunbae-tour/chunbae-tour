@@ -214,20 +214,25 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("upsertChunk의 기존 관광지 갱신은 커밋 후 상세 캐시(place:{id})를 무효화한다 (B10)")
+    @DisplayName("upsertChunk 갱신분은 커밋 후 상세 캐시를 다중 키 DEL로 모두 무효화한다 (B10, KAN-303 리뷰)")
     void upsertChunkUpdateEvictsDetailCache() {
         batchService.upsertChunk(List.of(
                 item("720", "옛이름", "127.1", "36.8"),
                 item("721", "다른관광지", "127.2", "36.9")));
-        Long placeId = placeRepository.findByExternalId("720").orElseThrow().getId();
-        seedDetailCache(placeId);
-        assertThat(detailCacheExists(placeId)).isTrue();
+        Long placeId720 = placeRepository.findByExternalId("720").orElseThrow().getId();
+        Long placeId721 = placeRepository.findByExternalId("721").orElseThrow().getId();
+        // 두 갱신분 모두 캐시 seed — 일부 키만 삭제하는 퇴행을 잡기 위해 둘 다 검증
+        seedDetailCache(placeId720);
+        seedDetailCache(placeId721);
+        assertThat(detailCacheExists(placeId720)).isTrue();
+        assertThat(detailCacheExists(placeId721)).isTrue();
 
         batchService.upsertChunk(List.of(
                 item("720", "새이름", "127.3", "37.0"),
-                item("721", "다른관광지", "127.2", "36.9")));
+                item("721", "또다른이름", "127.4", "37.1")));
 
-        assertThat(detailCacheExists(placeId)).isFalse();
+        assertThat(detailCacheExists(placeId720)).isFalse();
+        assertThat(detailCacheExists(placeId721)).isFalse();
     }
 
     @Test
