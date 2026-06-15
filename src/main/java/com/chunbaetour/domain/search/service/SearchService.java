@@ -81,16 +81,18 @@ public class SearchService {
      * @param cursorId 커서용 마지막 placeId
      * @param size     페이지 사이즈
      * @param clientIp 클라이언트 IP 주소
+     * @param track    false to skip popular search tracking.
      * @param source   검색 요청 출처 (예: community-place-selector)
      * @param userId   로그인한 유저의 PK (비로그인이면 null → 개인화 미적용)
      * @return 커서 페이지네이션이 적용된 관광지 검색 결과 (로그인 시 첫 페이지에 한해 현재 페이지 내에서 선호 카테고리 우선 노출 적용).
      *         결과 0건이고 오타 후보가 있으면 {@code didYouMean}에 교정 키워드를 포함한다.
      */
-    public TypoCorrectedSearchResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, String source, Long userId) {
+    public TypoCorrectedSearchResponse<SearchPlaceResponse> searchPlaces(String keyword, PlaceCategory category, String region, Long cursorId, int size, String clientIp, boolean track, String source, Long userId) {
         SearchSource searchSource = SearchSource.from(source);
+        boolean shouldTrackSearch = track && searchSource.isTrackable();
         // 검색어 원문을 INFO 로그에 남기지 않고 존재/길이만 기록하여 운영 로그 보안 강화
         log.info("[SearchService] 관광지 검색 요청 - keywordLength: {}, category: {}, region: {}, cursorId: {}, size: {}, source: {}, track: {}",
-                keyword != null ? keyword.length() : 0, category, region, cursorId, size, searchSource.name(), searchSource.isTrackable());
+                keyword != null ? keyword.length() : 0, category, region, cursorId, size, searchSource.name(), shouldTrackSearch);
 
         // 검색어 양끝 공백 제거 (정규화) - 이후 로직 전체에 적용
         String normalized = keyword != null ? keyword.strip() : null;
@@ -138,7 +140,7 @@ public class SearchService {
 
         // 5. 인기 검색어 점수 집계 (유효한 키워드이고, 결과가 1건 이상 존재하며, 첫 페이지 요청일 때만)
         // 페이지네이션(cursorId != null) 시 검색 횟수가 중복으로 증가하는 어뷰징(Abuse)을 원천 차단한다.
-        if (searchSource.isTrackable() && !resultItems.isEmpty() && cursorId == null) {
+        if (shouldTrackSearch && !resultItems.isEmpty() && cursorId == null) {
             popularSearchService.incrementSearchCount(normalized, clientIp);
         }
 
@@ -178,7 +180,7 @@ public class SearchService {
                         }
 
                         // 오타 교정 결과가 유효하면 교정어 기준으로 인기 검색어 집계 추가
-                        if (searchSource.isTrackable()) {
+                        if (shouldTrackSearch) {
                             popularSearchService.incrementSearchCount(correction, clientIp);
                         }
 

@@ -67,7 +67,7 @@ class SearchServiceTest {
         String emptyKeyword = "   ";
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", null, null))
+        assertThatThrownBy(() -> searchService.searchPlaces(emptyKeyword, null, null, null, 10, "127.0.0.1", true, null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_SHORT.getMessage());
     }
@@ -79,7 +79,7 @@ class SearchServiceTest {
         String longKeyword = "a".repeat(51);
 
         // when & then
-        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", null, null))
+        assertThatThrownBy(() -> searchService.searchPlaces(longKeyword, null, null, null, 10, "127.0.0.1", true, null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining(ErrorCode.SEARCH_KEYWORD_TOO_LONG.getMessage());
     }
@@ -97,7 +97,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when (cursor == null)
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, null);
 
         // then
         verify(popularSearchService).incrementSearchCount(keyword, "127.0.0.1");
@@ -116,7 +116,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(keyword, null, null, cursorId, size)).thenReturn(mockResult);
 
         // when (cursor != null)
-        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", null, null);
+        searchService.searchPlaces(keyword, null, null, cursorId, size, "127.0.0.1", true, null, null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -133,7 +133,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "community-place-selector", null);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, "community-place-selector", null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -150,7 +150,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", "companion-place-selector", null);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, "companion-place-selector", null);
 
         // then
         verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
@@ -171,7 +171,7 @@ class SearchServiceTest {
         when(placeQueryRepository.searchByKeyword(correction, null, null, null, size)).thenReturn(List.of());
 
         // when
-        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, null);
 
         // then
         assertThat(response.content()).isEmpty();
@@ -197,7 +197,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, userId);
 
         // then
         List<SearchPlaceResponse> content = response.content();
@@ -229,7 +229,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, userId);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -262,7 +262,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(userId)).thenReturn(List.of(PlaceCategory.TOURIST_SPOT));
 
         // when
-        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, userId);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -294,7 +294,7 @@ class SearchServiceTest {
         when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
 
         // when
-        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+        TypoCorrectedSearchResponse<SearchPlaceResponse> response = searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, null);
 
         // then
         assertThat(response.hasNext()).isTrue();
@@ -488,7 +488,7 @@ class SearchServiceTest {
                 .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, null);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, null);
 
         // then: 기본 리포지토리만 호출되어야 함
         verify(placeQueryRepository).searchByKeyword(keyword, null, null, null, size);
@@ -507,9 +507,26 @@ class SearchServiceTest {
                 .thenReturn(List.of(new SearchPlaceResponse(1L, "제주도 관광지", PlaceCategory.TOURIST_SPOT, "주소", "url", 4.5f, 1)));
 
         // when
-        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", null, userId);
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", true, null, userId);
 
         // then: 선호 카테고리가 없으니 기본 리포지토리 사용
         verify(placeQueryRepository).searchByKeyword(keyword, null, null, null, size);
+    }
+
+    @Test
+    @DisplayName("track=false면 source가 기본값이어도 관광지 검색 인기 검색어를 증가시키지 않는다")
+    void searchPlaces_DoesNotIncrementPopularSearch_WhenTrackIsFalse() {
+        // given
+        String keyword = "jeju";
+        int size = 10;
+        when(placeQueryRepository.searchByKeyword(keyword, null, null, null, size))
+                .thenReturn(List.of(new SearchPlaceResponse(1L, "jeju", PlaceCategory.TOURIST_SPOT, "address", "url", 4.5f, 1)));
+        when(personalizationService.getPreferredCategories(null)).thenReturn(List.of());
+
+        // when
+        searchService.searchPlaces(keyword, null, null, null, size, "127.0.0.1", false, null, null);
+
+        // then
+        verify(popularSearchService, never()).incrementSearchCount(anyString(), anyString());
     }
 }
