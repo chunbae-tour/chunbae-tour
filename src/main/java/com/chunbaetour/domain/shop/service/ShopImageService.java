@@ -3,8 +3,10 @@ package com.chunbaetour.domain.shop.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.dto.response.ShopImageResponse;
+import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
+import com.chunbaetour.domain.shop.type.ShopStatus;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -46,8 +48,14 @@ public class ShopImageService {
      */
     public ShopImageResponse uploadImage(Long userId, Long shopId, MultipartFile file) {
         // 소유권 확인 — 타인 가게 이미지 업로드 차단
-        shopRepository.findByIdAndUserId(shopId, userId)
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // 비활성(SUSPENDED/CLOSED) 가게 업로드 차단 — 가게 수정 API(imageUrls 저장)는 ACTIVE만 허용하므로,
+        // 업로드만 되고 키 저장이 막혀 S3 고아 객체가 확정 발생하는 것을 사전 차단(hyeonmin02 리뷰).
+        if (shop.getStatus() != ShopStatus.ACTIVE) {
+            throw new BusinessException(ErrorCode.SHOP_INACTIVE);
+        }
 
         // 파일 유효성 검사
         validateFile(file);

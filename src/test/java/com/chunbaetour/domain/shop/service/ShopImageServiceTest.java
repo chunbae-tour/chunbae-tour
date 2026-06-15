@@ -141,6 +141,20 @@ class ShopImageServiceTest {
     }
 
     @Test
+    @DisplayName("이미지 업로드 — 비활성(SUSPENDED) 가게 → SHOP_INACTIVE (고아 객체 사전 차단)")
+    void uploadImage_inactiveShop_throws() {
+        com.chunbaetour.domain.shop.entity.Shop suspended = createShop();
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                suspended, "status", com.chunbaetour.domain.shop.type.ShopStatus.SUSPENDED);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(suspended));
+
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, validFile()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
     @DisplayName("이미지 업로드 — declared image/png 인데 실제 바이트는 JPEG(포맷 불일치) → SHOP_IMAGE_TYPE_UNSUPPORTED")
     void uploadImage_declaredPngButJpegBytes_throws() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
