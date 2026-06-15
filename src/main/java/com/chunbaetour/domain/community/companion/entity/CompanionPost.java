@@ -17,13 +17,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+// InnoDB 보조 인덱스는 리프에 PK(id)를 자동 포함해 (col, id)로 정렬·저장되므로
+// 말단 id를 명시하지 않는다. cursor(id<?) 범위탐색 + id DESC 정렬은 PK 자동포함으로 충족.
 @Table(name = "companion_posts", indexes = {
         // 기본 목록 (필터 없음): WHERE status=? AND id<cursor ORDER BY id DESC
-        @Index(name = "idx_companion_status_id", columnList = "status, id"),
+        @Index(name = "idx_companion_status", columnList = "status"),
         // region 필터: WHERE status=? AND region=? ... ORDER BY id DESC
-        @Index(name = "idx_companion_status_region_id", columnList = "status, region, id"),
+        @Index(name = "idx_companion_status_region", columnList = "status, region"),
         // meetingDate 필터: WHERE status=? AND meeting_date=? ... ORDER BY id DESC
-        @Index(name = "idx_companion_status_meeting_date_id", columnList = "status, meeting_date, id")
+        @Index(name = "idx_companion_status_meeting_date", columnList = "status, meeting_date")
 })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
