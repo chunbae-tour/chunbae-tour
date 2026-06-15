@@ -2,7 +2,6 @@ package com.chunbaetour.domain.festival.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalRepository;
 import com.chunbaetour.domain.like.service.UserLikeService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
@@ -36,11 +35,8 @@ public class FestivalLikeService {
 
     @Transactional
     public void removeLike(Long userId, Long festivalId) {
-        Festival festival = festivalRepository.findById(festivalId)
+        festivalRepository.findById(festivalId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND));
-        if (!festival.isActive()) {
-            throw new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND);
-        }
 
         boolean success = userLikeService.removeLike(userId, LikeTargetType.FESTIVAL, festivalId);
         if (!success) {

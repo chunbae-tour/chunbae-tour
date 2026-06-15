@@ -11,6 +11,7 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -57,7 +58,7 @@ public class TraditionalMarketController {
     @Operation(summary = "전통시장 찜 추가")
     @PostMapping("/{marketId}/like")
     public ApiResponse<Void> addLike(
-            @PathVariable Long marketId,
+            @Positive @PathVariable Long marketId,
             @AuthenticationPrincipal Long userId
     ) {
         traditionalMarketLikeService.addLike(userId, marketId);
@@ -68,7 +69,7 @@ public class TraditionalMarketController {
     @DeleteMapping("/{marketId}/like")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public ApiResponse<Void> removeLike(
-            @PathVariable Long marketId,
+            @Positive @PathVariable Long marketId,
             @AuthenticationPrincipal Long userId
     ) {
         traditionalMarketLikeService.removeLike(userId, marketId);

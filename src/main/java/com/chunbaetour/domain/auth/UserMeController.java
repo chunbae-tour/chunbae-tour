@@ -161,7 +161,7 @@ public class UserMeController {
      */
     @Operation(summary = "내 찜 목록 조회")
     @GetMapping("/likes")
-    public ApiResponse<Page<UserLikedTargetResponse>> getLikedPlaces(
+    public ApiResponse<Page<UserLikedTargetResponse>> getLikedTargets(
             @AuthenticationPrincipal Long userId,
             @Parameter(description = "조회할 찜 타입. PLACE, MARKET, FESTIVAL을 지원합니다.")
             @RequestParam(defaultValue = "PLACE") LikeTargetType type,
