@@ -123,6 +123,27 @@ class ProductServiceTest {
     }
 
     @Test
+    @DisplayName("상품 목록 조회 — category 필터를 레포지토리로 그대로 전달, 응답은 {code,label} 형식 (KAN-302)")
+    void getProducts_categoryFilter_forwardedAndMappedToCodeLabel() {
+        given(productRepository.findVisibleProducts(
+                eq(Set.of(ProductStatus.ON_SALE, ProductStatus.SOLD_OUT)),
+                eq(ProductCategory.DISCOUNT_COUPON), eq(null), any(Pageable.class)))
+                .willReturn(List.of(createProduct(10L, ProductStatus.ON_SALE)));
+
+        CursorPageResponse<ProductSummaryResponse> result =
+                productService.getProducts(ProductCategory.DISCOUNT_COUPON, null, 20);
+
+        // enum 필터가 레포지토리로 그대로 전달되는지 핀
+        then(productRepository).should().findVisibleProducts(
+                eq(Set.of(ProductStatus.ON_SALE, ProductStatus.SOLD_OUT)),
+                eq(ProductCategory.DISCOUNT_COUPON), eq(null), any(Pageable.class));
+        // category가 String이 아니라 {code, label} 객체로 노출되는지 (Breaking 형식 회귀 가드)
+        ProductCategoryResponse category = result.content().get(0).category();
+        assertThat(category.code()).isEqualTo("DISCOUNT_COUPON");
+        assertThat(category.label()).isEqualTo("할인·교환권");
+    }
+
+    @Test
     @DisplayName("상품 상세 조회 — 캐시 미스, DB 조회 후 캐시 저장")
     void getProduct_cacheMiss_queriesDbAndCaches() {
         given(redisTemplate.opsForValue()).willReturn(valueOps);
@@ -153,6 +174,28 @@ class ProductServiceTest {
         assertThat(result.productId()).isEqualTo(PRODUCT_ID);
         assertThat(result.name()).isEqualTo("캐시 상품");
         then(productRepository).should(never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("상품 상세 캐시 — category가 {code,label}로 직렬화·역직렬화 (캐시 형식 회귀 가드, KAN-302)")
+    void getProduct_categorySerializedAsCodeLabel_roundTrip() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        // 캐시에 저장될 형태 그대로 — category={code,label} (옛 String "COUPON" 형식이 아님)
+        String cachedJson = mapper.writeValueAsString(
+                new ProductDetailResponse(PRODUCT_ID, "캐시 상품", null,
+                        ProductCategoryResponse.from(ProductCategory.DISCOUNT_COUPON),
+                        2000L, null, List.of(), null, 50, 50, null, ProductStatus.ON_SALE));
+        // 캐시 JSON이 {code,label} 객체 형식인지 사전 확인 (Breaking 형식 핀)
+        assertThat(cachedJson).contains("\"code\":\"DISCOUNT_COUPON\"").contains("\"label\":\"할인·교환권\"");
+
+        given(redisTemplate.opsForValue()).willReturn(valueOps);
+        given(valueOps.get("product:10")).willReturn(cachedJson);
+
+        ProductDetailResponse result = productService.getProduct(PRODUCT_ID);
+
+        // 역직렬화 후에도 {code,label} 유지
+        assertThat(result.category().code()).isEqualTo("DISCOUNT_COUPON");
+        assertThat(result.category().label()).isEqualTo("할인·교환권");
     }
 
     @Test

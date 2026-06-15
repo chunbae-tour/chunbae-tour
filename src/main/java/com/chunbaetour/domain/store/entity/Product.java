@@ -36,7 +36,8 @@ public class Product extends BaseEntity {
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    // DB products.category는 V1 baseline부터 varchar(50) — 컬럼 정의와 길이를 맞춘다 (KAN-302 리뷰, DDL 변경 아님)
+    @Column(nullable = false, length = 50)
     private ProductCategory category;
 
     @Column(nullable = false)
