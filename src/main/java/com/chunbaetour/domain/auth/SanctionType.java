@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.report.entity;
+package com.chunbaetour.domain.auth;
 
 public enum SanctionType {
 

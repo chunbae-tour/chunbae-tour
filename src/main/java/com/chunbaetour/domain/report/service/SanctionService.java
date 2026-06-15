@@ -2,8 +2,8 @@ package com.chunbaetour.domain.report.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.SanctionType;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
-import com.chunbaetour.domain.report.entity.SanctionType;
 import com.chunbaetour.domain.report.entity.UserSanction;
 import com.chunbaetour.domain.report.repository.UserSanctionRepository;
 import java.time.Clock;

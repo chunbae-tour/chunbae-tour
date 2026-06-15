@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.report.entity;
 
+import com.chunbaetour.domain.auth.SanctionType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;

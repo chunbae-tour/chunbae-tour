@@ -3,7 +3,6 @@ package com.chunbaetour.domain.auth;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.converter.AccountNumberEncryptConverter;
-import com.chunbaetour.domain.report.entity.SanctionType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;

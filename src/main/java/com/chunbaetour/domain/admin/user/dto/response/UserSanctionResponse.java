@@ -1,7 +1,7 @@
 package com.chunbaetour.domain.admin.user.dto.response;
 
+import com.chunbaetour.domain.auth.SanctionType;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
-import com.chunbaetour.domain.report.entity.SanctionType;
 import com.chunbaetour.domain.report.entity.UserSanction;
 import java.time.LocalDateTime;
 
