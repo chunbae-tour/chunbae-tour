@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.ChunkResult;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.UpsertResult;
@@ -11,6 +12,7 @@ import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 @SpringBootTest
 class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
@@ -28,9 +31,24 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private PlaceRepository placeRepository;
 
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
     @AfterEach
     void cleanup() {
         placeRepository.deleteAll();
+    }
+
+    /** 상세 캐시 키를 미리 채운다 — sync UPDATE/DELETE 후 무효화 검증용(B10). */
+    private void seedDetailCache(Long placeId) {
+        stringRedisTemplate.opsForValue().set(
+                PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId, "{\"cached\":true}",
+                Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES));
+    }
+
+    private boolean detailCacheExists(Long placeId) {
+        return Boolean.TRUE.equals(
+                stringRedisTemplate.hasKey(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId));
     }
 
     private TourApiPlaceItem item(String contentId, String title, String mapX, String mapY) {
@@ -152,6 +170,33 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("존재하지 않는 contentId의 삭제 요청은 SKIPPED")
     void markDeletedNotFound() {
         assertThat(batchService.markDeleted("999")).isEqualTo(UpsertResult.SKIPPED);
+    }
+
+    @Test
+    @DisplayName("markDeleted(DELETED)는 커밋 후 상세 캐시(place:{id})를 무효화한다 (B10)")
+    void markDeletedEvictsDetailCache() {
+        batchService.upsertItem(item("700", "삭제예정관광지", "127.1", "36.8"));
+        Long placeId = placeRepository.findByExternalId("700").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        batchService.markDeleted("700");
+
+        // REQUIRES_NEW 커밋 후 afterCommit에서 캐시 키 삭제
+        assertThat(detailCacheExists(placeId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("upsertItem(UPDATED)은 커밋 후 상세 캐시(place:{id})를 무효화한다 (B10)")
+    void upsertUpdateEvictsDetailCache() {
+        batchService.upsertItem(item("710", "옛이름", "127.1", "36.8"));
+        Long placeId = placeRepository.findByExternalId("710").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        batchService.upsertItem(item("710", "새이름", "127.2", "36.9"));
+
+        assertThat(detailCacheExists(placeId)).isFalse();
     }
 
     @Test
