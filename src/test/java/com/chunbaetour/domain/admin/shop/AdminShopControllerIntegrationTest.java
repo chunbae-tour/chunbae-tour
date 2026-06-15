@@ -102,6 +102,43 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET 상세 → 연결 장소/시장 id·이름 매핑 (KAN-307)")
+    void getShop_mapsLinkedPlaceAndMarket() throws Exception {
+        String adminToken = adminToken();
+        Place place = placeRepository.save(Place.builder()
+                .name("경복궁").category(PlaceCategory.TOURIST_SPOT).address("서울 종로구")
+                .lat(new BigDecimal("37.5796")).lng(new BigDecimal("126.9770")).build());
+        TraditionalMarket market = traditionalMarketRepository.save(TraditionalMarket.builder()
+                .name("광장시장").address("서울 종로구 창경궁로 88")
+                .lat(new BigDecimal("37.5701")).lng(new BigDecimal("126.9997")).build());
+        Shop shop = seedShopLinkedBoth(place.getId(), market.getId());
+
+        mockMvc.perform(get("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.placeId").value(place.getId()))
+                .andExpect(jsonPath("$.data.placeName").value("경복궁"))
+                .andExpect(jsonPath("$.data.traditionalMarketId").value(market.getId()))
+                .andExpect(jsonPath("$.data.traditionalMarketName").value("광장시장"));
+    }
+
+    @Test
+    @DisplayName("GET 상세 → 연결 레코드 미존재(삭제) 시 id는 있고 name은 null (KAN-307)")
+    void getShop_linkedRecordMissing_nameNull() throws Exception {
+        String adminToken = adminToken();
+        // 존재하지 않는 placeId/marketId 연결 — buildDetail findById 빈 결과 → name null, id는 보존
+        Shop shop = seedShopLinkedBoth(999999L, 888888L);
+
+        mockMvc.perform(get("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.placeId").value(999999))
+                .andExpect(jsonPath("$.data.placeName").value(Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.traditionalMarketId").value(888888))
+                .andExpect(jsonPath("$.data.traditionalMarketName").value(Matchers.nullValue()));
+    }
+
+    @Test
     @DisplayName("PATCH status=SUSPENDED → 200 숨김 + 공개 조회 미노출 + audit 1건")
     void patch_suspend_hides_from_public_and_records_audit() throws Exception {
         String adminToken = adminToken();
@@ -474,6 +511,18 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
         } else if (status == ShopStatus.CLOSED) {
             ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
         }
+        return shopRepository.save(shop);
+    }
+
+    /** 장소+시장 동시 연결 가게 seed — 상세 응답의 4개 연결 필드 매핑 검증용 (KAN-307). */
+    private Shop seedShopLinkedBoth(Long placeId, Long marketId) {
+        Shop shop = Shop.builder()
+                .userId(9001L).applicationId(System.nanoTime())
+                .shopName("연결가게").category("FOOD")
+                .address("서울시 강남구").lat(new BigDecimal("37.4979000"))
+                .lng(new BigDecimal("127.0276000"))
+                .phone("02-0000-0000").description("연결 소개")
+                .placeId(placeId).traditionalMarketId(marketId).build();
         return shopRepository.save(shop);
     }
 
