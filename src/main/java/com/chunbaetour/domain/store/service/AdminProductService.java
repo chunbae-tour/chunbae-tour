@@ -10,6 +10,7 @@ import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -45,13 +46,13 @@ public class AdminProductService {
      */
     @Transactional(readOnly = true)
     public CursorPageResponse<ProductSummaryResponse> getProducts(
-            ProductStatus status, String category, String cursor, int size) {
-        String normalizedCategory = (category == null || category.isBlank()) ? null : category.trim();
+            ProductStatus status, ProductCategory category, String cursor, int size) {
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
-        // size+1 조회 → 다음 페이지 존재 여부 판별
+        // size+1 조회 → 다음 페이지 존재 여부 판별. category null이면 전체 카테고리
+        // (문자열 정규화 불필요 — 컨트롤러 @RequestParam ProductCategory가 enum 변환·검증 수행)
         List<Product> products = productRepository.findForAdmin(
-                status, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
+                status, category, cursorId, PageRequest.of(0, size + 1));
 
         // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
         return CursorPageResponse.of(products, size, productMapper::toSummary, Product::getId);

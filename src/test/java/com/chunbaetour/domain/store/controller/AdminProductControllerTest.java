@@ -15,6 +15,7 @@ import com.chunbaetour.domain.auth.dto.SignupRequest;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.util.UUID;
@@ -158,12 +159,12 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("ADMIN + category 필터 → 해당 카테고리 상품만 반환 (KAN-300)")
     void getProducts_asAdmin_categoryFilter_returnsOnlyMatching() throws Exception {
-        saveProduct("음식 쿠폰", ProductStatus.ON_SALE, "FOOD");
-        saveProduct("일반 쿠폰", ProductStatus.ON_SALE, "COUPON");
+        saveProduct("음식 쿠폰", ProductStatus.ON_SALE, "EXPERIENCE");
+        saveProduct("일반 쿠폰", ProductStatus.ON_SALE, "DISCOUNT_COUPON");
         String token = adminToken();
 
         mockMvc.perform(get(ENDPOINT)
-                        .param("category", "FOOD")
+                        .param("category", "EXPERIENCE")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content.length()").value(1))
@@ -171,13 +172,13 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("ADMIN + 일치 상품 없는 category 필터 → 200 + 빈 content (KAN-300)")
+    @DisplayName("ADMIN + 매칭 상품 없는 유효 category 필터 → 200 + 빈 content (KAN-300)")
     void getProducts_asAdmin_noMatch_returnsEmptyContent() throws Exception {
-        saveProduct("일반 쿠폰", ProductStatus.ON_SALE, "COUPON");
+        saveProduct("일반 쿠폰", ProductStatus.ON_SALE, "DISCOUNT_COUPON");
         String token = adminToken();
 
         mockMvc.perform(get(ENDPOINT)
-                        .param("category", "NONEXISTENT")
+                        .param("category", "TOUR_PASS")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
@@ -248,12 +249,12 @@ class AdminProductControllerTest extends AbstractIntegrationTest {
     }
 
     private void saveProduct(String name, ProductStatus status) {
-        saveProduct(name, status, "COUPON");
+        saveProduct(name, status, "DISCOUNT_COUPON");
     }
 
     private void saveProduct(String name, ProductStatus status, String category) {
         productRepository.save(Product.builder()
-                .name(name).description("설명").category(category)
+                .name(name).description("설명").category(ProductCategory.valueOf(category))
                 .price(2000L).originalPrice(3000L).stock(status == ProductStatus.SOLD_OUT ? 0 : 10)
                 .originalStock(10).imageUrls(null).merchantName("상인")
                 .validityDays(30).status(status).maxPerPerson(5).build());

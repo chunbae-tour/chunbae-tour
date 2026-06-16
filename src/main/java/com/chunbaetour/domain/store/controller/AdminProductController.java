@@ -7,6 +7,7 @@ import com.chunbaetour.domain.store.dto.request.AdminProductUpdateRequest;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.service.AdminProductService;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,7 +47,7 @@ public class AdminProductController {
     @GetMapping
     public ApiResponse<CursorPageResponse<ProductSummaryResponse>> getProducts(
             @RequestParam(required = false) ProductStatus status,
-            @RequestParam(required = false) String category,
+            @RequestParam(required = false) ProductCategory category,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {

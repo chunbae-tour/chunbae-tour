@@ -46,7 +46,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             """)
     List<Product> findForAdmin(
             @Param("status") ProductStatus status,
-            @Param("category") String category,
+            @Param("category") ProductCategory category,
             @Param("cursorId") Long cursorId,
             Pageable pageable);
 }

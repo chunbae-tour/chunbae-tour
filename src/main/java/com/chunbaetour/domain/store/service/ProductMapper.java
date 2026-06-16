@@ -42,7 +42,7 @@ public class ProductMapper {
     public ProductSummaryResponse toSummary(Product p) {
         List<String> urls = parseImageUrls(p.getImageUrls());
         return new ProductSummaryResponse(
-                p.getId(), p.getName(), p.getCategory(), p.getPrice(), p.getOriginalPrice(),
+                p.getId(), p.getName(), ProductCategoryResponse.from(p.getCategory()), p.getPrice(), p.getOriginalPrice(),
                 urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
                 p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()),
                 p.getStatus());
