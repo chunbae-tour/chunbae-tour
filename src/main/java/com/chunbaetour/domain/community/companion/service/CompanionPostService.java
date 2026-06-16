@@ -17,6 +17,8 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
+import com.chunbaetour.domain.community.common.PostType;
+import com.chunbaetour.domain.community.common.event.PostDeletedEvent;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
@@ -27,6 +29,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +42,7 @@ public class CompanionPostService {
     private final CompanionPostQueryRepository postQueryRepository;
     private final AccountRepository accountRepository;
     private final ChatRoomRepository chatRoomRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
@@ -119,6 +123,7 @@ public class CompanionPostService {
             throw new BusinessException(ErrorCode.POST_DELETE_FORBIDDEN);
         }
         post.delete();
+        eventPublisher.publishEvent(new PostDeletedEvent(post.getId(), PostType.COMPANION));
     }
 
     private CompanionPost findActivePost(Long postId) {

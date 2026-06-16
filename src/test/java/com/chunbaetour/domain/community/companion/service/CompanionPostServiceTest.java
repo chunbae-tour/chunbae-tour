@@ -42,6 +42,7 @@ class CompanionPostServiceTest {
     @Mock CompanionPostQueryRepository postQueryRepository;
     @Mock AccountRepository accountRepository;
     @Mock ChatRoomRepository chatRoomRepository;
+    @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @InjectMocks CompanionPostService postService;
 
     private static final Long AUTHOR_ID = 1L;
@@ -347,6 +348,9 @@ class CompanionPostServiceTest {
         postService.delete(AUTHOR_ID, POST_ID);
 
         assertThat(post.getStatus()).isEqualTo(CompanionPostStatus.DELETED);
+        then(eventPublisher).should().publishEvent(
+                new com.chunbaetour.domain.community.common.event.PostDeletedEvent(
+                        POST_ID, com.chunbaetour.domain.community.common.PostType.COMPANION));
     }
 
     @Test
