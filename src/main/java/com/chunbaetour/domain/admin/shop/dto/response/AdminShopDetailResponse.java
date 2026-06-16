@@ -32,11 +32,20 @@ public record AdminShopDetailResponse(
         double rating,
         int reviewCount,
         ShopStatus status,
+        // 연결된 장소/전통시장 (KAN-307) — 미연결 시 id·name 모두 null
+        Long placeId,
+        String placeName,
+        Long traditionalMarketId,
+        String traditionalMarketName,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
 
-    public static AdminShopDetailResponse from(Shop shop) {
+    /**
+     * @param placeName  연결된 Place 이름(미연결·미존재 시 null) — 서비스가 placeId로 조회해 전달
+     * @param marketName 연결된 TraditionalMarket 이름(미연결·미존재 시 null)
+     */
+    public static AdminShopDetailResponse from(Shop shop, String placeName, String marketName) {
         return new AdminShopDetailResponse(
                 shop.getId(),
                 shop.getUserId(),
@@ -54,6 +63,10 @@ public record AdminShopDetailResponse(
                 shop.getRating(),
                 shop.getReviewCount(),
                 shop.getStatus(),
+                shop.getPlaceId(),
+                placeName,
+                shop.getTraditionalMarketId(),
+                marketName,
                 shop.getCreatedAt(),
                 shop.getUpdatedAt());
     }
