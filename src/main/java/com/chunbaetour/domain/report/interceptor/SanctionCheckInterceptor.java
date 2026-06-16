@@ -2,7 +2,6 @@ package com.chunbaetour.domain.report.interceptor;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
-import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
@@ -45,9 +44,11 @@ public class SanctionCheckInterceptor implements HandlerInterceptor {
 
     static {
         DOMAIN_PATTERNS = new LinkedHashMap<>();
+        // 댓글 경로는 /api/v1/community/posts/{postType}/{postId}/comments/** 형태라 게시글 패턴(posts/free/**,
+        // posts/companions/**)에 먼저 매칭된다 → COMMENT 패턴을 게시글보다 먼저 선언해 우선 매칭(findFirst).
+        DOMAIN_PATTERNS.put("/api/v1/community/posts/*/*/comments/**", ReportTargetType.COMMENT);
         DOMAIN_PATTERNS.put("/api/v1/community/posts/companions/**", ReportTargetType.POST_COMPANION);
         DOMAIN_PATTERNS.put("/api/v1/community/posts/free/**",       ReportTargetType.POST_FREE);
-        DOMAIN_PATTERNS.put("/api/v1/community/comments/**",         ReportTargetType.COMMENT);
         DOMAIN_PATTERNS.put("/api/v1/places/*/reviews/**",          ReportTargetType.REVIEW);
     }
 
@@ -71,10 +72,9 @@ public class SanctionCheckInterceptor implements HandlerInterceptor {
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        // 1. Account 레벨 정지 체크 (JWT 발급 후 정지된 경우 대비)
+        // 1. Account 레벨 정지 체크 (JWT 발급 후 정지된 경우 대비) — 시스템 제재 + 운영자 수동정지 양 채널.
         Account account = accountRepository.findById(userId).orElse(null);
-        if (account != null && account.getStatus() == AccountStatus.SUSPENDED
-                && account.isCurrentlySanctioned(now)) {
+        if (account != null && account.isCurrentlySuspended(now)) {
             throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 

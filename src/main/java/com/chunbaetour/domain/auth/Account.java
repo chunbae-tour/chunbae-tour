@@ -349,6 +349,21 @@ public class Account {
     }
 
     /**
+     * 요청 단위 정지 판정 — 시스템 제재(sanctionType)와 운영자 수동정지(suspendedUntil) 양 채널 모두 커버.
+     * JWT 발급 후 정지된 계정이 유효 토큰으로 우회하는 것을 인터셉터가 막기 위함.
+     * 수동정지는 sanctionType=null + suspendedUntil(무기한=null 또는 미래)로 표현된다.
+     */
+    public boolean isCurrentlySuspended(LocalDateTime now) {
+        if (this.status != AccountStatus.SUSPENDED) {
+            return false;
+        }
+        if (this.sanctionType != null) {
+            return this.sanctionEndAt == null || this.sanctionEndAt.isAfter(now);
+        }
+        return this.suspendedUntil == null || this.suspendedUntil.isAfter(now);
+    }
+
+    /**
      * 상인 인증 취소 (KAN-92 신고 처리 REVOKE_MERCHANT 액션).
      * MERCHANT → USER 권한 하향.
      */
