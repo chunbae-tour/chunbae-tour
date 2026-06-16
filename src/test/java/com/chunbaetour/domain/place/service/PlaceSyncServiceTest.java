@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -32,6 +33,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 
 @ExtendWith(MockitoExtension.class)
 class PlaceSyncServiceTest {
@@ -159,6 +161,34 @@ class PlaceSyncServiceTest {
         assertThat(result.fetched()).isEqualTo(2);
         assertThat(result.skipped()).isEqualTo(1);
         // 경계는 성공한 item(0001)까지만 — 실패 item(0003)은 다음 run에 재수집됨
+        verify(batchService).saveLastModifiedTime("20260101000001");
+    }
+
+    @Test
+    @DisplayName("청크가 낙관락 충돌(OptimisticLockingFailureException)로 실패하면 단건 fallback으로 격리하고 충돌 item 이전으로 경계를 캡한다 (KAN-304)")
+    void chunkOptimisticLockConflict_fallsBackAndCapsBoundary() {
+        given(lockProvider.lock(any(LockConfiguration.class))).willReturn(Optional.of(simpleLock));
+        given(syncStateRepository.findById(PlaceSyncState.SINGLETON_ID)).willReturn(Optional.empty());
+        // 목록: 성공(최신 0003) → 낙관락 충돌(과거 0001)
+        stubPages(
+                item("1", "20260101000003"),
+                item("2", "20260101000001"));
+        // 청크가 낙관락 충돌로 롤백 → 단건 fallback 진입 (fail-fast 아님)
+        given(batchService.upsertChunk(any())).willThrow(new OptimisticLockingFailureException("chunk optimistic"));
+        // 단건 재처리: 1 성공, 2는 낙관락 충돌 → processSingleItem이 흡수하고 minFailedModified 캡
+        given(batchService.upsertItem(any()))
+                .willReturn(UpsertResult.CREATED)
+                .willThrow(new OptimisticLockingFailureException("item optimistic"));
+
+        // (1) 예외가 전파되지 않고 정상 반환
+        PlaceSyncResult result = placeSyncService.syncAllPlaces();
+
+        assertThat(result.fetched()).isEqualTo(2);
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.skipped()).isEqualTo(1);
+        // (2) 청크 실패 후 각 item이 단건 fallback(upsertItem)으로 재처리됨
+        verify(batchService, times(2)).upsertItem(any());
+        // (3) 충돌 item(0001)으로 경계 캡 → 다음 run 재수집 보장
         verify(batchService).saveLastModifiedTime("20260101000001");
     }
 
