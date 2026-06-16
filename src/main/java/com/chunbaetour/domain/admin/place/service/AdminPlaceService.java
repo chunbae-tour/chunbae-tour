@@ -166,9 +166,9 @@ public class AdminPlaceService {
 
     // ── S10 대시보드 의존 카운트 (본 슬라이스는 메서드 노출까지) ────────────────────
 
-    /** 전체 관광지 수 — soft delete(DELETED) 제외(S07 리뷰 H). ACTIVE/HIDDEN만 집계. */
+    /** 전체 관광지 수 — 삭제 상태(DELETED 운영자 + SOURCE_DELETED 원천) 제외(S07 리뷰 H, KAN-306). ACTIVE/HIDDEN만 집계. */
     public long getTotalPlaces() {
-        return placeRepository.countByStatusNot(PlaceStatus.DELETED);
+        return placeRepository.countVisibleForAdmin();
     }
 
     /**

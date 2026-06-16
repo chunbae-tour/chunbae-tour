@@ -98,9 +98,11 @@ public class PlaceSyncBatchService {
             }
 
             Place place = existing.get();
-            // 운영자가 숨김(HIDDEN)·삭제(DELETED)한 관광지는 API 재수집으로 데이터를 덮어쓰지 않는다(운영 의사 존중).
-            // ACTIVE만 갱신 — 운영자가 정상 노출 상태로 둔 것만 최신 데이터로 동기화한다.
-            if (place.getStatus() != PlaceStatus.ACTIVE) {
+            if (place.getStatus() == PlaceStatus.SOURCE_DELETED) {
+                // 원천 재노출(showflag=1) — 원천 삭제분을 ACTIVE로 부활시킨 뒤 최신 데이터로 갱신 (KAN-306)
+                place.reviveFromSource();
+            } else if (place.getStatus() != PlaceStatus.ACTIVE) {
+                // 운영자가 숨김(HIDDEN)·삭제(DELETED)한 관광지는 API 재수집으로 데이터를 덮어쓰지 않는다(운영 의사 존중).
                 return UpsertResult.SKIPPED;
             }
             place.updateFromApi(item.title().trim(), item.fullAddress(), lat, lng, thumbnail, phone, sido, sigungu);
@@ -191,15 +193,19 @@ public class PlaceSyncBatchService {
                 np.syncExternalModifiedTime(p.modifiedTime());
                 newPlaces.add(np);
                 created++;
-            } else if (place.getStatus() != PlaceStatus.ACTIVE) {
-                // 운영자가 숨김/삭제한 관광지는 API 재수집으로 덮어쓰지 않는다(upsertItem과 동일 규칙).
-                skipped++;
-            } else {
+            } else if (place.getStatus() == PlaceStatus.ACTIVE || place.getStatus() == PlaceStatus.SOURCE_DELETED) {
+                if (place.getStatus() == PlaceStatus.SOURCE_DELETED) {
+                    // 원천 재노출(showflag=1) — 원천 삭제분 부활 후 갱신 (KAN-306, upsertItem과 동일 규칙).
+                    place.reviveFromSource();
+                }
                 place.updateFromApi(p.item().title().trim(), p.item().fullAddress(), p.lat(), p.lng(),
                         p.thumbnail(), p.phone(), p.sido(), p.sigungu());
                 place.syncExternalModifiedTime(p.modifiedTime());
                 updatedIds.add(place.getId());
                 updated++;
+            } else {
+                // 운영자가 숨김(HIDDEN)/삭제(DELETED)한 관광지는 API 재수집으로 덮어쓰지 않는다(운영 의사 존중).
+                skipped++;
             }
         }
         // 3) 신규 일괄 저장 + flush — 제약 위반을 이 시점에 즉시 발생시켜 호출부 fallback을 유도(부분 커밋 방지).
@@ -223,8 +229,9 @@ public class PlaceSyncBatchService {
     }
 
     /**
-     * 동기화 응답에서 삭제(showflag != "1") 처리된 항목을 soft-delete 한다.
-     * 존재하지 않거나 이미 DELETED면 SKIPPED. API 수집 데이터의 원천 삭제를 반영(MANUAL은 external_id가 null이라 매칭 안 됨).
+     * 동기화 응답에서 삭제(showflag != "1") 처리된 항목을 원천 삭제(SOURCE_DELETED)로 전이한다 (KAN-306).
+     * 운영자 수동 삭제(DELETED)와 구분 — SOURCE_DELETED는 원천 재노출 시 upsert에서 ACTIVE로 부활한다.
+     * 존재하지 않거나 ACTIVE가 아니면 SKIPPED. API 수집 데이터의 원천 삭제를 반영(MANUAL은 external_id가 null이라 매칭 안 됨).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UpsertResult markDeleted(String externalId) {
@@ -237,11 +244,12 @@ public class PlaceSyncBatchService {
         }
         Place place = existing.get();
         // upsert와 동일 규칙: ACTIVE만 처리. 운영자가 숨김(HIDDEN)·삭제(DELETED)한 관광지는
-        // showflag 삭제가 와도 운영 의사를 존중해 건드리지 않는다.
+        // showflag 삭제가 와도 운영 의사를 존중해 건드리지 않는다. 이미 SOURCE_DELETED인 건도 중복 처리 불필요.
         if (place.getStatus() != PlaceStatus.ACTIVE) {
             return UpsertResult.SKIPPED;
         }
-        place.delete();
+        // 운영자 삭제(DELETED)가 아닌 원천 삭제로 전이 — 재노출 시 부활 가능 (KAN-306)
+        place.markSourceDeleted();
         placeRepository.saveAndFlush(place);
         // 삭제된 관광지가 상세 캐시(place:{id}, TTL 10분)로 최대 10분 노출되는 것 방지 — 커밋 후 무효화(B10).
         Long deletedId = place.getId();

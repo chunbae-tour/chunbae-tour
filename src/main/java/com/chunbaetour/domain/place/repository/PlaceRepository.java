@@ -88,12 +88,13 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
      * <p>모든 필터는 {@code null}이면 미적용(전체). cursor는 id 내림차순 keyset 페이징 —
      * {@code cursorId}보다 작은 id만 조회해 다음 페이지를 sentinel(size+1) 방식으로 판단(서비스 책임).
      *
-     * <p>{@code DELETED}(soft delete) 상태는 운영자 목록에서 제외하고 ACTIVE/HIDDEN만 노출한다 — 사용자 검색은
-     * 별도로 status=ACTIVE 고정 필터를 적용(PlaceQueryRepository.searchByKeyword). keyword는
-     * {@code LIKE '%keyword%'}이며 공백 문자열은 호출자(서비스)가 null로 정규화해 전달.
+     * <p>삭제 상태({@code DELETED} 운영자 삭제 + {@code SOURCE_DELETED} 원천 삭제)는 운영자 목록에서 제외하고
+     * ACTIVE/HIDDEN만 노출한다 — 사용자 검색은 별도로 status=ACTIVE 고정 필터를 적용(PlaceQueryRepository.searchByKeyword).
+     * keyword는 {@code LIKE '%keyword%'}이며 공백 문자열은 호출자(서비스)가 null로 정규화해 전달.
      */
     @Query("SELECT p FROM Place p WHERE "
-            + "p.status <> com.chunbaetour.domain.place.type.PlaceStatus.DELETED "
+            + "p.status IN (com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE, "
+            + "com.chunbaetour.domain.place.type.PlaceStatus.HIDDEN) "
             + "AND (:keyword IS NULL OR p.name LIKE CONCAT('%', :keyword, '%') ESCAPE '\\') "
             + "AND (:category IS NULL OR p.category = :category) "
             + "AND (:cursorId IS NULL OR p.id < :cursorId) "
@@ -104,10 +105,13 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
                                Pageable pageable);
 
     /**
-     * 운영자 대시보드용 전체 관광지 수 — soft delete(DELETED) 제외(S07 리뷰 H).
-     * 사용자에게 노출되는 ACTIVE/HIDDEN만 집계한다.
+     * 운영자 대시보드용 전체 관광지 수 — 삭제 상태(DELETED 운영자 삭제 + SOURCE_DELETED 원천 삭제) 제외(S07 리뷰 H, KAN-306).
+     * 노출되는 ACTIVE/HIDDEN만 집계한다.
      */
-    long countByStatusNot(PlaceStatus status);
+    @Query("SELECT COUNT(p) FROM Place p WHERE p.status IN ("
+            + "com.chunbaetour.domain.place.type.PlaceStatus.ACTIVE, "
+            + "com.chunbaetour.domain.place.type.PlaceStatus.HIDDEN)")
+    long countVisibleForAdmin();
 
     /**
      * 외부 API 식별자(KorService2 contentid)로 단건 조회 — KAN-221 배치 upsert dedup.

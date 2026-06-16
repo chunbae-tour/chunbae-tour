@@ -341,6 +341,23 @@ public class Place {
         this.status = PlaceStatus.ACTIVE;
     }
 
+    /**
+     * 원천(TourAPI) 삭제 처리 — showflag != "1" 반영 (KAN-306).
+     * 운영자 수동 삭제(DELETED)와 구분해 SOURCE_DELETED로 전이한다.
+     * 원천이 다시 노출되면 {@link #reviveFromSource()}로 부활 가능.
+     */
+    public void markSourceDeleted() {
+        this.status = PlaceStatus.SOURCE_DELETED;
+    }
+
+    /**
+     * 원천 재노출(showflag=1) 시 부활 — SOURCE_DELETED → ACTIVE (KAN-306).
+     * 운영자 삭제(DELETED)·숨김(HIDDEN)은 부활 대상이 아니다(운영 의사 존중).
+     */
+    public void reviveFromSource() {
+        this.status = PlaceStatus.ACTIVE;
+    }
+
     // ── 하위 호환성 헬퍼 ────────────────────────────────────────────────
     public BigDecimal getLat() {
         return location != null ? BigDecimal.valueOf(location.getY()) : null;
