@@ -1,12 +1,8 @@
 package com.chunbaetour.domain.community.companion.repository;
 
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
-import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import jakarta.persistence.LockModeType;
-import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -19,19 +15,5 @@ public interface CompanionPostRepository extends JpaRepository<CompanionPost, Lo
     @Query("SELECT p FROM CompanionPost p WHERE p.id = :id")
     Optional<CompanionPost> findByIdForUpdate(@Param("id") Long id);
 
-    @Query("""
-            SELECT p FROM CompanionPost p
-            WHERE p.status = :status
-              AND (:region IS NULL OR p.region = :region)
-              AND (:meetingDate IS NULL OR p.meetingDate = :meetingDate)
-              AND (:cursor IS NULL OR p.id < :cursor)
-            ORDER BY p.id DESC
-            """)
-    List<CompanionPost> findByFilters(
-            @Param("status") CompanionPostStatus status,
-            @Param("region") String region,
-            @Param("meetingDate") LocalDate meetingDate,
-            @Param("cursor") Long cursor,
-            Pageable pageable
-    );
+    // 목록 cursor 조회는 동적 필터의 인덱스 사용을 보장하기 위해 CompanionPostQueryRepository(QueryDSL)로 분리.
 }

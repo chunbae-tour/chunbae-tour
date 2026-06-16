@@ -120,4 +120,9 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 	maxHeapSize = '6g'
+	// 테스트 JVM 시간대를 운영(Dockerfile -Duser.timezone=Asia/Seoul)과 일치시킨다.
+	// DailyChargeLimiter는 created_at(@CreatedDate, JVM 기본존 wall-clock) 전제로 KST naive 경계를
+	// 산정하고 부팅 시 JVM 기본존=KST를 검증(fail-fast)하므로, CI 기본 UTC에서 컨텍스트 로드가
+	// 깨지지 않도록 운영과 동일한 KST로 고정한다 (KAN-293).
+	systemProperty 'user.timezone', 'Asia/Seoul'
 }

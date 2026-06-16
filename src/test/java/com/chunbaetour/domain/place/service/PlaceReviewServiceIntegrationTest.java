@@ -160,9 +160,10 @@ class PlaceReviewServiceIntegrationTest extends AbstractIntegrationTest {
                 testUser.getId(), PageRequest.of(0, 10));
         assertThat(beforeDelete.getContent()).hasSize(1);
 
-        // 관광지 삭제 처리 (soft delete)
-        testPlace.delete();
-        placeRepository.save(testPlace);
+        // 리뷰 작성으로 Place 통계와 @Version이 갱신됐으므로 최신 엔티티를 다시 조회해 soft delete
+        Place latestPlace = placeRepository.findById(testPlace.getId()).orElseThrow();
+        latestPlace.delete();
+        placeRepository.save(latestPlace);
 
         // 삭제 후 다시 내 리뷰 조회 (0건이어야 함)
         Page<UserReviewResponse> afterDelete = placeReviewService.getUserReviews(
