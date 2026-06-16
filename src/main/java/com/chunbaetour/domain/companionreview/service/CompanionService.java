@@ -11,6 +11,7 @@ import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipan
 import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionDetailResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
@@ -326,6 +327,14 @@ public class CompanionService {
     // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)
     // CLOSED 체크 없음(의도) — 채팅방 상태와 무관하게 ONGOING 동행은 항상 취소 가능해야 함
     @Transactional
+    // 채팅방 ID로 동행 상세 조회 — 참여자 목록(endedAt 포함) 반환. 동행 없으면 CR_005
+    public CompanionDetailResponse getCompanion(Long roomId) {
+        Companion companion = companionRepository.findByChatRoomId(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+        List<CompanionParticipant> participants = companionParticipantRepository.findByCompanionId(companion.getId());
+        return CompanionDetailResponse.of(companion, participants);
+    }
+
     public void cancelCompanion(Long ownerId, Long roomId) {
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));

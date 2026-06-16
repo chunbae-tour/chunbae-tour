@@ -1,10 +1,12 @@
 package com.chunbaetour.domain.companionreview.controller;
 
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -13,7 +15,10 @@ import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionDetailResponse;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
+import java.time.LocalDate;
+import java.util.List;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,6 +36,42 @@ class CompanionControllerTest extends AbstractIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private TokenIssuer tokenIssuer;
     @MockitoBean private CompanionService companionService;
+
+    // ===== GET /api/v1/chat/rooms/{roomId}/companion =====
+
+    // 동행 조회 성공 → 200 + status/participants 반환
+    @Test
+    @DisplayName("동행 상세 조회 성공 → 200")
+    void getCompanion_success_returns200() throws Exception {
+        CompanionDetailResponse response = new CompanionDetailResponse(
+                10L, 1L, "ONGOING",
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 5),
+                null, null,
+                List.of(new CompanionDetailResponse.ParticipantInfo(1L, null))
+        );
+        given(companionService.getCompanion(1L)).willReturn(response);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get("/api/v1/chat/rooms/1/companion")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ONGOING"))
+                .andExpect(jsonPath("$.data.participants.length()").value(1));
+    }
+
+    // 동행 없는 방 → CR_005(404)
+    @Test
+    @DisplayName("동행 상세 조회 동행 미존재 → 404")
+    void getCompanion_notFound_returns404() throws Exception {
+        willThrow(new BusinessException(ErrorCode.COMPANION_NOT_FOUND))
+                .given(companionService).getCompanion(99L);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "user@test.com");
+
+        mockMvc.perform(get("/api/v1/chat/rooms/99/companion")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.COMPANION_NOT_FOUND.getCode()));
+    }
 
     // ===== PATCH /api/v1/chat/rooms/{roomId}/companion/participation/end =====
 

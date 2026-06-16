@@ -23,6 +23,7 @@ import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
+import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionTripPeriodProjection;
@@ -810,6 +811,38 @@ class CompanionServiceTest {
 
         assertThat(response.status()).isEqualTo("ONGOING");
         assertThat(response.companionId()).isEqualTo(200L);
+    }
+
+    // ONGOING 동행 조회 → 상태·참여자 목록 정상 반환
+    @Test
+    void getCompanion_ongoing_returnsDetail() {
+        Long roomId = 1L;
+        Long cId = 10L;
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
+        ReflectionTestUtils.setField(companion, "id", cId);
+        CompanionParticipant p1 = CompanionParticipant.builder().companionId(cId).userId(1L).build();
+        CompanionParticipant p2 = CompanionParticipant.builder().companionId(cId).userId(2L).build();
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.of(companion));
+        given(companionParticipantRepository.findByCompanionId(cId)).willReturn(List.of(p1, p2));
+
+        var result = companionService.getCompanion(roomId);
+
+        assertThat(result.status()).isEqualTo("ONGOING");
+        assertThat(result.chatRoomId()).isEqualTo(roomId);
+        assertThat(result.participants()).hasSize(2);
+        assertThat(result.participants().stream().map(p -> p.userId()).toList())
+                .containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    // 동행 없는 방 조회 → CR_005
+    @Test
+    void getCompanion_notFound_throws() {
+        given(companionRepository.findByChatRoomId(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> companionService.getCompanion(99L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.COMPANION_NOT_FOUND);
     }
 
     // findOngoingTripPeriodsByUserIds 결과 표현용 — CompanionTripPeriodProjection의 단순 테스트 구현체
