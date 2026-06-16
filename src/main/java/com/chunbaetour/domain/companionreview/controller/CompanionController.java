@@ -33,12 +33,13 @@ public class CompanionController {
 
     private final CompanionService companionService;
 
-    // GET /api/v1/chat/rooms/{roomId}/companion — 동행 상세 조회 (채팅방 멤버 공통)
-    @Operation(summary = "동행 상세 조회", description = "채팅방의 동행 정보(상태, 여행 기간, 참여자 목록, 각 참여자의 endedAt)를 반환합니다. 동행이 없으면 CR_005.")
+    // GET /api/v1/chat/rooms/{roomId}/companion — 동행 상세 조회 (채팅방 ACTIVE 멤버 전용)
+    @Operation(summary = "동행 상세 조회", description = "채팅방의 동행 정보(상태, 여행 기간, 참여자 목록, 각 참여자의 endedAt)를 반환합니다. ACTIVE 멤버만 조회 가능(CHAT_005). 동행이 없으면 CR_005.")
     @GetMapping("/api/v1/chat/rooms/{roomId}/companion")
     public ResponseEntity<ApiResponse<CompanionDetailResponse>> getCompanion(
+            @AuthenticationPrincipal Long userId,
             @PathVariable @Positive Long roomId) {
-        return ResponseEntity.ok(ApiResponse.success(companionService.getCompanion(roomId)));
+        return ResponseEntity.ok(ApiResponse.success(companionService.getCompanion(userId, roomId)));
     }
 
     // POST /api/v1/chat/rooms/{roomId}/companion — 동행 생성 (방장 전용)

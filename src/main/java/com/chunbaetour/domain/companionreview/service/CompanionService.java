@@ -327,8 +327,12 @@ public class CompanionService {
     // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)
     // CLOSED 체크 없음(의도) — 채팅방 상태와 무관하게 ONGOING 동행은 항상 취소 가능해야 함
     @Transactional
-    // 채팅방 ID로 동행 상세 조회 — 참여자 목록(endedAt 포함) 반환. 동행 없으면 CR_005
-    public CompanionDetailResponse getCompanion(Long roomId) {
+    // 채팅방 ID로 동행 상세 조회 — 호출자 ACTIVE 멤버십 검증(CHAT_005) 후 참여자 목록(endedAt 포함) 반환. 동행 없으면 CR_005
+    public CompanionDetailResponse getCompanion(Long userId, Long roomId) {
+        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                roomId, userId, ChatMemberState.activeStates())) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
         Companion companion = companionRepository.findByChatRoomId(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
         List<CompanionParticipant> participants = companionParticipantRepository.findByCompanionId(companion.getId());
