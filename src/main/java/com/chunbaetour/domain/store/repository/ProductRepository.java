@@ -34,4 +34,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             @Param("category") ProductCategory category,
             @Param("cursorId") Long cursorId,
             Pageable pageable);
+
+    /** 관리자 목록 조회 — 전체 status 노출(HIDDEN 포함). status 필터(null=전체), category 필터(null=전체), cursor 페이징.
+     *  공개 화이트리스트와 달리 status 제약 없음 — 숨김 상품 관리/복구를 위해 의도적으로 전체 노출. */
+    @Query("""
+            SELECT p FROM Product p
+            WHERE (:status IS NULL OR p.status = :status)
+            AND (:category IS NULL OR p.category = :category)
+            AND (:cursorId IS NULL OR p.id < :cursorId)
+            ORDER BY p.id DESC
+            """)
+    List<Product> findForAdmin(
+            @Param("status") ProductStatus status,
+            @Param("category") ProductCategory category,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable);
 }

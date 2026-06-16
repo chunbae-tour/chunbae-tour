@@ -4,6 +4,7 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.store.dto.response.ProductCategoryResponse;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
+import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,16 @@ public class ProductMapper {
                 // stock > originalStock은 정상 플로우에서 불가. 음수 발생 시 데이터 정합성 문제를 의미하므로 0 클램핑.
                 Math.max(0, p.getOriginalStock() - p.getStock()),
                 p.getValidityDays(), p.getStatus());
+    }
+
+    /** 목록 조회용 경량 DTO 변환 — 이미지는 첫 번째 URL만, soldCount = originalStock - stock (음수 0 클램핑) */
+    public ProductSummaryResponse toSummary(Product p) {
+        List<String> urls = parseImageUrls(p.getImageUrls());
+        return new ProductSummaryResponse(
+                p.getId(), p.getName(), ProductCategoryResponse.from(p.getCategory()), p.getPrice(), p.getOriginalPrice(),
+                urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
+                p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()),
+                p.getStatus());
     }
 
     public List<String> parseImageUrls(String imageUrlsJson) {
