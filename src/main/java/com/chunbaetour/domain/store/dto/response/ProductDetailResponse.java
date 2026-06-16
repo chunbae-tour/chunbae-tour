@@ -7,7 +7,7 @@ public record ProductDetailResponse(
         Long productId,
         String name,
         String description,
-        String category,
+        ProductCategoryResponse category,
         long price,
         Long originalPrice,
         List<String> imageUrls,

@@ -3,7 +3,6 @@ package com.chunbaetour.domain.shop.controller;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopImageResponse;
 import com.chunbaetour.domain.shop.service.ShopImageService;
-import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Positive;
@@ -21,10 +20,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 가게 사진 업로드 API.
- * /api/v1/merchants/** 경로는 SecurityConfig에서 MERCHANT 권한 필수.
- * S3 설정 완료 전까지 호출 시 COMMON_007(외부 서비스 오류) 반환.
+ * /api/v1/merchants/** 경로는 SecurityConfig에서 MERCHANT 권한 필수이며,
+ * 본인 소유 가게(shopId) 검증으로 타 가게 업로드(IDOR)를 차단한다.
  */
-@Tag(name = "가게 이미지 (MERCHANT)", description = "가게 사진 업로드 (/api/v1/merchants/me/shops/{shopId}/images) — S3 미연동 stub, 엔드포인트 @Hidden 처리")
+@Tag(name = "가게 이미지 (MERCHANT)", description = "가게 사진 업로드 (/api/v1/merchants/me/shops/{shopId}/images)")
 @RestController
 @RequestMapping("/api/v1/merchants/me/shops/{shopId}/images")
 @RequiredArgsConstructor
@@ -32,8 +31,9 @@ public class ShopImageController {
 
     private final ShopImageService shopImageService;
 
-    @Hidden // S3 미설정 stub — 클라이언트에 노출하지 않음. S3 통합 완료 후 제거
-    @Operation(summary = "가게 사진 업로드")
+    @Operation(summary = "가게 사진 업로드",
+            description = "본인 소유 가게에 이미지 1장을 업로드한다. JPEG/PNG/WebP만 허용(magic-byte 검증). "
+                    + "응답의 키는 조회 시 presigned GET URL로 변환되어 제공된다. MERCHANT 권한 + 본인 가게 검증 필수.")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ShopImageResponse> uploadImage(

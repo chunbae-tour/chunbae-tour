@@ -81,10 +81,10 @@ public class PlaceController {
      * GET /api/v1/places/map-markers
      *
      * <p>현재 지도 화면의 남서쪽(SW)과 북동쪽(NE) 좌표를 받아 해당 영역(Bounding Box) 안의 관광지 마커들을 조회합니다.
-     * 클라이언트 사이드 클러스터링을 위해 최대 500개까지만 응답합니다.
+     * 클라이언트 사이드 클러스터링을 위해 최대 30개까지만 응답합니다.
      */
     @SecurityRequirements
-    @Operation(summary = "지도 마커 일괄 조회", description = "지도 뷰포트(Bounding Box) 내의 마커 리스트를 조회합니다. (최대 span 2.0도, 결과 500개 초과 시 truncated=true 반환)")
+    @Operation(summary = "지도 마커 일괄 조회", description = "지도 뷰포트(Bounding Box) 내의 마커 리스트를 조회합니다. (최대 span 2.0도, 결과 30개 초과 시 truncated=true 반환)")
     @GetMapping("/map-markers")
     public ApiResponse<MapMarkerPageResponse> getMapMarkers(@Valid @ModelAttribute MapMarkerRequest request) {
         return ApiResponse.success(placeService.getMapMarkers(request));

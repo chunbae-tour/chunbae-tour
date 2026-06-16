@@ -154,4 +154,11 @@ class TypoCorrectionServiceTest {
         // then
         assertThat(closest).isEmpty();
     }
+
+    @Test
+    @DisplayName("Redis hash tag control characters in grams are encoded")
+    void encodeGramForKey_EscapesHashTagCharacters() {
+        assertThat(typoCorrectionService.encodeGramForKey("a{%}"))
+                .isEqualTo("a%7B%25%7D");
+    }
 }
