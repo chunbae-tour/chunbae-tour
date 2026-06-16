@@ -246,6 +246,18 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("SOURCE_DELETED는 실 MySQL ENUM 컬럼에 저장·조회된다 (마이그 V202606160900 검증, KAN-306)")
+    void sourceDeletedPersistsInEnumColumn() {
+        Place p = Place.createFromApi("650", "원천삭제저장", "충청남도 천안시",
+                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null, "충청남도", "천안시");
+        p.markSourceDeleted();
+        placeRepository.saveAndFlush(p);
+
+        Place found = placeRepository.findByExternalId("650").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.SOURCE_DELETED);
+    }
+
+    @Test
     @DisplayName("UPDATE 롤백 시 afterCommit 미발화 → 상세 캐시가 evict되지 않는다 (B10 일관성, KAN-303 리뷰)")
     void rollbackDoesNotEvictDetailCache() {
         batchService.upsertItem(item("730", "옛이름", "127.1", "36.8"));

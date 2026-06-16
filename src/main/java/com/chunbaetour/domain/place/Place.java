@@ -34,7 +34,8 @@ import lombok.NoArgsConstructor;
     name = "places",
     indexes = {
         @Index(name = "idx_places_category", columnList = "category"),
-        // 운영자 목록(searchForAdmin)은 status<>DELETED 필터 + id DESC 정렬 → (status, id) 복합으로 filesort 회피.
+        // 운영자 목록(searchForAdmin)은 status IN (ACTIVE,HIDDEN) 필터 + id DESC 정렬 → (status, id) 복합으로 filesort 회피.
+        // (KAN-306에서 status<>DELETED → IN(ACTIVE,HIDDEN)로 보정 — 인덱스 활용/성능 동일.)
         // 기존 단일 idx_places_status는 본 복합의 leftmost prefix라 중복 → 제거(KAN-209 S07 리뷰 G).
         @Index(name = "idx_places_status_id", columnList = "status, id"),
         // 공간 인덱스는 JPA @Index로 정의할 수 없으므로 DB 마이그레이션(V202606041400)에서 직접 생성

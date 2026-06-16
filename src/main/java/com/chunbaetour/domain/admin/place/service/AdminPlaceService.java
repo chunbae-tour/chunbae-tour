@@ -96,7 +96,8 @@ public class AdminPlaceService {
     public AdminPlaceDetailResponse updatePlace(Long placeId, AdminPlaceUpdateRequest request) {
         Place place = placeRepository.findById(placeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
-        if (place.getStatus() == PlaceStatus.DELETED) {
+        // 삭제계열(DELETED 운영자 삭제 + SOURCE_DELETED 원천 삭제)은 수정 거부 — placeId 직접 호출로 삭제 장소 mutate 차단 (KAN-306)
+        if (place.getStatus() == PlaceStatus.DELETED || place.getStatus() == PlaceStatus.SOURCE_DELETED) {
             throw new BusinessException(ErrorCode.PLACE_ALREADY_DELETED);
         }
         place.update(

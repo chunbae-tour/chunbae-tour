@@ -100,8 +100,9 @@ public class AdminMerchantApplicationService {
         Account account = accountRepository.findByIdWithLock(application.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-        // placeId 전달 시 DELETED 아닌 Place 사전 검증 — soft delete 장소 연결 차단, entity 오염 전 예외 처리
-        if (placeId != null && !placeRepository.existsByIdAndStatusNot(placeId, PlaceStatus.DELETED)) {
+        // placeId 전달 시 노출 상태(ACTIVE/HIDDEN) Place만 연결 허용 — 삭제계열(DELETED/SOURCE_DELETED) 연결 차단,
+        // entity 오염 전 예외 처리 (KAN-306: != DELETED 단일 가드가 SOURCE_DELETED를 통과시키던 회귀 보정, 화이트리스트로 통일)
+        if (placeId != null && !placeRepository.existsByIdAndStatusIn(placeId, PlaceStatus.visibleStatuses())) {
             throw new BusinessException(ErrorCode.PLACE_NOT_FOUND);
         }
 
