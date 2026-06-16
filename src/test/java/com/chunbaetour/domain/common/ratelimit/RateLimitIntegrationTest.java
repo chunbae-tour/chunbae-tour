@@ -69,6 +69,12 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
         registry.add("ratelimit.endpoints[1].path", () -> "/api/v1/users/auth/login");
         registry.add("ratelimit.endpoints[1].limit", () -> "2");
         registry.add("ratelimit.endpoints[1].window", () -> "PT1M");
+        // 신고 접수: 2회/PT1M (실 운영 10회/분보다 짧게 테스트 빠르게)
+        registry.add("ratelimit.endpoints[2].id", () -> "report-create");
+        registry.add("ratelimit.endpoints[2].method", () -> "POST");
+        registry.add("ratelimit.endpoints[2].path", () -> "/api/v1/reports");
+        registry.add("ratelimit.endpoints[2].limit", () -> "2");
+        registry.add("ratelimit.endpoints[2].window", () -> "PT1M");
     }
 
     @Autowired
@@ -133,6 +139,24 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 new LoginRequest("nonexistent@example.com", "Wrong!Pass1"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("AUTH_014"));
+    }
+
+    @Test
+    void report_create_exceeding_limit_returns_AUTH_014() throws Exception {
+        // 신고 접수는 인증 필요(미인증 시 AUTH_006). rate limit 필터는 인증 전에 카운트하므로
+        // limit(2) 초과 시 AUTH_006이 아니라 AUTH_014(429)가 먼저 반환된다 (report-bombing 방어).
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/api/v1/reports")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isUnauthorized());  // AUTH_006 (토큰 없음)
+        }
+
+        mockMvc.perform(post("/api/v1/reports")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("AUTH_014"));
     }
