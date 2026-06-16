@@ -12,6 +12,8 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -51,17 +53,18 @@ public class ReissueService {
     private final AccountRepository accountRepository;
     private final JwtProperties jwtProperties;
     private final SecurityAuditLogger auditLogger;
+    private final Clock clock;
 
     /**
      * Refresh Token으로 새 Access + Refresh를 발급한다.
      *
-     * <p>{@code @Transactional(readOnly = true)}: DB 작업은 Account 조회만이라 readOnly.
+     * <p>{@code @Transactional}: 시스템 제재 만료 시 clearSystemSanction() 호출로 Account 상태 변경 필요.
      * Redis 호출(rotate)은 트랜잭션 밖이므로 영향 없음.
      *
      * @param refreshToken Cookie에서 추출한 Refresh JWT
      * @return 새 토큰 쌍. Access는 Body로, Refresh는 Cookie로 전달 (컨트롤러 책임)
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public TokenPair reissue(String refreshToken) {
         // 1. JWT 검증 — 만료/변조 분기
         RefreshClaims claims = verifyOrThrow(refreshToken);
@@ -78,12 +81,16 @@ public class ReissueService {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 
-        // 3. 정지 계정 차단 — Refresh가 있어도 정지 후에는 재발급 금지
+        // 3. 정지 계정 차단 — 만료 여부 먼저 체크, 만료 시 즉시 해제 후 재발급 허용
         if (account.getStatus() == AccountStatus.SUSPENDED) {
-            auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, userId,
-                    ErrorCode.ACCOUNT_SUSPENDED.getCode(),
-                    Map.of("reasonDetail", "account_suspended"));
-            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+            if (account.isSystemSanctionExpired(LocalDateTime.now(clock))) {
+                account.clearSystemSanction();
+            } else {
+                auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, userId,
+                        ErrorCode.ACCOUNT_SUSPENDED.getCode(),
+                        Map.of("reasonDetail", "account_suspended"));
+                throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+            }
         }
 
         // 4. 새 토큰 발급 — DB에서 가져온 최신 role/email 사용 (권한 변경 즉시 반영)

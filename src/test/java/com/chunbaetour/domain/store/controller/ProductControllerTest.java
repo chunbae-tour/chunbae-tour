@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.entity.Product;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.AfterEach;
@@ -79,7 +80,7 @@ class ProductControllerTest extends AbstractIntegrationTest {
     void getProduct_found_returns200() throws Exception {
         Product product = productRepository.save(Product.builder()
                 .name("테스트상품")
-                .category("한식")
+                .category(ProductCategory.EXPERIENCE)
                 .price(10_000L)
                 .stock(5)
                 .originalStock(10)
@@ -94,6 +95,17 @@ class ProductControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.name").value("테스트상품"))
                 .andExpect(jsonPath("$.data.price").value(10_000))
                 .andExpect(jsonPath("$.data.stock").value(5))
-                .andExpect(jsonPath("$.data.status").value("ON_SALE"));
+                .andExpect(jsonPath("$.data.status").value("ON_SALE"))
+                // 카테고리는 {code, label} 구조로 노출 (KAN-302)
+                .andExpect(jsonPath("$.data.category.code").value("EXPERIENCE"))
+                .andExpect(jsonPath("$.data.category.label").value("체험"));
+    }
+
+    @Test
+    @DisplayName("상품 목록 — 잘못된 category enum 값 → 400 COMMON_002 (KAN-302)")
+    void getProducts_invalidCategory_returns400() throws Exception {
+        mockMvc.perform(get(LIST_ENDPOINT + "?category=NOT_A_CATEGORY"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 }

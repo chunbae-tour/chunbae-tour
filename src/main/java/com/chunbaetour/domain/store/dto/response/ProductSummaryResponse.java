@@ -5,7 +5,7 @@ import com.chunbaetour.domain.store.type.ProductStatus;
 public record ProductSummaryResponse(
         Long productId,
         String name,
-        String category,
+        ProductCategoryResponse category,
         long price,
         Long originalPrice,
         String imageUrl,

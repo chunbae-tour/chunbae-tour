@@ -19,6 +19,7 @@ import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import java.util.List;
 import java.util.Optional;
@@ -56,7 +57,7 @@ class AdminProductServiceTest {
 
     private Product createProduct(Long id, int stock, ProductStatus status) {
         Product p = Product.builder()
-                .name("테스트 상품").description("설명").category("COUPON")
+                .name("테스트 상품").description("설명").category(ProductCategory.DISCOUNT_COUPON)
                 .price(2000L).originalPrice(3000L).stock(stock).originalStock(stock)
                 .imageUrls(null).merchantName("상인").validityDays(30)
                 .status(status).maxPerPerson(5).build();
@@ -142,7 +143,7 @@ class AdminProductServiceTest {
     @DisplayName("상품 등록 — ProductDetailResponse 반환, status = ON_SALE")
     void createProduct_success_returnsDetail() {
         AdminProductCreateRequest req = new AdminProductCreateRequest(
-                "새 상품", "설명", "COUPON", 2000L, null, 30, null, "상인", 30, 3);
+                "새 상품", "설명", ProductCategory.DISCOUNT_COUPON, 2000L, null, 30, null, "상인", 30, 3);
         given(productRepository.save(any(Product.class)))
                 .willAnswer(inv -> {
                     Product p = inv.getArgument(0);
@@ -249,7 +250,7 @@ class AdminProductServiceTest {
     @DisplayName("상품 등록 — Redis 재고 키(stock:{id}) 초기화")
     void createProduct_setsRedisStockKey() {
         AdminProductCreateRequest req = new AdminProductCreateRequest(
-                "테스트", "설명", "COUPON", 2000L, 3000L, 10,
+                "테스트", "설명", ProductCategory.DISCOUNT_COUPON, 2000L, 3000L, 10,
                 null, "상인", 30, 5);
         Product saved = createProduct(1L, 10, ProductStatus.ON_SALE);
         given(productRepository.save(any(Product.class))).willReturn(saved);

@@ -53,7 +53,10 @@ class IntegratedSearchServiceTraditionalMarketTest extends AbstractIntegrationTe
                 "동대문시장",
                 "TRADITIONAL_MARKET",
                 null,
-                10
+                10,
+                "127.0.0.1",
+                false,
+                null
         );
 
         // then
@@ -71,7 +74,7 @@ class IntegratedSearchServiceTraditionalMarketTest extends AbstractIntegrationTe
     void searchIntegrated_emptyKeyword_throwException() {
         // when & then
         assertThatThrownBy(() ->
-                integratedSearchService.searchIntegrated("", "TRADITIONAL_MARKET", null, 10)
+                integratedSearchService.searchIntegrated("", "TRADITIONAL_MARKET", null, 10, "127.0.0.1", false, null)
         ).isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
@@ -82,7 +85,7 @@ class IntegratedSearchServiceTraditionalMarketTest extends AbstractIntegrationTe
     void searchIntegrated_invalidType_throwException() {
         // when & then
         assertThatThrownBy(() ->
-                integratedSearchService.searchIntegrated("시장", "INVALID_TYPE", null, 10)
+                integratedSearchService.searchIntegrated("시장", "INVALID_TYPE", null, 10, "127.0.0.1", false, null)
         ).isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);

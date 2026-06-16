@@ -4,10 +4,12 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
+import com.chunbaetour.domain.store.dto.response.ProductCategoryResponse;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import java.time.Duration;
 import java.util.List;
@@ -51,16 +53,15 @@ public class ProductService {
      * VISIBLE_STATUSES(ON_SALE·SOLD_OUT) 화이트리스트. category 없으면 전체. cursor 없으면 첫 페이지.
      * stock=0이어도 status=ON_SALE 이면 목록에 노출 — 품절 상태 전이는 STORY-17(구매 흐름)에서 처리.
      */
-    public CursorPageResponse<ProductSummaryResponse> getProducts(String category, String cursor, int size) {
-        String normalizedCategory = (category == null || category.isBlank()) ? null : category.trim();
+    public CursorPageResponse<ProductSummaryResponse> getProducts(ProductCategory category, String cursor, int size) {
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
-        // size+1 조회 → 다음 페이지 존재 여부 판별
+        // size+1 조회 → 다음 페이지 존재 여부 판별. category null이면 전체.
         List<Product> products = productRepository.findVisibleProducts(
-                VISIBLE_STATUSES, normalizedCategory, cursorId, PageRequest.of(0, size + 1));
+                VISIBLE_STATUSES, category, cursorId, PageRequest.of(0, size + 1));
 
         // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
-        return CursorPageResponse.of(products, size, productMapper::toSummary, Product::getId);
+        return CursorPageResponse.of(products, size, this::toSummary, Product::getId);
     }
 
     /**
@@ -111,6 +112,16 @@ public class ProductService {
         }
 
         return response;
+    }
+
+    /** 목록 조회용 경량 DTO 변환 — 이미지는 첫 번째 URL만, soldCount = originalStock - stock */
+    private ProductSummaryResponse toSummary(Product p) {
+        List<String> urls = productMapper.parseImageUrls(p.getImageUrls());
+        return new ProductSummaryResponse(
+                p.getId(), p.getName(), ProductCategoryResponse.from(p.getCategory()), p.getPrice(), p.getOriginalPrice(),
+                urls.isEmpty() ? null : urls.get(0), p.getMerchantName(),
+                p.getStock(), Math.max(0, p.getOriginalStock() - p.getStock()),
+                p.getStatus());
     }
 
     /** 상세 조회용 풀 DTO 변환 — 이미지 전체 목록, description/validityDays/status 포함 */

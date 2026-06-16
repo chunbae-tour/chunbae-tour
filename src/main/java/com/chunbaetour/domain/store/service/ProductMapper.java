@@ -2,6 +2,7 @@ package com.chunbaetour.domain.store.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.store.dto.response.ProductCategoryResponse;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.entity.Product;
@@ -28,7 +29,7 @@ public class ProductMapper {
     /** 쓰기(create/update) 응답용 — imageUrls 재파싱 없이 원본 리스트 직접 사용해 DB↔응답 불일치 방지 */
     public ProductDetailResponse toDetail(Product p, List<String> imageUrls) {
         return new ProductDetailResponse(
-                p.getId(), p.getName(), p.getDescription(), p.getCategory(),
+                p.getId(), p.getName(), p.getDescription(), ProductCategoryResponse.from(p.getCategory()),
                 p.getPrice(), p.getOriginalPrice(), imageUrls,
                 p.getMerchantName(), p.getStock(),
                 // adminUpdate() 호출 시 originalStock=stock으로 리셋 → 이후 구매 감소분이 soldCount.

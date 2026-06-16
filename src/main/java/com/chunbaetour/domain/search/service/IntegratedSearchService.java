@@ -7,6 +7,7 @@ import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.search.dto.request.IntegratedSearchCursor;
 import com.chunbaetour.domain.search.dto.response.integrated.*;
 import com.chunbaetour.domain.search.repository.SearchQueryRepository;
+import com.chunbaetour.domain.search.type.SearchSource;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import lombok.RequiredArgsConstructor;
@@ -27,12 +28,14 @@ import java.util.stream.Collectors;
 public class IntegratedSearchService {
 
     private final SearchQueryRepository searchQueryRepository;
+    private final PopularSearchService popularSearchService;
 
-    public CursorPageResponse<IntegratedSearchItem> searchIntegrated(String keyword, String type, String cursorStr, int size) {
+    public CursorPageResponse<IntegratedSearchItem> searchIntegrated(String keyword, String type, String cursorStr, int size, String clientIp, boolean track, String source) {
         if (keyword == null || keyword.isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         keyword = keyword.trim();
+        SearchSource searchSource = SearchSource.from(source);
         if (keyword.length() > 50) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
@@ -175,6 +178,10 @@ public class IntegratedSearchService {
         }
 
         List<IntegratedSearchItem> items = paged.stream().map(w -> w.item).toList();
+        // 첫 페이지에서 실제 결과가 있는 사용자 검색만 인기검색어로 집계한다.
+        if (track && searchSource.isTrackable() && cursor == null && !items.isEmpty()) {
+            popularSearchService.incrementSearchCount(keyword, clientIp);
+        }
         return new CursorPageResponse<>(items, nextCursor, hasNext, items.size());
     }
 

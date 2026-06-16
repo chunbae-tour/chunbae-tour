@@ -29,11 +29,11 @@ class PlaceServiceMapMarkerTest {
     private PlaceService placeService;
 
     @Test
-    @DisplayName("DB에서 500개 이하가 조회되면 truncated는 false이고 원본 리스트를 반환한다")
+    @DisplayName("DB에서 30개 이하가 조회되면 truncated는 false이고 원본 리스트를 반환한다")
     void getMapMarkers_NotTruncated() {
         // given
         List<MapMarkerResponse> repoResult = new ArrayList<>();
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < 30; i++) {
             repoResult.add(new MapMarkerResponse((long) i, "관광지", PlaceCategory.TOURIST_SPOT,
                     BigDecimal.valueOf(33.0), BigDecimal.valueOf(126.0), ""));
         }
@@ -48,17 +48,17 @@ class PlaceServiceMapMarkerTest {
         MapMarkerPageResponse response = placeService.getMapMarkers(request);
 
         // then
-        assertThat(response.markers()).hasSize(500);
+        assertThat(response.markers()).hasSize(30);
         assertThat(response.truncated()).isFalse();
-        assertThat(response.limit()).isEqualTo(500);
+        assertThat(response.limit()).isEqualTo(30);
     }
 
     @Test
-    @DisplayName("DB에서 501개가 조회되면 500개로 자르고 truncated는 true를 반환한다")
+    @DisplayName("DB에서 31개가 조회되면 30개로 자르고 truncated는 true를 반환한다")
     void getMapMarkers_Truncated() {
         // given
         List<MapMarkerResponse> repoResult = new ArrayList<>();
-        for (int i = 0; i < 501; i++) {
+        for (int i = 0; i < 31; i++) {
             repoResult.add(new MapMarkerResponse((long) i, "관광지", PlaceCategory.TOURIST_SPOT,
                     BigDecimal.valueOf(33.0), BigDecimal.valueOf(126.0), ""));
         }
@@ -73,8 +73,8 @@ class PlaceServiceMapMarkerTest {
         MapMarkerPageResponse response = placeService.getMapMarkers(request);
 
         // then
-        assertThat(response.markers()).hasSize(500);
+        assertThat(response.markers()).hasSize(30);
         assertThat(response.truncated()).isTrue();
-        assertThat(response.limit()).isEqualTo(500);
+        assertThat(response.limit()).isEqualTo(30);
     }
 }
