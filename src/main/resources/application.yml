@@ -129,6 +129,14 @@ ratelimit:
       path: /api/v1/translations
       limit: 15
       window: PT1M
+    # 신고 접수: 한 사용자가 여러 대상을 빠르게 신고(report-bombing)해 관리자 큐를 도배하거나
+    #   다계정 협업으로 자동숨김 임계(3건)를 노리는 남용 방어. uk_reports_reporter_target은 같은 대상
+    #   중복만 막아 다른 대상 연속 신고는 차단 못 함 → IP당 한도로 보완. 정상 사용자는 분당 10건 신고할 일 없음.
+    - id: report-create
+      method: POST
+      path: /api/v1/reports
+      limit: 10
+      window: PT1M
     - id: qr-status-poll
       method: GET
       path: /api/v1/payments/qr/*/status
