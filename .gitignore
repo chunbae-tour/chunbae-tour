@@ -1,5 +1,5 @@
-# Local-only spec docs (not for version control)
-docs/specs/
+# Local-only docs (not for version control)
+docs/
 
 # Claude Code agent files (local only)
 .agents/

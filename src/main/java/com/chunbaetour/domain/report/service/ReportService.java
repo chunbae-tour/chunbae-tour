@@ -30,6 +30,7 @@ import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.event.ReportAcceptedEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
 import java.util.List;
 import java.util.Locale;
@@ -39,6 +40,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
@@ -68,6 +70,7 @@ public class ReportService {
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
     private final ShopService shopService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
 
@@ -88,9 +91,13 @@ public class ReportService {
         }
 
         try {
+            Long reportedUserId = resolveReportedUserId(request.targetType(), request.targetId());
+            if (reportedUserId == null) {
+                throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+            }
             Report report = Report.create(
                     reporterId, request.targetType(), request.targetId(),
-                    request.reason(), request.description());
+                    request.reason(), request.description(), reportedUserId);
             // saveAndFlush: 트랜잭션 내 즉시 flush → DB 유니크 제약 위반 시 여기서 예외 발생
             ReportCreateResponse response = ReportCreateResponse.of(reportRepository.saveAndFlush(report));
 
@@ -225,6 +232,7 @@ public class ReportService {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
             reportRepository.saveAndFlush(report);
+            publishReportAcceptedEventIfNeeded(report, action);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
@@ -265,6 +273,7 @@ public class ReportService {
                 report.resolve(action, request.adminNote(), adminNickname);
             }
             reportRepository.saveAndFlush(report);
+            publishReportAcceptedEventIfNeeded(report, action);
 
             return ReportResolveResponse.of(report);
         } catch (OptimisticLockingFailureException e) {
@@ -373,6 +382,33 @@ public class ReportService {
         }
     }
 
+    private void publishReportAcceptedEventIfNeeded(Report report, ReportAction action) {
+        if (action == ReportAction.DISMISS) return;
+        Long reportedUserId = report.getReportedUserId();
+        if (reportedUserId == null) {
+            reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
+        }
+        if (reportedUserId == null) return;
+        long acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
+                reportedUserId, report.getTargetType(), ReportStatus.RESOLVED);
+        eventPublisher.publishEvent(new ReportAcceptedEvent(
+                report.getId(), reportedUserId, report.getTargetType(), acceptedCount));
+    }
+
+    private Long resolveReportedUserId(ReportTargetType targetType, Long targetId) {
+        return switch (targetType) {
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .map(CompanionPost::getAuthorId).orElse(null);
+            case POST_FREE -> freePostRepository.findById(targetId)
+                    .map(FreePost::getAuthorId).orElse(null);
+            case COMMENT -> commentRepository.findById(targetId)
+                    .map(Comment::getAuthorId).orElse(null);
+            case USER -> targetId;
+            case MERCHANT -> shopService.findMerchantAccountId(targetId).orElse(null);
+            default -> null;
+        };
+    }
+
     private void suspendTargetAuthor(ReportTargetType targetType, Long targetId) {
         Long authorId = switch (targetType) {
             case POST_COMPANION -> companionPostRepository.findById(targetId)
@@ -477,6 +513,9 @@ public class ReportService {
                         .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
                 if (account.getRole() != Role.USER) {
                     throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+                if (account.getStatus() == AccountStatus.DELETED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
                 }
             }
             case MERCHANT -> {
