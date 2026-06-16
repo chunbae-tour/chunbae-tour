@@ -159,7 +159,7 @@ class CacheWarmupServiceTest {
         cacheWarmupService.warmupPopularZSet(List.of(place), "test-lock-token");
 
         // then
-        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp:test-lock-token";
+        String tmpKey = "{" + PlaceRedisConstants.RECOMMEND_POPULAR_KEY + "}:tmp:test-lock-token";
         verify(zSetOperations).add(eq(tmpKey), any());
         verify(stringRedisTemplate).expire(
                 eq(tmpKey),
@@ -223,7 +223,7 @@ class CacheWarmupServiceTest {
         cacheWarmupService.warmupPopularZSet(List.of(place), "test-lock-token");
 
         // then
-        String tmpKey = PlaceRedisConstants.RECOMMEND_POPULAR_KEY + ":tmp:test-lock-token";
+        String tmpKey = "{" + PlaceRedisConstants.RECOMMEND_POPULAR_KEY + "}:tmp:test-lock-token";
         verify(zSetOperations).add(eq(tmpKey), any());
         // TTL 실패로 인해 delete가 호출되어야 함
         verify(stringRedisTemplate).delete(tmpKey);
