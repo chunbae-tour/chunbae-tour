@@ -15,10 +15,13 @@ import com.chunbaetour.domain.community.free.dto.FreePostCreateRequest;
 import com.chunbaetour.domain.community.free.dto.FreePostGetListResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostGetOneResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostUpdateRequest;
+import com.chunbaetour.domain.community.comment.service.CommentCountService;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +37,7 @@ class FreePostServiceTest {
     @Mock FreePostRepository postRepository;
     @Mock AccountRepository accountRepository;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock CommentCountService commentCountService;
     @InjectMocks FreePostService postService;
 
     private static final Long AUTHOR_ID = 1L;
@@ -91,10 +95,13 @@ class FreePostServiceTest {
         Account author = mockAccount(AUTHOR_ID);
         given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(commentCountService.countByPost(POST_ID, PostType.FREE)).willReturn(2L);
 
         FreePostGetOneResponse response = postService.findById(POST_ID);
 
         assertThat(response.postId()).isEqualTo(POST_ID);
+        assertThat(response.viewCount()).isEqualTo(1L); // 상세 조회 시 +1
+        assertThat(response.commentCount()).isEqualTo(2L);
     }
 
     @Test
@@ -141,6 +148,7 @@ class FreePostServiceTest {
                 buildPost(3L, FreePostStatus.ACTIVE));
         given(postRepository.findByCursor(any(), any(), any(Pageable.class))).willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentCountService.countByPosts(any(), any())).willReturn(Map.of());
 
         CursorPageResponse<FreePostGetListResponse> result = postService.findAll(null, size);
 
@@ -155,6 +163,7 @@ class FreePostServiceTest {
         List<FreePost> posts = List.of(buildPost(1L, FreePostStatus.ACTIVE));
         given(postRepository.findByCursor(any(), any(), any(Pageable.class))).willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentCountService.countByPosts(any(), any())).willReturn(Map.of());
 
         CursorPageResponse<FreePostGetListResponse> result = postService.findAll(null, size);
 

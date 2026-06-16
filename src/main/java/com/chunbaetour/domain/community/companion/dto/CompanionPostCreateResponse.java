@@ -18,6 +18,8 @@ public record CompanionPostCreateResponse(
         int currentMembers,
         CompanionPostStatus status,
         WriterInfo writer,
+        long viewCount,
+        long commentCount,
         LocalDateTime createdAt
 ) {
     public static CompanionPostCreateResponse of(CompanionPost post, Account author) {
@@ -32,6 +34,8 @@ public record CompanionPostCreateResponse(
                 post.getCurrentMembers(),
                 post.getStatus(),
                 WriterInfo.from(author),
+                post.getViewCount(),
+                0L,
                 post.getCreatedAt()
         );
     }

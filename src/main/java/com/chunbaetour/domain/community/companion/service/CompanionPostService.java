@@ -17,6 +17,7 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
+import com.chunbaetour.domain.community.comment.service.CommentCountService;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.common.event.PostDeletedEvent;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
@@ -43,6 +44,7 @@ public class CompanionPostService {
     private final AccountRepository accountRepository;
     private final ChatRoomRepository chatRoomRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final CommentCountService commentCountService;
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
@@ -60,13 +62,19 @@ public class CompanionPostService {
         return CompanionPostCreateResponse.of(postRepository.save(post), author);
     }
 
+    // 상세 조회마다 조회수 +1 — 벌크 UPDATE라 쓰기 트랜잭션 필요. 동기 증가 방식(트래픽 적은 커뮤니티 기준).
+    @Transactional
     public CompanionPostGetOneResponse findById(Long postId) {
         CompanionPost post = findActivePost(postId);
+        postRepository.incrementViewCount(postId);
         Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
         Optional<ChatRoom> chatRoom = chatRoomRepository.findByPostId(post.getId());
         Long chatRoomId = chatRoom.map(ChatRoom::getId).orElse(null);
         ChatRoomStatus chatRoomStatus = chatRoom.map(ChatRoom::getStatus).orElse(null);
-        return CompanionPostGetOneResponse.of(post, author, chatRoomId, chatRoomStatus);
+        long commentCount = commentCountService.countByPost(postId, PostType.COMPANION);
+        // 엔티티는 벌크 UPDATE로 동기화되지 않으므로 이번 조회분(+1)을 응답에 반영
+        return CompanionPostGetOneResponse.of(
+                post, author, chatRoomId, chatRoomStatus, post.getViewCount() + 1, commentCount);
     }
 
     public CursorPageResponse<CompanionPostGetListResponse> findAll(
@@ -92,9 +100,12 @@ public class CompanionPostService {
                 : chatRoomRepository.findAllByPostIdIn(postIds).stream()
                         .collect(Collectors.toMap(ChatRoom::getPostId, ChatRoom::getId));
 
+        Map<Long, Long> commentCounts = commentCountService.countByPosts(postIds, PostType.COMPANION);
+
         List<CompanionPostGetListResponse> items = content.stream()
                 .map(post -> CompanionPostGetListResponse.of(
-                        post, authors.get(post.getAuthorId()), chatRoomIdByPostId.get(post.getId())))
+                        post, authors.get(post.getAuthorId()), chatRoomIdByPostId.get(post.getId()),
+                        commentCounts.getOrDefault(post.getId(), 0L)))
                 .toList();
 
         return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());

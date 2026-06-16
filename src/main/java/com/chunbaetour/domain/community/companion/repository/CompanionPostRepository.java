@@ -24,4 +24,13 @@ public interface CompanionPostRepository extends JpaRepository<CompanionPost, Lo
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CompanionPost p SET p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.HIDDEN, p.updatedAt = :now WHERE p.authorId = :authorId AND p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.ACTIVE")
     void hideAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
+
+    /**
+     * 조회수 원자적 +1. 벌크 UPDATE라 엔티티 dirty checking을 거치지 않아
+     * {@code @LastModifiedDate updatedAt}을 건드리지 않고(조회=수정 오염 방지),
+     * 동시 조회 시 lost-update도 발생하지 않는다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE CompanionPost p SET p.viewCount = p.viewCount + 1 WHERE p.id = :id")
+    void incrementViewCount(@Param("id") Long id);
 }

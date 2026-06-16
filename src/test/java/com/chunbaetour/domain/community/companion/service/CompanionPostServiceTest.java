@@ -21,12 +21,15 @@ import com.chunbaetour.domain.community.companion.dto.CompanionPostGetListRespon
 import com.chunbaetour.domain.community.companion.dto.CompanionPostGetOneResponse;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateRequest;
 import com.chunbaetour.domain.community.companion.dto.CompanionPostUpdateResponse;
+import com.chunbaetour.domain.community.comment.service.CommentCountService;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +46,7 @@ class CompanionPostServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock ChatRoomRepository chatRoomRepository;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock CommentCountService commentCountService;
     @InjectMocks CompanionPostService postService;
 
     private static final Long AUTHOR_ID = 1L;
@@ -104,10 +108,13 @@ class CompanionPostServiceTest {
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
         given(chatRoomRepository.findByPostId(POST_ID)).willReturn(Optional.empty());
+        given(commentCountService.countByPost(POST_ID, PostType.COMPANION)).willReturn(2L);
 
         CompanionPostGetOneResponse response = postService.findById(POST_ID);
 
         assertThat(response.postId()).isEqualTo(POST_ID);
+        assertThat(response.viewCount()).isEqualTo(1L); // 상세 조회 시 +1
+        assertThat(response.commentCount()).isEqualTo(2L);
     }
 
     @Test
@@ -214,6 +221,7 @@ class CompanionPostServiceTest {
         given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentCountService.countByPosts(any(), any())).willReturn(Map.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
 
         CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, size);
@@ -230,6 +238,7 @@ class CompanionPostServiceTest {
         given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(posts);
         given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentCountService.countByPosts(any(), any())).willReturn(Map.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
 
         CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, size);
@@ -247,6 +256,7 @@ class CompanionPostServiceTest {
         given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(List.of(post));
         given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentCountService.countByPosts(any(), any())).willReturn(Map.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of(chatRoom));
 
         CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 5);
@@ -260,6 +270,7 @@ class CompanionPostServiceTest {
         given(postQueryRepository.findByFilters(any(), any(), any(), any(), anyInt()))
                 .willReturn(List.of(post));
         given(accountRepository.findAllById(any())).willReturn(List.of());
+        given(commentCountService.countByPosts(any(), any())).willReturn(Map.of());
         given(chatRoomRepository.findAllByPostIdIn(any())).willReturn(List.of());
 
         CursorPageResponse<CompanionPostGetListResponse> result = postService.findAll(null, null, null, 5);
