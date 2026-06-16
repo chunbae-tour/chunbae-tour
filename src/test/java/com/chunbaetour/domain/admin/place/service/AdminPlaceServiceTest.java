@@ -187,9 +187,9 @@ class AdminPlaceServiceTest {
     }
 
     @Test
-    @DisplayName("getTotalPlaces: countByStatusNot(DELETED) 위임 (soft delete 제외)")
+    @DisplayName("getTotalPlaces: countVisibleForAdmin() 위임 (DELETED·SOURCE_DELETED 제외, KAN-306)")
     void getTotalPlaces_excludesDeleted() {
-        given(placeRepository.countByStatusNot(PlaceStatus.DELETED)).willReturn(42L);
+        given(placeRepository.countVisibleForAdmin()).willReturn(42L);
 
         assertThat(service().getTotalPlaces()).isEqualTo(42L);
     }
