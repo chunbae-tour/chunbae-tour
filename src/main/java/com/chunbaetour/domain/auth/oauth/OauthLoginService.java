@@ -47,8 +47,15 @@ public class OauthLoginService {
     private final SecurityAuditLogger auditLogger;
     private final Clock clock;
 
+    /**
+     * 소셜 로그인 처리. 진입점(컨트롤러)이 요구하는 {@code requiredRole}을 받아 계정 role과 대조한다 —
+     * 이메일 로그인({@link com.chunbaetour.domain.auth.LoginService#login})의 endpoint별 role 경계와 동일 정책.
+     * USER 진입점은 {@code Role.USER}, 상인 진입점은 {@code Role.MERCHANT}를 전달한다.
+     *
+     * @param requiredRole 호출한 endpoint가 요구하는 role (USER/MERCHANT). 계정 role과 다르면 ACCESS_DENIED.
+     */
     @Transactional
-    public OauthLoginResult login(OauthProvider provider, String code, String redirectUri) {
+    public OauthLoginResult login(OauthProvider provider, String code, String redirectUri, Role requiredRole) {
         // resolve(미지원 provider) → OAUTH_PROVIDER_UNSUPPORTED, fetch(공급자 토큰/사용자 조회) → OAUTH_PROVIDER_ERROR.
         OauthClient client = resolve(provider);
 
@@ -71,21 +78,32 @@ public class OauthLoginService {
                 .orElse(null);
 
         if (account == null) {
-            // 우리 계정 없음 → 추가정보 입력 단계로. provider+oauthId+공급자검증이메일을 서명해 담은 단기 티켓.
+            // 우리 계정 없음. 소셜 회원가입은 USER 전용 흐름이므로 USER 진입점에서만 가입 티켓을 발급한다.
+            // 상인 등 비-USER 진입점은 가입 경로가 아니다(상인 계정은 상인 신청/승인으로만 생성) → 거부.
+            if (requiredRole != Role.USER) {
+                meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "role_mismatch").increment();
+                auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, null,
+                        ErrorCode.ACCESS_DENIED.getCode(),
+                        Map.of("method", "oauth", "provider", provider.name(),
+                                "requiredRole", requiredRole.name(), "reasonDetail", "oauth_no_account_for_role"));
+                throw new BusinessException(ErrorCode.ACCESS_DENIED);
+            }
+            // 추가정보 입력 단계로. provider+oauthId+공급자검증이메일을 서명해 담은 단기 티켓.
             // 이메일을 티켓에 박아 2단계에서 클라이언트가 임의 이메일을 넣어 선점하는 것을 차단한다.
             String ticket = ticketIssuer.issue(provider, info.oauthId(), info.email());
             meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "needs_signup").increment();
             return OauthLoginResult.needSignup(ticket, info.email(), info.nickname());
         }
 
-        // 소셜 로그인은 USER 전용 진입점(/api/v1/users/auth/oauth)이다. 승격된 MERCHANT/ADMIN 계정이 이 경로로
-        // 자기 role 토큰을 발급받지 못하게 막는다 — 이메일 로그인(LoginService)의 endpoint별 role 경계와 동일 정책.
-        if (account.getRole() != Role.USER) {
+        // 진입점이 요구하는 role과 계정 role 대조 — USER 진입점은 USER만, 상인 진입점은 MERCHANT만 토큰 발급.
+        // 이메일 로그인(LoginService)의 endpoint별 role 경계와 동일 정책.
+        if (account.getRole() != requiredRole) {
             meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "role_mismatch").increment();
             auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(),
                     ErrorCode.ACCESS_DENIED.getCode(),
                     Map.of("method", "oauth", "provider", provider.name(),
-                            "actualRole", account.getRole().name(), "reasonDetail", "oauth_role_not_user"));
+                            "requiredRole", requiredRole.name(),
+                            "actualRole", account.getRole().name(), "reasonDetail", "oauth_role_mismatch"));
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
 
