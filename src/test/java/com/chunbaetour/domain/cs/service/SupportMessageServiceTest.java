@@ -3,6 +3,7 @@ package com.chunbaetour.domain.cs.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -13,6 +14,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import com.chunbaetour.domain.cs.dto.request.SupportSendMessageRequest;
+import com.chunbaetour.domain.cs.dto.response.SupportMessageResponse;
 import com.chunbaetour.domain.cs.event.SupportMessageSentEvent;
 import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
@@ -210,7 +212,8 @@ class SupportMessageServiceTest {
         supportMessageService.sendMessage(1L, 1L, false, fileReq("support-rooms/1/uuid.jpg"));
 
         verify(supportMessageRepository).save(any(SupportMessage.class));
-        verify(supportRedisPubSubService).publish(eq(1L), any());
+        verify(supportFileStorage).presignedGetUrl("support-rooms/1/uuid.jpg");
+        verify(supportRedisPubSubService).publish(eq(1L), argThat(r -> r instanceof SupportMessageResponse sr && sr.fileUrl() == null));
     }
 
     // IMAGE 메시지 — fileName null → INVALID_REQUEST (정책 결정 2026-06-16)
