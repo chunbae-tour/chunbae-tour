@@ -45,6 +45,9 @@ public class CacheConfig {
                 .cacheDefaults(config)
                 .withCacheConfiguration("companionScore", companionScoreConfig)
                 .withCacheConfiguration("translation", translationConfig)
+                // 캐시 통계 활성화 — @Cacheable 캐시의 hit/miss를 RedisCache가 집계하고 Micrometer가 cache.* 메트릭으로 노출
+                // (모니터링 1단계). 미설정 시 RedisCache 기본 통계 OFF라 hit율이 수집되지 않는다.
+                .enableStatistics()
                 .build();
     }
 }
