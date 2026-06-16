@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -29,12 +30,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -53,8 +58,28 @@ class ChargeServiceTest {
     @Mock
     private PortOneProperties portOneProperties;
 
+    @Mock
+    private DailyChargeLimiter dailyChargeLimiter;
+
+    @Mock
+    private RedissonClient redissonClient;
+
+    @Mock
+    private RLock chargeLock;
+
     @InjectMocks
     private ChargeService chargeService;
+
+    @BeforeEach
+    void setUpChargeLock() throws InterruptedException {
+        // 충전 직렬화 분산락 — 금액 검증 이후 모든 경로가 락을 거치므로 lenient로 통과 stub.
+        // 단위 테스트는 트랜잭션 밖이라 charge()가 finally 즉시해제 분기를 탄다.
+        lenient().when(redissonClient.getLock(anyString())).thenReturn(chargeLock);
+        lenient().when(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).thenReturn(true);
+        // unlockIfHeld는 isHeldByCurrentThread()가 true일 때만 unlock — 미스텁 시 기본 false라
+        // finally 해제 분기가 한 번도 실행되지 않아 락 해제 계약이 검증 공백으로 남는다.
+        lenient().when(chargeLock.isHeldByCurrentThread()).thenReturn(true);
+    }
 
     @Test
     @DisplayName("정상 충전 요청 시 프론트 결제창 호출에 필요한 값을 반환한다")
@@ -84,6 +109,7 @@ class ChargeServiceTest {
         verify(paymentOrderRepository).save(any(PaymentOrder.class));
         verify(paymentGatewayClient).preRegister(anyString(), anyLong());
         verify(idempotencyService, never()).unmark(anyString());
+        verify(chargeLock).unlock(); // 정상 경로에서 락 해제 계약 핀 (트랜잭션 밖 finally 분기)
     }
 
     @Test
@@ -143,6 +169,7 @@ class ChargeServiceTest {
                 .isEqualTo(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
 
         verify(idempotencyService).unmark("key");
+        verify(chargeLock).unlock(); // 예외 경로(preRegister 실패)에서도 락 해제 보장
     }
 
     @Test
@@ -223,6 +250,79 @@ class ChargeServiceTest {
                 .isInstanceOf(PaymentException.class)
                 .extracting(ex -> ((PaymentException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.CHARGE_AMOUNT_EXCEEDED);
+    }
+
+    @Test
+    @DisplayName("신규 요청에서 일일 한도 초과 시 멱등성 키 점유 전에 PAY_030을 던진다 (KAN-293)")
+    void charge_dailyLimitExceeded_throws_PAY_030_before_idempotency_mark() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
+        // 기존 주문 없음 — 신규 요청 경로로 진입해 한도 검증에 도달
+        given(paymentOrderRepository.findByIdempotencyKey("key")).willReturn(Optional.empty());
+        willThrow(new PaymentException(ErrorCode.DAILY_CHARGE_LIMIT_EXCEEDED))
+                .given(dailyChargeLimiter).assertWithinDailyLimit(1L, 100_000L);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(100_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.DAILY_CHARGE_LIMIT_EXCEEDED);
+
+        // 한도 초과는 외부 호출·키 점유 전에 차단 — 자원 미소모
+        verify(idempotencyService, never()).checkAndMark(anyString());
+        verify(paymentGatewayClient, never()).preRegister(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("기존 PENDING 주문 재시도는 일일 한도 검증을 건너뛰고 멱등 재생한다 (KAN-293 멱등성 보존)")
+    void charge_existingPendingOrder_skipsDailyLimitCheck() {
+        given(portOneProperties.getStoreId()).willReturn("store-id");
+        given(portOneProperties.getChannel()).willReturn(Map.of("card", "channel-card"));
+        PaymentOrder pendingOrder = PaymentOrder.create(
+                "existing-uid", 1L, 100_000L, "retry-key", PaymentMethod.CARD, "pg-order");
+        given(paymentOrderRepository.findByIdempotencyKey("retry-key")).willReturn(Optional.of(pendingOrder));
+
+        ChargeResponse response = chargeService.charge(1L, "retry-key", new ChargeRequest(100_000L, PaymentMethod.CARD));
+
+        assertThat(response.orderUid()).isEqualTo("existing-uid");
+        // 이미 만들어진 주문의 멱등 응답은 이후 누적액과 무관해야 함 — 한도 검증 미호출
+        verify(dailyChargeLimiter, never()).assertWithinDailyLimit(anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("충전 락 획득 실패(tryLock=false) 시 PAY_008(PAYMENT_PROCESSING)을 던지고 키 점유·PG 호출을 하지 않는다")
+    void charge_lockNotAcquired_throws_PAY_008() throws InterruptedException {
+        // 대기 시간 내 락을 못 잡음 — 같은 사용자의 충전이 임계구역 점유 중
+        given(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).willReturn(false);
+
+        assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                .isInstanceOf(PaymentException.class)
+                .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
+
+        // 락 실패는 임계구역 진입 전 차단 — 자원 미소모, 잡지 못한 락은 해제도 하지 않음
+        verify(idempotencyService, never()).checkAndMark(anyString());
+        verify(paymentGatewayClient, never()).preRegister(anyString(), anyLong());
+        verify(chargeLock, never()).unlock();
+    }
+
+    @Test
+    @DisplayName("충전 락 대기 중 인터럽트 시 PAY_008을 던지고 인터럽트 상태를 복원한다")
+    void charge_lockInterrupted_throws_PAY_008_and_restoresInterrupt() throws InterruptedException {
+        given(chargeLock.tryLock(anyLong(), any(TimeUnit.class))).willThrow(new InterruptedException());
+
+        try {
+            assertThatThrownBy(() -> chargeService.charge(1L, "key", new ChargeRequest(10_000L, PaymentMethod.CARD)))
+                    .isInstanceOf(PaymentException.class)
+                    .extracting(ex -> ((PaymentException) ex).getErrorCode())
+                    .isEqualTo(ErrorCode.PAYMENT_PROCESSING);
+
+            // InterruptedException을 삼키지 않고 인터럽트 플래그를 복원한다 (호출 스레드 취소 신호 보존)
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            verify(idempotencyService, never()).checkAndMark(anyString());
+        } finally {
+            // 테스트 스레드 인터럽트 플래그를 비워 후속 테스트로 누수 방지
+            Thread.interrupted();
+        }
     }
 
     // ── cancelCharge (KAN-252) ────────────────────────────────────────────────
@@ -307,6 +407,8 @@ class ChargeServiceTest {
         assertThat(result.content().get(0).orderUid()).isEqualTo("order-10");
         assertThat(result.hasNext()).isFalse();
         assertThat(result.nextCursor()).isNull();
+        // size 필드는 반환 개수(2)가 아니라 요청 size(20)를 echo한다 — 팀 표준 회귀 가드 (KAN-295 일관)
+        assertThat(result.size()).isEqualTo(20);
     }
 
     @Test

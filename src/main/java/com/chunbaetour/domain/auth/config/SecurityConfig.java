@@ -184,6 +184,10 @@ public class SecurityConfig {
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/festivals/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/festivals/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/traditional-markets/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/traditional-markets/*/like").hasRole("USER")
                         // 관광지 리뷰 작성은 USER 인증 필요 — GET permitAll보다 먼저 선언
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/reviews").hasRole("USER")
                         // 지오코딩 및 리버스 지오코딩 등 카카오 API 연동 엔드포인트는 외부 API 할당량 보호를 위해 인증 필수

@@ -9,12 +9,13 @@ import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.like.dto.response.UserLikedTargetResponse;
+import com.chunbaetour.domain.like.service.UserLikedTargetService;
 import com.chunbaetour.domain.like.type.LikeTargetType;
-import com.chunbaetour.domain.place.dto.response.UserLikedPlaceResponse;
 import com.chunbaetour.domain.place.dto.response.UserReviewResponse;
-import com.chunbaetour.domain.place.service.PlaceLikeService;
 import com.chunbaetour.domain.place.service.PlaceReviewService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -43,7 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   <li>{@code GET /api/v1/users/me} — 본인 정보 조회 (Epic A S1, KAN-63)</li>
  *   <li>{@code PATCH /api/v1/users/me} — 닉네임/언어/프로필 partial update (Epic A S2, KAN-127)</li>
  *   <li>{@code GET /api/v1/users/me/home} — 마이페이지 홈 통합 응답 (Epic A S3, KAN-128)</li>
- *   <li>{@code GET /api/v1/users/me/likes} — 찜한 관광지 페이징 (Epic A S5, KAN-130)</li>
+ *   <li>{@code GET /api/v1/users/me/likes} — 찜한 대상 페이징 (Epic A S5, KAN-130)</li>
  *   <li>{@code GET /api/v1/users/me/reviews} — 내가 작성한 리뷰 페이징 (Epic A S6, KAN-173)</li>
  *   <li>{@code DELETE /api/v1/users/me} — 회원 탈퇴 + 토큰 cascade 무효화 (Epic C S1, KAN-143)</li>
  * </ul>
@@ -81,7 +82,7 @@ public class UserMeController {
 
     private final UserMeService userMeService;
     private final UserMeHomeService userMeHomeService;
-    private final PlaceLikeService placeLikeService;
+    private final UserLikedTargetService userLikedTargetService;
     private final PlaceReviewService placeReviewService;
     private final RefreshCookieFactory refreshCookieFactory;
 
@@ -137,16 +138,16 @@ public class UserMeController {
     }
 
     /**
-     * 본인이 찜한 관광지 목록 페이징 조회 (Epic A S5, KAN-130).
+     * 본인이 찜한 대상 목록 페이징 조회 (Epic A S5, KAN-130).
      *
-     * <p>KAN-124 (PR #163)가 제공한 {@link PlaceLikeService#getUserLikedPlaces}를 호출 — 본 컨트롤러는
-     * 인증된 userId 추출 + 페이징 파라미터 전달만 담당. 응답 DTO({@link UserLikedPlaceResponse})는
-     * Place 도메인 모델 그대로 노출 — 마이페이지 전용 별도 스키마를 두지 않아 클라이언트가 단일 모델 사용.
+     * <p>{@link UserLikedTargetService#getLikedTargets}를 호출 — 본 컨트롤러는
+     * 인증된 userId 추출 + 페이징 파라미터 전달만 담당. 응답 DTO({@link UserLikedTargetResponse})는
+     * PLACE, MARKET, FESTIVAL 카드에 필요한 공통 필드를 제공한다.
      *
      * <p>페이징 정책:
      * <ul>
      *   <li>default size = 20</li>
-     *   <li>max size = 100 (운영 부하 방지 — {@code PlaceLikeService.getUserLikedPlaces} 내부 가드)</li>
+     *   <li>max size = 100 (운영 부하 방지 — {@code UserLikedTargetService.getLikedTargets} 내부 가드)</li>
      *   <li>default sort = {@code createdAt DESC} — 최근 찜 순. 클라이언트가 {@code ?sort=}로 오버라이드 가능.
      *       허용 필드: {@code createdAt}, {@code id}. 그 외 필드 지정 시 {@link ErrorCode#INVALID_REQUEST} (COMMON_002) 응답.</li>
      * </ul>
@@ -156,13 +157,13 @@ public class UserMeController {
      *
      * @param userId   SecurityContext에 저장된 본인 ID
      * @param pageable {@code ?page=0&size=20} 파라미터 — Spring Data Pageable 자동 바인딩
-     * @return 찜한 관광지 페이지 (UserLikedPlaceResponse 페이징)
+     * @return 찜한 대상 페이지 (UserLikedTargetResponse 페이징)
      */
     @Operation(summary = "내 찜 목록 조회")
     @GetMapping("/likes")
-    public ApiResponse<Page<UserLikedPlaceResponse>> getLikedPlaces(
+    public ApiResponse<Page<UserLikedTargetResponse>> getLikedTargets(
             @AuthenticationPrincipal Long userId,
-            @io.swagger.v3.oas.annotations.Parameter(description = "조회할 찜 타입. 현재는 PLACE만 지원합니다.")
+            @Parameter(description = "조회할 찜 타입. PLACE, MARKET, FESTIVAL을 지원합니다.")
             @RequestParam(defaultValue = "PLACE") LikeTargetType type,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         requireAuthenticated(userId);
@@ -171,13 +172,8 @@ public class UserMeController {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
         });
-        
-        if (type != LikeTargetType.PLACE) {
-            // TODO: MARKET, FESTIVAL 도메인 찜 목록 조회 연동 예정
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        
-        return ApiResponse.success(placeLikeService.getUserLikedPlaces(userId, pageable));
+
+        return ApiResponse.success(userLikedTargetService.getLikedTargets(userId, type, pageable));
     }
 
     /**

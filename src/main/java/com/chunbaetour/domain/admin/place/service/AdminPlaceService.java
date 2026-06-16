@@ -9,15 +9,20 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 /**
@@ -34,6 +39,7 @@ import org.springframework.util.StringUtils;
  * <p>{@link #getTotalPlaces()}는 S10 대시보드 의존 — 관광지 카운트 쿼리는 본 서비스에만 두고 대시보드는
  * 조합만 한다. 본 슬라이스에서는 메서드 노출까지만(wiring은 S10).
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -41,6 +47,7 @@ public class AdminPlaceService {
 
     private final PlaceRepository placeRepository;
     private final ShopRepository shopRepository;
+    private final StringRedisTemplate stringRedisTemplate;
 
     /**
      * 관광지 목록 검색 (keyword/category 필터 + cursor 페이징).
@@ -101,6 +108,8 @@ public class AdminPlaceService {
                 request.phone(),
                 request.admissionFee(),
                 request.tags());
+        // 상세 캐시(place:{id}, TTL 10분) 무효화 — 수정 내용이 최대 10분 stale로 노출되는 것 방지. 커밋 후 실행(B10).
+        registerAfterCommit(() -> evictDetailCache(placeId));
         return AdminPlaceDetailResponse.from(place);
     }
 
@@ -120,6 +129,39 @@ public class AdminPlaceService {
         place.delete();
         // Place는 soft delete라 FK ON DELETE SET NULL이 발화하지 않음 — 연관 shop.place_id를 서비스 레이어에서 직접 null 처리
         shopRepository.clearPlaceReference(placeId);
+        // 상세 캐시(place:{id}, TTL 10분) 무효화 — 삭제된 관광지가 최대 10분 노출되는 것 방지. 커밋 후 실행(B10).
+        registerAfterCommit(() -> evictDetailCache(placeId));
+    }
+
+    /**
+     * DB 트랜잭션 커밋 성공 후 {@code action}을 실행하도록 등록.
+     * 롤백 시 캐시만 비워지는 불일치를 막기 위해 afterCommit으로 분리. 활성 트랜잭션이 없으면(테스트 등) 즉시 실행.
+     * (PlaceReviewService/PlaceLikeService의 캐시 무효화 패턴과 동일 — B10 일관화.)
+     */
+    private void registerAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
+    }
+
+    /**
+     * 관광지 상세 캐시(place:{id}) 제거. 명시적 키 삭제 — REQUIRES_NEW/self-invocation 프록시 우회 함정이 없는
+     * @CacheEvict 대안. 삭제 실패는 자연 TTL(10분) 만료에 위임하고 warn 로그만 남긴다(비즈니스 차단 없음).
+     */
+    private void evictDetailCache(Long placeId) {
+        try {
+            stringRedisTemplate.delete(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId);
+            log.debug("관광지 상세 캐시 무효화 — placeId={}", placeId);
+        } catch (Exception e) {
+            log.warn("관광지 상세 캐시 무효화 실패 — placeId={}", placeId, e);
+        }
     }
 
     // ── S10 대시보드 의존 카운트 (본 슬라이스는 메서드 노출까지) ────────────────────

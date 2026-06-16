@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.store.dto.response.ProductDetailResponse;
 import com.chunbaetour.domain.store.dto.response.ProductSummaryResponse;
 import com.chunbaetour.domain.store.service.ProductService;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,7 +33,7 @@ public class ProductController {
     @Operation(summary = "상품 목록 조회")
     @GetMapping
     public ApiResponse<CursorPageResponse<ProductSummaryResponse>> getProducts(
-            @RequestParam(required = false) String category,
+            @RequestParam(required = false) ProductCategory category,
             @RequestParam(required = false) String cursor,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {

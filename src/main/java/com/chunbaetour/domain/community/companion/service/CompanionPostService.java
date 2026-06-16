@@ -17,6 +17,9 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
+import com.chunbaetour.domain.community.common.PostType;
+import com.chunbaetour.domain.community.common.event.PostDeletedEvent;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,7 +29,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,8 +39,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class CompanionPostService {
 
     private final CompanionPostRepository postRepository;
+    private final CompanionPostQueryRepository postQueryRepository;
     private final AccountRepository accountRepository;
     private final ChatRoomRepository chatRoomRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
@@ -67,8 +72,8 @@ public class CompanionPostService {
     public CursorPageResponse<CompanionPostGetListResponse> findAll(
             String region, LocalDate meetingDate, String cursor, int size) {
         Long cursorId = decodeCursor(cursor);
-        List<CompanionPost> posts = postRepository.findByFilters(
-                CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, PageRequest.of(0, size + 1));
+        List<CompanionPost> posts = postQueryRepository.findByFilters(
+                CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, size + 1);
 
         boolean hasNext = posts.size() > size;
         List<CompanionPost> content = hasNext ? posts.subList(0, size) : posts;
@@ -101,13 +106,7 @@ public class CompanionPostService {
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
-        // placeId·placeName은 쌍으로 수정해야 함 — 한쪽만 보내면 데이터 불일치
-        if ((request.placeId() == null) != (request.placeName() == null)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
-        }
-        if (request.maxMembers() != null && request.maxMembers() < post.getCurrentMembers()) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
+        // 입력 불변식(placeId·placeName 쌍, maxMembers >= currentMembers)은 엔티티 update에서 검증
         post.update(
                 request.title(), request.content(),
                 request.placeId(), request.placeName(),
@@ -124,6 +123,7 @@ public class CompanionPostService {
             throw new BusinessException(ErrorCode.POST_DELETE_FORBIDDEN);
         }
         post.delete();
+        eventPublisher.publishEvent(new PostDeletedEvent(post.getId(), PostType.COMPANION));
     }
 
     private CompanionPost findActivePost(Long postId) {

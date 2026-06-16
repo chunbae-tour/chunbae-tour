@@ -142,6 +142,13 @@ ratelimit:
       path: /api/v1/merchants/me/shops/*/images
       limit: 20
       window: PT1H
+    # 채팅 파일/이미지 업로드(KAN-309): shop-image-upload와 동일한 이유 — 업로드와 메시지 전송이 분리된
+    #   2-step 구조라 전송 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
+    - id: chat-file-upload
+      method: POST
+      path: /api/v1/chat/rooms/*/files
+      limit: 20
+      window: PT1H
     # 상담 채팅 파일/이미지 업로드(KAN-310): shop-image-upload와 동일한 이유 — 업로드와 메시지 전송이 분리된
     #   2-step 구조라 전송 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
     - id: support-file-upload

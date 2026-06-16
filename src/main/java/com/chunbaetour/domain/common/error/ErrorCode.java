@@ -21,6 +21,8 @@ public enum ErrorCode {
     // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
     INVALID_CURSOR_PAIR(HttpStatus.BAD_REQUEST,              "COMMON_011", "커서 페이징 쌍(cursor, cursorRating 등)이 올바르게 전달되지 않았습니다."),
+    // COMMON_012: multipart 파싱 단계 파일 크기 초과 — 도메인 무관 공용 (GlobalExceptionHandler.handleMaxUploadSize)
+    FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,                   "COMMON_012", "파일 크기가 최대 허용 용량을 초과합니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
@@ -93,8 +95,8 @@ public enum ErrorCode {
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
-    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
-    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
+    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 대상입니다."),
+    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 대상입니다."),
     REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,            "PLACE_012", "이미 리뷰를 작성한 관광지입니다."),
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND,                "PLACE_013", "존재하지 않는 리뷰입니다."),
     REVIEW_FORBIDDEN(HttpStatus.FORBIDDEN,                "PLACE_014", "본인의 리뷰만 수정·삭제할 수 있습니다."),
@@ -140,6 +142,9 @@ public enum ErrorCode {
     QR_PAY_CONFIRM_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_028", "본인 가게의 결제 요청만 승인/거절할 수 있습니다."),
     // PAY_029: QR payload의 nonce가 현재 가게 nonce와 불일치 — 재발급으로 무효화된 옛 QR (KAN-253)
     QR_PAY_NONCE_MISMATCH(HttpStatus.CONFLICT,             "PAY_029", "만료된 QR 코드입니다. 최신 QR로 다시 시도해주세요."),
+    // PAY_030: 하루 충전 누적액(진행중+완료 이력)이 일일 한도를 초과 (KAN-293)
+    // 메시지에 한도 금액을 박지 않는다 — 한도는 DailyChargeLimiter.DAILY_LIMIT 단일 소스에서만 관리
+    DAILY_CHARGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST,    "PAY_030", "1일 충전 한도를 초과했습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
@@ -213,6 +218,11 @@ public enum ErrorCode {
     CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
     CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
     CHAT_OWNER_TRANSFER_INVALID_TARGET(HttpStatus.BAD_REQUEST, "CHAT_019", "방장 위임 대상은 본인이 아닌 활성 참여자여야 합니다."),
+    CHAT_FILE_EMPTY(HttpStatus.BAD_REQUEST,                 "CHAT_020", "업로드할 파일이 비어 있습니다."),
+    CHAT_FILE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,      "CHAT_021", "지원하지 않는 파일 형식입니다. (이미지: JPEG/PNG/WebP, 문서: PDF/DOCX/XLSX/PPTX/HWP)"),
+    CHAT_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,       "CHAT_022", "이미지 크기가 최대 허용 용량(5MB)을 초과합니다."),
+    CHAT_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,             "CHAT_023", "파일 크기가 최대 허용 용량(10MB)을 초과합니다."),
+    CHAT_FILE_OWNERSHIP_INVALID(HttpStatus.FORBIDDEN,       "CHAT_024", "해당 채팅방에 업로드되지 않은 파일입니다."),
 
     // ===== NOTIFICATION (담당: 임하은) =====
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
@@ -266,7 +276,18 @@ public enum ErrorCode {
     // 동행 ENDED 전에는 리뷰 작성 불가 — 고도화 #25
     COMPANION_NOT_ENDED(HttpStatus.CONFLICT,                "CR_009", "동행 종료 후에만 리뷰를 작성할 수 있습니다."),
     // 동행 생성/참여자 추가 시 기간 겹침 검증 — 고도화 #1
-    COMPANION_DATE_OVERLAP(HttpStatus.CONFLICT,             "CR_010", "겹치는 기간에 진행 중인 동행이 있습니다.");
+    COMPANION_DATE_OVERLAP(HttpStatus.CONFLICT,             "CR_010", "겹치는 기간에 진행 중인 동행이 있습니다."),
+    // CR_011~015: 동행 생애주기 자동화 + 참여자별 종료/리뷰 자격 — 고도화 #2
+    // 리뷰 작성 시 reviewer/target 둘 다 endParticipation을 마쳐야 함
+    COMPANION_REVIEW_PARTICIPANT_NOT_ENDED(HttpStatus.CONFLICT, "CR_011", "양쪽 모두 동행 참여를 종료해야 리뷰를 작성할 수 있습니다."),
+    // 리뷰 작성 시 reviewer/target 둘 중 한쪽이라도 정지 계정이면 차단
+    COMPANION_REVIEW_SUSPENDED_ACCOUNT(HttpStatus.FORBIDDEN, "CR_012", "정지된 계정과는 리뷰를 작성할 수 없습니다."),
+    // endParticipation 호출자가 해당 동행의 참여자가 아님
+    COMPANION_PARTICIPANT_NOT_FOUND(HttpStatus.FORBIDDEN,   "CR_013", "동행 참여자가 아닙니다."),
+    // endParticipation은 Companion.status==ENDED(여행 종료, 날짜 기반 배치job)일 때만 호출 가능
+    COMPANION_NOT_ENDED_FOR_PARTICIPATION(HttpStatus.CONFLICT, "CR_014", "여행이 종료되지 않아 참여를 종료할 수 없습니다."),
+    // endParticipation 중복 호출 — 이미 endedAt 세팅됨
+    COMPANION_PARTICIPATION_ALREADY_ENDED(HttpStatus.CONFLICT, "CR_015", "이미 참여 종료 처리되었습니다.");
 
     private final HttpStatus status;
     private final String code;

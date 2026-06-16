@@ -5,6 +5,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,6 +31,64 @@ class CompanionControllerTest extends AbstractIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private TokenIssuer tokenIssuer;
     @MockitoBean private CompanionService companionService;
+
+    // ===== PATCH /api/v1/chat/rooms/{roomId}/companion/participation/end =====
+
+    // 정상 종료 → 204 No Content
+    @Test
+    @DisplayName("동행 참여 종료 성공 → 204")
+    void endParticipation_success_returns204() throws Exception {
+        willDoNothing().given(companionService).endParticipation(1L, 10L);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "participant@test.com");
+
+        mockMvc.perform(patch("/api/v1/chat/rooms/10/companion/participation/end")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        verify(companionService).endParticipation(1L, 10L);
+    }
+
+    // 호출자가 동행 참여자가 아님 → CR_013(403)
+    @Test
+    @DisplayName("동행 참여 종료 참여자 아님 → 403")
+    void endParticipation_notParticipant_returns403() throws Exception {
+        willThrow(new BusinessException(ErrorCode.COMPANION_PARTICIPANT_NOT_FOUND))
+                .given(companionService).endParticipation(2L, 10L);
+        String token = tokenIssuer.issueAccess(2L, Role.USER, "non-participant@test.com");
+
+        mockMvc.perform(patch("/api/v1/chat/rooms/10/companion/participation/end")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.COMPANION_PARTICIPANT_NOT_FOUND.getCode()));
+    }
+
+    // 동행이 아직 ENDED 상태가 아님 → CR_014(409)
+    @Test
+    @DisplayName("동행 참여 종료 여행 미종료 → 409")
+    void endParticipation_companionNotEnded_returns409() throws Exception {
+        willThrow(new BusinessException(ErrorCode.COMPANION_NOT_ENDED_FOR_PARTICIPATION))
+                .given(companionService).endParticipation(1L, 10L);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "participant@test.com");
+
+        mockMvc.perform(patch("/api/v1/chat/rooms/10/companion/participation/end")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.COMPANION_NOT_ENDED_FOR_PARTICIPATION.getCode()));
+    }
+
+    // 이미 참여 종료 처리됨 → CR_015(409)
+    @Test
+    @DisplayName("동행 참여 종료 이미 처리됨 → 409")
+    void endParticipation_alreadyEnded_returns409() throws Exception {
+        willThrow(new BusinessException(ErrorCode.COMPANION_PARTICIPATION_ALREADY_ENDED))
+                .given(companionService).endParticipation(1L, 10L);
+        String token = tokenIssuer.issueAccess(1L, Role.USER, "participant@test.com");
+
+        mockMvc.perform(patch("/api/v1/chat/rooms/10/companion/participation/end")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.COMPANION_PARTICIPATION_ALREADY_ENDED.getCode()));
+    }
 
     // ===== DELETE /api/v1/chat/rooms/{roomId}/companion =====
 
