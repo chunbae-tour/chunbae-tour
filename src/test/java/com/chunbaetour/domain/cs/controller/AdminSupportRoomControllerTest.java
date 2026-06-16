@@ -95,7 +95,7 @@ class AdminSupportRoomControllerTest extends AbstractIntegrationTest {
     @DisplayName("상담 메시지 조회 (ADMIN) — 200")
     void getMessages_whenAdmin_returns200() throws Exception {
         SupportMessageResponse msg = new SupportMessageResponse(
-                1L, 1L, SupportSenderRole.CUSTOMER, SupportMessageType.TEXT, "문의입니다", null, LocalDateTime.now());
+                1L, 1L, SupportSenderRole.CUSTOMER, SupportMessageType.TEXT, "문의입니다", null, null, null, LocalDateTime.now());
         given(supportRoomService.getMessagesAsAdmin(eq(10L), any(), eq(20)))
                 .willReturn(new CursorPageResponse<>(List.of(msg), null, false, 1));
         String token = tokenIssuer.issueAccess(1L, Role.ADMIN, "admin@test.com");

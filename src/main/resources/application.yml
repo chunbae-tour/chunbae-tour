@@ -33,7 +33,7 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 10MB    # 서비스 레벨 문서 cap(10MB)과 일치 — 초과 시 MaxUploadSizeExceededException → 400
+      max-file-size: 10MB   # 서비스 레벨 문서 10MB cap과 일치 — 초과 시 MaxUploadSizeExceededException → 400
       max-request-size: 10MB
 
   # Flyway 마이그레이션 (KAN-178, Admin Epic KAN-177 S00).
@@ -147,6 +147,18 @@ ratelimit:
     - id: chat-file-upload
       method: POST
       path: /api/v1/chat/rooms/*/files
+      limit: 20
+      window: PT1H
+    # 상담 채팅 파일/이미지 업로드(KAN-310): shop-image-upload와 동일한 이유 — 업로드와 메시지 전송이 분리된
+    #   2-step 구조라 전송 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
+    - id: support-file-upload
+      method: POST
+      path: /api/v1/support/rooms/*/files
+      limit: 20
+      window: PT1H
+    - id: admin-support-file-upload
+      method: POST
+      path: /api/v1/admin/support/rooms/*/files
       limit: 20
       window: PT1H
     # 토큰 재발급: permitAll + 자동 전송 refresh 쿠키만으로 호출 가능한 경로라 무제한 노출되면
