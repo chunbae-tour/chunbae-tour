@@ -22,6 +22,7 @@ import com.chunbaetour.domain.chat.repository.MessageRepository;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import org.mockito.Mockito;
 import com.chunbaetour.domain.common.ratelimit.RateLimitDecision;
 import com.chunbaetour.domain.common.ratelimit.RateLimiter;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -474,6 +475,31 @@ class ChatMessageServiceTest {
         CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
 
         assertThat(result.content().get(0).fileUrl()).isEqualTo("https://signed/chat-rooms/100/uuid.jpg");
+    }
+
+    // IMAGE 메시지 presign 실패(EXTERNAL_SERVICE_ERROR) → fileUrl=null 격하, 조회 전체 503 방지
+    @Test
+    void getMessages_imageMessage_presignFails_fileUrlIsNull() {
+        given(chatRoomRepository.existsById(ROOM_ID)).willReturn(true);
+        com.chunbaetour.domain.chat.entity.ChatRoomMember member = mock(com.chunbaetour.domain.chat.entity.ChatRoomMember.class);
+        given(member.isActiveMember()).willReturn(true);
+        given(chatRoomMemberRepository.findByChatRoomIdAndUserId(ROOM_ID, USER_ID))
+                .willReturn(Optional.of(member));
+        Message imageMsg = mock(Message.class);
+        given(imageMsg.getId()).willReturn(31L);
+        given(imageMsg.getChatRoomId()).willReturn(ROOM_ID);
+        given(imageMsg.getSenderId()).willReturn(USER_ID);
+        given(imageMsg.getMessageType()).willReturn(MessageType.IMAGE);
+        given(imageMsg.getFileUrl()).willReturn("chat-rooms/100/uuid.jpg");
+        given(imageMsg.getCreatedAt()).willReturn(LocalDateTime.of(2026, 6, 16, 12, 0));
+        given(messageRepository.findWithCursor(eq(ROOM_ID), any(), any())).willReturn(List.of(imageMsg));
+        given(accountRepository.findAllById(List.of(USER_ID))).willReturn(List.of());
+        Mockito.doThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR))
+                .when(chatFileStorage).presignedGetUrl("chat-rooms/100/uuid.jpg");
+
+        CursorPageResponse<ChatMessageResponse> result = chatMessageService.getMessages(USER_ID, ROOM_ID, null, 10);
+
+        assertThat(result.content().get(0).fileUrl()).isNull();
     }
 
     @Test

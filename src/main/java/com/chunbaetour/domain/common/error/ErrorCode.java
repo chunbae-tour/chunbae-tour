@@ -21,6 +21,8 @@ public enum ErrorCode {
     // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
     INVALID_CURSOR_PAIR(HttpStatus.BAD_REQUEST,              "COMMON_011", "커서 페이징 쌍(cursor, cursorRating 등)이 올바르게 전달되지 않았습니다."),
+    // COMMON_012: multipart 파싱 단계 파일 크기 초과 — 도메인 무관 공용 (GlobalExceptionHandler.handleMaxUploadSize)
+    FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,                   "COMMON_012", "파일 크기가 최대 허용 용량을 초과합니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),

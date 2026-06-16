@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -169,7 +171,19 @@ public class ChatMessageService {
 
     // Message.fileUrl(S3 객체 키) → presigned GET URL 변환. TEXT/SYSTEM은 fileUrl이 없어 그대로 null 반환.
     // presign 발급은 로컬 서명 연산(네트워크 호출 없음)이라 메시지별 호출해도 N+1 문제 없음.
+    // EXTERNAL_SERVICE_ERROR만 fileUrl=null 격하 — 조회 전체 503 방지. 그 외 예외는 전파.
     private String resolveFileUrl(Message message) {
-        return message.getFileUrl() != null ? chatFileStorage.presignedGetUrl(message.getFileUrl()) : null;
+        if (message.getFileUrl() == null) {
+            return null;
+        }
+        try {
+            return chatFileStorage.presignedGetUrl(message.getFileUrl());
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.EXTERNAL_SERVICE_ERROR) {
+                log.warn("presign 실패 — fileUrl=null 격하: key={}", message.getFileUrl());
+                return null;
+            }
+            throw e;
+        }
     }
 }
