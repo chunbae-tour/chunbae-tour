@@ -49,9 +49,7 @@ public class PlaceLikeService {
             "if redis.call('EXISTS', key) == 0 then\n" +
             "  redis.call('SET', key, ARGV[1]);\n" +
             "end;\n" +
-            "local result = redis.call('INCR', key);\n" +
-            "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
-            "return result;";
+            "return redis.call('INCR', key);";
 
     private static final String SEED_AND_DECR_SCRIPT = 
             "local key = KEYS[1];\n" +
@@ -61,10 +59,8 @@ public class PlaceLikeService {
             "local current = redis.call('DECR', key);\n" +
             "if current < 0 then\n" +
             "  redis.call('SET', key, 0);\n" +
-            "  redis.call('SADD', KEYS[2], ARGV[2]);\n" +
             "  return 0;\n" +
             "end;\n" +
-            "redis.call('SADD', KEYS[2], ARGV[2]);\n" +
             "return current;";
 
     private static final DefaultRedisScript<Long> REDIS_SCRIPT_INCR =
@@ -144,12 +140,14 @@ public class PlaceLikeService {
         try {
             String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
             String dirtyKey = PlaceRedisConstants.PLACE_DIRTY_STATS_KEY;
-            stringRedisTemplate.execute(
+            Long result = stringRedisTemplate.execute(
                     REDIS_SCRIPT_INCR,
-                    java.util.Arrays.asList(key, dirtyKey),
-                    String.valueOf(dbLikeCount),
-                    String.valueOf(placeId)
+                    java.util.Collections.singletonList(key),
+                    String.valueOf(dbLikeCount)
             );
+            if (result != null) {
+                addDirtyStatsMarker(dirtyKey, placeId, "increment");
+            }
         } catch (Exception e) {
             log.warn("Place like count seed+increment failed: placeId={}", placeId, e);
         }
@@ -163,14 +161,35 @@ public class PlaceLikeService {
         try {
             String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
             String dirtyKey = PlaceRedisConstants.PLACE_DIRTY_STATS_KEY;
-            stringRedisTemplate.execute(
+            Long result = stringRedisTemplate.execute(
                     REDIS_SCRIPT_DECR,
-                    java.util.Arrays.asList(key, dirtyKey),
-                    String.valueOf(dbLikeCount),
-                    String.valueOf(placeId)
+                    java.util.Collections.singletonList(key),
+                    String.valueOf(dbLikeCount)
             );
+            if (result != null) {
+                addDirtyStatsMarker(dirtyKey, placeId, "decrement");
+            }
         } catch (Exception e) {
             log.warn("Place like count seed+decrement failed: placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * Marks a place like stat as dirty after the Redis counter has already changed.
+     *
+     * <p>If this write fails, the updated like counter may not be discovered by the write-behind
+     * sync batch. Keep the user action tolerant, but log at ERROR so operations can alert and repair.
+     */
+    private void addDirtyStatsMarker(String dirtyKey, Long placeId, String operation) {
+        try {
+            stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+        } catch (RuntimeException e) {
+            log.error(
+                    "Place dirty stats marker add failed after like counter {}. placeId={}",
+                    operation,
+                    placeId,
+                    e
+            );
         }
     }
 

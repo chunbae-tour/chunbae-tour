@@ -19,7 +19,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * POST /api/v1/merchants/me/shops/{shopId}/images 권한 및 파라미터 통합 테스트.
- * stub 상태이므로 MERCHANT + 유효 파일 요청은 EXTERNAL_SERVICE_ERROR(503) 반환.
+ * 모든 케이스가 소유권 확인(SHOP_NOT_FOUND) 또는 Security 단계에서 종료되어 storage(S3/LocalDisk)까지 도달하지 않는다.
+ * 실제 storage 동작(업로드·키 반환)은 단위 테스트(ShopImageServiceTest / S3ShopImageStorageTest)가 검증한다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
