@@ -24,11 +24,23 @@ public class RedisConfig {
     @Value("${spring.data.redis.password:}")
     private String redisPassword;
 
+    // 전송 중 암호화(TLS) 토글. 운영 ElastiCache(Valkey)는 in-transit encryption ON이라 rediss:// 필요(ECS E2/E4).
+    // 로컬/CI(평문 단일 Redis)는 기본 false → 기존 redis:// 그대로.
+    // ⚠️ Lettuce(자동구성)와 Redisson(수동구성)이 SSL을 따로 켜는 게 아니라, 둘 다 동일 키
+    //   `spring.data.redis.ssl.enabled` 하나를 출처로 읽는다(Lettuce=DataRedisProperties.ssl.enabled, Redisson=아래 @Value).
+    //   단일 출처라 두 경로가 "한쪽만 TLS"로 어긋날 수 없다(DGAZA-max 리뷰 — 어긋남 방지 장치 = 동일 키 바인딩).
+    @Value("${spring.data.redis.ssl.enabled:false}")
+    private boolean redisSslEnabled;
+
     @Bean(destroyMethod = "shutdown")
     public RedissonClient redissonClient() {
         Config config = new Config();
+        // ElastiCache는 단일 샤드(cluster-mode-disabled, 슬롯 0-16383 단일)라 useSingleServer로 구성 엔드포인트에 직접 연결.
+        //   샤드 분리(cluster-mode-enabled)는 ECS 안정화 후 별도 진행 — 그때 useClusterServers + 키 hash tag 전환 필요.
+        // 비밀번호: ElastiCache AUTH 미설정(TLS만) → redisPassword가 빈값이면 setPassword 스킵(기존 동작 유지).
+        String scheme = redisSslEnabled ? "rediss://" : "redis://";
         var singleServer = config.useSingleServer()
-                .setAddress("redis://" + redisHost + ":" + redisPort);
+                .setAddress(scheme + redisHost + ":" + redisPort);
 
         if (redisPassword != null && !redisPassword.isBlank()) {
             singleServer.setPassword(redisPassword);

@@ -4,7 +4,7 @@ package com.chunbaetour.domain.search.type;
  * 인기 검색어 순위 변동 타입.
  * <p>
  * SA 기능 명세서 F-SEARCH-002 기준:
- * 이전 순위({@code search:ranking:prev})와 현재 순위를 비교하여 결정한다.
+ * 이전 순위({@code {search:ranking}:prev})와 현재 순위를 비교하여 결정한다.
  * </p>
  *
  * <ul>

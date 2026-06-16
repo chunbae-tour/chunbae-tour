@@ -18,12 +18,18 @@ import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
+import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
+import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.math.BigDecimal;
 import java.util.List;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,6 +70,8 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
     @Autowired private AccountRepository accountRepository;
     @Autowired private AccountSeedFactory seedFactory;
     @Autowired private ShopRepository shopRepository;
+    @Autowired private PlaceRepository placeRepository;
+    @Autowired private TraditionalMarketRepository traditionalMarketRepository;
     @Autowired private AdminActionLogRepository adminActionLogRepository;
     @Autowired private TokenIssuer tokenIssuer;
 
@@ -71,6 +79,8 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
     void cleanup() {
         adminActionLogRepository.deleteAll();
         shopRepository.deleteAll();
+        placeRepository.deleteAll();
+        traditionalMarketRepository.deleteAll();
         accountRepository.deleteAll();
     }
 
@@ -89,6 +99,43 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.id").value(shop.getId()))
                 .andExpect(jsonPath("$.data.shopName").value("테스트가게"))
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("GET 상세 → 연결 장소/시장 id·이름 매핑 (KAN-307)")
+    void getShop_mapsLinkedPlaceAndMarket() throws Exception {
+        String adminToken = adminToken();
+        Place place = placeRepository.save(Place.builder()
+                .name("경복궁").category(PlaceCategory.TOURIST_SPOT).address("서울 종로구")
+                .lat(new BigDecimal("37.5796")).lng(new BigDecimal("126.9770")).build());
+        TraditionalMarket market = traditionalMarketRepository.save(TraditionalMarket.builder()
+                .name("광장시장").address("서울 종로구 창경궁로 88")
+                .lat(new BigDecimal("37.5701")).lng(new BigDecimal("126.9997")).build());
+        Shop shop = seedShopLinkedBoth(place.getId(), market.getId());
+
+        mockMvc.perform(get("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.placeId").value(place.getId()))
+                .andExpect(jsonPath("$.data.placeName").value("경복궁"))
+                .andExpect(jsonPath("$.data.traditionalMarketId").value(market.getId()))
+                .andExpect(jsonPath("$.data.traditionalMarketName").value("광장시장"));
+    }
+
+    @Test
+    @DisplayName("GET 상세 → 연결 레코드 미존재(삭제) 시 id는 있고 name은 null (KAN-307)")
+    void getShop_linkedRecordMissing_nameNull() throws Exception {
+        String adminToken = adminToken();
+        // 존재하지 않는 placeId/marketId 연결 — buildDetail findById 빈 결과 → name null, id는 보존
+        Shop shop = seedShopLinkedBoth(999999L, 888888L);
+
+        mockMvc.perform(get("/api/v1/admin/shops/" + shop.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.placeId").value(999999))
+                .andExpect(jsonPath("$.data.placeName").value(Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.traditionalMarketId").value(888888))
+                .andExpect(jsonPath("$.data.traditionalMarketName").value(Matchers.nullValue()));
     }
 
     @Test
@@ -243,6 +290,123 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.description").value("첫 줄 소개\n둘째 줄 소개"));
     }
 
+    // ── 목록 조회 (KAN-307) ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("GET 목록 → 200 + 페이징 계약(hasNext/nextCursor) + 연결 장소 이름 매핑 (KAN-307)")
+    void getShops_returns200_withPagingAndPlaceName() throws Exception {
+        String adminToken = adminToken();
+        Place place = placeRepository.save(Place.builder()
+                .name("경복궁").category(PlaceCategory.TOURIST_SPOT).address("서울 종로구")
+                .lat(new BigDecimal("37.5796")).lng(new BigDecimal("126.9770")).build());
+        seedShopLinked(ShopStatus.ACTIVE, place.getId());  // 장소 연결 가게
+        seedShop(ShopStatus.ACTIVE);                       // 미연결 가게
+
+        mockMvc.perform(get("/api/v1/admin/shops")
+                        .param("size", "1")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("GET 목록 — 연결 장소 가게는 placeName 노출, 미연결은 null (KAN-307)")
+    void getShops_mapsPlaceName() throws Exception {
+        String adminToken = adminToken();
+        Place place = placeRepository.save(Place.builder()
+                .name("광화문광장").category(PlaceCategory.TOURIST_SPOT).address("서울 종로구")
+                .lat(new BigDecimal("37.5759")).lng(new BigDecimal("126.9769")).build());
+        seedShopLinked(ShopStatus.ACTIVE, place.getId());
+
+        mockMvc.perform(get("/api/v1/admin/shops")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].placeId").value(place.getId()))
+                .andExpect(jsonPath("$.data.content[0].placeName").value("광화문광장"));
+    }
+
+    @Test
+    @DisplayName("GET 목록 — 시장 연결 가게는 traditionalMarketId/Name 노출, 미연결은 null (KAN-307)")
+    void getShops_mapsTraditionalMarket() throws Exception {
+        String adminToken = adminToken();
+        TraditionalMarket market = traditionalMarketRepository.save(TraditionalMarket.builder()
+                .name("광장시장").address("서울 종로구 창경궁로 88")
+                .lat(new BigDecimal("37.5701")).lng(new BigDecimal("126.9997")).build());
+        seedShopLinkedMarket(market.getId());  // 시장 연결 가게
+        seedShop(ShopStatus.ACTIVE);           // 미연결 가게
+
+        mockMvc.perform(get("/api/v1/admin/shops")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(2))
+                // 연결 가게: 시장 id·이름 노출 / 미연결 가게: 이름 null — 둘 다 응답에 존재
+                .andExpect(jsonPath("$.data.content[*].traditionalMarketId", Matchers.hasItem(market.getId().intValue())))
+                .andExpect(jsonPath("$.data.content[*].traditionalMarketName", Matchers.hasItem("광장시장")))
+                .andExpect(jsonPath("$.data.content[*].traditionalMarketName", Matchers.hasItem(Matchers.nullValue())));
+    }
+
+    @Test
+    @DisplayName("GET 목록 status=SUSPENDED 필터 → 해당 상태만 (KAN-307)")
+    void getShops_statusFilter() throws Exception {
+        String adminToken = adminToken();
+        seedShop(ShopStatus.ACTIVE);
+        Shop suspended = seedShop(ShopStatus.ACTIVE);
+        suspended.hide();
+        shopRepository.save(suspended);
+
+        mockMvc.perform(get("/api/v1/admin/shops")
+                        .param("status", "SUSPENDED")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[*].status", Matchers.everyItem(Matchers.is("SUSPENDED"))));
+    }
+
+    @Test
+    @DisplayName("GET 목록 size=0 → 400 COMMON_002 (@Min)")
+    void getShops_size0_returns400() throws Exception {
+        String adminToken = adminToken();
+        mockMvc.perform(get("/api/v1/admin/shops").param("size", "0")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    @DisplayName("GET 목록 size=101 → 400 COMMON_002 (@Max)")
+    void getShops_size101_returns400() throws Exception {
+        String adminToken = adminToken();
+        mockMvc.perform(get("/api/v1/admin/shops").param("size", "101")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
+    }
+
+    @Test
+    @DisplayName("GET 목록 유효하지 않은 cursor → 400 COMMON_008")
+    void getShops_invalidCursor_returns400() throws Exception {
+        String adminToken = adminToken();
+        mockMvc.perform(get("/api/v1/admin/shops").param("cursor", "!!!")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_008"));
+    }
+
+    @Test
+    @DisplayName("GET 목록 USER 토큰 → 403 AUTH_007")
+    void getShops_userToken_forbidden() throws Exception {
+        seedFactory.seed("user-list-forbid@test.com", PASSWORD, "유저", Role.USER, AccountStatus.ACTIVE);
+        String userToken = loginAndGetToken("/api/v1/users/auth/login", "user-list-forbid@test.com");
+
+        mockMvc.perform(get("/api/v1/admin/shops")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
     // ── 에러/접근 제어 ──────────────────────────────────────────────────────
 
     @Test
@@ -320,6 +484,21 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
         return seedShopFor(9001L, status);
     }
 
+    /** 장소(placeId) 연결 가게 seed — 목록 응답의 placeName 매핑 검증용 (KAN-307). */
+    private Shop seedShopLinked(ShopStatus status, Long placeId) {
+        Shop shop = Shop.builder()
+                .userId(9001L).applicationId(System.nanoTime())
+                .shopName("연결가게").category("FOOD")
+                .address("서울시 강남구").lat(new BigDecimal("37.4979000"))
+                .lng(new BigDecimal("127.0276000"))
+                .phone("02-0000-0000").description("연결 소개")
+                .placeId(placeId).build();
+        if (status == ShopStatus.SUSPENDED) {
+            shop.hide();
+        }
+        return shopRepository.save(shop);
+    }
+
     private Shop seedShopFor(Long userId, ShopStatus status) {
         Shop shop = Shop.builder()
                 .userId(userId).applicationId(System.nanoTime())
@@ -332,6 +511,30 @@ class AdminShopControllerIntegrationTest extends AbstractIntegrationTest {
         } else if (status == ShopStatus.CLOSED) {
             ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
         }
+        return shopRepository.save(shop);
+    }
+
+    /** 장소+시장 동시 연결 가게 seed — 상세 응답의 4개 연결 필드 매핑 검증용 (KAN-307). */
+    private Shop seedShopLinkedBoth(Long placeId, Long marketId) {
+        Shop shop = Shop.builder()
+                .userId(9001L).applicationId(System.nanoTime())
+                .shopName("연결가게").category("FOOD")
+                .address("서울시 강남구").lat(new BigDecimal("37.4979000"))
+                .lng(new BigDecimal("127.0276000"))
+                .phone("02-0000-0000").description("연결 소개")
+                .placeId(placeId).traditionalMarketId(marketId).build();
+        return shopRepository.save(shop);
+    }
+
+    /** 전통시장(traditionalMarketId) 연결 가게 seed — 목록 응답의 traditionalMarketName 매핑 검증용 (KAN-307). */
+    private Shop seedShopLinkedMarket(Long marketId) {
+        Shop shop = Shop.builder()
+                .userId(9001L).applicationId(System.nanoTime())
+                .shopName("시장연결가게").category("FOOD")
+                .address("서울시 종로구").lat(new BigDecimal("37.5701000"))
+                .lng(new BigDecimal("126.9997000"))
+                .phone("02-0000-0000").description("시장 연결 소개")
+                .traditionalMarketId(marketId).build();
         return shopRepository.save(shop);
     }
 
