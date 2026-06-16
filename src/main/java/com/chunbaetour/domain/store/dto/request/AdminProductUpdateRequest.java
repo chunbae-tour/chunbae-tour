@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.store.dto.request;
 
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
@@ -15,7 +16,7 @@ import java.util.List;
 public record AdminProductUpdateRequest(
         @Size(min = 1, max = 100) String name,
         @Size(max = 2000) String description,
-        @Size(min = 1, max = 50) String category,
+        ProductCategory category,
         @Min(1) Long price,
         @Min(0) Long originalPrice,
         @Min(0) Integer stock,

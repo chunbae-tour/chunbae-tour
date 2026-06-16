@@ -5,7 +5,6 @@ import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipan
 import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionEndResponse;
 import com.chunbaetour.domain.companionreview.service.CompanionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "동행", description = "동행 생성/종료/취소/참여자 추가 (/api/v1/chat/rooms/{roomId}/companion)")
+@Tag(name = "동행", description = "동행 생성/취소/참여자 추가/참여 종료 (/api/v1/chat/rooms/{roomId}/companion)")
 @RestController
 @RequiredArgsConstructor
 @Validated
@@ -57,14 +56,17 @@ public class CompanionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(response));
     }
 
-    // PATCH /api/v1/chat/rooms/{roomId}/companion/end — 동행 종료 (방장 전용)
-    @Operation(summary = "동행 종료")
-    @PatchMapping("/api/v1/chat/rooms/{roomId}/companion/end")
-    public ResponseEntity<ApiResponse<CompanionEndResponse>> endCompanion(
-            @AuthenticationPrincipal Long ownerId,
+    // PATCH /api/v1/chat/rooms/{roomId}/companion/participation/end — 참여자 본인 동행 종료
+    @Operation(
+            summary = "동행 참여 종료",
+            description = "여행이 종료된(Companion.status==ENDED) 동행에서 본인의 참여를 종료 처리합니다. 양쪽 참여자 모두 종료해야 리뷰 작성이 가능합니다."
+    )
+    @PatchMapping("/api/v1/chat/rooms/{roomId}/companion/participation/end")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void endParticipation(
+            @AuthenticationPrincipal Long userId,
             @PathVariable @Positive Long roomId) {
-        CompanionEndResponse response = companionService.endCompanion(ownerId, roomId);
-        return ResponseEntity.ok(ApiResponse.success(response));
+        companionService.endParticipation(userId, roomId);
     }
 
     // DELETE /api/v1/chat/rooms/{roomId}/companion — 동행 취소 (방장 전용)

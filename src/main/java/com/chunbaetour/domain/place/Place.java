@@ -13,6 +13,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import org.locationtech.jts.geom.Point;
 import org.springframework.data.annotation.CreatedDate;
@@ -50,6 +51,16 @@ public class Place {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * 낙관적 락 버전 (KAN-304/B12). Tier-1 sync(updateFromApi)와 Tier-2 enrich(applyApiDetail) 동시 UPDATE의
+     * lost-update를 방지한다. 충돌 시 {@code ObjectOptimisticLockingFailureException} — sync 배치는 per-item으로
+     * skip(다음 run 재수집), enrich는 best-effort라 호출부가 graceful 흡수. 리뷰 경로는 PESSIMISTIC_WRITE 락으로
+     * 직렬화되므로 충돌 전에 차단된다.
+     */
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @Column(nullable = false, length = 100)
     private String name;

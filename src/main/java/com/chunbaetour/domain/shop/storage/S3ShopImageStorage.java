@@ -11,7 +11,10 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 /**
  * 운영 S3 이미지 저장소 (E10, {@code @Profile("prod")}).
@@ -26,10 +29,12 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 public class S3ShopImageStorage implements ShopImageStorage {
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
     private final S3Properties properties;
 
-    public S3ShopImageStorage(S3Client s3Client, S3Properties properties) {
+    public S3ShopImageStorage(S3Client s3Client, S3Presigner s3Presigner, S3Properties properties) {
         this.s3Client = s3Client;
+        this.s3Presigner = s3Presigner;
         this.properties = properties;
     }
 
@@ -53,5 +58,23 @@ public class S3ShopImageStorage implements ShopImageStorage {
             throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
         }
         return key;
+    }
+
+    @Override
+    public String presignedGetUrl(String key) {
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+                .bucket(properties.getBucket())
+                .key(key)
+                .build();
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(properties.getPresignExpiry())
+                .getObjectRequest(getRequest)
+                .build();
+        try {
+            return s3Presigner.presignGetObject(presignRequest).url().toString();
+        } catch (SdkException e) {
+            log.error("S3 presigned GET URL 발급 실패: bucket={}, key={}", properties.getBucket(), key, e);
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
     }
 }

@@ -44,4 +44,13 @@ public class LocalDiskShopImageStorage implements ShopImageStorage {
         }
         return key;
     }
+
+    /**
+     * 로컬은 실제 presign이 없으므로 키를 그대로 반환(passthrough). 개발자는 키로 로컬 파일을 직접 확인.
+     * 운영(S3)에서만 만료 있는 presigned URL이 발급된다.
+     */
+    @Override
+    public String presignedGetUrl(String key) {
+        return key;
+    }
 }
