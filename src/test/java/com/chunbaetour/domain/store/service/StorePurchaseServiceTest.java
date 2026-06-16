@@ -24,6 +24,7 @@ import com.chunbaetour.domain.store.entity.StoreOrder;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.repository.StoreOrderRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.store.type.StoreOrderStatus;
 import com.chunbaetour.domain.yeopjeon.service.WalletService;
@@ -145,7 +146,7 @@ class StorePurchaseServiceTest {
         Product realProduct = Product.builder()
                 .name("재고 소진 상품")
                 .description("테스트")
-                .category("TEST")
+                .category(ProductCategory.DISCOUNT_COUPON)
                 .price(UNIT_PRICE)
                 .originalPrice(null)
                 .stock(QUANTITY)       // 정확히 quantity만큼 — 구매 후 stock=0

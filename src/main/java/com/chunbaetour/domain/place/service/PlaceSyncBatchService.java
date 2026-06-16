@@ -3,6 +3,7 @@ package com.chunbaetour.domain.place.service;
 import com.chunbaetour.domain.common.util.RegionParser;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.entity.PlaceSyncState;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.repository.PlaceSyncStateRepository;
@@ -19,10 +20,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 관광지 KorService2 수집 배치 저장 서비스 (KAN-221 Tier-1).
@@ -37,6 +42,7 @@ public class PlaceSyncBatchService {
 
     private final PlaceRepository placeRepository;
     private final PlaceSyncStateRepository syncStateRepository;
+    private final StringRedisTemplate stringRedisTemplate;
 
     public enum UpsertResult { CREATED, UPDATED, SKIPPED, DELETED }
 
@@ -101,6 +107,9 @@ public class PlaceSyncBatchService {
             // 외부 modifiedtime이 증가했으면 상세 재시도 한도 리셋 (뒤늦게 overview 생긴 경우 재수집 기회 회복)
             place.syncExternalModifiedTime(modifiedTime);
             placeRepository.saveAndFlush(place);
+            // 갱신 내용이 상세 캐시(place:{id}, TTL 10분)에 최대 10분 stale로 남는 것 방지 — 커밋 후 무효화(B10).
+            Long updatedId = place.getId();
+            registerAfterCommit(() -> evictDetailCache(updatedId));
             return UpsertResult.UPDATED;
         } catch (DataIntegrityViolationException e) {
             // REQUIRES_NEW 트랜잭션은 이미 rollback-only — 호출부 catch에 위임
@@ -114,6 +123,13 @@ public class PlaceSyncBatchService {
             TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             log.warn("관광지 데이터 품질 오류 — skip: contentId={}, reason={}", item.contentId(), e.getMessage());
             return UpsertResult.SKIPPED;
+        } catch (OptimisticLockingFailureException e) {
+            // 낙관락 충돌(KAN-304/B12) — Tier-2 enrich 등 동시 UPDATE가 먼저 커밋해 version이 바뀐 경우.
+            // DataAccessException 하위지만 인프라 장애가 아니라 일시적 경합이므로 fail-fast(배치 중단) 대상이 아니다.
+            // 반드시 아래 DataAccessException catch보다 위에서 상위로 전파해야 PlaceSyncService가
+            // minFailedModified를 충돌 item 이전으로 캡하고 다음 run 재수집을 보장한다.
+            log.warn("관광지 낙관락 충돌 — 다음 run 재수집 대상으로 전파: contentId={}", item.contentId());
+            throw e;
         } catch (DataAccessException e) {
             // DB/인프라 장애(락 획득 실패·쿼리 타임아웃·커넥션 풀 고갈 등) — 은닉하지 않고 전파(배치 전체 중단).
             // market #390 계약과 동일: per-item skip으로 흡수하면 DB 다운 상태로 전 item을 'skipped 성공'으로 돌게 된다.
@@ -166,6 +182,7 @@ public class PlaceSyncBatchService {
 
         int created = 0, updated = 0;
         List<Place> newPlaces = new ArrayList<>();
+        List<Long> updatedIds = new ArrayList<>();  // 갱신 항목 — 커밋 후 상세 캐시 무효화 대상(B10)
         for (ParsedItem p : parsed) {
             Place place = existing.get(p.item().contentId());
             if (place == null) {
@@ -181,12 +198,21 @@ public class PlaceSyncBatchService {
                 place.updateFromApi(p.item().title().trim(), p.item().fullAddress(), p.lat(), p.lng(),
                         p.thumbnail(), p.phone(), p.sido(), p.sigungu());
                 place.syncExternalModifiedTime(p.modifiedTime());
+                updatedIds.add(place.getId());
                 updated++;
             }
         }
         // 3) 신규 일괄 저장 + flush — 제약 위반을 이 시점에 즉시 발생시켜 호출부 fallback을 유도(부분 커밋 방지).
         placeRepository.saveAll(newPlaces);
         placeRepository.flush();
+        // 갱신분 상세 캐시(place:{id}, TTL 10분)를 커밋 후 일괄 무효화 — 신규(created)는 캐시가 없어 대상 아님(B10).
+        // 단건 DEL을 N번 반복하면 네트워크 라운드트립이 N번 → 다중 키 DEL 한 번으로 묶는다(KAN-303 리뷰).
+        if (!updatedIds.isEmpty()) {
+            List<String> cacheKeys = updatedIds.stream()
+                    .map(id -> PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + id)
+                    .toList();
+            registerAfterCommit(() -> evictDetailCaches(cacheKeys));
+        }
         return new ChunkResult(created, updated, skipped);
     }
 
@@ -217,7 +243,51 @@ public class PlaceSyncBatchService {
         }
         place.delete();
         placeRepository.saveAndFlush(place);
+        // 삭제된 관광지가 상세 캐시(place:{id}, TTL 10분)로 최대 10분 노출되는 것 방지 — 커밋 후 무효화(B10).
+        Long deletedId = place.getId();
+        registerAfterCommit(() -> evictDetailCache(deletedId));
         return UpsertResult.DELETED;
+    }
+
+    /**
+     * DB 트랜잭션 커밋 성공 후 {@code action}을 실행하도록 등록(REQUIRES_NEW 아이템 트랜잭션의 커밋 시점).
+     * 롤백 시 캐시만 비워지는 불일치를 막기 위해 afterCommit으로 분리. 활성 트랜잭션이 없으면(테스트 등) 즉시 실행.
+     */
+    private void registerAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
+    }
+
+    /**
+     * 관광지 상세 캐시(place:{id}) 제거. 명시적 키 삭제 — REQUIRES_NEW/self-invocation 프록시 우회 함정이 없는
+     * @CacheEvict 대안. 삭제 실패는 자연 TTL(10분) 만료에 위임하고 warn 로그만 남긴다(동기화 차단 없음).
+     */
+    private void evictDetailCache(Long placeId) {
+        try {
+            stringRedisTemplate.delete(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId);
+        } catch (Exception e) {
+            log.warn("관광지 상세 캐시 무효화 실패 — placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * 상세 캐시 키 다중 삭제 — 청크 갱신분을 단일 DEL 요청으로 묶어 N번 라운드트립을 1번으로 줄인다(KAN-303 리뷰).
+     * 삭제 실패는 자연 TTL(10분) 만료에 위임하고 warn 로그만 남긴다(동기화 차단 없음).
+     */
+    private void evictDetailCaches(List<String> cacheKeys) {
+        try {
+            stringRedisTemplate.delete(cacheKeys);
+        } catch (Exception e) {
+            log.warn("관광지 상세 캐시 일괄 무효화 실패 — count={}", cacheKeys.size(), e);
+        }
     }
 
     /**
