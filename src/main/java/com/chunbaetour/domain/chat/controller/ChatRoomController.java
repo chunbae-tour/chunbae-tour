@@ -2,11 +2,13 @@ package com.chunbaetour.domain.chat.controller;
 
 import com.chunbaetour.domain.chat.dto.request.CreateChatRoomRequest;
 import com.chunbaetour.domain.chat.dto.request.TransferOwnerRequest;
+import com.chunbaetour.domain.chat.dto.response.ChatFileUploadResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatMessageResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomDetailResponse;
 import com.chunbaetour.domain.chat.dto.response.ChatRoomMemberResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateChatRoomResponse;
 import com.chunbaetour.domain.chat.dto.response.MyChatRoomResponse;
+import com.chunbaetour.domain.chat.service.ChatFileService;
 import com.chunbaetour.domain.chat.service.ChatMessageService;
 import com.chunbaetour.domain.chat.service.ChatRoomService;
 import com.chunbaetour.domain.common.response.ApiResponse;
@@ -19,6 +21,7 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,8 +34,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
-@Tag(name = "채팅방", description = "채팅방 생성·조회·종료·퇴장·강퇴·방장위임·메시지 조회 (/api/v1/chat/rooms/**)")
+@Tag(name = "채팅방", description = "채팅방 생성·조회·종료·퇴장·강퇴·방장위임·메시지 조회·파일 업로드 (/api/v1/chat/rooms/**)")
 @RestController
 @RequestMapping("/api/v1/chat/rooms")
 @RequiredArgsConstructor
@@ -41,6 +45,7 @@ public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
     private final ChatMessageService chatMessageService;
+    private final ChatFileService chatFileService;
 
     @Operation(summary = "채팅방 생성")
     @PostMapping
@@ -122,5 +127,15 @@ public class ChatRoomController {
             @RequestParam(required = false) String cursor,
             @Min(1) @Max(100) @RequestParam(defaultValue = "50") int size) {
         return ApiResponse.success(chatMessageService.getMessages(userId, roomId, cursor, size));
+    }
+
+    @Operation(summary = "채팅 파일/이미지 업로드 (S3)")
+    @PostMapping(value = "/{roomId}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<ChatFileUploadResponse> uploadFile(
+            @AuthenticationPrincipal Long userId,
+            @Min(1) @PathVariable Long roomId,
+            @RequestParam("file") MultipartFile file) {
+        return ApiResponse.success(chatFileService.uploadFile(userId, roomId, file));
     }
 }

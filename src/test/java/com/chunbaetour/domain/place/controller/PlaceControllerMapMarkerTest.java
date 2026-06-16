@@ -63,7 +63,7 @@ class PlaceControllerMapMarkerTest {
                 new MapMarkerResponse(1L, "테스트 관광지", PlaceCategory.TOURIST_SPOT,
                         BigDecimal.valueOf(33.5), BigDecimal.valueOf(126.5), "http://thumb.jpg")
         );
-        MapMarkerPageResponse mockResponse = new MapMarkerPageResponse(markers, false, 500);
+        MapMarkerPageResponse mockResponse = new MapMarkerPageResponse(markers, false, 30);
         given(placeService.getMapMarkers(any())).willReturn(mockResponse);
 
         // when & then

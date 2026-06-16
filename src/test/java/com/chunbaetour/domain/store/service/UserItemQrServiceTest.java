@@ -18,6 +18,7 @@ import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.entity.UserItem;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.RedemptionScope;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -186,7 +187,7 @@ class UserItemQrServiceTest {
     }
 
     private UserItem item(Long userId, UserItemStatus status, LocalDate expiresAt) {
-        Product product = Product.create("테스트 아이템", "설명", "쿠폰", 1000L,
+        Product product = Product.create("테스트 아이템", "설명", ProductCategory.DISCOUNT_COUPON, 1000L,
                 null, 10, "[]", "테스트 상점", 30, 1);
         ReflectionTestUtils.setField(product, "id", 100L);
         // create(...)의 4번째 인자는 구매일(today)이며 expiresAt=today+validityDays로 계산된다.
@@ -199,7 +200,7 @@ class UserItemQrServiceTest {
     }
 
     private Product product(RedemptionScope scope) {
-        Product product = Product.create("테스트 아이템", "설명", "쿠폰", 1000L,
+        Product product = Product.create("테스트 아이템", "설명", ProductCategory.DISCOUNT_COUPON, 1000L,
                 null, 10, "[]", "테스트 상점", 30, 1);
         ReflectionTestUtils.setField(product, "id", 100L);
         ReflectionTestUtils.setField(product, "redemptionScope", scope);

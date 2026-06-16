@@ -43,7 +43,7 @@ class ChatRedisPubSubServiceTest {
     private static final String PATTERN = "chat:*";
 
     private static final ChatMessageResponse RESPONSE = new ChatMessageResponse(
-            1L, ROOM_ID, 10L, "닉네임", null, MessageType.TEXT, "안녕", LocalDateTime.of(2024, 1, 1, 0, 0));
+            1L, ROOM_ID, 10L, "닉네임", null, MessageType.TEXT, "안녕", null, null, null, LocalDateTime.of(2024, 1, 1, 0, 0));
 
     @BeforeEach
     void setUp() {

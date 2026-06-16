@@ -18,7 +18,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,11 +36,19 @@ public class ChargeService {
     private static final long MIN_AMOUNT = 5_000L;
     private static final long MAX_AMOUNT = 100_000L;
     private static final long UNIT_AMOUNT = 1_000L;
+    /** 사용자 단위 충전 직렬화 락 키 — 동시 충전의 일일 한도 TOCTOU 차단 (KAN-293). */
+    private static final String CHARGE_LOCK_KEY = "charge:lock:%d";
+    // 락 대기 상한 — 임계구역 내 PortOne preRegister 호출 worst case(connect 3s + read 5s = 8s, PortOneConfig)
+    // 와 그 뒤 DB save까지 합한 락 보유 상한보다 크게 잡아, 락 보유자가 PG 응답을 정상 대기하는 동안
+    // 같은 사용자의 후속 요청이 PAY_008(503)로 새지 않게 한다. 8s 예산 + 여유 = 10s (KAN-293 리뷰 M1).
+    private static final int CHARGE_LOCK_WAIT_SECONDS = 10;
 
     private final IdempotencyService idempotencyService;
     private final PaymentGatewayClient paymentGatewayClient;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PortOneProperties portOneProperties;
+    private final DailyChargeLimiter dailyChargeLimiter;
+    private final RedissonClient redissonClient;
 
     // 충전 플로우:
     // [1] 금액 검증 → [1.5] PortOne 설정 검증 → [2] 멱등성 키 점유 → [3] 포트원 사전등록 → [4] 주문 PENDING 저장 → [5] orderUid 반환
@@ -49,6 +60,30 @@ public class ChargeService {
         // [1] 금액 2차 검증 (최소 5,000원 / 1,000원 단위 / 최대 100,000원)
         validateAmount(request.amount());
 
+        // [1.3] 사용자 단위 분산락 (KAN-293 리뷰 M2) — 일일 한도 SUM 조회 → PENDING INSERT 사이 TOCTOU 차단.
+        // 서로 다른 멱등키로 동시에 들어온 같은 사용자 요청이 같은 누적 스냅샷을 읽고 모두 통과해 한도를
+        // 초과(예: 40만에서 10만 2건 동시 → 60만)하는 것을 막는다. 다음 요청이 확정된 PENDING을 보도록
+        // finally(커밋 직전)가 아니라 트랜잭션 완료 후(afterCompletion)에 해제한다.
+        RLock lock = redissonClient.getLock(CHARGE_LOCK_KEY.formatted(userId));
+        acquireChargeLock(lock);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    unlockIfHeld(lock);
+                }
+            });
+            return chargeWithinLock(userId, idempotencyKey, request);
+        }
+        // 트랜잭션 컨텍스트 밖(직접 호출·테스트): 즉시 해제
+        try {
+            return chargeWithinLock(userId, idempotencyKey, request);
+        } finally {
+            unlockIfHeld(lock);
+        }
+    }
+
+    private ChargeResponse chargeWithinLock(Long userId, String idempotencyKey, ChargeRequest request) {
         // [1.5] PortOne 설정 누락 검증 — 키 점유 전에 실행해 불필요한 멱등성 키 소모 방지
         String storeId = portOneProperties.getStoreId();
         if (storeId == null || storeId.isBlank()) {
@@ -71,6 +106,13 @@ public class ChargeService {
             // Redis TTL(24h) 만료 후 동일 키 재사용 시 DB UNIQUE 위반 → 500 방지
             throw new PaymentException(ErrorCode.DUPLICATE_PAYMENT_REQUEST);
         }
+
+        // [1.8] 일일 충전 한도 검증 (KAN-293) — 신규 요청에만 적용.
+        // payment_orders의 당일 충전 누적(진행중 PENDING + 완료 이력)을 SUM 조회해 한도 초과를 차단한다.
+        // 기존 주문 재생/PAY_007 분기([1.7]) 이후에 둬, 이미 만들어진 주문의 멱등 응답이
+        // 이후 누적액 변화로 PAY_030으로 뒤바뀌는 멱등성 계약 위반을 막는다.
+        // 키 점유([2])·외부 호출([3]) 전이라 한도 초과 요청은 자원을 소모하지 않는다.
+        dailyChargeLimiter.assertWithinDailyLimit(userId, request.amount());
 
         // [2] 멱등성 키 점유 — 중복 요청 차단 (Redis 24시간 TTL)
         idempotencyService.checkAndMark(idempotencyKey);
@@ -173,15 +215,30 @@ public class ChargeService {
         List<PaymentOrder> orders = paymentOrderRepository.findByUserIdWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = orders.size() > size;
-        List<PaymentOrder> content = hasNext ? orders.subList(0, size) : orders;
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        // size 필드는 실제 반환 개수가 아니라 요청 size를 그대로 echo한다(팀 표준).
+        return CursorPageResponse.of(orders, size, PaymentHistoryResponse::from, PaymentOrder::getId);
+    }
 
-        List<PaymentHistoryResponse> responses = content.stream()
-                .map(PaymentHistoryResponse::from)
-                .toList();
+    /** 충전 직렬화 락 획득 — 대기 시간 내 실패하거나 인터럽트되면 PAYMENT_PROCESSING(503)으로 재시도 유도. */
+    private void acquireChargeLock(RLock lock) {
+        boolean locked;
+        try {
+            locked = lock.tryLock(CHARGE_LOCK_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PaymentException(ErrorCode.PAYMENT_PROCESSING);
+        }
+        if (!locked) {
+            throw new PaymentException(ErrorCode.PAYMENT_PROCESSING);
+        }
+    }
 
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+    /** 현재 스레드가 보유한 경우에만 해제 — 중복/비보유 해제 시 IllegalMonitorStateException 방지. */
+    private static void unlockIfHeld(RLock lock) {
+        if (lock.isHeldByCurrentThread()) {
+            lock.unlock();
+        }
     }
 
     private void validateAmount(Long amount) {

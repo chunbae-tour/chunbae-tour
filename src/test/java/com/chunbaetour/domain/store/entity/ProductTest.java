@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,7 +14,7 @@ class ProductTest {
 
     private Product createProduct(int stock) {
         return Product.builder()
-                .name("테스트 상품").description("설명").category("TEST")
+                .name("테스트 상품").description("설명").category(ProductCategory.DISCOUNT_COUPON)
                 .price(1_000L).originalPrice(null).stock(stock).originalStock(stock)
                 .merchantName("상인").validityDays(30)
                 .status(ProductStatus.ON_SALE).maxPerPerson(5).build();
@@ -70,7 +71,7 @@ class ProductTest {
     @Test
     @DisplayName("create — 초기 status = ON_SALE, originalStock = stock")
     void create_initialStatus_onSaleAndOriginalStockSet() {
-        Product product = Product.create("테스트 상품", "설명", "COUPON", 2000L, 3000L, 50, null, "상인", 30, 5);
+        Product product = Product.create("테스트 상품", "설명", ProductCategory.DISCOUNT_COUPON, 2000L, 3000L, 50, null, "상인", 30, 5);
         assertThat(product.getStatus()).isEqualTo(ProductStatus.ON_SALE);
         assertThat(product.getStock()).isEqualTo(50);
         assertThat(product.getOriginalStock()).isEqualTo(50);
@@ -90,7 +91,7 @@ class ProductTest {
     @DisplayName("adminUpdate — stock 추가 + SOLD_OUT이면 ON_SALE 복구, originalStock 갱신")
     void adminUpdate_stockAdded_soldOutRecoveredToOnSale() {
         Product product = Product.builder()
-                .name("품절상품").description("").category("X").price(1000L)
+                .name("품절상품").description("").category(ProductCategory.DISCOUNT_COUPON).price(1000L)
                 .originalPrice(null).stock(0).originalStock(10)
                 .merchantName(null).validityDays(null)
                 .status(ProductStatus.SOLD_OUT).maxPerPerson(1).build();
@@ -129,7 +130,7 @@ class ProductTest {
     @DisplayName("adminUpdate — stock 감소 정정 시 originalStock 재조정 (허위 soldCount 방지)")
     void adminUpdate_stockDecrease_recalibratesOriginalStock() {
         Product product = Product.builder()
-                .name("상품").description("").category("X").price(1000L)
+                .name("상품").description("").category(ProductCategory.DISCOUNT_COUPON).price(1000L)
                 .originalPrice(null).stock(100).originalStock(100)
                 .merchantName(null).validityDays(null)
                 .status(ProductStatus.ON_SALE).maxPerPerson(1).build();
@@ -153,7 +154,7 @@ class ProductTest {
     @DisplayName("create — stock=0으로 생성 시 INVALID_REQUEST (ON_SALE 불변식)")
     void create_zeroStock_throwsInvalidRequest() {
         assertThatThrownBy(() ->
-                Product.create("상품", "설명", "COUPON", 2000L, null, 0, null, "상인", 30, 5))
+                Product.create("상품", "설명", ProductCategory.DISCOUNT_COUPON, 2000L, null, 0, null, "상인", 30, 5))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
@@ -164,7 +165,7 @@ class ProductTest {
     void adminUpdate_priceExceedsOriginalPrice_throwsInvalidRequest() {
         // originalPrice=3000인 상품에서 price를 5000으로 인상 → originalPrice(3000) < price(5000) 위반
         Product product = Product.builder()
-                .name("상품").description("").category("X").price(2000L)
+                .name("상품").description("").category(ProductCategory.DISCOUNT_COUPON).price(2000L)
                 .originalPrice(3000L).stock(10).originalStock(10)
                 .merchantName(null).validityDays(null)
                 .status(ProductStatus.ON_SALE).maxPerPerson(1).build();

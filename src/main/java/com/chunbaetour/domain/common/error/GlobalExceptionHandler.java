@@ -89,7 +89,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(
             org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
-        ErrorCode code = ErrorCode.SHOP_IMAGE_FILE_TOO_LARGE;
+        ErrorCode code = ErrorCode.FILE_TOO_LARGE;
         return ResponseEntity.status(code.getStatus())
                 .body(ApiResponse.error(code.getCode(), code.getMessage()));
     }
