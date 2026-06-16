@@ -14,6 +14,9 @@ import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,8 +49,10 @@ class ShopImagePresignServiceTest {
     @BeforeEach
     void setUp() {
         // 실제 ObjectMapper — readTree/writeValueAsString 필요(presign·검증).
+        // 영업시간 무관 테스트 — 고정 Clock 주입(생성자 시그니처 충족용)
+        Clock clock = Clock.fixed(Instant.parse("2026-06-15T05:00:00Z"), ZoneOffset.UTC);
         shopService = new ShopService(shopRepository, menuRepository, shopWalletRepository,
-                new ObjectMapper(), placeRepository, traditionalMarketRepository, imageStorage);
+                new ObjectMapper(), placeRepository, traditionalMarketRepository, imageStorage, clock);
     }
 
     private Shop activeShop() {

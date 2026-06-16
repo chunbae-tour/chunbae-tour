@@ -47,11 +47,13 @@ public class SearchV2Controller {
             @RequestParam(name = "region", required = false) String region,
             @RequestParam(name = "cursor", required = false) Long cursor,
             @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) int size,
+            @Parameter(description = "false 전달 시 인기 검색어 집계를 건너뜁니다. 기본값은 true입니다.")
+            @RequestParam(name = "track", defaultValue = "true") boolean track,
             @Parameter(description = "검색 출처 (축제 선택 검색 시 'companion-place-selector' 등 전달 시 집계 제외)")
             @RequestParam(name = "source", required = false) String source,
             HttpServletRequest request
     ) {
         String clientIp = request.getRemoteAddr();
-        return ApiResponse.success(searchService.searchFestivals(q, startDate, endDate, region, cursor, size, clientIp, source));
+        return ApiResponse.success(searchService.searchFestivals(q, startDate, endDate, region, cursor, size, clientIp, track, source));
     }
 }

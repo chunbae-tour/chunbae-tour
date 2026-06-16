@@ -2,6 +2,7 @@ package com.chunbaetour.domain.search.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,13 +51,30 @@ class SearchControllerTest {
     void searchPlaces_PassesSourceToService() throws Exception {
         // given
         String source = "companion-place-selector";
-        given(searchService.searchPlaces(eq("광장시장"), any(), any(), any(), eq(8), any(), eq(source), any()))
+        given(searchService.searchPlaces(eq("광장시장"), any(), any(), any(), eq(8), any(), eq(false), eq(source), any()))
                 .willReturn(TypoCorrectedSearchResponse.of(new CursorPageResponse<>(Collections.emptyList(), null, false, 0)));
 
         // when & then
         mockMvc.perform(get("/api/v1/search/places")
                         .param("q", "광장시장")
                         .param("size", "8")
+                        .param("track", "false")
+                        .param("source", source))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/search 호출 시 track과 source 파라미터가 IntegratedSearchService로 전달된다")
+    void searchIntegrated_PassesTrackAndSourceToService() throws Exception {
+        // given
+        String source = "community-place-selector";
+        given(integratedSearchService.searchIntegrated(eq("광장시장"), eq("ALL"), isNull(), eq(20), any(), eq(false), eq(source)))
+                .willReturn(new CursorPageResponse<>(Collections.emptyList(), null, false, 0));
+
+        // when & then
+        mockMvc.perform(get("/api/v1/search")
+                        .param("q", "광장시장")
+                        .param("track", "false")
                         .param("source", source))
                 .andExpect(status().isOk());
     }

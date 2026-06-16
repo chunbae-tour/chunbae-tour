@@ -10,6 +10,8 @@ import com.chunbaetour.domain.community.free.dto.FreePostCreateRequest;
 import com.chunbaetour.domain.community.free.dto.FreePostGetOneResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostGetListResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostUpdateRequest;
+import com.chunbaetour.domain.community.common.PostType;
+import com.chunbaetour.domain.community.common.event.PostDeletedEvent;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
@@ -19,6 +21,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +33,7 @@ public class FreePostService {
 
     private final FreePostRepository postRepository;
     private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public FreePostGetOneResponse create(Long authorId, FreePostCreateRequest request) {
@@ -83,6 +87,7 @@ public class FreePostService {
             throw new BusinessException(ErrorCode.POST_DELETE_FORBIDDEN);
         }
         post.delete();
+        eventPublisher.publishEvent(new PostDeletedEvent(post.getId(), PostType.FREE));
     }
 
     private FreePost findActivePost(Long postId) {

@@ -2,6 +2,7 @@ package com.chunbaetour.domain.shop.dto.response;
 
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.type.BusinessStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import java.math.BigDecimal;
 import java.util.List;
@@ -32,10 +33,12 @@ public record ShopInfoResponse(
         int reviewCount,
         boolean isCertified,
         ShopStatus status,
+        // 실시간 영업여부 — operatingHours + 현재시각(KST)으로 조회 시점 계산, 미저장 파생값 (B7, KAN-301)
+        BusinessStatus businessStatus,
         List<MenuResponse> menus
 ) {
 
-    public static ShopInfoResponse from(Shop shop, List<Menu> menus) {
+    public static ShopInfoResponse from(Shop shop, List<Menu> menus, BusinessStatus businessStatus) {
         return new ShopInfoResponse(
                 shop.getId(),
                 shop.getShopName(),
@@ -49,6 +52,7 @@ public record ShopInfoResponse(
                 shop.getReviewCount(),
                 shop.isCertified(),
                 shop.getStatus(),
+                businessStatus,
                 menus.stream().map(MenuResponse::from).toList()
         );
     }
