@@ -51,11 +51,11 @@ public class SupportMessage {
     @Column(name = "file_url", length = 500)
     private String fileUrl;
 
-    // FILE 타입에만 사용 — 메시지 표시용 원본 파일명 (KAN-310)
+    // IMAGE/FILE 타입에 사용 — 메시지 표시용 원본 파일명 (KAN-310)
     @Column(name = "file_name", length = 255)
     private String fileName;
 
-    // FILE 타입에만 사용 — 파일 크기(bytes) (KAN-310)
+    // IMAGE/FILE 타입에 사용 — 파일 크기(bytes) (KAN-310)
     @Column(name = "file_size")
     private Long fileSize;
 
@@ -96,9 +96,9 @@ public class SupportMessage {
                 && (fileUrl == null || fileUrl.isBlank())) {
             throw new IllegalArgumentException("IMAGE/FILE 메시지는 fileUrl이 필요합니다.");
         }
-        if (messageType == SupportMessageType.FILE
+        if ((messageType == SupportMessageType.IMAGE || messageType == SupportMessageType.FILE)
                 && (fileName == null || fileName.isBlank() || fileSize == null || fileSize <= 0)) {
-            throw new IllegalArgumentException("FILE 메시지는 fileName/fileSize가 필요합니다.");
+            throw new IllegalArgumentException("IMAGE/FILE 메시지는 fileName/fileSize가 필요합니다.");
         }
     }
 }

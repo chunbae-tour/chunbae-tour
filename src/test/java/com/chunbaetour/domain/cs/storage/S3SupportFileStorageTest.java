@@ -61,6 +61,7 @@ class S3SupportFileStorageTest {
         assertThat(req.bucket()).isEqualTo("test-bucket");
         assertThat(req.key()).isEqualTo(key);
         assertThat(req.contentType()).isEqualTo("application/pdf");
+        assertThat(req.contentLength()).isEqualTo((long) "%PDF-1.4\n".getBytes().length);
         // 키 규칙: support-rooms/{supportRoomId}/{uuid}.pdf
         assertThat(key).matches("support-rooms/10/[0-9a-fA-F\\-]{36}\\.pdf");
     }

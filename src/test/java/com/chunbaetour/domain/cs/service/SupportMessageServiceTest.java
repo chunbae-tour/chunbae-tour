@@ -198,6 +198,21 @@ class SupportMessageServiceTest {
         verify(supportRedisPubSubService).publish(eq(1L), any());
     }
 
+    // IMAGE 메시지 — fileName null → INVALID_REQUEST (정책 결정 2026-06-16)
+    @Test
+    void sendMessage_whenImageWithNullFileName_throwsInvalidRequest() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+
+        SupportSendMessageRequest req = new SupportSendMessageRequest(
+                SupportMessageType.IMAGE, null, "support-rooms/1/uuid.jpg", null, null);
+        assertThatThrownBy(() -> supportMessageService.sendMessage(1L, 1L, false, req))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.INVALID_REQUEST));
+        verify(supportMessageRepository, never()).save(any());
+    }
+
     // IMAGE 메시지 — 타 상담방 키 전송 → SUPPORT_FILE_OWNERSHIP_INVALID (IDOR 방지)
     @Test
     void sendMessage_whenImageWithOtherRoomFileKey_throwsOwnershipInvalid() {
@@ -228,7 +243,7 @@ class SupportMessageServiceTest {
     }
 
     private SupportSendMessageRequest fileReq(String fileUrl) {
-        return new SupportSendMessageRequest(SupportMessageType.IMAGE, null, fileUrl, null, null);
+        return new SupportSendMessageRequest(SupportMessageType.IMAGE, null, fileUrl, "photo.jpg", 1024L);
     }
 
     private SupportMessage buildImageMessage(Long id, Long roomId, String fileUrl) {
@@ -239,6 +254,8 @@ class SupportMessageServiceTest {
                 .messageType(SupportMessageType.IMAGE)
                 .content(null)
                 .fileUrl(fileUrl)
+                .fileName("photo.jpg")
+                .fileSize(1024L)
                 .build();
         try {
             var field = SupportMessage.class.getDeclaredField("id");

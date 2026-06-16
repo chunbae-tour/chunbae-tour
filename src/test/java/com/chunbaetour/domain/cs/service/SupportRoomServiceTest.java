@@ -189,6 +189,23 @@ class SupportRoomServiceTest {
         assertThat(result.content()).hasSize(1);
     }
 
+    // IMAGE 메시지 — fileUrl이 presigned GET URL로 변환되는지 확인
+    @Test
+    void getMessages_imageMessage_fileUrlIsPresigned() {
+        SupportRoom room = buildRoom(1L);
+        SupportMessage imgMsg = buildImageMessage(1L, 1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(supportMessageRepository.findMessagesWithCursor(eq(1L), any(), any(PageRequest.class)))
+                .willReturn(List.of(imgMsg));
+        given(supportFileStorage.presignedGetUrl("support-rooms/1/uuid.jpg"))
+                .willReturn("https://s3.example.com/support-rooms/1/uuid.jpg?sig=abc");
+
+        CursorPageResponse<SupportMessageResponse> result = supportRoomService.getMessages(1L, 1L, null, 20);
+
+        assertThat(result.content().get(0).fileUrl())
+                .isEqualTo("https://s3.example.com/support-rooms/1/uuid.jpg?sig=abc");
+    }
+
     // 타인 방 → CS_003
     @Test
     void getMessages_whenNotOwner_throwsForbidden() {
@@ -363,6 +380,26 @@ class SupportRoomServiceTest {
             throw new RuntimeException(e);
         }
         return room;
+    }
+
+    private SupportMessage buildImageMessage(Long id, Long roomId) {
+        SupportMessage msg = SupportMessage.builder()
+                .supportRoomId(roomId)
+                .senderId(1L)
+                .senderRole(SupportSenderRole.CUSTOMER)
+                .messageType(SupportMessageType.IMAGE)
+                .fileUrl("support-rooms/1/uuid.jpg")
+                .fileName("photo.jpg")
+                .fileSize(1024L)
+                .build();
+        try {
+            var field = SupportMessage.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(msg, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return msg;
     }
 
     private SupportMessage buildMessage(Long id, Long roomId) {

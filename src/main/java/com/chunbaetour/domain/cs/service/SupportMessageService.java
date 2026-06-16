@@ -98,6 +98,11 @@ public class SupportMessageService {
             if (!SupportFileKeys.belongsToSupportRoom(request.fileUrl(), supportRoomId)) {
                 throw new BusinessException(ErrorCode.SUPPORT_FILE_OWNERSHIP_INVALID);
             }
+            // IMAGE/FILE: fileName/fileSize 필수 (정책 결정 2026-06-16, 채팅 패턴 동일)
+            if (request.fileName() == null || request.fileName().isBlank()
+                    || request.fileSize() == null || request.fileSize() <= 0) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
             messageBuilder.fileUrl(request.fileUrl())
                     .fileName(request.fileName())
                     .fileSize(request.fileSize());

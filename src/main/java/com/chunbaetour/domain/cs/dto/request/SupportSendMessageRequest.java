@@ -14,8 +14,8 @@ import com.chunbaetour.domain.cs.entity.SupportMessageType;
  * @param messageType TEXT(기본값)/IMAGE/FILE
  * @param content     TEXT 필수, IMAGE/FILE은 캡션으로 선택 사용
  * @param fileUrl     IMAGE/FILE 필수 — 업로드 API가 반환한 객체 키
- * @param fileName    FILE 필수 — 업로드 API가 반환한 원본 파일명
- * @param fileSize    FILE 필수 — 업로드 API가 반환한 파일 크기(bytes)
+ * @param fileName    IMAGE/FILE 필수 — 업로드 API가 반환한 원본 파일명
+ * @param fileSize    IMAGE/FILE 필수 — 업로드 API가 반환한 파일 크기(bytes)
  */
 public record SupportSendMessageRequest(
         SupportMessageType messageType,

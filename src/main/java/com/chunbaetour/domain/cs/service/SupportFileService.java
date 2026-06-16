@@ -9,12 +9,17 @@ import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import com.chunbaetour.domain.cs.storage.SupportFileStorage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.poifs.filesystem.DocumentEntry;
+import org.apache.poi.poifs.filesystem.DocumentInputStream;
+import org.apache.poi.poifs.filesystem.Entry;
+import org.apache.poi.poifs.filesystem.POIFSFileSystem;
 import org.apache.tika.Tika;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -34,7 +39,6 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class SupportFileService {
 
     private static final long MAX_IMAGE_SIZE = 5 * 1024 * 1024L; // 5MB
@@ -70,11 +74,16 @@ public class SupportFileService {
      * HWP 5.0(현재 표준, OLE2 복합 문서 포맷)은 Tika mimetypes상 application/x-hwp-v5로
      * "sub-class-of application/x-tika-msoffice"일 뿐 별도 magic이 없어, 실제 감지 결과는
      * application/x-tika-msoffice(OLE2 제너릭)로 나온다(직접 검증, TikaCheck). declared=application/x-hwp일 때
-     * 이를 허용한다 — "완전 동일 비교" 대신 "OLE2 컨테이너군 일치" 검사로, zip/PDF/스크립트 등 비-OLE2 위장은 여전히 차단된다.
+     * OLE2 컨테이너군 일치 선검증 후 isHwpV5()로 "FileHeader" 스트림 시그니처까지 확인한다 —
+     * OLE2이지만 "FileHeader" 없는 위장 .doc/.xls/.ppt는 isHwpV5()에서 차단된다.
      * application/x-hwp(HWP v5 이전, 문자열 시그니처 "HWP Document File V")는 Tika가 직접 감지 가능 — 그대로 매칭.
      */
     private static final Set<String> OLE2_CONTAINER_TYPES = Set.of(
             "application/x-hwp", "application/x-tika-msoffice");
+
+    /** HWP v5 OLE2 컨테이너의 "FileHeader" 스트림 시작 바이트(32바이트 시그니처 필드의 앞부분) */
+    private static final byte[] HWP_V5_FILEHEADER_SIGNATURE =
+            "HWP Document File".getBytes(StandardCharsets.US_ASCII);
 
     private final SupportRoomRepository supportRoomRepository;
     private final SupportFileStorage supportFileStorage;
@@ -175,9 +184,9 @@ public class SupportFileService {
         if (contentType.equals(detected)) {
             return true;
         }
-        // HWP는 OLE2 컨테이너군 일치로 판정(OLE2_CONTAINER_TYPES 주석 참고)
+        // HWP v5: OLE2 컨테이너군 일치 선검증 후 POIFS로 "FileHeader" 시그니처 확인 — 위장 .doc/.xls/.ppt 차단
         if (contentType.equals("application/x-hwp") && OLE2_CONTAINER_TYPES.contains(detected)) {
-            return true;
+            return isHwpV5(file);
         }
         // docx/xlsx/pptx는 OOXML 컨테이너군 일치로 판정(OOXML_CONTENT_TYPES 주석 참고)
         return OOXML_CONTENT_TYPES.contains(contentType) && TIKA_OOXML_GENERIC.equals(detected);
@@ -200,11 +209,33 @@ public class SupportFileService {
                 && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P';
     }
 
-    /** 메시지 표시용 파일명 — 경로 구분자 제거(클라이언트가 전체 경로를 보내는 경우 방어). 저장 키에는 사용되지 않음(UUID). */
+    /**
+     * OLE2 컨테이너의 "FileHeader" 스트림을 열어 HWP v5 시그니처("HWP Document File")로 시작하는지 확인.
+     * 위장된 .doc/.xls/.ppt는 "FileHeader" 스트림이 없거나(POI가 FileNotFoundException) 시그니처가 달라 차단된다.
+     */
+    private static boolean isHwpV5(MultipartFile file) {
+        try (InputStream in = file.getInputStream();
+                POIFSFileSystem fs = new POIFSFileSystem(in)) {
+            Entry entry = fs.getRoot().getEntry("FileHeader");
+            if (!(entry instanceof DocumentEntry documentEntry)) {
+                return false;
+            }
+            try (DocumentInputStream header = new DocumentInputStream(documentEntry)) {
+                byte[] signature = header.readNBytes(HWP_V5_FILEHEADER_SIGNATURE.length);
+                return Arrays.equals(signature, HWP_V5_FILEHEADER_SIGNATURE);
+            }
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** 메시지 표시용 파일명 — `\`와 `/` 모두 경로 구분자로 정규화해 제거(Windows 경로 위장 방어). 저장 키에는 사용되지 않음(UUID). */
     private static String sanitizeFileName(String originalFilename) {
         if (originalFilename == null || originalFilename.isBlank()) {
             return "file";
         }
-        return Paths.get(originalFilename).getFileName().toString();
+        // Paths.get()은 OS 기본 구분자만 인식 — Linux에서 Windows 경로(`C:\...`) 업로드 시 `\` 미제거
+        String normalized = originalFilename.replace('\\', '/');
+        return Paths.get(normalized).getFileName().toString();
     }
 }

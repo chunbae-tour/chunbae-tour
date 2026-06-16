@@ -12,11 +12,14 @@ import com.chunbaetour.domain.cs.entity.SupportRoom;
 import com.chunbaetour.domain.cs.entity.SupportRoomStatus;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
 import com.chunbaetour.domain.cs.storage.SupportFileStorage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.apache.poi.poifs.filesystem.POIFSFileSystem;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -76,10 +79,34 @@ class SupportFileServiceTest {
         return new byte[]{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'};
     }
 
-    /** OLE2 복합 문서 시그니처 — HWP 5.0(현재 표준)은 이 포맷으로 저장됨. */
-    private static byte[] ole2Bytes() {
-        return new byte[]{(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    /**
+     * HWP v5 OLE2 컨테이너 — "FileHeader" 스트림에 HWP v5 시그니처("HWP Document File") 포함.
+     * isHwpV5() POIFS 검증을 통과하는 최소 유효 HWP v5 바이트.
+     */
+    private static byte[] hwpV5Bytes() {
+        try (POIFSFileSystem fs = new POIFSFileSystem()) {
+            byte[] header = new byte[32];
+            byte[] signature = "HWP Document File".getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(signature, 0, header, 0, signature.length);
+            fs.getRoot().createDocument("FileHeader", new ByteArrayInputStream(header));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            fs.writeFilesystem(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /** OLE2 컨테이너지만 "FileHeader" 없이 "WordDocument" 스트림만 존재 — 위장 .doc(declared=x-hwp) 차단 검증용. */
+    private static byte[] wordOle2Bytes() {
+        try (POIFSFileSystem fs = new POIFSFileSystem()) {
+            fs.getRoot().createDocument("WordDocument", new ByteArrayInputStream(new byte[]{1, 2, 3, 4}));
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            fs.writeFilesystem(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /** HWP v5 이전 포맷 문자열 시그니처("HWP Document File V", offset 0). */
@@ -390,7 +417,7 @@ class SupportFileServiceTest {
     }
 
     @Test
-    @DisplayName("업로드 — 유효한 HWP(구버전 문자열 시그니처/v5 OLE2) → storage 위임 후 객체 키 반환")
+    @DisplayName("업로드 — 유효한 HWP(구버전 문자열 시그니처/v5 OLE2 + FileHeader) → storage 위임 후 객체 키 반환")
     void uploadFile_validHwp_delegatesToStorage() {
         given(supportRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room()));
 
@@ -399,10 +426,23 @@ class SupportFileServiceTest {
         MockMultipartFile oldHwp = new MockMultipartFile("file", "old.hwp", "application/x-hwp", oldHwpBytes());
         assertThat(supportFileService.uploadFile(CUSTOMER_ID, ROOM_ID, false, oldHwp).fileUrl()).isEqualTo("support-rooms/10/uuid-old.hwp");
 
-        // HWP 5.0(현재 표준) — OLE2 복합 문서(Tika가 application/x-tika-msoffice로 감지, OLE2 컨테이너군 일치로 허용)
+        // HWP 5.0(현재 표준) — OLE2 컨테이너 + "FileHeader" 스트림 시그니처 검증(isHwpV5) 통과
         given(supportFileStorage.upload(eq(ROOM_ID), any())).willReturn("support-rooms/10/uuid-v5.hwp");
-        MockMultipartFile hwpV5 = new MockMultipartFile("file", "v5.hwp", "application/x-hwp", ole2Bytes());
+        MockMultipartFile hwpV5 = new MockMultipartFile("file", "v5.hwp", "application/x-hwp", hwpV5Bytes());
         assertThat(supportFileService.uploadFile(CUSTOMER_ID, ROOM_ID, false, hwpV5).fileUrl()).isEqualTo("support-rooms/10/uuid-v5.hwp");
+    }
+
+    @Test
+    @DisplayName("업로드 — declared application/x-hwp인데 실제는 .doc(OLE2 + WordDocument 스트림) → SUPPORT_FILE_TYPE_UNSUPPORTED")
+    void uploadFile_disguisedDocAsHwp_throws() {
+        given(supportRoomRepository.findById(ROOM_ID)).willReturn(Optional.of(room()));
+
+        MockMultipartFile file = new MockMultipartFile("file", "fake.hwp", "application/x-hwp", wordOle2Bytes());
+
+        assertThatThrownBy(() -> supportFileService.uploadFile(CUSTOMER_ID, ROOM_ID, false, file))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SUPPORT_FILE_TYPE_UNSUPPORTED);
     }
 
     @Test
