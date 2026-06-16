@@ -67,7 +67,10 @@ public class PendingOrderReconcileScheduler {
     private final Clock clock;
 
     @Scheduled(fixedDelay = SCHEDULE_INTERVAL_MS)
-    @SchedulerLock(name = "pending_order_reconcile", lockAtMostFor = "PT3M", lockAtLeastFor = "PT30S")
+    // lockAtMostFor: BATCH_SIZE(20)건을 순차 처리하며 건당 PG 호출(verify + handleSuccess 재검증)이 최악 타임아웃까지
+    // 누적될 수 있어 PT3M로는 배치 도중 락이 만료돼 다른 인스턴스가 중복 PG 호출할 수 있다 → 여유 있게 PT10M.
+    // (정상 종료 시 lockAtMostFor 전이라도 즉시 해제되므로 크래시 복구 지연만 영향) (KAN-298 리뷰)
+    @SchedulerLock(name = "pending_order_reconcile", lockAtMostFor = "PT10M", lockAtLeastFor = "PT30S")
     public void reconcileStalePendingOrders() {
         // createdAt(KST wall-clock)과 동일 프레임으로 now 산정 — UTC now와 비교하면 9h skew로 stale 미검출
         LocalDateTime now = LocalDateTime.now(clock.withZone(KST));
@@ -93,8 +96,16 @@ public class PendingOrderReconcileScheduler {
             PortOnePaymentInfo info = paymentGatewayClient.verifyPayment(orderUid);
 
             if (info.isPaid()) {
+                String txId = info.transactionId();
+                if (txId == null || txId.isBlank()) {
+                    // PAID인데 pgTxId 미수신(채널/타이밍) — handleSuccess의 amountValid가 txId null로 false가 돼
+                    // failIfPending으로 정상 결제를 FAILED 확정(입금됐는데 엽전 미적립 = 자금 유실)하는 것을 차단.
+                    // PENDING 유지하고 다음 주기 재시도 — 일시 누락이면 회복, 지속되면 본 경고로그로 수동 점검 유도. (KAN-298 리뷰)
+                    log.warn("[고아 PENDING 재조정] PAID인데 pgTxId 미수신 — FAILED 오판 방지 위해 보류, 다음 주기 재시도: orderUid={}", orderUid);
+                    return;
+                }
                 // 실제 결제됨인데 웹훅 미도달 — COMPLETED + 엽전 충전 복구. handleSuccess가 PG 재검증·금액확인·CAS 수행.
-                callbackService.handleSuccess(orderUid, info.transactionId());
+                callbackService.handleSuccess(orderUid, txId);
                 log.info("[고아 PENDING 재조정] PAID 복구 완료: orderUid={}", orderUid);
             } else if (info.isFailed() || info.isCancelled()) {
                 // PG에서 실패/취소 확정 — FAILED 전이 + 멱등키 해제

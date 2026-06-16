@@ -70,6 +70,36 @@ class PendingOrderReconcileSchedulerTest {
     }
 
     @Test
+    @DisplayName("PG가 PAID인데 pgTxId가 null이면 FAILED로 오판하지 않고 보류한다 — 자금 유실 방지 (KAN-298 리뷰)")
+    void paidButNullTxId_holdsInsteadOfFailing() {
+        PaymentOrder order = pendingOrder("uid-1n", NOW.minusMinutes(15));
+        givenStale(order);
+        // status=PAID인데 pgTxId(4번째)가 null — 채널/타이밍상 미수신
+        given(paymentGatewayClient.verifyPayment("uid-1n"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null, null));
+
+        scheduler.reconcileStalePendingOrders();
+
+        // handleSuccess(amountValid=false→failIfPending) 호출 금지, handleFail도 금지 → PENDING 유지, 다음 주기 재시도
+        verify(callbackService, never()).handleSuccess(anyString(), anyString());
+        verify(callbackService, never()).handleFail(anyString());
+    }
+
+    @Test
+    @DisplayName("PG가 PAID인데 pgTxId가 공백이면 보류한다 — 자금 유실 방지 (KAN-298 리뷰)")
+    void paidButBlankTxId_holds() {
+        PaymentOrder order = pendingOrder("uid-1b", NOW.minusMinutes(15));
+        givenStale(order);
+        given(paymentGatewayClient.verifyPayment("uid-1b"))
+                .willReturn(new PortOnePaymentInfo("PAID", 10_000L, null, "   "));
+
+        scheduler.reconcileStalePendingOrders();
+
+        verify(callbackService, never()).handleSuccess(anyString(), anyString());
+        verify(callbackService, never()).handleFail(anyString());
+    }
+
+    @Test
     @DisplayName("PG가 FAILED면 handleFail로 정리한다")
     void failed_cleansUpViaHandleFail() {
         PaymentOrder order = pendingOrder("uid-2", NOW.minusMinutes(15));
