@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.community.companion.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -74,7 +76,7 @@ public class CompanionPost extends BaseEntity {
             Long placeId, String placeName, String region,
             LocalDate meetingDate, int maxMembers) {
         if (maxMembers < 2) {
-            throw new IllegalArgumentException("maxMembers must be at least 2");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         CompanionPost post = new CompanionPost();
         post.authorId = authorId;
@@ -92,6 +94,14 @@ public class CompanionPost extends BaseEntity {
 
     public void update(String title, String content, Long placeId, String placeName,
                        String region, LocalDate meetingDate, Integer maxMembers) {
+        // placeId·placeName은 쌍으로만 수정 가능 — 한쪽만 보내면 장소 정보 불일치
+        if ((placeId == null) != (placeName == null)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        // 하한 2명(create와 동일) + 현재 인원 미만 불가 — 정원 1명짜리 동행글 방지
+        if (maxMembers != null && (maxMembers < 2 || maxMembers < this.currentMembers)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         if (title != null) this.title = title;
         if (content != null) this.content = content;
         if (placeId != null) this.placeId = placeId;
@@ -99,9 +109,6 @@ public class CompanionPost extends BaseEntity {
         if (region != null) this.region = region;
         if (meetingDate != null) this.meetingDate = meetingDate;
         if (maxMembers != null) {
-            if (maxMembers < this.currentMembers) {
-                throw new IllegalArgumentException("maxMembers must be >= currentMembers");
-            }
             this.maxMembers = maxMembers;
         }
     }
