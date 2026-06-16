@@ -27,12 +27,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -214,7 +216,20 @@ public class SupportRoomService {
     }
 
     // SupportMessage.fileUrl(S3 객체 키) → presigned GET URL 변환. TEXT는 fileUrl이 없어 그대로 null 반환.
+    // S3 presign 실패(EXTERNAL_SERVICE_ERROR)는 부분 실패로 격하 — 1건 실패가 목록 전체를 503으로 만들지 않도록(E10 패턴).
     private String resolveFileUrl(SupportMessage message) {
-        return message.getFileUrl() != null ? supportFileStorage.presignedGetUrl(message.getFileUrl()) : null;
+        if (message.getFileUrl() == null) {
+            return null;
+        }
+        try {
+            return supportFileStorage.presignedGetUrl(message.getFileUrl());
+        } catch (BusinessException e) {
+            if (e.getErrorCode() != ErrorCode.EXTERNAL_SERVICE_ERROR) {
+                throw e;
+            }
+            log.warn("파일 presign 실패 — 해당 메시지 제외. supportRoomId={}, messageId={}, key={}",
+                    message.getSupportRoomId(), message.getId(), message.getFileUrl(), e);
+            return null;
+        }
     }
 }

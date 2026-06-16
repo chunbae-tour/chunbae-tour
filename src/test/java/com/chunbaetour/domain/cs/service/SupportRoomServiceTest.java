@@ -206,6 +206,23 @@ class SupportRoomServiceTest {
                 .isEqualTo("https://s3.example.com/support-rooms/1/uuid.jpg?sig=abc");
     }
 
+    // IMAGE presign 실패(EXTERNAL_SERVICE_ERROR) → 해당 메시지 fileUrl=null로 격하, 목록 전체 503 아님(E10 패턴)
+    @Test
+    void getMessages_imagePresignFails_fileUrlNullified_notPropagated() {
+        SupportRoom room = buildRoom(1L);
+        SupportMessage imgMsg = buildImageMessage(1L, 1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(supportMessageRepository.findMessagesWithCursor(eq(1L), any(), any(PageRequest.class)))
+                .willReturn(List.of(imgMsg));
+        given(supportFileStorage.presignedGetUrl("support-rooms/1/uuid.jpg"))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
+
+        CursorPageResponse<SupportMessageResponse> result = supportRoomService.getMessages(1L, 1L, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).fileUrl()).isNull();
+    }
+
     // 타인 방 → CS_003
     @Test
     void getMessages_whenNotOwner_throwsForbidden() {
