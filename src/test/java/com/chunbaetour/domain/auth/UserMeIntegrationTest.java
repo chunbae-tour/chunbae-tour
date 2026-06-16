@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.auth;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -9,9 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.auth.dto.PatchUserMeRequest;
 import com.chunbaetour.domain.auth.dto.SignupRequest;
+import com.chunbaetour.domain.festival.entity.Festival;
+import com.chunbaetour.domain.festival.repository.FestivalRepository;
+import com.chunbaetour.domain.festival.type.FestivalStatus;
 import com.chunbaetour.domain.like.entity.UserLike;
 import com.chunbaetour.domain.like.repository.UserLikeRepository;
 import com.chunbaetour.domain.like.type.LikeTargetType;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
+import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.type.PlaceCategory;
@@ -19,6 +25,7 @@ import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
 import com.chunbaetour.domain.yeopjeon.repository.WalletRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +77,12 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     private PlaceRepository placeRepository;
 
     @Autowired
+    private TraditionalMarketRepository traditionalMarketRepository;
+
+    @Autowired
+    private FestivalRepository festivalRepository;
+
+    @Autowired
     private UserLikeRepository userLikeRepository;
 
     @Autowired
@@ -79,6 +92,8 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     void cleanup() {
         userLikeRepository.deleteAll();
         placeRepository.deleteAll();
+        traditionalMarketRepository.deleteAll();
+        festivalRepository.deleteAll();
         walletRepository.deleteAll();
         accountRepository.deleteAll();
         var refreshKeys = redis.keys("auth:refresh:*");
@@ -366,7 +381,7 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
      * 페이징 메타({@code data.size}, {@code data.number}) 바인딩 검증. 시드 데이터 없이 통과 가능 — 본 케이스는
      * endpoint wire-up + 페이징 파라미터 전달만 확인.
      * 실제 content 검증(개수/정렬)은 {@code get_me_likes_with_25_seeds_pages_correctly}와 PR #163의
-     * {@code PlaceLikeServiceTest}가 service 단위로 커버.
+     * {@code UserLikedTargetServiceTest}가 service 단위로 커버.
      */
     @Test
     void get_me_likes_respects_page_size_parameter() throws Exception {
@@ -383,7 +398,7 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void get_me_likes_with_oversized_page_returns_400_COMMON_002() throws Exception {
-        // PlaceLikeService.getUserLikedPlaces 내부 가드: size > 100이면 INVALID_REQUEST
+        // UserLikedTargetService.getLikedTargets 내부 가드: size > 100이면 INVALID_REQUEST
         signup(EMAIL, PASSWORD, NICKNAME);
         String accessToken = login(EMAIL, PASSWORD);
 
@@ -404,7 +419,7 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
     void get_me_likes_with_25_seeds_pages_correctly() throws Exception {
         // 25개 UserLike 시드 → size=10 페이징 → 3페이지 (10/10/5)
         // Place 생성자는 status 파라미터를 빌더에 노출하지 않고 항상 PlaceStatus.ACTIVE로 강제 세팅 (Place.java:150).
-        // 따라서 시드 데이터는 항상 ACTIVE → PlaceLikeService의 ACTIVE 필터 통과 보장.
+        // 따라서 시드 데이터는 항상 ACTIVE → UserLikedTargetService의 ACTIVE 필터 통과 보장.
         signup(EMAIL, PASSWORD, NICKNAME);
         String accessToken = login(EMAIL, PASSWORD);
         Account user = accountRepository.findByEmail(EMAIL).orElseThrow();
@@ -428,7 +443,14 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.number").value(0))
                 .andExpect(jsonPath("$.data.totalElements").value(25))
                 .andExpect(jsonPath("$.data.totalPages").value(3))
-                .andExpect(jsonPath("$.data.content.length()").value(10));
+                .andExpect(jsonPath("$.data.content.length()").value(10))
+                .andExpect(jsonPath("$.data.content[0].targetId").isNumber())
+                .andExpect(jsonPath("$.data.content[0].type").value("PLACE"))
+                .andExpect(jsonPath("$.data.content[0].name").exists())
+                .andExpect(jsonPath("$.data.content[0].rating").exists())
+                .andExpect(jsonPath("$.data.content[0].reviewCount").exists())
+                .andExpect(jsonPath("$.data.content[0].likeCount").exists())
+                .andExpect(jsonPath("$.data.content[0].likedAt").exists());
 
         // 2페이지 — 10개
         mockMvc.perform(get("/api/v1/users/me/likes?page=1&size=10")
@@ -468,6 +490,122 @@ class UserMeIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("SUCCESS"));
+    }
+
+    @Test
+    void get_me_likes_supports_market_and_festival_types() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+        Account user = accountRepository.findByEmail(EMAIL).orElseThrow();
+
+        TraditionalMarket market = traditionalMarketRepository.save(TraditionalMarket.builder()
+                .name("market-like")
+                .address("market-address")
+                .lat(new BigDecimal("37.5665000"))
+                .lng(new BigDecimal("126.9780000"))
+                .marketType("상설시장")
+                .sido("서울특별시")
+                .sigungu("중구")
+                .build());
+        Festival festival = festivalRepository.save(Festival.create(
+                "festival-like",
+                "festival-description",
+                "서울",
+                "festival-address",
+                LocalDate.now(),
+                LocalDate.now().plusDays(3),
+                "https://example.com/festival.jpg",
+                "https://example.com",
+                FestivalStatus.ACTIVE
+        ));
+        userLikeRepository.save(UserLike.of(user, LikeTargetType.MARKET, market.getId()));
+        userLikeRepository.save(UserLike.of(user, LikeTargetType.FESTIVAL, festival.getId()));
+
+        mockMvc.perform(get("/api/v1/users/me/likes?type=MARKET")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].targetId").value(market.getId()))
+                .andExpect(jsonPath("$.data.content[0].type").value("MARKET"))
+                .andExpect(jsonPath("$.data.content[0].name").value("market-like"))
+                .andExpect(jsonPath("$.data.content[0].region").value("서울특별시 중구"));
+
+        mockMvc.perform(get("/api/v1/users/me/likes?type=FESTIVAL")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].targetId").value(festival.getId()))
+                .andExpect(jsonPath("$.data.content[0].type").value("FESTIVAL"))
+                .andExpect(jsonPath("$.data.content[0].name").value("festival-like"))
+                .andExpect(jsonPath("$.data.content[0].imageUrl").value("https://example.com/festival.jpg"));
+    }
+
+    @Test
+    void market_like_add_duplicate_remove_and_missing_remove_flow() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+        TraditionalMarket market = traditionalMarketRepository.save(TraditionalMarket.builder()
+                .name("market-api-like")
+                .address("market-api-address")
+                .lat(new BigDecimal("37.5665000"))
+                .lng(new BigDecimal("126.9780000"))
+                .marketType("상설시장")
+                .build());
+
+        mockMvc.perform(post("/api/v1/traditional-markets/{marketId}/like", market.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"));
+
+        mockMvc.perform(post("/api/v1/traditional-markets/{marketId}/like", market.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PLACE_010"));
+
+        mockMvc.perform(delete("/api/v1/traditional-markets/{marketId}/like", market.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(delete("/api/v1/traditional-markets/{marketId}/like", market.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PLACE_011"));
+    }
+
+    @Test
+    void festival_like_add_duplicate_remove_and_missing_remove_flow() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        String accessToken = login(EMAIL, PASSWORD);
+        Festival festival = festivalRepository.save(Festival.create(
+                "festival-api-like",
+                "festival-description",
+                "서울",
+                "festival-api-address",
+                LocalDate.now(),
+                LocalDate.now().plusDays(3),
+                "https://example.com/festival-api.jpg",
+                "https://example.com",
+                FestivalStatus.ACTIVE
+        ));
+
+        mockMvc.perform(post("/api/v1/festivals/{festivalId}/like", festival.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"));
+
+        mockMvc.perform(post("/api/v1/festivals/{festivalId}/like", festival.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PLACE_010"));
+
+        mockMvc.perform(delete("/api/v1/festivals/{festivalId}/like", festival.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(delete("/api/v1/festivals/{festivalId}/like", festival.getId())
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PLACE_011"));
     }
 
     private void signup(String email, String password, String nickname) throws Exception {

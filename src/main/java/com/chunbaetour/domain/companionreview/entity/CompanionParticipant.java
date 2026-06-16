@@ -43,6 +43,10 @@ public class CompanionParticipant extends BaseEntity {
     @Column(name = "added_at", nullable = false)
     private LocalDateTime addedAt;
 
+    // 참여자 본인의 동행 종료 시각 — null이면 아직 종료 안 함 (고도화 #2)
+    @Column(name = "ended_at")
+    private LocalDateTime endedAt;
+
     @Builder
     private CompanionParticipant(Long companionId, Long userId) {
         if (companionId == null) throw new IllegalArgumentException("companionId is required");

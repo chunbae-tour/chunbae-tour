@@ -14,15 +14,23 @@ import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
+import com.chunbaetour.domain.shop.businesshours.BusinessHours;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
+import com.chunbaetour.domain.shop.type.BusinessStatus;
+import com.chunbaetour.domain.shop.storage.ShopImageKeys;
+import com.chunbaetour.domain.shop.storage.ShopImageStorage;
 import com.chunbaetour.domain.shop.type.ShopStatus;
+import java.util.ArrayList;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -41,12 +49,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ShopService {
 
+    // KST 기준 시각 비교용 타임존
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+
     private final ShopRepository shopRepository;
     private final MenuRepository menuRepository;
     private final ShopWalletRepository shopWalletRepository;
     private final ObjectMapper objectMapper;
     private final PlaceRepository placeRepository;
     private final TraditionalMarketRepository traditionalMarketRepository;
+    private final ShopImageStorage imageStorage;
+    private final Clock clock;
 
     /**
      * 내 가게 목록 조회.
@@ -54,9 +67,11 @@ public class ShopService {
      * SUSPENDED/CLOSED 가게도 포함 — 본인 가게 상태 확인 가능해야 함.
      */
     public List<ShopResponse> getMyShops(Long userId) {
-        // userId로 내 가게 목록 조회
+        // userId로 내 가게 목록 조회. imageUrls(키)는 presigned GET URL로 변환해 응답.
         return shopRepository.findAllByUserId(userId)
-                .stream().map(ShopResponse::from).toList();
+                .stream()
+                .map(shop -> ShopResponse.from(shop, presignImageUrls(shop.getImageUrls(), shop.getId())))
+                .toList();
     }
 
     /**
@@ -69,7 +84,7 @@ public class ShopService {
         Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        return ShopResponse.from(shop);
+        return ShopResponse.from(shop, presignImageUrls(shop.getImageUrls(), shop.getId()));
     }
 
     /**
@@ -92,13 +107,13 @@ public class ShopService {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
 
-        // imageUrls JSON 유효성 검사 — 형식 오류 시 DB flush에서 MySQL 5xx 발생하므로 사전 차단
-        validateImageUrls(request.imageUrls());
+        // imageUrls JSON 유효성 + 키 소유권(prefix) 검사 — 형식 오류 사전 차단 + 타 가게/임의 객체 키 저장 차단(IDOR)
+        validateImageUrls(request.imageUrls(), shopId);
 
         // 수정 가능한 필드 업데이트 (위치 제외)
         shop.update(request);
 
-        return ShopResponse.from(shop);
+        return ShopResponse.from(shop, presignImageUrls(shop.getImageUrls(), shop.getId()));
     }
 
     /**
@@ -182,7 +197,14 @@ public class ShopService {
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
         List<Menu> menus = menuRepository.findByShopIdOrderByIdAsc(shopId);
 
-        return ShopInfoResponse.from(shop, menus);
+        // 실시간 영업여부 — operatingHours를 KST 현재시각과 비교해 조회 시점 산출 (저장하지 않음, B7 MVP).
+        // ShopStatus.CLOSED(폐업/영업종료 관리상태)는 영업시간과 무관하게 영업 안 함 → businessStatus도 CLOSED 강제.
+        // (SUSPENDED는 위에서 차단, 여기 도달하는 비ACTIVE는 CLOSED뿐) 폐업 가게가 "영업중"으로 표시되는 모순 방지.
+        BusinessStatus businessStatus = (shop.getStatus() == ShopStatus.ACTIVE)
+                ? BusinessHours.statusAt(shop.getOperatingHours(), LocalDateTime.now(clock.withZone(SEOUL_ZONE)))
+                : BusinessStatus.CLOSED;
+
+        return ShopInfoResponse.from(shop, menus, businessStatus);
     }
 
     /**
@@ -312,22 +334,77 @@ public class ShopService {
         return shopRepository.findById(shopId).map(Shop::getUserId);
     }
 
-    /** imageUrls가 JSON 배열인지 검사 — null이면 수정 안 함으로 통과, 배열 아닌 JSON(객체·문자열 등)도 거부 */
-    private void validateImageUrls(String imageUrls) {
+    /**
+     * imageUrls 검사 — null이면 통과(수정 안 함), JSON 배열이어야 하고 원소는 비어있지 않은 문자열,
+     * 그리고 각 원소는 <b>해당 가게 소유 키({@code shops/{shopId}/...})</b>여야 한다.
+     * 마지막 조건이 IDOR 방지(hyeonmin02 리뷰) — 타 가게/임의 S3 객체 키를 저장해 PR3 조회 시 presign되는 것을 차단.
+     */
+    private void validateImageUrls(String imageUrls, Long shopId) {
         if (imageUrls == null) return;
         try {
             var node = objectMapper.readTree(imageUrls);
             if (!node.isArray()) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-            // S3 URL 배열이므로 원소는 반드시 문자열이어야 함 — [1, true, null, {...}] 등 거부
             for (var item : node) {
                 if (!item.isTextual() || item.asText().isBlank()) {
+                    throw new BusinessException(ErrorCode.INVALID_REQUEST);
+                }
+                // 키 소유권: 자기 가게 prefix 아닌 키(타 가게/임의 객체)는 거부
+                if (!ShopImageKeys.belongsToShop(item.asText(), shopId)) {
                     throw new BusinessException(ErrorCode.INVALID_REQUEST);
                 }
             }
         } catch (JacksonException e) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+    }
+
+    /**
+     * 저장된 imageUrls(S3 객체 키 JSON 배열) → presigned GET URL JSON 배열로 변환(E10 PR3).
+     * null/blank는 그대로 반환. 방어적으로 <b>해당 가게 소유 prefix 키만</b> presign한다(IDOR 2중 방어 —
+     * 저장 검증을 우회한 키가 있어도 presign 안 함).
+     *
+     * <p><b>graceful degrade</b>: 개별 키 presign 실패(S3 장애·자격증명 등)는 해당 이미지만 빼고 진행한다.
+     * presign이 매 조회의 주 경로라, 예외를 그대로 던지면 이미지 한 장 때문에 가게 조회 전체가 503이 된다 — 가게
+     * 데이터는 멀쩡하므로 부분 실패로 격하(자가검증 반영).
+     */
+    private String presignImageUrls(String imageUrls, Long shopId) {
+        if (imageUrls == null || imageUrls.isBlank()) {
+            return imageUrls;
+        }
+        try {
+            var node = objectMapper.readTree(imageUrls);
+            if (!node.isArray()) {
+                return imageUrls;
+            }
+            List<String> urls = new ArrayList<>();
+            for (var item : node) {
+                if (!item.isTextual()) {
+                    continue;
+                }
+                String key = item.asText();
+                if (!ShopImageKeys.belongsToShop(key, shopId)) {
+                    // 정상 경로면 저장 검증을 통과했어야 함 — 여기 걸리면 DB 직접수정/마이그레이션/IDOR 시도 신호 → 관찰 위해 로깅(DGAZA-max 리뷰).
+                    log.warn("presign 건너뜀 — 소유권 불일치 키. shopId={}, key={}", shopId, key);
+                    continue;
+                }
+                try {
+                    urls.add(imageStorage.presignedGetUrl(key));
+                } catch (BusinessException e) {
+                    // 외부 의존(S3 presign) 실패만 부분 실패로 격하. 그 외 내부 결함은 전파해 가시화(CodeRabbit 리뷰).
+                    if (e.getErrorCode() != ErrorCode.EXTERNAL_SERVICE_ERROR) {
+                        throw e;
+                    }
+                    log.warn("이미지 presign 실패 — 해당 키 제외. shopId={}, key={}", shopId, key, e);
+                }
+            }
+            return objectMapper.writeValueAsString(urls);
+        } catch (JacksonException e) {
+            // 정상 경로(저장 검증 통과 JSON)에선 도달 안 함. 도달 시 "원본"은 URL이 아니라 S3 키 배열이라
+            // 그대로 반환하면 내부 키 구조가 노출됨 → 빈 배열로 차단 + 로깅(DGAZA-max 리뷰).
+            log.warn("imageUrls presign 변환 실패 — 빈 배열 반환. shopId={}", shopId, e);
+            return "[]";
         }
     }
 }

@@ -9,6 +9,7 @@ import com.chunbaetour.domain.store.entity.Product;
 import com.chunbaetour.domain.store.repository.ProductRepository;
 import com.chunbaetour.domain.store.repository.StoreOrderRepository;
 import com.chunbaetour.domain.store.repository.UserItemRepository;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import com.chunbaetour.domain.yeopjeon.entity.Wallet;
@@ -67,7 +68,7 @@ class StorePurchaseConcurrencyIntegrationTest extends AbstractIntegrationTest {
         Product product = productRepository.saveAndFlush(Product.builder()
                 .name("한정 수량 상품")
                 .description("동시성 테스트 상품")
-                .category("TEST")
+                .category(ProductCategory.DISCOUNT_COUPON)
                 .price(1_000L)
                 .stock(STOCK)
                 .originalStock(STOCK)

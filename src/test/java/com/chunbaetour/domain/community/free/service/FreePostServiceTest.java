@@ -33,6 +33,7 @@ class FreePostServiceTest {
 
     @Mock FreePostRepository postRepository;
     @Mock AccountRepository accountRepository;
+    @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @InjectMocks FreePostService postService;
 
     private static final Long AUTHOR_ID = 1L;
@@ -200,6 +201,9 @@ class FreePostServiceTest {
         postService.delete(AUTHOR_ID, POST_ID);
 
         assertThat(post.getStatus()).isEqualTo(FreePostStatus.DELETED);
+        then(eventPublisher).should().publishEvent(
+                new com.chunbaetour.domain.community.common.event.PostDeletedEvent(
+                        POST_ID, com.chunbaetour.domain.community.common.PostType.FREE));
     }
 
     @Test

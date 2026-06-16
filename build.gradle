@@ -82,6 +82,13 @@ dependencies {
 	// Swagger / OpenAPI UI
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
+	// AWS SDK v2 — S3 업로드(PutObject) + presigned GET URL 발급 (E10).
+	// 자격증명은 DefaultCredentialsProvider → 운영 ECS task-role 자동 사용(액세스키 하드코딩 없음).
+	// 버전은 BOM으로 고정. S3Presigner는 별도 아티팩트가 아니라 s3 모듈에 포함
+	//   (software.amazon.awssdk.services.s3.presigner.S3Presigner) — s3 의존성만으로 충분.
+	implementation platform('software.amazon.awssdk:bom:2.29.52')
+	implementation 'software.amazon.awssdk:s3'
+
 	compileOnly 'org.projectlombok:lombok'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	annotationProcessor 'org.projectlombok:lombok'

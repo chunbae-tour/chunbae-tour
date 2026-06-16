@@ -25,6 +25,14 @@ public record ShopResponse(
         ShopStatus status
 ) {
     public static ShopResponse from(Shop shop) {
+        return from(shop, shop.getImageUrls());
+    }
+
+    /**
+     * imageUrls를 외부에서 주입하는 오버로드 (E10 PR3).
+     * 저장값은 S3 객체 키 JSON 배열이지만, 응답에는 ShopService가 presigned GET URL JSON 배열로 변환해 내려준다.
+     */
+    public static ShopResponse from(Shop shop, String imageUrls) {
         return new ShopResponse(
                 shop.getId(),
                 shop.getUserId(),
@@ -36,7 +44,7 @@ public record ShopResponse(
                 shop.getLng(),
                 shop.getPhone(),
                 shop.getDescription(),
-                shop.getImageUrls(),
+                imageUrls,
                 shop.getOperatingHours(),
                 shop.getClosedDays(),
                 shop.isCertified(),

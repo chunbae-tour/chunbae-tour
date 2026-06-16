@@ -23,6 +23,7 @@ import net.javacrumbs.shedlock.core.LockProvider;
 import net.javacrumbs.shedlock.core.SimpleLock;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -196,8 +197,9 @@ public class PlaceSyncService {
             for (TourApiPlaceItem item : upserts) {
                 p.maxModified = laterOf(p.maxModified, normalizeModifiedTime(item.modifiedTime()));
             }
-        } catch (DataIntegrityViolationException | IllegalArgumentException e) {
-            // 청크 내 1건의 제약/불변식 위반이 청크 전체를 롤백 → 단건으로 재처리해 실패 item만 격리.
+        } catch (DataIntegrityViolationException | IllegalArgumentException | OptimisticLockingFailureException e) {
+            // 청크 내 1건의 제약/불변식 위반 또는 낙관락 충돌(KAN-304/B12)이 청크 전체를 롤백 → 단건으로 재처리해
+            // 실패 item만 격리한다. 낙관락 충돌도 fail-fast(인프라 예외)가 아니라 per-item 재처리 대상이므로 여기서 흡수.
             log.warn("관광지 청크 batch 실패 — 단건 fallback 격리: size={}, error={}", upserts.size(), e.getMessage());
             for (TourApiPlaceItem item : upserts) {
                 processSingleItem(item, p);
@@ -233,6 +235,12 @@ public class PlaceSyncService {
             p.maxModified = laterOf(p.maxModified, itemModified);
             log.warn("관광지 item 건너뜀 — 제약 위반(영구 실패 추정, 경계 전진): contentId={}, error={}",
                     item.contentId(), e.getMessage());
+            p.skipped++;
+        } catch (OptimisticLockingFailureException e) {
+            // 낙관락 충돌(KAN-304/B12) — markDeleted 등에서 동시 UPDATE와 경합. 일시적 경합이므로 fail-fast 대상이
+            // 아니다(반드시 DataAccessException catch보다 위). 경계를 이 item 이전으로 캡해 다음 run에 재수집 보장.
+            log.warn("관광지 item 건너뜀 — 낙관락 충돌(다음 run 재수집): contentId={}", item.contentId());
+            p.minFailedModified = earlierOf(p.minFailedModified, itemModified);
             p.skipped++;
         } catch (DataAccessException e) {
             // 인프라 예외 — per-item skip으로 흡수하지 않고 전파해 배치 전체 중단(fail-fast).

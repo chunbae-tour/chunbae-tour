@@ -37,7 +37,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/admin/auth/**} — ADMIN 로그인 (permitAll)</li>
  *   <li>{@code POST /api/v1/auth/logout} — 인증 필요 (S4)</li>
  *   <li>{@code /api/v1/auth/**} — 공통 토큰 API (reissue 등, permitAll)</li>
- *   <li>{@code /actuator/health}, {@code /actuator/info} — permitAll (LB health check).
+ *   <li>{@code /actuator/health}, {@code /actuator/health/**}(health group, 예: {@code /actuator/health/lb} — ALB 헬스체크), {@code /actuator/info} — permitAll (LB health check).
  *       {@code /actuator/prometheus}는 IP allowlist (loopback only), 그 외 {@code /actuator/**}는 denyAll (#149).
  *       ⚠️ 본 필터 체인은 main 포트(8080)에만 적용된다. 운영은 별도 management port(9090)라 이 규칙이 9090에 적용되지 않으므로
  *       (별도 management 컨텍스트), 운영에서는 prometheus를 아예 노출하지 않고(application-prod.yml exposure=health,info) SG로 9090을
@@ -132,7 +132,7 @@ public class SecurityConfig {
                         // Actuator endpoint 권한 — KAN-104 + #149.
                         // exposure include = health, info, prometheus (application.yml). 그 외 endpoint는 yml exposure로도 차단되지만,
                         // 방어적으로 SecurityConfig에서도 명시 거부해 향후 exposure가 잘못 확장돼도 노출 방지 (이중 안전).
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         // /actuator/prometheus IP allowlist (#149).
                         // ⚠️ 적용 범위: 이 필터 체인은 main 포트(8080)에만 적용된다.
                         // - 운영(application-prod.yml): management.server.port=9090(별도 컨텍스트)이라 이 규칙이 9090에 적용 안 됨.
@@ -184,6 +184,10 @@ public class SecurityConfig {
                         // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/festivals/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/festivals/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/traditional-markets/*/like").hasRole("USER")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/traditional-markets/*/like").hasRole("USER")
                         // 관광지 리뷰 작성은 USER 인증 필요 — GET permitAll보다 먼저 선언
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/reviews").hasRole("USER")
                         // 지오코딩 및 리버스 지오코딩 등 카카오 API 연동 엔드포인트는 외부 API 할당량 보호를 위해 인증 필수

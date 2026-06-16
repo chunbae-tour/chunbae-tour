@@ -93,8 +93,8 @@ public enum ErrorCode {
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
-    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
-    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
+    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 대상입니다."),
+    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 대상입니다."),
     REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,            "PLACE_012", "이미 리뷰를 작성한 관광지입니다."),
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND,                "PLACE_013", "존재하지 않는 리뷰입니다."),
     REVIEW_FORBIDDEN(HttpStatus.FORBIDDEN,                "PLACE_014", "본인의 리뷰만 수정·삭제할 수 있습니다."),
@@ -263,7 +263,18 @@ public enum ErrorCode {
     // 동행 ENDED 전에는 리뷰 작성 불가 — 고도화 #25
     COMPANION_NOT_ENDED(HttpStatus.CONFLICT,                "CR_009", "동행 종료 후에만 리뷰를 작성할 수 있습니다."),
     // 동행 생성/참여자 추가 시 기간 겹침 검증 — 고도화 #1
-    COMPANION_DATE_OVERLAP(HttpStatus.CONFLICT,             "CR_010", "겹치는 기간에 진행 중인 동행이 있습니다.");
+    COMPANION_DATE_OVERLAP(HttpStatus.CONFLICT,             "CR_010", "겹치는 기간에 진행 중인 동행이 있습니다."),
+    // CR_011~015: 동행 생애주기 자동화 + 참여자별 종료/리뷰 자격 — 고도화 #2
+    // 리뷰 작성 시 reviewer/target 둘 다 endParticipation을 마쳐야 함
+    COMPANION_REVIEW_PARTICIPANT_NOT_ENDED(HttpStatus.CONFLICT, "CR_011", "양쪽 모두 동행 참여를 종료해야 리뷰를 작성할 수 있습니다."),
+    // 리뷰 작성 시 reviewer/target 둘 중 한쪽이라도 정지 계정이면 차단
+    COMPANION_REVIEW_SUSPENDED_ACCOUNT(HttpStatus.FORBIDDEN, "CR_012", "정지된 계정과는 리뷰를 작성할 수 없습니다."),
+    // endParticipation 호출자가 해당 동행의 참여자가 아님
+    COMPANION_PARTICIPANT_NOT_FOUND(HttpStatus.FORBIDDEN,   "CR_013", "동행 참여자가 아닙니다."),
+    // endParticipation은 Companion.status==ENDED(여행 종료, 날짜 기반 배치job)일 때만 호출 가능
+    COMPANION_NOT_ENDED_FOR_PARTICIPATION(HttpStatus.CONFLICT, "CR_014", "여행이 종료되지 않아 참여를 종료할 수 없습니다."),
+    // endParticipation 중복 호출 — 이미 endedAt 세팅됨
+    COMPANION_PARTICIPATION_ALREADY_ENDED(HttpStatus.CONFLICT, "CR_015", "이미 참여 종료 처리되었습니다.");
 
     private final HttpStatus status;
     private final String code;
