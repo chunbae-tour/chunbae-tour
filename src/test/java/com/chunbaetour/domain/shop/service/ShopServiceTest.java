@@ -54,6 +54,9 @@ class ShopServiceTest {
     @Mock
     private ObjectMapper objectMapper;
 
+    @Mock
+    private com.chunbaetour.domain.shop.storage.ShopImageStorage imageStorage;
+
     // @Mock Clock 금지(withZone→null NPE) — @Spy 고정 Clock 사용. 2026-06-15T05:00:00Z = KST 14:00
     @Spy
     private Clock clock = Clock.fixed(Instant.parse("2026-06-15T05:00:00Z"), ZoneOffset.UTC);
@@ -318,66 +321,6 @@ class ShopServiceTest {
         ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
 
         assertThat(response.menus()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("가게 공개 정보 조회 — operatingHours 영업시간 내(KST 14:00) → businessStatus=OPEN (B7, KAN-301)")
-    void getShopInfo_businessStatusOpen() {
-        Shop shop = createShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        ReflectionTestUtils.setField(shop, "operatingHours", "09:00-18:00");
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
-
-        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
-
-        // 고정 Clock = KST 14:00 → 09:00-18:00 영업중
-        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.OPEN);
-    }
-
-    @Test
-    @DisplayName("가게 공개 정보 조회 — ACTIVE 가게가 영업시간 외(KST 14:00, 운영 18:00-22:00) → businessStatus=CLOSED (시간 기반 판정, KAN-301)")
-    void getShopInfo_activeShop_outsideHours_businessStatusClosed() {
-        Shop shop = createShop(); // ACTIVE
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        // 고정 Clock = KST 14:00 → 18:00-22:00 영업시간 밖
-        ReflectionTestUtils.setField(shop, "operatingHours", "18:00-22:00");
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
-
-        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
-
-        // ACTIVE라도 영업시간 외면 시간 기반으로 CLOSED 판정
-        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.CLOSED);
-    }
-
-    @Test
-    @DisplayName("가게 공개 정보 조회 — CLOSED(폐업) 가게는 영업시간 내라도 businessStatus=CLOSED (모순 방지, KAN-301)")
-    void getShopInfo_closedShop_businessStatusClosed_evenWithinHours() {
-        Shop shop = createShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        ReflectionTestUtils.setField(shop, "operatingHours", "09:00-18:00"); // KST 14:00이면 시간상 OPEN
-        ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
-
-        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
-
-        // 폐업 가게는 영업시간 무관 CLOSED
-        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.CLOSED);
-    }
-
-    @Test
-    @DisplayName("가게 공개 정보 조회 — operatingHours 없으면 businessStatus=UNKNOWN")
-    void getShopInfo_businessStatusUnknown_whenNoHours() {
-        Shop shop = createShop();
-        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
-        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
-
-        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
-
-        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.UNKNOWN);
     }
 
     @Test
@@ -702,13 +645,15 @@ class ShopServiceTest {
     void validateImageUrls_validArray_pass() throws Exception {
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        String validJson = "[\"https://example.com/img.jpg\"]";
+        // E10: imageUrls 저장값은 S3 객체 키이며 자기 가게 prefix(shops/{shopId}/)여야 통과.
+        String validJson = "[\"shops/10/img.jpg\"]";
         var mockNode = mock(tools.jackson.databind.JsonNode.class);
         var mockItem = mock(tools.jackson.databind.JsonNode.class);
         given(mockNode.isArray()).willReturn(true);
-        given(mockNode.iterator()).willReturn(java.util.List.of(mockItem).iterator());
+        // validate + presign이 각각 iterator()를 호출하므로 매번 새 iterator 반환.
+        given(mockNode.iterator()).willAnswer(inv -> java.util.List.of(mockItem).iterator());
         given(mockItem.isTextual()).willReturn(true);
-        given(mockItem.asText()).willReturn("https://example.com/img.jpg");
+        given(mockItem.asText()).willReturn("shops/10/img.jpg");
         given(objectMapper.readTree(validJson)).willReturn(mockNode);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 

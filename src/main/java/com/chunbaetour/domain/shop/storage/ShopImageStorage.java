@@ -20,4 +20,13 @@ public interface ShopImageStorage {
      * @return 저장된 객체 키
      */
     String upload(Long shopId, MultipartFile file);
+
+    /**
+     * 저장된 객체 키로 조회용 presigned GET URL을 발급한다(E10 PR3).
+     * 비공개 버킷이라 조회는 만료 있는 presigned URL로만 가능하다.
+     *
+     * @param key 객체 키(예: {@code shops/10/uuid.jpg})
+     * @return 만료 있는 presigned GET URL (구현체 정책: S3=실제 presign, 로컬=passthrough)
+     */
+    String presignedGetUrl(String key);
 }

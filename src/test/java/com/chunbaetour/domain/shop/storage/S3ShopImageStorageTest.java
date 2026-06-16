@@ -32,12 +32,15 @@ class S3ShopImageStorageTest {
     @Mock
     private S3Client s3Client;
 
+    @Mock
+    private software.amazon.awssdk.services.s3.presigner.S3Presigner s3Presigner;
+
     private static final Long SHOP_ID = 10L;
 
     private S3ShopImageStorage storage() {
         S3Properties props = new S3Properties();
         props.setBucket("test-bucket");
-        return new S3ShopImageStorage(s3Client, props);
+        return new S3ShopImageStorage(s3Client, s3Presigner, props);
     }
 
     private MockMultipartFile jpeg() {
@@ -69,6 +72,39 @@ class S3ShopImageStorageTest {
                 .willThrow(S3Exception.builder().message("boom").build());
 
         assertThatThrownBy(() -> storage().upload(SHOP_ID, jpeg()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
+    }
+
+    @Test
+    @DisplayName("presignedGetUrl — 버킷·키로 presign 요청 후 URL 문자열 반환")
+    void presignedGetUrl_returnsUrl() throws Exception {
+        var presigned = org.mockito.Mockito.mock(
+                software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest.class);
+        given(presigned.url()).willReturn(java.net.URI.create("https://test-bucket.s3/shops/10/x.jpg?sig=abc").toURL());
+        given(s3Presigner.presignGetObject(
+                any(software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.class)))
+                .willReturn(presigned);
+
+        String url = storage().presignedGetUrl("shops/10/x.jpg");
+
+        assertThat(url).isEqualTo("https://test-bucket.s3/shops/10/x.jpg?sig=abc");
+        var captor = ArgumentCaptor.forClass(
+                software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.class);
+        verify(s3Presigner).presignGetObject(captor.capture());
+        assertThat(captor.getValue().getObjectRequest().bucket()).isEqualTo("test-bucket");
+        assertThat(captor.getValue().getObjectRequest().key()).isEqualTo("shops/10/x.jpg");
+    }
+
+    @Test
+    @DisplayName("presignedGetUrl — presign 중 SdkException → EXTERNAL_SERVICE_ERROR 매핑")
+    void presignedGetUrl_s3Error_mapsToExternalServiceError() {
+        given(s3Presigner.presignGetObject(
+                any(software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest.class)))
+                .willThrow(S3Exception.builder().message("boom").build());
+
+        assertThatThrownBy(() -> storage().presignedGetUrl("shops/10/x.jpg"))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
