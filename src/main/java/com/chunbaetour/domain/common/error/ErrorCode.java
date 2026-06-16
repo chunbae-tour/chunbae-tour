@@ -21,6 +21,8 @@ public enum ErrorCode {
     // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
     INVALID_CURSOR_PAIR(HttpStatus.BAD_REQUEST,              "COMMON_011", "커서 페이징 쌍(cursor, cursorRating 등)이 올바르게 전달되지 않았습니다."),
+    // COMMON_012: multipart 파싱 단계 파일 크기 초과 — 도메인 무관 공용 (GlobalExceptionHandler.handleMaxUploadSize)
+    FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,                   "COMMON_012", "파일 크기가 최대 허용 용량을 초과합니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
@@ -216,6 +218,11 @@ public enum ErrorCode {
     CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
     CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
     CHAT_OWNER_TRANSFER_INVALID_TARGET(HttpStatus.BAD_REQUEST, "CHAT_019", "방장 위임 대상은 본인이 아닌 활성 참여자여야 합니다."),
+    CHAT_FILE_EMPTY(HttpStatus.BAD_REQUEST,                 "CHAT_020", "업로드할 파일이 비어 있습니다."),
+    CHAT_FILE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,      "CHAT_021", "지원하지 않는 파일 형식입니다. (이미지: JPEG/PNG/WebP, 문서: PDF/DOCX/XLSX/PPTX/HWP)"),
+    CHAT_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,       "CHAT_022", "이미지 크기가 최대 허용 용량(5MB)을 초과합니다."),
+    CHAT_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,             "CHAT_023", "파일 크기가 최대 허용 용량(10MB)을 초과합니다."),
+    CHAT_FILE_OWNERSHIP_INVALID(HttpStatus.FORBIDDEN,       "CHAT_024", "해당 채팅방에 업로드되지 않은 파일입니다."),
 
     // ===== NOTIFICATION (담당: 임하은) =====
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
