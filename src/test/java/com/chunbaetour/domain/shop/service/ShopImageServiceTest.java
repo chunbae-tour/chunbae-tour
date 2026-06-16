@@ -42,7 +42,16 @@ class ShopImageServiceTest {
     }
 
     private MockMultipartFile validFile() {
-        return new MockMultipartFile("file", "test.jpg", "image/jpeg", new byte[1024]);
+        return new MockMultipartFile("file", "test.jpg", "image/jpeg", jpegBytes(1024));
+    }
+
+    /** JPEG 매직바이트(FF D8 FF)로 시작하는 더미 — magic-byte 검증(E10) 통과용. */
+    private static byte[] jpegBytes(int len) {
+        byte[] b = new byte[len];
+        b[0] = (byte) 0xFF;
+        b[1] = (byte) 0xD8;
+        b[2] = (byte) 0xFF;
+        return b;
     }
 
     @Test
@@ -103,8 +112,8 @@ class ShopImageServiceTest {
     }
 
     @Test
-    @DisplayName("이미지 업로드 — 유효한 파일이나 S3 미설정 → EXTERNAL_SERVICE_ERROR (stub)")
-    void uploadImage_validFile_s3NotConfigured_throws() {
+    @DisplayName("이미지 업로드 — 검증 통과 후 storage 위임 → 키 반환, storage 오류는 그대로 전파")
+    void uploadImage_storageError_propagates() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
         given(imageStorage.upload(eq(SHOP_ID), any()))
                 .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
@@ -113,5 +122,48 @@ class ShopImageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
+    }
+
+    @Test
+    @DisplayName("이미지 업로드 — declared는 image/jpeg지만 매직바이트가 이미지 아님(위장) → SHOP_IMAGE_TYPE_UNSUPPORTED")
+    void uploadImage_magicByteMismatch_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
+        // content-type은 image/jpeg로 위장했지만 실제 바이트는 'MZ'(exe) 시그니처 → magic-byte 검증서 거부
+        byte[] fake = new byte[1024];
+        fake[0] = 'M';
+        fake[1] = 'Z';
+        MockMultipartFile disguised = new MockMultipartFile("file", "evil.jpg", "image/jpeg", fake);
+
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, disguised))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
+    }
+
+    @Test
+    @DisplayName("이미지 업로드 — 비활성(SUSPENDED) 가게 → SHOP_INACTIVE (고아 객체 사전 차단)")
+    void uploadImage_inactiveShop_throws() {
+        com.chunbaetour.domain.shop.entity.Shop suspended = createShop();
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                suspended, "status", com.chunbaetour.domain.shop.type.ShopStatus.SUSPENDED);
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(suspended));
+
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, validFile()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    @Test
+    @DisplayName("이미지 업로드 — declared image/png 인데 실제 바이트는 JPEG(포맷 불일치) → SHOP_IMAGE_TYPE_UNSUPPORTED")
+    void uploadImage_declaredPngButJpegBytes_throws() {
+        given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
+        // declared=image/png 이지만 실제 시그니처는 JPEG(FF D8 FF) → declared↔magic 매칭 검증서 거부(hyeonmin02 리뷰)
+        MockMultipartFile mismatch = new MockMultipartFile("file", "x.png", "image/png", jpegBytes(1024));
+
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, mismatch))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
     }
 }

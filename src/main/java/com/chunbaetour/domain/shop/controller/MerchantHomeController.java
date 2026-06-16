@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 상인 홈 대시보드 API.
- * 오늘 매출 합계와 최근 QR 결제 목록을 조회한다.
+ * 오늘 매출 합계, 어제 대비 매출, 시간대별 매출 분포, 미완료(거절+만료) 결제 건수, 최근 QR 결제 목록을 조회한다.
  */
 @Tag(name = "상인 홈 (MERCHANT)", description = "상인 홈 대시보드 조회 (/api/v1/merchants/me/home)")
 @RestController
@@ -29,9 +29,9 @@ public class MerchantHomeController {
      * 내 상인 홈 대시보드를 조회한다.
      *
      * @param userId 인증된 상인 사용자 ID
-     * @return 오늘 매출 합계와 최근 결제 목록
+     * @return 오늘/어제 매출, 시간대별 분포, 미완료 결제 건수, 최근 결제 목록
      */
-    @Operation(summary = "상인 홈 대시보드 조회")
+    @Operation(summary = "상인 홈 대시보드 조회 (오늘/어제 매출·시간대별 분포·미완료 카운터)")
     @GetMapping
     public ApiResponse<MerchantHomeResponse> getHome(@AuthenticationPrincipal Long userId) {
         // SecurityConfig가 인증을 보장하지만, null principal이 들어오는 비정상 상황은

@@ -22,8 +22,12 @@ import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.type.BusinessStatus;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import tools.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -48,6 +53,13 @@ class ShopServiceTest {
 
     @Mock
     private ObjectMapper objectMapper;
+
+    @Mock
+    private com.chunbaetour.domain.shop.storage.ShopImageStorage imageStorage;
+
+    // @Mock Clock 금지(withZone→null NPE) — @Spy 고정 Clock 사용. 2026-06-15T05:00:00Z = KST 14:00
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-06-15T05:00:00Z"), ZoneOffset.UTC);
 
     @InjectMocks
     private ShopService shopService;
@@ -633,13 +645,15 @@ class ShopServiceTest {
     void validateImageUrls_validArray_pass() throws Exception {
         Shop shop = createShop();
         ReflectionTestUtils.setField(shop, "id", SHOP_ID);
-        String validJson = "[\"https://example.com/img.jpg\"]";
+        // E10: imageUrls 저장값은 S3 객체 키이며 자기 가게 prefix(shops/{shopId}/)여야 통과.
+        String validJson = "[\"shops/10/img.jpg\"]";
         var mockNode = mock(tools.jackson.databind.JsonNode.class);
         var mockItem = mock(tools.jackson.databind.JsonNode.class);
         given(mockNode.isArray()).willReturn(true);
-        given(mockNode.iterator()).willReturn(java.util.List.of(mockItem).iterator());
+        // validate + presign이 각각 iterator()를 호출하므로 매번 새 iterator 반환.
+        given(mockNode.iterator()).willAnswer(inv -> java.util.List.of(mockItem).iterator());
         given(mockItem.isTextual()).willReturn(true);
-        given(mockItem.asText()).willReturn("https://example.com/img.jpg");
+        given(mockItem.asText()).willReturn("shops/10/img.jpg");
         given(objectMapper.readTree(validJson)).willReturn(mockNode);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(shop));
 

@@ -7,9 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.data.redis.core.Cursor;
-import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,7 +17,9 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -204,7 +203,7 @@ public class TypoCorrectionService {
 
         Set<String> candidates = new HashSet<>();
         for (String gram : grams) {
-            String key = gramPrefix + gram;
+            String key = gramPrefix + encodeGramForKey(gram);
             Set<String> members = stringRedisTemplate.opsForSet().members(key);
             if (members != null) {
                 candidates.addAll(members);
@@ -308,54 +307,49 @@ public class TypoCorrectionService {
         }
 
         try {
-            String tempPrefix = gramPrefix + "temp:";
-            evictDictionary(tempPrefix); // 이전 실패 시 남은 temp 잔재 정리
+            String buildToken = UUID.randomUUID().toString();
+            Map<String, String> tempKeysByRealKey = new LinkedHashMap<>();
 
             for (String word : words) {
                 if (!StringUtils.hasText(word)) continue;
                 List<String> grams = extractGrams(word);
                 for (String gram : grams) {
-                    String key = tempPrefix + gram;
-                    stringRedisTemplate.opsForSet().add(key, word);
-                    stringRedisTemplate.expire(key, DICT_TTL);
+                    String realKey = gramPrefix + encodeGramForKey(gram);
+                    String tempKey = tempKeyForSameSlot(realKey, buildToken);
+                    tempKeysByRealKey.put(realKey, tempKey);
+                    stringRedisTemplate.opsForSet().add(tempKey, word);
+                    stringRedisTemplate.expire(tempKey, DICT_TTL);
                 }
             }
 
-            // 성공 시 temp 키를 실제 키로 RENAME
-            ScanOptions options = ScanOptions.scanOptions().match(tempPrefix + "*").count(500).build();
-            stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
-                try (Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
-                    while (cursor.hasNext()) {
-                        byte[] tempKeyBytes = cursor.next();
-                        String tempKey = new String(tempKeyBytes);
-                        String realKey = tempKey.replace(tempPrefix, gramPrefix);
-                        connection.keyCommands().rename(tempKeyBytes, realKey.getBytes());
-                    }
-                }
-                return null;
-            });
-            // 새 사전에 포함되지 않은 구 키워드들은 DICT_TTL 만료 시점에 자연 삭제됨
+            for (Map.Entry<String, String> entry : tempKeysByRealKey.entrySet()) {
+                stringRedisTemplate.rename(entry.getValue(), entry.getKey());
+            }
+            // 기존 사전에만 남은 gram 키는 DICT_TTL 만료 시 자연 삭제된다.
         } finally {
             String script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
             stringRedisTemplate.execute(new DefaultRedisScript<>(script, Long.class), List.of(lockKey), lockToken);
         }
     }
 
+    private String tempKeyForSameSlot(String realKey, String buildToken) {
+        // Redis Cluster RENAME은 source/dest가 같은 hash slot이어야 하므로 real key 자체를 hash tag로 사용한다.
+        return "{" + realKey + "}:temp:" + buildToken;
+    }
+
     /**
-     * 특정 prefix에 해당하는 모든 사전 키를 삭제한다.
+     * Encodes Redis hash-tag control characters before a gram is used as a key suffix.
      *
-     * @param gramPrefix Redis 키 prefix (예: "search:typo:places:gram:")
+     * <p>Place and festival names are user/admin controlled data. If a raw gram contains
+     * {@code {}} characters, the temp-key hash tag used for cluster-safe RENAME can be parsed
+     * differently from the destination key and CROSSSLOT can recur. Encoding keeps the key
+     * deterministic while preventing input data from becoming Redis hash-tag syntax.
      */
-    private void evictDictionary(String gramPrefix) {
-        ScanOptions options = ScanOptions.scanOptions().match(gramPrefix + "*").count(500).build();
-        stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
-            try (Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
-                while (cursor.hasNext()) {
-                    connection.keyCommands().del(cursor.next());
-                }
-            }
-            return null;
-        });
+    String encodeGramForKey(String gram) {
+        return gram
+                .replace("%", "%25")
+                .replace("{", "%7B")
+                .replace("}", "%7D");
     }
 
     /**

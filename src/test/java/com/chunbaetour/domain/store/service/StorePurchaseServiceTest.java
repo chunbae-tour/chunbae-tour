@@ -16,6 +16,7 @@ import static org.mockito.Mockito.never;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import com.chunbaetour.domain.store.dto.request.StorePurchaseRequest;
 import com.chunbaetour.domain.store.dto.response.StoreOrderResponse;
 import com.chunbaetour.domain.store.entity.Product;
@@ -474,9 +475,10 @@ class StorePurchaseServiceTest {
         CursorPageResponse<StoreOrderResponse> result =
                 storePurchaseService.getMyOrders(USER_ID, null, 2);
 
-        // then — size=2만 반환, hasNext=true, nextCursor는 마지막 항목(order2) ID 기반
+        // then — size=2만 반환, hasNext=true, nextCursor는 노출된 마지막 항목(order2, id=2) 기반
         assertThat(result.content()).hasSize(2);
         assertThat(result.hasNext()).isTrue();
-        assertThat(result.nextCursor()).isNotNull();
+        // idExtractor 배선 검증: sentinel(order3)이 아니라 노출 마지막 항목(order2=2L) id를 인코딩해야 함
+        assertThat(CursorUtils.decode(result.nextCursor())).isEqualTo(2L);
     }
 }

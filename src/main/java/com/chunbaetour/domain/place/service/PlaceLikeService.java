@@ -45,23 +45,23 @@ public class PlaceLikeService {
     private final ApplicationEventPublisher eventPublisher;
 
     private static final String SEED_AND_INCR_SCRIPT = 
-            "local key = KEYS[1]\n" +
+            "local key = KEYS[1];\n" +
             "if redis.call('EXISTS', key) == 0 then\n" +
-            "  redis.call('SET', key, ARGV[1])\n" +
-            "end\n" +
-            "return redis.call('INCR', key)";
+            "  redis.call('SET', key, ARGV[1]);\n" +
+            "end;\n" +
+            "return redis.call('INCR', key);";
 
     private static final String SEED_AND_DECR_SCRIPT = 
-            "local key = KEYS[1]\n" +
+            "local key = KEYS[1];\n" +
             "if redis.call('EXISTS', key) == 0 then\n" +
-            "  redis.call('SET', key, ARGV[1])\n" +
-            "end\n" +
-            "local current = redis.call('DECR', key)\n" +
+            "  redis.call('SET', key, ARGV[1]);\n" +
+            "end;\n" +
+            "local current = redis.call('DECR', key);\n" +
             "if current < 0 then\n" +
-            "  redis.call('SET', key, 0)\n" +
-            "  return 0\n" +
-            "end\n" +
-            "return current";
+            "  redis.call('SET', key, 0);\n" +
+            "  return 0;\n" +
+            "end;\n" +
+            "return current;";
 
     private static final DefaultRedisScript<Long> REDIS_SCRIPT_INCR =
             new DefaultRedisScript<>(SEED_AND_INCR_SCRIPT, Long.class);
@@ -139,11 +139,15 @@ public class PlaceLikeService {
     private void seedAndIncrement(Long placeId, int dbLikeCount) {
         try {
             String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
-            stringRedisTemplate.execute(
+            String dirtyKey = PlaceRedisConstants.PLACE_DIRTY_STATS_KEY;
+            Long result = stringRedisTemplate.execute(
                     REDIS_SCRIPT_INCR,
                     java.util.Collections.singletonList(key),
                     String.valueOf(dbLikeCount)
             );
+            if (result != null) {
+                addDirtyStatsMarker(dirtyKey, placeId, "increment");
+            }
         } catch (Exception e) {
             log.warn("Place like count seed+increment failed: placeId={}", placeId, e);
         }
@@ -156,13 +160,36 @@ public class PlaceLikeService {
     private void seedAndDecrement(Long placeId, int dbLikeCount) {
         try {
             String key = PlaceRedisConstants.PLACE_LIKE_COUNT_PREFIX + placeId;
-            stringRedisTemplate.execute(
+            String dirtyKey = PlaceRedisConstants.PLACE_DIRTY_STATS_KEY;
+            Long result = stringRedisTemplate.execute(
                     REDIS_SCRIPT_DECR,
                     java.util.Collections.singletonList(key),
                     String.valueOf(dbLikeCount)
             );
+            if (result != null) {
+                addDirtyStatsMarker(dirtyKey, placeId, "decrement");
+            }
         } catch (Exception e) {
             log.warn("Place like count seed+decrement failed: placeId={}", placeId, e);
+        }
+    }
+
+    /**
+     * Marks a place like stat as dirty after the Redis counter has already changed.
+     *
+     * <p>If this write fails, the updated like counter may not be discovered by the write-behind
+     * sync batch. Keep the user action tolerant, but log at ERROR so operations can alert and repair.
+     */
+    private void addDirtyStatsMarker(String dirtyKey, Long placeId, String operation) {
+        try {
+            stringRedisTemplate.opsForSet().add(dirtyKey, String.valueOf(placeId));
+        } catch (RuntimeException e) {
+            log.error(
+                    "Place dirty stats marker add failed after like counter {}. placeId={}",
+                    operation,
+                    placeId,
+                    e
+            );
         }
     }
 

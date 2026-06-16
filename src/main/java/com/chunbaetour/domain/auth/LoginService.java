@@ -10,6 +10,8 @@ import com.chunbaetour.domain.common.audit.SecurityAuditLogger;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +49,7 @@ public class LoginService {
     private final JwtProperties jwtProperties;
     private final MeterRegistry meterRegistry;
     private final SecurityAuditLogger auditLogger;
+    private final Clock clock;
 
     /**
      * 로그인 처리. 성공 시 TokenPair 반환 + Redis에 Refresh 저장.
@@ -59,7 +62,7 @@ public class LoginService {
      * @param requiredRole 호출한 endpoint가 요구하는 role. S2~S3은 USER, S5에서 MERCHANT/ADMIN 추가 예정
      * @return 발급된 토큰 쌍 (Cookie 직렬화는 컨트롤러 책임)
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public TokenPair login(String loginId, String password, Role requiredRole) {
         // 이메일은 대소문자 무관 저장 정책이므로 조회 직전 lowercase 정규화
         String email = loginId.toLowerCase(Locale.ROOT);
@@ -96,13 +99,17 @@ public class LoginService {
             throw new BusinessException(ErrorCode.ACCESS_DENIED);
         }
 
-        // 정지 계정은 비밀번호와 무관하게 차단. 메시지는 명시 (사용자에게 정지 사실 안내 필요).
-        // role 체크를 먼저 통과한 후 검사 — 다른 page 호출자에게 정지 상태가 노출되는 oracle 차단.
+        // 정지 계정은 비밀번호와 무관하게 차단.
+        // 시스템 제재 만료 여부를 먼저 체크 — 만료됐으면 즉시 해제 후 로그인 허용.
         if (account.getStatus() == AccountStatus.SUSPENDED) {
-            meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "suspended").increment();
-            auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.ACCOUNT_SUSPENDED.getCode(),
-                    Map.of("requiredRole", requiredRole.name(), "reasonDetail", "account_suspended"));
-            throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+            if (account.isSystemSanctionExpired(LocalDateTime.now(clock))) {
+                account.clearSystemSanction();
+            } else {
+                meterRegistry.counter(METRIC_LOGIN_ATTEMPT, "outcome", "suspended").increment();
+                auditLogger.emitFailure(SecurityAuditEventType.LOGIN_FAILURE, account.getId(), ErrorCode.ACCOUNT_SUSPENDED.getCode(),
+                        Map.of("requiredRole", requiredRole.name(), "reasonDetail", "account_suspended"));
+                throw new BusinessException(ErrorCode.ACCOUNT_SUSPENDED);
+            }
         }
 
         // 토큰 발급. Refresh는 매번 새로운 tokenId(UUID)를 가진다.

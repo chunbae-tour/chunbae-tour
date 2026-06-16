@@ -42,6 +42,7 @@ import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
 import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.shop.service.ShopService;
+import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -65,6 +66,7 @@ class ReportServiceTest {
     @Mock private CommentRepository commentRepository;
     @Mock private AccountRepository accountRepository;
     @Mock private ShopService shopService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ReportService reportService;
@@ -97,7 +99,7 @@ class ReportServiceTest {
         ReflectionTestUtils.setField(activeCompanionPost, "id", COMP_POST_ID);
 
         pendingReport = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(pendingReport, "id", REPORT_ID);
     }
 
@@ -136,7 +138,7 @@ class ReportServiceTest {
     @DisplayName("MERCHANT 신고 — shopId가 reporterId와 숫자 일치해도 owner 다르면 정상 신고 (KAN-93 조기 차단 오판 회귀)")
     void create_MERCHANT_shopId_숫자일치_owner_다름() {
         Long shopId = REPORTER_ID; // shopId(1) == reporterId(1) — 숫자 우연 일치
-        Report merchantReport = Report.create(REPORTER_ID, ReportTargetType.MERCHANT, shopId, ReportReason.SPAM, null);
+        Report merchantReport = Report.create(REPORTER_ID, ReportTargetType.MERCHANT, shopId, ReportReason.SPAM, null, null);
         given(shopService.findMerchantAccountId(shopId)).willReturn(Optional.of(OTHER_ID));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
                 REPORTER_ID, ReportTargetType.MERCHANT, shopId)).willReturn(false);
@@ -256,7 +258,7 @@ class ReportServiceTest {
     @DisplayName("신고 3건 도달 — CompanionPost 자동 숨김 (HIDDEN)")
     void create_autoHide_CompanionPost_3건_도달() {
         Report companionReport = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION,
-                COMP_POST_ID, ReportReason.SPAM, null);
+                COMP_POST_ID, ReportReason.SPAM, null, null);
         given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(activeCompanionPost));
         given(companionPostRepository.findByIdForUpdate(COMP_POST_ID)).willReturn(Optional.of(activeCompanionPost));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
@@ -311,7 +313,7 @@ class ReportServiceTest {
         ReflectionTestUtils.setField(activeComment, "id", commentId);
 
         Report commentReport = Report.create(REPORTER_ID, ReportTargetType.COMMENT, commentId,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         given(commentRepository.findById(commentId)).willReturn(Optional.of(activeComment));
         given(commentRepository.findByIdForUpdate(commentId)).willReturn(Optional.of(activeComment));
         given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(any(), any(), any())).willReturn(false);
@@ -356,7 +358,7 @@ class ReportServiceTest {
     @DisplayName("size+1 반환 시 hasNext true, nextCursor 반환")
     void getMyReports_hasNext() {
         Report report2 = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report2, "id", 99L);
 
         given(reportRepository.findByReporterIdOrderByIdDesc(any(), any(Pageable.class)))
@@ -430,7 +432,7 @@ class ReportServiceTest {
     @DisplayName("POST_COMPANION 신고 상세 — targetTitle 반환, targetImageUrls null")
     void getReport_COMPANION_POST_상세() {
         Report companionReport = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION,
-                COMP_POST_ID, ReportReason.SPAM, null);
+                COMP_POST_ID, ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(companionReport, "id", REPORT_ID);
 
         Account reporter = mock(Account.class);
@@ -468,7 +470,7 @@ class ReportServiceTest {
     @DisplayName("POST_COMPANION 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
     void getReport_COMPANION_삭제됨_graceful() {
         Report companionReport = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION,
-                COMP_POST_ID, ReportReason.SPAM, null);
+                COMP_POST_ID, ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(companionReport, "id", REPORT_ID);
 
         Account reporter = mock(Account.class);
@@ -489,7 +491,7 @@ class ReportServiceTest {
     @DisplayName("COMMENT 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
     void getReport_COMMENT_삭제됨_graceful() {
         Report commentReport = Report.create(REPORTER_ID, ReportTargetType.COMMENT,
-                COMMENT_ID, ReportReason.SPAM, null);
+                COMMENT_ID, ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(commentReport, "id", REPORT_ID);
 
         Account reporter = mock(Account.class);
@@ -510,7 +512,7 @@ class ReportServiceTest {
     @DisplayName("USER 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
     void getReport_USER_삭제됨_graceful() {
         Report userReport = Report.create(REPORTER_ID, ReportTargetType.USER,
-                USER_TARGET_ID, ReportReason.SPAM, null);
+                USER_TARGET_ID, ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(userReport, "id", REPORT_ID);
 
         Account reporter = mock(Account.class);
@@ -531,7 +533,7 @@ class ReportServiceTest {
     @DisplayName("MERCHANT 신고 대상 삭제된 경우 — targetTitle·targetContent '(삭제됨)' 반환")
     void getReport_MERCHANT_삭제됨_graceful() {
         Report merchantReport = Report.create(REPORTER_ID, ReportTargetType.MERCHANT,
-                MERCHANT_ID, ReportReason.SPAM, null);
+                MERCHANT_ID, ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(merchantReport, "id", REPORT_ID);
 
         Account reporter = mock(Account.class);
@@ -564,7 +566,7 @@ class ReportServiceTest {
     @DisplayName("POST_FREE 이미 DELETED — DELETE resolve 시 500 없이 완료")
     void resolveReport_POST_FREE_이미삭제됨_500없음() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
 
         FreePost deletedPost = mock(FreePost.class);
@@ -584,7 +586,7 @@ class ReportServiceTest {
     @DisplayName("POST_COMPANION 이미 DELETED — DELETE resolve 시 500 없이 완료")
     void resolveReport_POST_COMPANION_이미삭제됨_500없음() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION, COMP_POST_ID,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
 
         CompanionPost deletedPost = mock(CompanionPost.class);
@@ -604,7 +606,7 @@ class ReportServiceTest {
     @DisplayName("COMMENT 이미 DELETED — DELETE resolve 시 멱등, 500 없이 완료")
     void resolveReport_COMMENT_이미삭제됨_DELETE_멱등() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.COMMENT, COMMENT_ID,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
 
         Comment deletedComment = mock(Comment.class);
@@ -623,7 +625,7 @@ class ReportServiceTest {
     @DisplayName("USER 탈퇴(DELETED) — SUSPEND resolve 시 skip, 500 없이 완료")
     void resolveReport_USER_탈퇴계정_SUSPEND_500없음() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
-                ReportReason.SPAM, null);
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
 
         Account deletedUser = mock(Account.class);
@@ -637,5 +639,27 @@ class ReportServiceTest {
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
         then(deletedUser).should(never()).suspend();
+    }
+
+    @Test
+    @DisplayName("USER 이미정지(SUSPENDED) — DELETE resolve 시 409 REPORT_TARGET_ALREADY_SUSPENDED — R-5 일관")
+    void resolveReport_USER_이미정지_DELETE_409() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
+                ReportReason.HARASSMENT, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+
+        Account suspendedUser = mock(Account.class);
+        given(suspendedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(suspendedUser));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
+
+        assertThatThrownBy(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
+        then(suspendedUser).should(never()).suspend();
     }
 }

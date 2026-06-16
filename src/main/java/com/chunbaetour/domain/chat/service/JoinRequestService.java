@@ -26,8 +26,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.redisson.client.RedisException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -35,6 +37,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -44,6 +47,8 @@ public class JoinRequestService {
     private static final long LOCK_WAIT_SECONDS = 3L;
     // DB 작업 지연 시 watchdog 무한 점유 방지 — 정상 작업은 수백 ms 이내 완료
     private static final long LOCK_LEASE_SECONDS = 5L;
+    // lease보다 짧게 — 트랜잭션이 lease 만료 전에 항상 끝나도록 강제(락 만료 후 동작 방지)
+    private static final int TX_TIMEOUT_SECONDS = 4;
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
@@ -69,17 +74,19 @@ public class JoinRequestService {
             if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
-            // 트랜잭션 커밋이 락 해제 전에 완료되도록 TransactionTemplate 사용
+            // 트랜잭션 커밋이 락 해제 전에 완료되도록 TransactionTemplate 사용, 타임아웃은 lease보다 짧게 설정
+            TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+            transactionTemplate.setTimeout(TX_TIMEOUT_SECONDS);
             return Objects.requireNonNull(
-                    new TransactionTemplate(transactionManager).execute(
+                    transactionTemplate.execute(
                             status -> doCreateJoinRequest(userId, chatRoomId, request, account)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        } catch (RedisException e) {
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
         } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
+            releaseLock(lock);
         }
     }
 
@@ -135,16 +142,18 @@ public class JoinRequestService {
             if (!lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS)) {
                 throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
             }
+            TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+            transactionTemplate.setTimeout(TX_TIMEOUT_SECONDS);
             return Objects.requireNonNull(
-                    new TransactionTemplate(transactionManager).execute(
+                    transactionTemplate.execute(
                             status -> doApproveJoinRequest(ownerId, chatRoomId, requestId)));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException(ErrorCode.CONCURRENT_UPDATE);
+        } catch (RedisException e) {
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
         } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
+            releaseLock(lock);
         }
     }
 
@@ -197,6 +206,18 @@ public class JoinRequestService {
                 new JoinRequestRejectedEvent(chatRoomId, requestId, joinRequest.getUserId()));
 
         return RejectJoinRequestResponse.from(joinRequest);
+    }
+
+    // 락 해제 — isHeldByCurrentThread()/unlock() 자체가 Redis 장애로 던지는 RedisException이
+    // try/catch에서 던진 원본 예외를 덮어쓰지 않도록 여기서 잡아 로그만 남김
+    private void releaseLock(RLock lock) {
+        try {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        } catch (RedisException e) {
+            log.warn("락 해제 실패 — Redis 장애로 추정, lease 만료로 자동 해제됨", e);
+        }
     }
 
     // 락 내부 실제 비즈니스 로직 — TransactionTemplate으로 호출해 트랜잭션 커밋이 락 해제 전에 완료됨을 보장

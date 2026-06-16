@@ -25,6 +25,7 @@ import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRep
 import com.chunbaetour.domain.companionreview.repository.CompanionRepository;
 import com.chunbaetour.domain.companionreview.repository.CompanionReviewRepository;
 import com.chunbaetour.domain.companionreview.repository.ScoreCountProjection;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -276,7 +277,8 @@ class CompanionReviewServiceTest {
     }
 
     private Companion buildCompanion(Long id, Long chatRoomId) {
-        Companion companion = Companion.builder().chatRoomId(chatRoomId).build();
+        Companion companion = Companion.builder().chatRoomId(chatRoomId)
+                .tripStartDate(LocalDate.of(2026, 7, 1)).tripEndDate(LocalDate.of(2026, 7, 5)).build();
         try {
             var idField = Companion.class.getDeclaredField("id");
             idField.setAccessible(true);

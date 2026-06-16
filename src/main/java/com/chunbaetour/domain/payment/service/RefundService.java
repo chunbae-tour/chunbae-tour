@@ -170,15 +170,8 @@ public class RefundService {
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Refund> refunds = refundRepository.findByUserIdWithFilter(userId, status, cursorId, pageable);
 
-        boolean hasNext = refunds.size() > size;
-        List<Refund> content = hasNext ? refunds.subList(0, size) : refunds;
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
-
-        List<UserRefundResponse> responses = content.stream()
-                .map(UserRefundResponse::from)
-                .toList();
-
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
+        return CursorPageResponse.of(refunds, size, UserRefundResponse::from, Refund::getId);
     }
 
     @Transactional

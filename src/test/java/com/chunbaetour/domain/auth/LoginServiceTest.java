@@ -21,7 +21,10 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Field;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,6 +78,10 @@ class LoginServiceTest {
     /** KAN-105 감사 로그 mock — emit 호출 자체만 별도 verify 가능. 출력 검증은 통합 테스트에서. */
     @Mock
     private SecurityAuditLogger auditLogger;
+
+    /** 시스템 제재 만료 체크(isSystemSanctionExpired)에 LocalDateTime.now(clock) 사용 — 고정 시각 주입. */
+    @Spy
+    private Clock clock = Clock.fixed(Instant.parse("2026-06-11T12:00:00Z"), ZoneOffset.UTC);
 
     @InjectMocks
     private LoginService loginService;
