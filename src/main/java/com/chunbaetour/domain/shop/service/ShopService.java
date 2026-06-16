@@ -49,6 +49,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ShopService {
 
+    // KST 기준 시각 비교용 타임존
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+
     private final ShopRepository shopRepository;
     private final MenuRepository menuRepository;
     private final ShopWalletRepository shopWalletRepository;
@@ -56,6 +59,7 @@ public class ShopService {
     private final PlaceRepository placeRepository;
     private final TraditionalMarketRepository traditionalMarketRepository;
     private final ShopImageStorage imageStorage;
+    private final Clock clock;
 
     /**
      * 내 가게 목록 조회.
