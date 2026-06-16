@@ -263,7 +263,10 @@ public class ReportService {
             // }
 
             ReportAction action = request.action();
-            if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
+            // RESTORE는 정정 전용(updateReportStatus)에서만 발행. 최초 처리(/resolve)에서 허용하면
+            // 이 신고와 무관하게(다른 신고로 숨긴) 콘텐츠를 복원하는 부작용 → 부적합 action으로 차단.
+            if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT
+                    || action == ReportAction.RESTORE) {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
             }
 
@@ -384,16 +387,16 @@ public class ReportService {
                     .filter(p -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
                     .ifPresent(FreePost::hide);
             case COMMENT -> commentRepository.findByIdForUpdate(targetId)
-                    .filter(c -> c.getStatus() != CommentStatus.DELETED)
+                    .filter(c -> c.getStatus() == CommentStatus.ACTIVE)
                     .filter(c -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
-                    .ifPresent(Comment::delete);
+                    .ifPresent(Comment::hide);
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요
             }
             case REVIEW -> placeReviewRepository.findByIdForUpdate(targetId)
                     .filter(r -> r.getStatus() == PlaceReviewStatus.ACTIVE)
                     .filter(r -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
-                    .ifPresent(PlaceReview::delete);
+                    .ifPresent(PlaceReview::hide);
         }
     }
 

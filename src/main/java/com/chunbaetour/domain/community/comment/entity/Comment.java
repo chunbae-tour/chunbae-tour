@@ -85,6 +85,10 @@ public class Comment extends BaseEntity {
         this.status = CommentStatus.HIDDEN;
     }
 
+    /**
+     * 행정 숨김 복구 — HIDDEN(신고 처리·자동제재) 댓글만 ACTIVE로 되돌린다 (게시글과 동일).
+     * 작성자 자발 삭제(DELETED)는 부활시키지 않는다.
+     */
     public void restore() {
         if (this.status == CommentStatus.HIDDEN) {
             this.status = CommentStatus.ACTIVE;

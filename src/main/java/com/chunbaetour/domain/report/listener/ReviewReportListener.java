@@ -30,11 +30,12 @@ public class ReviewReportListener {
 
         placeReviewRepository.findById(event.targetId()).ifPresentOrElse(review -> {
             if (event.action() == ReportAction.DELETE) {
-                if (review.getStatus() == PlaceReviewStatus.DELETED) {
-                    log.warn("ReviewReportListener: already DELETED, reviewId={}", event.targetId());
+                // 행정 DELETE 액션 = 숨김(HIDDEN, 복원 가능). 작성자 자발 삭제(DELETED)와 구분.
+                if (review.getStatus() == PlaceReviewStatus.HIDDEN) {
+                    log.warn("ReviewReportListener: already HIDDEN, reviewId={}", event.targetId());
                     return;
                 }
-                review.delete();
+                review.hide();
             } else if (event.action() == ReportAction.SUSPEND) {
                 accountRepository.findById(review.getAuthor().getId()).ifPresent(acc -> {
                     if (acc.getStatus() == AccountStatus.DELETED) return;

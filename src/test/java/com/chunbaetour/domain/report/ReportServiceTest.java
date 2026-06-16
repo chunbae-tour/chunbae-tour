@@ -326,7 +326,7 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("COMMENT 신고 3건 도달 → 댓글 자동 삭제")
+    @DisplayName("COMMENT 신고 3건 도달 → 댓글 자동 숨김 (HIDDEN)")
     void create_autoHide_COMMENT_3건_도달() {
         Long commentId = 30L;
         Comment activeComment = Comment.create(FREE_POST_ID, PostType.FREE, 2L, "댓글 내용");
@@ -344,7 +344,7 @@ class ReportServiceTest {
         reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.COMMENT, commentId, ReportReason.SPAM, null));
 
-        assertThat(activeComment.getStatus()).isEqualTo(CommentStatus.DELETED);
+        assertThat(activeComment.getStatus()).isEqualTo(CommentStatus.HIDDEN);
     }
 
     // ── getMyReports ──────────────────────────────────────────────────────
@@ -648,6 +648,22 @@ class ReportServiceTest {
                 REPORT_ID, ReportTargetType.USER, USER_TARGET_ID, ReportAction.SUSPEND));
     }
 
+    @Test
+    @DisplayName("RESTORE resolve — /resolve 부적합 action → REPORT_WRONG_ENDPOINT (정정 전용)")
+    void resolveReport_RESTORE_거부() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.RESTORE, null);
+
+        assertThatThrownBy(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_WRONG_ENDPOINT);
+        then(eventPublisher).shouldHaveNoInteractions();
+    }
+
     // ── REVIEW 신고 (KAN-152 통합) ────────────────────────────────────────
 
     @Test
@@ -707,7 +723,7 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("REVIEW 신고 3건 도달 — 리뷰 자동 삭제")
+    @DisplayName("REVIEW 신고 3건 도달 — 리뷰 자동 숨김 (HIDDEN)")
     void create_REVIEW_autoHide() {
         Account author = mock(Account.class);
         given(author.getId()).willReturn(2L);
@@ -729,7 +745,7 @@ class ReportServiceTest {
         reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.REVIEW, REVIEW_ID, ReportReason.SPAM, null));
 
-        then(review).should().delete();
+        then(review).should().hide();
     }
 
     @Test

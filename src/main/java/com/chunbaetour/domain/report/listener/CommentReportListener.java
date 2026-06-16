@@ -30,7 +30,8 @@ public class CommentReportListener {
 
         commentRepository.findById(event.targetId()).ifPresentOrElse(comment -> {
             if (event.action() == ReportAction.DELETE) {
-                if (comment.getStatus() != CommentStatus.DELETED) comment.delete();
+                // 행정 DELETE 액션 = 숨김(HIDDEN, 복원 가능). 작성자 자발 삭제(DELETED)와 구분.
+                if (comment.getStatus() != CommentStatus.DELETED) comment.hide();
             } else if (event.action() == ReportAction.SUSPEND) {
                 accountRepository.findById(comment.getAuthorId()).ifPresent(acc -> {
                     if (acc.getStatus() == AccountStatus.DELETED) return;

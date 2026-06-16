@@ -121,13 +121,23 @@ public class PlaceReview {
         return this.author.getId().equals(accountId);
     }
 
-    /** soft delete */
+    /** 작성자 자발 삭제 (soft delete) — 복원 대상 아님. */
     public void delete() {
         this.status = PlaceReviewStatus.DELETED;
     }
 
-    /** soft delete 복구 — 숨김(DELETED) 리뷰를 ACTIVE로 되돌린다 (신고 RESTORE 처리용). */
+    /** 행정 숨김 (신고 처리·자동제재) — 복원 가능. 자발 삭제(DELETED)는 덮어쓰지 않음. */
+    public void hide() {
+        if (this.status == PlaceReviewStatus.DELETED) {
+            return;
+        }
+        this.status = PlaceReviewStatus.HIDDEN;
+    }
+
+    /** 행정 숨김 복구 — HIDDEN 리뷰만 ACTIVE로 되돌린다 (신고 RESTORE/정정 처리용). 자발 삭제(DELETED)는 부활 안 함. */
     public void restore() {
-        this.status = PlaceReviewStatus.ACTIVE;
+        if (this.status == PlaceReviewStatus.HIDDEN) {
+            this.status = PlaceReviewStatus.ACTIVE;
+        }
     }
 }

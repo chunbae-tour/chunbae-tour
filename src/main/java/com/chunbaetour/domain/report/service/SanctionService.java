@@ -135,7 +135,7 @@ public class SanctionService {
             case COMMENT -> commentRepository.findById(targetId)
                     .ifPresent(c -> { if (c.getStatus() != com.chunbaetour.domain.community.comment.entity.CommentStatus.DELETED) c.hide(); });
             case REVIEW -> placeReviewRepository.findById(targetId)
-                    .ifPresent(r -> { if (r.getStatus() != PlaceReviewStatus.DELETED) r.delete(); });
+                    .ifPresent(r -> { if (r.getStatus() != PlaceReviewStatus.DELETED) r.hide(); });
             default -> log.warn("[제재 숨김] 미지원 targetType={}", targetType);
         }
         log.info("[제재 숨김] reportId={} targetType={} targetId={}", reportId, targetType, targetId);
@@ -147,8 +147,7 @@ public class SanctionService {
         companionPostRepository.hideAllActiveByAuthorId(userId, now);
         freePostRepository.hideAllActiveByAuthorId(userId, now);
         commentRepository.hideAllActiveByAuthorId(userId, now);
-        // PlaceReview는 HIDDEN 상태가 없어 soft-delete(DELETED)로 숨김 — hideReportedContent의 REVIEW 처리와 동일.
-        placeReviewRepository.deleteAllActiveByAuthorId(userId, now);
+        placeReviewRepository.hideAllActiveByAuthorId(userId, now);
         log.info("[영구 정지 전체 숨김] userId={}", userId);
     }
 

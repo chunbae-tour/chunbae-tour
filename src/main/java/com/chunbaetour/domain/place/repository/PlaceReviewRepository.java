@@ -70,11 +70,11 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
     Optional<PlaceReview> findByIdForUpdate(@Param("id") Long id);
 
     /**
-     * 영구 정지 유저의 ACTIVE 리뷰 일괄 soft-delete (DELETED).
-     * PlaceReview는 HIDDEN 상태가 없어 게시글·댓글의 hideAllActiveByAuthorId와 달리 DELETED로 처리.
+     * 영구 정지 유저의 ACTIVE 리뷰 일괄 행정 숨김(HIDDEN) — 게시글·댓글과 동일하게 복원 가능한 모더레이션 상태로 처리.
+     * 작성자 자발 삭제(DELETED)와 구분된다.
      */
-    @Modifying(clearAutomatically = true)
-    @Query("UPDATE PlaceReview r SET r.status = com.chunbaetour.domain.place.PlaceReviewStatus.DELETED, r.updatedAt = :now "
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE PlaceReview r SET r.status = com.chunbaetour.domain.place.PlaceReviewStatus.HIDDEN, r.updatedAt = :now "
             + "WHERE r.author.id = :authorId AND r.status = com.chunbaetour.domain.place.PlaceReviewStatus.ACTIVE")
-    void deleteAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
+    void hideAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
 }
