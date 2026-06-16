@@ -19,13 +19,26 @@ public interface PaymentGatewayClient {
     // idempotencyKey: "refund-{refundId}" 형식으로 전달해 네트워크 타임아웃 후 재시도 시 이중 취소 방지.
     void cancelPayment(String orderUid, Long amount, String reason, String idempotencyKey);
 
-    record PortOnePaymentInfo(String status, Long totalAmount, Long cancelledAmount) {
+    record PortOnePaymentInfo(String status, Long totalAmount, Long cancelledAmount, String transactionId) {
+        /**
+         * transactionId가 불필요한 경로(취소·부분취소 검증, 다수 테스트) 호환용 3-arg 생성자.
+         * 고아 PENDING 재조정(B3)에서 PAID 복구 시 CallbackService.handleSuccess(orderUid, txId)에
+         * 넘길 PG 거래번호가 필요해 canonical에 transactionId를 추가했으나, 기존 호출은 무변경 유지한다.
+         */
+        public PortOnePaymentInfo(String status, Long totalAmount, Long cancelledAmount) {
+            this(status, totalAmount, cancelledAmount, null);
+        }
+
         public boolean isPaid() {
             return "PAID".equals(status);
         }
 
         public boolean isCancelled() {
             return "CANCELLED".equals(status);
+        }
+
+        public boolean isFailed() {
+            return "FAILED".equals(status);
         }
     }
 }
