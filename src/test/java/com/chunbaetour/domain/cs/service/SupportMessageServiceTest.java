@@ -198,6 +198,21 @@ class SupportMessageServiceTest {
         verify(supportRedisPubSubService).publish(eq(1L), any());
     }
 
+    // IMAGE presign 실패(EXTERNAL_SERVICE_ERROR) → fileUrl=null 격하, 메시지 저장·publish는 성공(트랜잭션 롤백 방지)
+    @Test
+    void sendMessage_whenPresignFails_fileUrlNullified_messageStillSaved() {
+        given(rateLimiter.tryConsume(any(), any())).willReturn(RateLimitDecision.allowed(19));
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(buildRoom(1L, 1L, SupportRoomStatus.WAITING)));
+        given(supportMessageRepository.save(any())).willReturn(buildImageMessage(102L, 1L, "support-rooms/1/uuid.jpg"));
+        given(supportFileStorage.presignedGetUrl("support-rooms/1/uuid.jpg"))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
+
+        supportMessageService.sendMessage(1L, 1L, false, fileReq("support-rooms/1/uuid.jpg"));
+
+        verify(supportMessageRepository).save(any(SupportMessage.class));
+        verify(supportRedisPubSubService).publish(eq(1L), any());
+    }
+
     // IMAGE 메시지 — fileName null → INVALID_REQUEST (정책 결정 2026-06-16)
     @Test
     void sendMessage_whenImageWithNullFileName_throwsInvalidRequest() {
