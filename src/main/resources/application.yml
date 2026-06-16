@@ -33,8 +33,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 5MB    # 서비스 레벨 5MB cap과 일치 — 초과 시 MaxUploadSizeExceededException → 400
-      max-request-size: 5MB
+      max-file-size: 10MB   # 서비스 레벨 문서 10MB cap과 일치 — 초과 시 MaxUploadSizeExceededException → 400
+      max-request-size: 10MB
 
   # Flyway 마이그레이션 (KAN-178, Admin Epic KAN-177 S00).
   # baseline-on-migrate=true + baseline-version=1: 기존 운영 prod DB는 V1 적용된 것으로 간주 (schema 변경 0).
@@ -129,6 +129,14 @@ ratelimit:
       path: /api/v1/translations
       limit: 15
       window: PT1M
+    # 신고 접수: 한 사용자가 여러 대상을 빠르게 신고(report-bombing)해 관리자 큐를 도배하거나
+    #   다계정 협업으로 자동숨김 임계(3건)를 노리는 남용 방어. uk_reports_reporter_target은 같은 대상
+    #   중복만 막아 다른 대상 연속 신고는 차단 못 함 → IP당 한도로 보완. 정상 사용자는 분당 10건 신고할 일 없음.
+    - id: report-create
+      method: POST
+      path: /api/v1/reports
+      limit: 10
+      window: PT1M
     - id: qr-status-poll
       method: GET
       path: /api/v1/payments/qr/*/status
@@ -140,6 +148,25 @@ ratelimit:
     - id: shop-image-upload
       method: POST
       path: /api/v1/merchants/me/shops/*/images
+      limit: 20
+      window: PT1H
+    # 채팅 파일/이미지 업로드(KAN-309): shop-image-upload와 동일한 이유 — 업로드와 메시지 전송이 분리된
+    #   2-step 구조라 전송 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
+    - id: chat-file-upload
+      method: POST
+      path: /api/v1/chat/rooms/*/files
+      limit: 20
+      window: PT1H
+    # 상담 채팅 파일/이미지 업로드(KAN-310): shop-image-upload와 동일한 이유 — 업로드와 메시지 전송이 분리된
+    #   2-step 구조라 전송 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
+    - id: support-file-upload
+      method: POST
+      path: /api/v1/support/rooms/*/files
+      limit: 20
+      window: PT1H
+    - id: admin-support-file-upload
+      method: POST
+      path: /api/v1/admin/support/rooms/*/files
       limit: 20
       window: PT1H
     # 토큰 재발급: permitAll + 자동 전송 refresh 쿠키만으로 호출 가능한 경로라 무제한 노출되면

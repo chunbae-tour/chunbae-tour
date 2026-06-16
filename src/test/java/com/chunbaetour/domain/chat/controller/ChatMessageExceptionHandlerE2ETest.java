@@ -6,6 +6,7 @@ import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.jwt.TokenIssuer;
 import com.chunbaetour.domain.chat.dto.request.ChatSendMessageRequest;
 import com.chunbaetour.domain.chat.dto.response.StompErrorResponse;
+import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import java.lang.reflect.Type;
 import java.util.List;
@@ -78,7 +79,7 @@ class ChatMessageExceptionHandlerE2ETest extends AbstractIntegrationTest {
 
         // 비참여 채팅방으로 메시지 전송 → CHAT_NOT_JOINED 예외 → @MessageExceptionHandler
         session.send("/pub/chat/rooms/" + NON_EXISTENT_ROOM_ID + "/messages",
-                new ChatSendMessageRequest("테스트"));
+                new ChatSendMessageRequest(MessageType.TEXT, "테스트", null, null, null));
 
         StompErrorResponse error = errors.poll(5, TimeUnit.SECONDS);
         assertThat(error).isNotNull();

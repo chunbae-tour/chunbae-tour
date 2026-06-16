@@ -2,6 +2,7 @@ package com.chunbaetour.domain.payment.repository;
 
 import com.chunbaetour.domain.payment.entity.PaymentOrder;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
@@ -44,6 +45,41 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PaymentOrder p WHERE p.id = :id")
     Optional<PaymentOrder> findByIdWithLock(@Param("id") Long id);
+
+    /**
+     * 고아 PENDING 충전 주문 조회 — 웹훅 미도달·서버 크래시 복구용 (B3 재조정 스케줄러).
+     *
+     * <p>생성 후 일정 시간(threshold)이 지나도 PENDING으로 잔류한 주문을 createdAt 오름차순(오래된 것 우선)으로
+     * 조회한다. 스케줄러가 건별로 PG 실제 상태를 확인해 COMPLETED/FAILED로 재조정한다. 락 미사용 —
+     * 상태 전이는 CallbackService의 DB-level CAS(completeIfNotCompleted/failIfPending)에 위임해 웹훅과 직렬화.
+     */
+    @Query("SELECT p FROM PaymentOrder p "
+            + "WHERE p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING "
+            + "  AND p.createdAt < :threshold "
+            + "ORDER BY p.createdAt ASC")
+    List<PaymentOrder> findStalePendingOrders(@Param("threshold") LocalDateTime threshold, Pageable pageable);
+
+    /**
+     * 일일 충전 한도 검증용 — 기간 내 사용자의 충전 시도 금액 합계 (KAN-293).
+     *
+     * <p>진행중(PENDING) + 완료 이력이 있는 주문(pgTransactionId != null)을 합산한다.
+     * pgTransactionId는 complete() 시점에만 세팅되고 이후 취소·환불로 지워지지 않으므로
+     * "한 번이라도 완료된 주문"의 마커다. 따라서 완료 후 취소·환불(CANCELLED/REFUNDED/PARTIAL_CANCELLED 등)도
+     * 한도에 그대로 유지돼 한도 세탁을 방지한다. 반면 결제 전 취소(PENDING→CANCELLED)·실패(FAILED)는
+     * pgTransactionId가 null이라 자연 제외돼 사용자가 한도를 억울하게 소모하지 않는다.
+     *
+     * <p>created_at은 JPA auditing이 JVM 기본 존(운영=KST)으로 기록하는 KST wall-clock이다. 따라서 호출 측은
+     * UTC 변환 없이 KST naive 영업일 경계(오늘 00:00 ~ 내일 00:00)를 그대로 전달한다(UTC로 변환하면 9h 어긋남).
+     */
+    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM PaymentOrder p "
+            + "WHERE p.userId = :userId "
+            + "  AND (p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING "
+            + "       OR p.pgTransactionId IS NOT NULL) "
+            + "  AND p.createdAt >= :startAt "
+            + "  AND p.createdAt < :endAt")
+    long sumChargedAmountForDailyLimit(@Param("userId") Long userId,
+                                       @Param("startAt") LocalDateTime startAt,
+                                       @Param("endAt") LocalDateTime endAt);
 
     /**
      * PENDING 또는 FAILED 상태인 경우에만 COMPLETED + pgTransactionId 세팅하는 DB-level 조건부 UPDATE.

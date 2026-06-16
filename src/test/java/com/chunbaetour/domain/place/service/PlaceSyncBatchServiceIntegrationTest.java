@@ -1,9 +1,11 @@
 package com.chunbaetour.domain.place.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.client.TourApiPlaceItem;
+import com.chunbaetour.domain.place.constant.PlaceRedisConstants;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.ChunkResult;
 import com.chunbaetour.domain.place.service.PlaceSyncBatchService.UpsertResult;
@@ -11,6 +13,7 @@ import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.place.type.PlaceSource;
 import com.chunbaetour.domain.place.type.PlaceStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +21,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 @SpringBootTest
 class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
@@ -28,9 +33,24 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     private PlaceRepository placeRepository;
 
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
     @AfterEach
     void cleanup() {
         placeRepository.deleteAll();
+    }
+
+    /** 상세 캐시 키를 미리 채운다 — sync UPDATE/DELETE 후 무효화 검증용(B10). */
+    private void seedDetailCache(Long placeId) {
+        stringRedisTemplate.opsForValue().set(
+                PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId, "{\"cached\":true}",
+                Duration.ofMinutes(PlaceRedisConstants.PLACE_DETAIL_CACHE_TTL_MINUTES));
+    }
+
+    private boolean detailCacheExists(Long placeId) {
+        return Boolean.TRUE.equals(
+                stringRedisTemplate.hasKey(PlaceRedisConstants.PLACE_DETAIL_CACHE_PREFIX + placeId));
     }
 
     private TourApiPlaceItem item(String contentId, String title, String mapX, String mapY) {
@@ -110,6 +130,20 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("@Version — upsertItem UPDATE 시 낙관락 version이 1 증가한다 (KAN-304/B12)")
+    void versionIncrementsOnUpdate() {
+        batchService.upsertItem(item("910", "옛이름", "127.1", "36.8"));
+        Long v0 = placeRepository.findByExternalId("910").orElseThrow().getVersion();
+
+        batchService.upsertItem(item("910", "새이름", "127.2", "36.9"));
+        Long v1 = placeRepository.findByExternalId("910").orElseThrow().getVersion();
+
+        // version 컬럼이 매 UPDATE마다 증가 → 동시 UPDATE 시 한쪽이 OptimisticLockingFailureException으로 차단됨
+        assertThat(v0).isZero();
+        assertThat(v1).isEqualTo(v0 + 1);
+    }
+
+    @Test
     @DisplayName("좌표가 없으면 SKIPPED 처리되고 저장되지 않는다")
     void skipMissingCoords() {
         UpsertResult result = batchService.upsertItem(item("300", "좌표없음", "", ""));
@@ -137,21 +171,174 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("showflag 삭제 항목(markDeleted)은 기존 관광지를 soft-delete(DELETED)한다")
+    @DisplayName("showflag 삭제 항목(markDeleted)은 기존 관광지를 원천 삭제(SOURCE_DELETED)로 전이한다 (KAN-306)")
     void markDeletedSoftDeletes() {
         batchService.upsertItem(item("500", "삭제예정관광지", "127.1", "36.8"));
 
         UpsertResult result = batchService.markDeleted("500");
 
         assertThat(result).isEqualTo(UpsertResult.DELETED);
+        // 운영자 삭제(DELETED)가 아니라 원천 삭제(SOURCE_DELETED) — 재노출 시 부활 가능
         assertThat(placeRepository.findByExternalId("500").orElseThrow().getStatus())
-                .isEqualTo(PlaceStatus.DELETED);
+                .isEqualTo(PlaceStatus.SOURCE_DELETED);
     }
 
     @Test
     @DisplayName("존재하지 않는 contentId의 삭제 요청은 SKIPPED")
     void markDeletedNotFound() {
         assertThat(batchService.markDeleted("999")).isEqualTo(UpsertResult.SKIPPED);
+    }
+
+    @Test
+    @DisplayName("원천 삭제(SOURCE_DELETED)된 관광지는 원천 재노출 시 upsertItem에서 ACTIVE로 부활하고 UPDATED된다 (KAN-306)")
+    void reviveSourceDeletedOnReappear() {
+        batchService.upsertItem(item("600", "원천삭제예정", "127.1", "36.8"));
+        batchService.markDeleted("600");
+        assertThat(placeRepository.findByExternalId("600").orElseThrow().getStatus())
+                .isEqualTo(PlaceStatus.SOURCE_DELETED);
+
+        UpsertResult result = batchService.upsertItem(item("600", "부활된이름", "127.2", "36.9"));
+
+        assertThat(result).isEqualTo(UpsertResult.UPDATED);
+        Place revived = placeRepository.findByExternalId("600").orElseThrow();
+        assertThat(revived.getStatus()).isEqualTo(PlaceStatus.ACTIVE);   // SOURCE_DELETED → ACTIVE 부활
+        assertThat(revived.getName()).isEqualTo("부활된이름");            // 부활 + 최신 데이터 갱신
+    }
+
+    @Test
+    @DisplayName("upsertChunk도 원천 삭제(SOURCE_DELETED) 관광지를 원천 재노출 시 ACTIVE로 부활시킨다 (KAN-306)")
+    void upsertChunkRevivesSourceDeleted() {
+        batchService.upsertItem(item("620", "청크부활예정", "127.1", "36.8"));
+        batchService.markDeleted("620");
+
+        batchService.upsertChunk(List.of(item("620", "청크부활됨", "127.2", "36.9")));
+
+        Place revived = placeRepository.findByExternalId("620").orElseThrow();
+        assertThat(revived.getStatus()).isEqualTo(PlaceStatus.ACTIVE);
+        assertThat(revived.getName()).isEqualTo("청크부활됨");
+    }
+
+    @Test
+    @DisplayName("운영자 삭제(DELETED)는 원천 재노출에도 부활하지 않는다 — SOURCE_DELETED와 구분 (KAN-306)")
+    void operatorDeletedNotRevivedBySource() {
+        Place toDelete = Place.createFromApi("630", "운영자삭제", "충청남도 천안시",
+                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null, "충청남도", "천안시");
+        toDelete.delete();   // 운영자 수동 삭제
+        placeRepository.saveAndFlush(toDelete);
+
+        UpsertResult result = batchService.upsertItem(item("630", "되살리기시도", "127.2", "36.9"));
+
+        assertThat(result).isEqualTo(UpsertResult.SKIPPED);
+        Place found = placeRepository.findByExternalId("630").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.DELETED);  // 부활 안 됨
+        assertThat(found.getName()).isEqualTo("운영자삭제");            // 갱신 안 됨
+    }
+
+    @Test
+    @DisplayName("이미 SOURCE_DELETED인 관광지에 대한 markDeleted는 SKIPPED (중복 처리 안 함, KAN-306)")
+    void markDeletedAlreadySourceDeleted() {
+        batchService.upsertItem(item("610", "원천삭제예정", "127.1", "36.8"));
+        batchService.markDeleted("610");
+
+        assertThat(batchService.markDeleted("610")).isEqualTo(UpsertResult.SKIPPED);
+        assertThat(placeRepository.findByExternalId("610").orElseThrow().getStatus())
+                .isEqualTo(PlaceStatus.SOURCE_DELETED);
+    }
+
+    @Test
+    @DisplayName("SOURCE_DELETED는 실 MySQL ENUM 컬럼에 저장·조회된다 (마이그 V202606160900 검증, KAN-306)")
+    void sourceDeletedPersistsInEnumColumn() {
+        Place p = Place.createFromApi("650", "원천삭제저장", "충청남도 천안시",
+                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null, "충청남도", "천안시");
+        p.markSourceDeleted();
+        placeRepository.saveAndFlush(p);
+
+        Place found = placeRepository.findByExternalId("650").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.SOURCE_DELETED);
+    }
+
+    @Test
+    @DisplayName("UPDATE 롤백 시 afterCommit 미발화 → 상세 캐시가 evict되지 않는다 (B10 일관성, KAN-303 리뷰)")
+    void rollbackDoesNotEvictDetailCache() {
+        batchService.upsertItem(item("730", "옛이름", "127.1", "36.8"));
+        Long placeId = placeRepository.findByExternalId("730").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        // 같은 contentId 재수집(UPDATE)인데 name이 컬럼 한도(varchar 100) 초과 → flush 시 제약 위반으로 롤백.
+        // evict는 saveAndFlush 성공 이후(afterCommit)에만 등록되므로, 롤백 경로에선 캐시가 그대로 남아야 한다.
+        String tooLongName = "가".repeat(150);
+        assertThatThrownBy(() -> batchService.upsertItem(item("730", tooLongName, "127.2", "36.9")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        // 롤백 → afterCommit 미발화 → 캐시 키 유지(stale은 자연 TTL로 치유)
+        assertThat(detailCacheExists(placeId)).isTrue();
+    }
+
+    @Test
+    @DisplayName("upsertChunk 갱신분이 없으면(전부 SKIP) evict를 등록하지 않는다 — 캐시 그대로 (updatedIds.isEmpty 가드)")
+    void upsertChunkNoUpdates_doesNotEvict() {
+        // HIDDEN 관광지는 upsertChunk가 SKIP(updatedIds 미포함) → evict 미등록
+        batchService.upsertItem(item("740", "숨김관광지", "127.1", "36.8"));
+        Place hidden = placeRepository.findByExternalId("740").orElseThrow();
+        hidden.hide();
+        placeRepository.saveAndFlush(hidden);
+        Long placeId = hidden.getId();
+        seedDetailCache(placeId);
+
+        batchService.upsertChunk(List.of(item("740", "갱신시도", "127.2", "36.9")));
+
+        // 갱신분 0건 → evict 미등록 → 캐시 유지
+        assertThat(detailCacheExists(placeId)).isTrue();
+    }
+
+    @Test
+    @DisplayName("markDeleted(DELETED)는 커밋 후 상세 캐시(place:{id})를 무효화한다 (B10)")
+    void markDeletedEvictsDetailCache() {
+        batchService.upsertItem(item("700", "삭제예정관광지", "127.1", "36.8"));
+        Long placeId = placeRepository.findByExternalId("700").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        batchService.markDeleted("700");
+
+        // REQUIRES_NEW 커밋 후 afterCommit에서 캐시 키 삭제
+        assertThat(detailCacheExists(placeId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("upsertItem(UPDATED)은 커밋 후 상세 캐시(place:{id})를 무효화한다 (B10)")
+    void upsertUpdateEvictsDetailCache() {
+        batchService.upsertItem(item("710", "옛이름", "127.1", "36.8"));
+        Long placeId = placeRepository.findByExternalId("710").orElseThrow().getId();
+        seedDetailCache(placeId);
+        assertThat(detailCacheExists(placeId)).isTrue();
+
+        batchService.upsertItem(item("710", "새이름", "127.2", "36.9"));
+
+        assertThat(detailCacheExists(placeId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("upsertChunk 갱신분은 커밋 후 상세 캐시를 다중 키 DEL로 모두 무효화한다 (B10, KAN-303 리뷰)")
+    void upsertChunkUpdateEvictsDetailCache() {
+        batchService.upsertChunk(List.of(
+                item("720", "옛이름", "127.1", "36.8"),
+                item("721", "다른관광지", "127.2", "36.9")));
+        Long placeId720 = placeRepository.findByExternalId("720").orElseThrow().getId();
+        Long placeId721 = placeRepository.findByExternalId("721").orElseThrow().getId();
+        // 두 갱신분 모두 캐시 seed — 일부 키만 삭제하는 퇴행을 잡기 위해 둘 다 검증
+        seedDetailCache(placeId720);
+        seedDetailCache(placeId721);
+        assertThat(detailCacheExists(placeId720)).isTrue();
+        assertThat(detailCacheExists(placeId721)).isTrue();
+
+        batchService.upsertChunk(List.of(
+                item("720", "새이름", "127.3", "37.0"),
+                item("721", "또다른이름", "127.4", "37.1")));
+
+        assertThat(detailCacheExists(placeId720)).isFalse();
+        assertThat(detailCacheExists(placeId721)).isFalse();
     }
 
     @Test

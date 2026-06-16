@@ -1,6 +1,8 @@
 package com.chunbaetour.domain.community.companion.entity;
 
 import com.chunbaetour.domain.common.entity.BaseEntity;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -8,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -16,7 +19,16 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "companion_posts")
+// InnoDB 보조 인덱스는 리프에 PK(id)를 자동 포함해 (col, id)로 정렬·저장되므로
+// 말단 id를 명시하지 않는다. cursor(id<?) 범위탐색 + id DESC 정렬은 PK 자동포함으로 충족.
+@Table(name = "companion_posts", indexes = {
+        // 기본 목록 (필터 없음): WHERE status=? AND id<cursor ORDER BY id DESC
+        @Index(name = "idx_companion_status", columnList = "status"),
+        // region 필터: WHERE status=? AND region=? ... ORDER BY id DESC
+        @Index(name = "idx_companion_status_region", columnList = "status, region"),
+        // meetingDate 필터: WHERE status=? AND meeting_date=? ... ORDER BY id DESC
+        @Index(name = "idx_companion_status_meeting_date", columnList = "status, meeting_date")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CompanionPost extends BaseEntity {
@@ -64,7 +76,7 @@ public class CompanionPost extends BaseEntity {
             Long placeId, String placeName, String region,
             LocalDate meetingDate, int maxMembers) {
         if (maxMembers < 2) {
-            throw new IllegalArgumentException("maxMembers must be at least 2");
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
         }
         CompanionPost post = new CompanionPost();
         post.authorId = authorId;
@@ -82,6 +94,14 @@ public class CompanionPost extends BaseEntity {
 
     public void update(String title, String content, Long placeId, String placeName,
                        String region, LocalDate meetingDate, Integer maxMembers) {
+        // placeId·placeName은 쌍으로만 수정 가능 — 한쪽만 보내면 장소 정보 불일치
+        if ((placeId == null) != (placeName == null)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        // 하한 2명(create와 동일) + 현재 인원 미만 불가 — 정원 1명짜리 동행글 방지
+        if (maxMembers != null && (maxMembers < 2 || maxMembers < this.currentMembers)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         if (title != null) this.title = title;
         if (content != null) this.content = content;
         if (placeId != null) this.placeId = placeId;
@@ -89,9 +109,6 @@ public class CompanionPost extends BaseEntity {
         if (region != null) this.region = region;
         if (meetingDate != null) this.meetingDate = meetingDate;
         if (maxMembers != null) {
-            if (maxMembers < this.currentMembers) {
-                throw new IllegalArgumentException("maxMembers must be >= currentMembers");
-            }
             this.maxMembers = maxMembers;
         }
     }
@@ -107,6 +124,12 @@ public class CompanionPost extends BaseEntity {
             throw new IllegalStateException("삭제된 게시글은 숨김 처리할 수 없습니다. postId=" + this.id);
         }
         this.status = CompanionPostStatus.HIDDEN;
+    }
+
+    public void restore() {
+        if (this.status == CompanionPostStatus.HIDDEN) {
+            this.status = CompanionPostStatus.ACTIVE;
+        }
     }
 
     public boolean isOwnedBy(Long accountId) {

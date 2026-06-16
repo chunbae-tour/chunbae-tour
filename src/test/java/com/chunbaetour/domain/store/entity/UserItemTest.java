@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.UserItemStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -50,7 +51,7 @@ class UserItemTest {
     }
 
     private UserItem item(UserItemStatus status) {
-        Product product = Product.create("테스트 아이템", "설명", "쿠폰", 1000L,
+        Product product = Product.create("테스트 아이템", "설명", ProductCategory.DISCOUNT_COUPON, 1000L,
                 null, 10, "[]", "테스트 상점", 30, 1);
         ReflectionTestUtils.setField(product, "id", 100L);
         UserItem item = UserItem.create(1L, 200L, product, LocalDate.of(2026, 6, 8));

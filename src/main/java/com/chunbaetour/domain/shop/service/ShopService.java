@@ -14,18 +14,23 @@ import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
+import com.chunbaetour.domain.shop.businesshours.BusinessHours;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
+import com.chunbaetour.domain.shop.type.BusinessStatus;
 import com.chunbaetour.domain.shop.storage.ShopImageKeys;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import java.util.ArrayList;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +49,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ShopService {
 
+    // KST 기준 시각 비교용 타임존
+    private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
+
     private final ShopRepository shopRepository;
     private final MenuRepository menuRepository;
     private final ShopWalletRepository shopWalletRepository;
@@ -51,6 +59,7 @@ public class ShopService {
     private final PlaceRepository placeRepository;
     private final TraditionalMarketRepository traditionalMarketRepository;
     private final ShopImageStorage imageStorage;
+    private final Clock clock;
 
     /**
      * 내 가게 목록 조회.
@@ -188,7 +197,14 @@ public class ShopService {
         // soft delete 제외된 메뉴 전체 조회 (@SQLRestriction 적용)
         List<Menu> menus = menuRepository.findByShopIdOrderByIdAsc(shopId);
 
-        return ShopInfoResponse.from(shop, menus);
+        // 실시간 영업여부 — operatingHours를 KST 현재시각과 비교해 조회 시점 산출 (저장하지 않음, B7 MVP).
+        // ShopStatus.CLOSED(폐업/영업종료 관리상태)는 영업시간과 무관하게 영업 안 함 → businessStatus도 CLOSED 강제.
+        // (SUSPENDED는 위에서 차단, 여기 도달하는 비ACTIVE는 CLOSED뿐) 폐업 가게가 "영업중"으로 표시되는 모순 방지.
+        BusinessStatus businessStatus = (shop.getStatus() == ShopStatus.ACTIVE)
+                ? BusinessHours.statusAt(shop.getOperatingHours(), LocalDateTime.now(clock.withZone(SEOUL_ZONE)))
+                : BusinessStatus.CLOSED;
+
+        return ShopInfoResponse.from(shop, menus, businessStatus);
     }
 
     /**
@@ -225,9 +241,10 @@ public class ShopService {
             return AdminShopPlaceResponse.unlinked(shopId);
         }
 
-        // 연결 요청 — DELETED 아닌 Place 조회(soft delete 장소 연결 차단) + 응답에 담을 장소명 확보
+        // 연결 요청 — 노출 상태(ACTIVE/HIDDEN) Place만 연결(삭제계열 DELETED/SOURCE_DELETED 차단) + 응답에 담을 장소명 확보
+        // KAN-306: != DELETED 단일 가드가 SOURCE_DELETED를 통과시키던 회귀 보정 — 화이트리스트로 통일
         Place place = placeRepository.findById(placeId)
-                .filter(p -> p.getStatus() != PlaceStatus.DELETED)
+                .filter(p -> PlaceStatus.visibleStatuses().contains(p.getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
 
         shop.linkPlace(placeId);

@@ -11,6 +11,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
@@ -23,7 +24,11 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "free_posts")
+// InnoDB 보조 인덱스는 PK(id)를 자동 포함 — 말단 id 생략, cursor+id DESC는 PK 자동포함으로 충족
+@Table(name = "free_posts", indexes = {
+        // 목록 조회: WHERE status=? AND id<cursor ORDER BY id DESC
+        @Index(name = "idx_free_status", columnList = "status")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class FreePost extends BaseEntity {
@@ -86,6 +91,12 @@ public class FreePost extends BaseEntity {
             throw new IllegalStateException("삭제된 게시글은 숨김 처리할 수 없습니다. postId=" + this.id);
         }
         this.status = FreePostStatus.HIDDEN;
+    }
+
+    public void restore() {
+        if (this.status == FreePostStatus.HIDDEN) {
+            this.status = FreePostStatus.ACTIVE;
+        }
     }
 
     public boolean isOwnedBy(Long accountId) {

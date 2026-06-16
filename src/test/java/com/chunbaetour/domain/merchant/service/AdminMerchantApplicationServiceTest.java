@@ -56,6 +56,9 @@ class AdminMerchantApplicationServiceTest {
     @Mock
     private ShopWalletRepository shopWalletRepository;
 
+    @Mock
+    private com.chunbaetour.domain.place.repository.PlaceRepository placeRepository;
+
     private static final Long APPLICATION_ID_2 = 2L;
 
     private MerchantApplication pendingApplication() {
@@ -124,6 +127,25 @@ class AdminMerchantApplicationServiceTest {
         assertThat(account.getRole()).isEqualTo(com.chunbaetour.domain.auth.Role.MERCHANT);
         verify(shopRepository).save(any(Shop.class));
         verify(shopWalletRepository).save(any(ShopWallet.class));
+    }
+
+    @Test
+    @DisplayName("승인 실패: placeId가 노출 상태(ACTIVE/HIDDEN)가 아님 — SOURCE_DELETED 등 → PLACE_NOT_FOUND (KAN-306 화이트리스트)")
+    void approve_nonVisiblePlace_throws() {
+        MerchantApplication app = pendingApplication();
+        Account account = activeAccount();
+        Long placeId = 7L;
+
+        given(applicationRepository.findByIdWithLock(APPLICATION_ID)).willReturn(Optional.of(app));
+        given(accountRepository.findByIdWithLock(USER_ID)).willReturn(Optional.of(account));
+        // 원천삭제(SOURCE_DELETED) 등 비노출 상태 → 화이트리스트(ACTIVE/HIDDEN) 미포함 → false
+        given(placeRepository.existsByIdAndStatusIn(
+                placeId, com.chunbaetour.domain.place.type.PlaceStatus.visibleStatuses())).willReturn(false);
+
+        assertThatThrownBy(() -> adminMerchantApplicationService.approve(APPLICATION_ID, placeId))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PLACE_NOT_FOUND);
     }
 
     @Test

@@ -54,7 +54,10 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
                 || response.amount().total() == null) {
                 throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
             }
-            return new PortOnePaymentInfo(response.status(), response.amount().total(), response.amount().cancelled());
+            // pgTxId: 고아 PENDING 재조정(B3)이 PAID 복구 시 pgTransactionId로 저장할 PG 거래번호.
+            // 웹훅 경로는 payload의 transactionId를 쓰지만, GET 조회 경로엔 webhook이 없어 응답의 pgTxId로 대체한다.
+            return new PortOnePaymentInfo(
+                response.status(), response.amount().total(), response.amount().cancelled(), response.pgTxId());
         } catch (RestClientException e) {
             throw new PaymentException(ErrorCode.PAYMENT_SERVICE_UNAVAILABLE);
         }
@@ -82,7 +85,7 @@ public class PortOnePaymentGatewayClient implements PaymentGatewayClient {
     private record CancelRequest(String storeId, String reason, Long amount) {
     }
 
-    private record PortOnePaymentResponse(String status, AmountDetail amount) {
+    private record PortOnePaymentResponse(String status, String pgTxId, AmountDetail amount) {
         record AmountDetail(Long total, Long cancelled) {
         }
     }

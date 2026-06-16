@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * {@link AdminPlaceService} 단위 테스트 (Admin S07).
@@ -42,8 +43,11 @@ class AdminPlaceServiceTest {
     @Mock
     private ShopRepository shopRepository;
 
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+
     private AdminPlaceService service() {
-        return new AdminPlaceService(placeRepository, shopRepository);
+        return new AdminPlaceService(placeRepository, shopRepository, stringRedisTemplate);
     }
 
     private Place activePlace() {
@@ -77,6 +81,8 @@ class AdminPlaceServiceTest {
         assertThat(result.description()).isEqualTo("조선 왕궁");
         assertThat(result.address()).isEqualTo("서울 종로구");
         assertThat(result.operatingHours()).isEqualTo("09:00-18:00");
+        // 수정 후 상세 캐시 무효화 — 트랜잭션 밖이라 registerAfterCommit 즉시 실행 (B10)
+        then(stringRedisTemplate).should().delete("place:1");
     }
 
     @Test
@@ -121,6 +127,8 @@ class AdminPlaceServiceTest {
         then(placeRepository).should(never()).deleteById(any());
         // soft delete 후 연관 shop.place_id null 처리 호출 검증
         then(shopRepository).should().clearPlaceReference(1L);
+        // 상세 캐시 무효화 — 트랜잭션 밖이라 registerAfterCommit 즉시 실행 (B10)
+        then(stringRedisTemplate).should().delete("place:1");
     }
 
     @Test
@@ -179,9 +187,9 @@ class AdminPlaceServiceTest {
     }
 
     @Test
-    @DisplayName("getTotalPlaces: countByStatusNot(DELETED) 위임 (soft delete 제외)")
+    @DisplayName("getTotalPlaces: countVisibleForAdmin() 위임 (DELETED·SOURCE_DELETED 제외, KAN-306)")
     void getTotalPlaces_excludesDeleted() {
-        given(placeRepository.countByStatusNot(PlaceStatus.DELETED)).willReturn(42L);
+        given(placeRepository.countVisibleForAdmin()).willReturn(42L);
 
         assertThat(service().getTotalPlaces()).isEqualTo(42L);
     }

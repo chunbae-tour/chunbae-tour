@@ -2,6 +2,7 @@ package com.chunbaetour.domain.companionreview.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
@@ -65,14 +66,33 @@ public class CompanionReviewService {
             throw new BusinessException(ErrorCode.COMPANION_NOT_ENDED);
         }
 
+        // reviewer/target 둘 다 endParticipation을 마쳤는지 검증 (CR_011, 고도화 #2)
+        long endedCount = companionParticipantRepository.countByCompanionIdAndUserIdInAndEndedAtIsNotNull(
+                companion.getId(), List.of(reviewerId, request.targetUserId()));
+        if (endedCount != 2) {
+            throw new BusinessException(ErrorCode.COMPANION_REVIEW_PARTICIPANT_NOT_ENDED);
+        }
+
         if (companionReviewRepository.existsByReviewerIdAndTargetUserIdAndChatRoomId(
                 reviewerId, request.targetUserId(), request.chatRoomId())) {
             throw new BusinessException(ErrorCode.COMPANION_REVIEW_ALREADY_EXISTS);
         }
 
-        // PESSIMISTIC_WRITE — 동시 리뷰 등록으로 인한 이중 점수 갱신 경합 방어
-        Account target = accountRepository.findByIdWithLock(request.targetUserId())
+        // 둘 다 PESSIMISTIC_WRITE — target은 이중 점수 갱신 경합 방어, reviewer는 SUSPENDED 체크(CR_012)를 락 안에서 일관되게 검증하기 위함
+        // 데드락 방지 — id 오름차순으로 고정된 순서로 락 획득
+        long firstId = Math.min(reviewerId, request.targetUserId());
+        long secondId = Math.max(reviewerId, request.targetUserId());
+        Account first = accountRepository.findByIdWithLock(firstId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        Account second = accountRepository.findByIdWithLock(secondId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        Account target = firstId == request.targetUserId() ? first : second;
+        Account reviewer = firstId == reviewerId ? first : second;
+
+        // reviewer/target 둘 중 하나라도 정지 계정이면 리뷰 작성 차단 (CR_012, 고도화 #2)
+        if (target.getStatus() == AccountStatus.SUSPENDED || reviewer.getStatus() == AccountStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.COMPANION_REVIEW_SUSPENDED_ACCOUNT);
+        }
 
         CompanionReview review;
         try {

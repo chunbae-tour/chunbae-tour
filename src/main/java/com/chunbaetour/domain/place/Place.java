@@ -13,6 +13,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import org.locationtech.jts.geom.Point;
 import org.springframework.data.annotation.CreatedDate;
@@ -33,7 +34,8 @@ import lombok.NoArgsConstructor;
     name = "places",
     indexes = {
         @Index(name = "idx_places_category", columnList = "category"),
-        // 운영자 목록(searchForAdmin)은 status<>DELETED 필터 + id DESC 정렬 → (status, id) 복합으로 filesort 회피.
+        // 운영자 목록(searchForAdmin)은 status IN (ACTIVE,HIDDEN) 필터 + id DESC 정렬 → (status, id) 복합으로 filesort 회피.
+        // (KAN-306에서 status<>DELETED → IN(ACTIVE,HIDDEN)로 보정 — 인덱스 활용/성능 동일.)
         // 기존 단일 idx_places_status는 본 복합의 leftmost prefix라 중복 → 제거(KAN-209 S07 리뷰 G).
         @Index(name = "idx_places_status_id", columnList = "status, id"),
         // 공간 인덱스는 JPA @Index로 정의할 수 없으므로 DB 마이그레이션(V202606041400)에서 직접 생성
@@ -50,6 +52,16 @@ public class Place {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * 낙관적 락 버전 (KAN-304/B12). Tier-1 sync(updateFromApi)와 Tier-2 enrich(applyApiDetail) 동시 UPDATE의
+     * lost-update를 방지한다. 충돌 시 {@code ObjectOptimisticLockingFailureException} — sync 배치는 per-item으로
+     * skip(다음 run 재수집), enrich는 best-effort라 호출부가 graceful 흡수. 리뷰 경로는 PESSIMISTIC_WRITE 락으로
+     * 직렬화되므로 충돌 전에 차단된다.
+     */
+    @Version
+    @Column(nullable = false)
+    private Long version;
 
     @Column(nullable = false, length = 100)
     private String name;
@@ -327,6 +339,23 @@ public class Place {
 
     /** 관리자: 관광지 다시 노출 */
     public void activate() {
+        this.status = PlaceStatus.ACTIVE;
+    }
+
+    /**
+     * 원천(TourAPI) 삭제 처리 — showflag != "1" 반영 (KAN-306).
+     * 운영자 수동 삭제(DELETED)와 구분해 SOURCE_DELETED로 전이한다.
+     * 원천이 다시 노출되면 {@link #reviveFromSource()}로 부활 가능.
+     */
+    public void markSourceDeleted() {
+        this.status = PlaceStatus.SOURCE_DELETED;
+    }
+
+    /**
+     * 원천 재노출(showflag=1) 시 부활 — SOURCE_DELETED → ACTIVE (KAN-306).
+     * 운영자 삭제(DELETED)·숨김(HIDDEN)은 부활 대상이 아니다(운영 의사 존중).
+     */
+    public void reviveFromSource() {
         this.status = PlaceStatus.ACTIVE;
     }
 

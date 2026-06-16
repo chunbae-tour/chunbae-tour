@@ -97,7 +97,7 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
     void searchPlaces_WithInMemoryBoost_MaintainsCursorIntegrity() {
         // [1페이지 조회] size = 3
         TypoCorrectedSearchResponse<SearchPlaceResponse> page1 = searchService.searchPlaces(
-                "통합테스트", null, null, null, 3, "127.0.0.1", null, testUserId);
+                "통합테스트", null, null, null, 3, "127.0.0.1", true, null, testUserId);
 
         List<SearchPlaceResponse> content1 = page1.content();
         assertThat(content1).hasSize(3);
@@ -112,7 +112,7 @@ class SearchPlacePersonalizationIntegrationTest extends AbstractIntegrationTest 
         // [2페이지 조회] 
         Long cursor = Long.valueOf(page1.nextCursor());
         TypoCorrectedSearchResponse<SearchPlaceResponse> page2 = searchService.searchPlaces(
-                "통합테스트", null, null, cursor, 3, "127.0.0.1", null, testUserId);
+                "통합테스트", null, null, cursor, 3, "127.0.0.1", true, null, testUserId);
 
         List<SearchPlaceResponse> content2 = page2.content();
         
