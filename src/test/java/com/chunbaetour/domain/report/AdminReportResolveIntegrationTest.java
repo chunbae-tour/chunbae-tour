@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,6 +13,7 @@ import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.dto.LoginRequest;
 import com.chunbaetour.domain.community.comment.entity.Comment;
+import com.chunbaetour.domain.community.comment.entity.CommentStatus;
 import com.chunbaetour.domain.community.comment.repository.CommentRepository;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
@@ -20,6 +22,12 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.place.Place;
+import com.chunbaetour.domain.place.PlaceReview;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
+import com.chunbaetour.domain.place.type.PlaceCategory;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
@@ -31,7 +39,9 @@ import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import com.chunbaetour.domain.support.AbstractIntegrationTest;
 import jakarta.servlet.http.Cookie;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -74,6 +84,8 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
     @Autowired private FreePostRepository freePostRepository;
     @Autowired private CommentRepository commentRepository;
     @Autowired private ShopRepository shopRepository;
+    @Autowired private PlaceRepository placeRepository;
+    @Autowired private PlaceReviewRepository placeReviewRepository;
 
     @AfterEach
     void cleanup() {
@@ -81,6 +93,8 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         commentRepository.deleteAll();
         companionPostRepository.deleteAll();
         freePostRepository.deleteAll();
+        placeReviewRepository.deleteAll();
+        placeRepository.deleteAll();
         shopRepository.deleteAll();
         accountRepository.deleteAll();
     }
@@ -254,7 +268,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.USER, target.getId(),
                     ReportReason.SPAM, null, null));
-            report.resolve(ReportAction.WARNING, null, "admin");  // already resolved, valid action required
+            report.resolve(ReportAction.WARNING, null, "admin", LocalDateTime.now());  // already resolved, valid action required
             reportRepository.save(report);
             String adminToken = adminToken();
 
@@ -331,6 +345,52 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                             .content(resolveBody("WARNING", null)))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("REPORT_005"));
+        }
+    }
+
+    // ── PATCH /status — 신고 상태 정정 (오판 정정) ──────────────────────────
+
+    @Nested
+    @DisplayName("PATCH /admin/reports/{id}/status")
+    class UpdateStatus {
+
+        @Test
+        @DisplayName("RESOLVED → DISMISSED 정정 시 200, status=DISMISSED")
+        void resolved_to_dismissed() throws Exception {
+            Account reporter = seedFactory.seed("ust_reporter@test.com", PASSWORD, "정정신고자", Role.USER, AccountStatus.ACTIVE);
+            Account target = seedFactory.seed("ust_target@test.com", PASSWORD, "정정대상", Role.USER, AccountStatus.ACTIVE);
+            Report report = Report.create(reporter.getId(), ReportTargetType.USER, target.getId(),
+                    ReportReason.SPAM, null, target.getId());
+            report.resolve(ReportAction.WARNING, "처리함", "admin", LocalDateTime.now());
+            reportRepository.saveAndFlush(report);
+            String adminToken = adminToken();
+
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", "오판 정정")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DISMISSED"));
+
+            Report updated = reportRepository.findById(report.getId()).orElseThrow();
+            assertThat(updated.getStatus()).isEqualTo(ReportStatus.DISMISSED);
+        }
+
+        @Test
+        @DisplayName("PENDING 신고 정정 시도 → 400 REPORT_010")
+        void pending_rejected() throws Exception {
+            Account reporter = seedFactory.seed("ust_r2@test.com", PASSWORD, "정정신고자2", Role.USER, AccountStatus.ACTIVE);
+            Account target = seedFactory.seed("ust_t2@test.com", PASSWORD, "정정대상2", Role.USER, AccountStatus.ACTIVE);
+            Report report = reportRepository.save(Report.create(reporter.getId(), ReportTargetType.USER,
+                    target.getId(), ReportReason.SPAM, null, target.getId()));  // PENDING
+            String adminToken = adminToken();
+
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", null)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("REPORT_010"));
         }
     }
 
@@ -435,7 +495,7 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.MERCHANT, merchant.getId(),
                     ReportReason.SPAM, null, null));
-            report.dismiss(null, "admin");
+            report.dismiss(null, "admin", LocalDateTime.now());
             reportRepository.save(report);
             String adminToken = adminToken();
 
@@ -448,7 +508,158 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("RESTORE 차단 · 정정 복원 (오판 정정)")
+    class RestoreAndCorrection {
+
+        @Test
+        @DisplayName("RESTORE를 /resolve 최초 처리에 사용 시 400 REPORT_007 — 정정 전용 (콘텐츠·신고 불변)")
+        void restore_on_resolve_rejected() throws Exception {
+            Account author = seedFactory.seed("rr_author@test.com", PASSWORD, "복원작성자", Role.USER, AccountStatus.ACTIVE);
+            Account reporter = seedFactory.seed("rr_reporter@test.com", PASSWORD, "복원신고자", Role.USER, AccountStatus.ACTIVE);
+            FreePost post = freePostRepository.save(FreePost.create(author.getId(), "글", "내용", List.of()));
+            Report report = reportRepository.save(Report.create(
+                    reporter.getId(), ReportTargetType.POST_FREE, post.getId(), ReportReason.SPAM, null, null));
+            String adminToken = adminToken();
+
+            mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(resolveBody("RESTORE", null)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("REPORT_007"));
+
+            assertThat(freePostRepository.findById(post.getId()).orElseThrow().getStatus())
+                    .isEqualTo(FreePostStatus.ACTIVE);
+            assertThat(reportRepository.findById(report.getId()).orElseThrow().getStatus())
+                    .isEqualTo(ReportStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("REVIEW DELETE 처리 — 리뷰 HIDDEN (행정 숨김)")
+        void delete_review() throws Exception {
+            Account author = seedFactory.seed("dv_author@test.com", PASSWORD, "리뷰작성자", Role.USER, AccountStatus.ACTIVE);
+            Account reporter = seedFactory.seed("dv_reporter@test.com", PASSWORD, "리뷰신고자", Role.USER, AccountStatus.ACTIVE);
+            Place place = placeRepository.save(samplePlace("경복궁"));
+            PlaceReview review = placeReviewRepository.save(PlaceReview.create(place, author, 3, "리뷰내용", null));
+            Report report = reportRepository.save(Report.create(
+                    reporter.getId(), ReportTargetType.REVIEW, review.getId(), ReportReason.OBSCENE, null, null));
+            String adminToken = adminToken();
+
+            mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(resolveBody("DELETE", null)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("RESOLVED"));
+
+            assertThat(placeReviewRepository.findById(review.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PlaceReviewStatus.HIDDEN);
+        }
+
+        @Test
+        @DisplayName("정정 — POST_FREE DELETE 후 RESOLVED→DISMISSED 정정 시 게시글 ACTIVE 복원 + action(DELETE) 보존")
+        void correction_restores_free_post() throws Exception {
+            Account author = seedFactory.seed("cf_author@test.com", PASSWORD, "정정작성자", Role.USER, AccountStatus.ACTIVE);
+            Account reporter = seedFactory.seed("cf_reporter@test.com", PASSWORD, "정정신고자", Role.USER, AccountStatus.ACTIVE);
+            FreePost post = freePostRepository.save(FreePost.create(author.getId(), "글", "내용", List.of()));
+            Report report = reportRepository.save(Report.create(
+                    reporter.getId(), ReportTargetType.POST_FREE, post.getId(), ReportReason.SPAM, null, null));
+            String adminToken = adminToken();
+
+            // 1) DELETE 처리 → 게시글 HIDDEN, 신고 RESOLVED
+            mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(resolveBody("DELETE", null)))
+                    .andExpect(status().isOk());
+            assertThat(freePostRepository.findById(post.getId()).orElseThrow().getStatus())
+                    .isEqualTo(FreePostStatus.HIDDEN);
+
+            // 2) 정정(RESOLVED→DISMISSED) → RESTORE 이벤트 → 게시글 ACTIVE 복원
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", "오판 정정")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DISMISSED"))
+                    .andExpect(jsonPath("$.data.action").value("DELETE"));  // 원래 조치 보존
+
+            assertThat(freePostRepository.findById(post.getId()).orElseThrow().getStatus())
+                    .isEqualTo(FreePostStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("정정 — COMMENT DELETE 후 RESOLVED→DISMISSED 정정 시 댓글 ACTIVE 복원")
+        void correction_restores_comment() throws Exception {
+            Account author = seedFactory.seed("cc_author@test.com", PASSWORD, "댓글정정작성자", Role.USER, AccountStatus.ACTIVE);
+            Account reporter = seedFactory.seed("cc_reporter@test.com", PASSWORD, "댓글정정신고자", Role.USER, AccountStatus.ACTIVE);
+            Comment comment = commentRepository.save(Comment.create(1L, PostType.FREE, author.getId(), "댓글내용"));
+            Report report = reportRepository.save(Report.create(
+                    reporter.getId(), ReportTargetType.COMMENT, comment.getId(), ReportReason.HARASSMENT, null, null));
+            String adminToken = adminToken();
+
+            mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(resolveBody("DELETE", null)))
+                    .andExpect(status().isOk());
+            assertThat(commentRepository.findById(comment.getId()).orElseThrow().getStatus())
+                    .isEqualTo(CommentStatus.HIDDEN);
+
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", "오판 정정")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DISMISSED"));
+
+            assertThat(commentRepository.findById(comment.getId()).orElseThrow().getStatus())
+                    .isEqualTo(CommentStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("정정 — REVIEW DELETE 후 RESOLVED→DISMISSED 정정 시 리뷰 ACTIVE 복원")
+        void correction_restores_review() throws Exception {
+            Account author = seedFactory.seed("cv_author@test.com", PASSWORD, "리뷰정정작성자", Role.USER, AccountStatus.ACTIVE);
+            Account reporter = seedFactory.seed("cv_reporter@test.com", PASSWORD, "리뷰정정신고자", Role.USER, AccountStatus.ACTIVE);
+            Place place = placeRepository.save(samplePlace("창덕궁"));
+            PlaceReview review = placeReviewRepository.save(PlaceReview.create(place, author, 4, "리뷰내용", null));
+            Report report = reportRepository.save(Report.create(
+                    reporter.getId(), ReportTargetType.REVIEW, review.getId(), ReportReason.OBSCENE, null, null));
+            String adminToken = adminToken();
+
+            mockMvc.perform(post("/api/v1/admin/reports/" + report.getId() + "/resolve")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(resolveBody("DELETE", null)))
+                    .andExpect(status().isOk());
+            assertThat(placeReviewRepository.findById(review.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PlaceReviewStatus.HIDDEN);
+
+            mockMvc.perform(patch("/api/v1/admin/reports/" + report.getId() + "/status")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(statusBody("DISMISSED", "오판 정정")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("DISMISSED"));
+
+            assertThat(placeReviewRepository.findById(review.getId()).orElseThrow().getStatus())
+                    .isEqualTo(PlaceReviewStatus.ACTIVE);
+        }
+    }
+
     // ── 헬퍼 ──────────────────────────────────────────────────────────────
+
+    private Place samplePlace(String name) {
+        return Place.builder()
+                .name(name)
+                .category(PlaceCategory.TOURIST_SPOT)
+                .address("서울시 종로구")
+                .lat(new BigDecimal("37.5796"))
+                .lng(new BigDecimal("126.9770"))
+                .build();
+    }
 
     private String adminToken() throws Exception {
         seedFactory.seedAdmin("admin@test.com", PASSWORD, "관리자");
@@ -464,6 +675,15 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         return body.get("data").get("accessToken").asString();
+    }
+
+    private String statusBody(String status, String adminNote) throws Exception {
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("status", status);
+        if (adminNote != null) {
+            body.put("adminNote", adminNote);
+        }
+        return objectMapper.writeValueAsString(body);
     }
 
     private String resolveBody(String action, String adminNote) throws Exception {

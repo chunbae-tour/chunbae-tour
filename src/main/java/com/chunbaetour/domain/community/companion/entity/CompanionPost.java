@@ -126,6 +126,12 @@ public class CompanionPost extends BaseEntity {
         this.status = CompanionPostStatus.HIDDEN;
     }
 
+    public void restore() {
+        if (this.status == CompanionPostStatus.HIDDEN) {
+            this.status = CompanionPostStatus.ACTIVE;
+        }
+    }
+
     public boolean isOwnedBy(Long accountId) {
         return this.authorId.equals(accountId);
     }

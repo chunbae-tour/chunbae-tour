@@ -31,6 +31,7 @@ import com.chunbaetour.domain.cs.entity.SupportSenderRole;
 import com.chunbaetour.domain.cs.event.SupportRoomClosedEvent;
 import com.chunbaetour.domain.cs.repository.SupportMessageRepository;
 import com.chunbaetour.domain.cs.repository.SupportRoomRepository;
+import com.chunbaetour.domain.cs.storage.SupportFileStorage;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,7 @@ class SupportRoomServiceTest {
     @Mock private SupportMessageRepository supportMessageRepository;
     @Mock private AccountRepository accountRepository;
     @Mock private ApplicationEventPublisher applicationEventPublisher;
+    @Mock private SupportFileStorage supportFileStorage;
 
     // ===== createRoom =====
 
@@ -185,6 +187,40 @@ class SupportRoomServiceTest {
         CursorPageResponse<SupportMessageResponse> result = supportRoomService.getMessages(1L, 1L, null, 20);
 
         assertThat(result.content()).hasSize(1);
+    }
+
+    // IMAGE 메시지 — fileUrl이 presigned GET URL로 변환되는지 확인
+    @Test
+    void getMessages_imageMessage_fileUrlIsPresigned() {
+        SupportRoom room = buildRoom(1L);
+        SupportMessage imgMsg = buildImageMessage(1L, 1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(supportMessageRepository.findMessagesWithCursor(eq(1L), any(), any(PageRequest.class)))
+                .willReturn(List.of(imgMsg));
+        given(supportFileStorage.presignedGetUrl("support-rooms/1/uuid.jpg"))
+                .willReturn("https://s3.example.com/support-rooms/1/uuid.jpg?sig=abc");
+
+        CursorPageResponse<SupportMessageResponse> result = supportRoomService.getMessages(1L, 1L, null, 20);
+
+        assertThat(result.content().get(0).fileUrl())
+                .isEqualTo("https://s3.example.com/support-rooms/1/uuid.jpg?sig=abc");
+    }
+
+    // IMAGE presign 실패(EXTERNAL_SERVICE_ERROR) → 해당 메시지 fileUrl=null로 격하, 목록 전체 503 아님(E10 패턴)
+    @Test
+    void getMessages_imagePresignFails_fileUrlNullified_notPropagated() {
+        SupportRoom room = buildRoom(1L);
+        SupportMessage imgMsg = buildImageMessage(1L, 1L);
+        given(supportRoomRepository.findById(1L)).willReturn(Optional.of(room));
+        given(supportMessageRepository.findMessagesWithCursor(eq(1L), any(), any(PageRequest.class)))
+                .willReturn(List.of(imgMsg));
+        given(supportFileStorage.presignedGetUrl("support-rooms/1/uuid.jpg"))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
+
+        CursorPageResponse<SupportMessageResponse> result = supportRoomService.getMessages(1L, 1L, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.content().get(0).fileUrl()).isNull();
     }
 
     // 타인 방 → CS_003
@@ -361,6 +397,26 @@ class SupportRoomServiceTest {
             throw new RuntimeException(e);
         }
         return room;
+    }
+
+    private SupportMessage buildImageMessage(Long id, Long roomId) {
+        SupportMessage msg = SupportMessage.builder()
+                .supportRoomId(roomId)
+                .senderId(1L)
+                .senderRole(SupportSenderRole.CUSTOMER)
+                .messageType(SupportMessageType.IMAGE)
+                .fileUrl("support-rooms/1/uuid.jpg")
+                .fileName("photo.jpg")
+                .fileSize(1024L)
+                .build();
+        try {
+            var field = SupportMessage.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(msg, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return msg;
     }
 
     private SupportMessage buildMessage(Long id, Long roomId) {

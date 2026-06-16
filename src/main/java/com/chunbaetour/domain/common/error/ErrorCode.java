@@ -21,6 +21,8 @@ public enum ErrorCode {
     // 페이지네이션 공통 검증 — 결제 외 도메인도 동일 기준 적용
     INVALID_PAGE_SIZE(HttpStatus.BAD_REQUEST,                "COMMON_010", "페이지 크기는 1 이상 100 이하여야 합니다."),
     INVALID_CURSOR_PAIR(HttpStatus.BAD_REQUEST,              "COMMON_011", "커서 페이징 쌍(cursor, cursorRating 등)이 올바르게 전달되지 않았습니다."),
+    // COMMON_012: multipart 파싱 단계 파일 크기 초과 — 도메인 무관 공용 (GlobalExceptionHandler.handleMaxUploadSize)
+    FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,                   "COMMON_012", "파일 크기가 최대 허용 용량을 초과합니다."),
 
     // ===== AUTH (담당: 정민교) =====
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "AUTH_001", "이메일 또는 비밀번호가 올바르지 않습니다."),
@@ -38,6 +40,8 @@ public enum ErrorCode {
     INVALID_PASSWORD_FORMAT(HttpStatus.BAD_REQUEST, "AUTH_010", "비밀번호 형식이 올바르지 않습니다."),
     INVALID_EMAIL_FORMAT(HttpStatus.BAD_REQUEST, "AUTH_011", "이메일 형식이 올바르지 않습니다."),
     ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "AUTH_012", "정지된 계정입니다."),
+    // AUTH_024: 도메인별 제재(POST/COMMENT/REVIEW 쓰기 차단) — 계정 전체 정지(AUTH_012)와 구분 (SanctionCheckInterceptor).
+    DOMAIN_SANCTIONED(HttpStatus.FORBIDDEN, "AUTH_024", "해당 도메인에서 활동이 제한된 계정입니다."),
     // AUTH_013: 로그아웃 시 Access Token이 블랙리스트에 등록되며, 이후 같은 토큰으로 요청하면 거부된다.
     //           남은 만료 시간 동안만 블랙리스트에 머무르므로 자연 만료 후에는 같은 tokenId가 새로 발급될 가능성도 사라진다 (UUID).
     BLACKLISTED_TOKEN(HttpStatus.UNAUTHORIZED, "AUTH_013", "로그아웃된 토큰입니다."),
@@ -93,8 +97,8 @@ public enum ErrorCode {
     MAP_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "PLACE_007", "길찾기 서비스를 일시적으로 사용할 수 없습니다."),
     INVALID_SEARCH_RADIUS(HttpStatus.BAD_REQUEST,           "PLACE_008", "유효하지 않은 반경 범위입니다. (최대 20km)"),
     SEARCH_INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST,       "PLACE_009", "검색 시작일은 종료일보다 늦을 수 없습니다."),
-    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 관광지입니다."),
-    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 관광지입니다."),
+    LIKE_ALREADY_EXISTS(HttpStatus.CONFLICT,                "PLACE_010", "이미 찜한 대상입니다."),
+    LIKE_NOT_FOUND(HttpStatus.NOT_FOUND,                  "PLACE_011", "찜하지 않은 대상입니다."),
     REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,            "PLACE_012", "이미 리뷰를 작성한 관광지입니다."),
     REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND,                "PLACE_013", "존재하지 않는 리뷰입니다."),
     REVIEW_FORBIDDEN(HttpStatus.FORBIDDEN,                "PLACE_014", "본인의 리뷰만 수정·삭제할 수 있습니다."),
@@ -140,6 +144,9 @@ public enum ErrorCode {
     QR_PAY_CONFIRM_FORBIDDEN(HttpStatus.FORBIDDEN,         "PAY_028", "본인 가게의 결제 요청만 승인/거절할 수 있습니다."),
     // PAY_029: QR payload의 nonce가 현재 가게 nonce와 불일치 — 재발급으로 무효화된 옛 QR (KAN-253)
     QR_PAY_NONCE_MISMATCH(HttpStatus.CONFLICT,             "PAY_029", "만료된 QR 코드입니다. 최신 QR로 다시 시도해주세요."),
+    // PAY_030: 하루 충전 누적액(진행중+완료 이력)이 일일 한도를 초과 (KAN-293)
+    // 메시지에 한도 금액을 박지 않는다 — 한도는 DailyChargeLimiter.DAILY_LIMIT 단일 소스에서만 관리
+    DAILY_CHARGE_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST,    "PAY_030", "1일 충전 한도를 초과했습니다."),
 
     // ===== STORE (담당: 신현민) =====
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND,                 "STORE_001", "존재하지 않는 상품입니다."),
@@ -213,6 +220,11 @@ public enum ErrorCode {
     CHAT_OWNER_CANNOT_BE_KICKED(HttpStatus.FORBIDDEN,       "CHAT_017", "채팅방 개설자는 강퇴할 수 없습니다."),
     CHAT_NOT_APPLICANT(HttpStatus.FORBIDDEN,                "CHAT_018", "본인의 참여 신청만 취소할 수 있습니다."),
     CHAT_OWNER_TRANSFER_INVALID_TARGET(HttpStatus.BAD_REQUEST, "CHAT_019", "방장 위임 대상은 본인이 아닌 활성 참여자여야 합니다."),
+    CHAT_FILE_EMPTY(HttpStatus.BAD_REQUEST,                 "CHAT_020", "업로드할 파일이 비어 있습니다."),
+    CHAT_FILE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,      "CHAT_021", "지원하지 않는 파일 형식입니다. (이미지: JPEG/PNG/WebP, 문서: PDF/DOCX/XLSX/PPTX/HWP)"),
+    CHAT_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,       "CHAT_022", "이미지 크기가 최대 허용 용량(5MB)을 초과합니다."),
+    CHAT_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,             "CHAT_023", "파일 크기가 최대 허용 용량(10MB)을 초과합니다."),
+    CHAT_FILE_OWNERSHIP_INVALID(HttpStatus.FORBIDDEN,       "CHAT_024", "해당 채팅방에 업로드되지 않은 파일입니다."),
 
     // ===== NOTIFICATION (담당: 임하은) =====
     NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND,            "NOTIFICATION_001", "존재하지 않는 알림입니다."),
@@ -232,6 +244,8 @@ public enum ErrorCode {
     REPORT_TARGET_ALREADY_SUSPENDED(HttpStatus.CONFLICT,     "REPORT_008", "이미 정지된 계정입니다."),
     // REPORT_009: 제재 이력 없음 — 운영자 조기 해제 시 존재하지 않는 sanctionId
     SANCTION_NOT_FOUND(HttpStatus.NOT_FOUND,                 "REPORT_009", "존재하지 않는 제재 이력입니다."),
+    // REPORT_010: 허용되지 않는 신고 상태 전이 — 오판 정정은 RESOLVED→DISMISSED만 허용
+    REPORT_INVALID_STATUS_TRANSITION(HttpStatus.BAD_REQUEST, "REPORT_010", "허용되지 않는 신고 상태 변경입니다."),
 
     // ===== CS / FAQ (담당: 임하은) =====
     FAQ_NOT_FOUND(HttpStatus.NOT_FOUND,                     "FAQ_001", "존재하지 않는 FAQ입니다."),
@@ -245,6 +259,12 @@ public enum ErrorCode {
     SUPPORT_ROOM_ALREADY_EXISTS(HttpStatus.CONFLICT,        "CS_004", "이미 진행 중인 상담방이 있습니다."),
     // CS_005: 이미 배정된 상담방 — 중복 배정 차단
     SUPPORT_ROOM_ALREADY_ASSIGNED(HttpStatus.CONFLICT,      "CS_005", "이미 배정된 상담방입니다."),
+    // CS_006~010: 상담 파일/이미지 업로드 검증 (KAN-310) — CHAT_020~024 대응
+    SUPPORT_FILE_EMPTY(HttpStatus.BAD_REQUEST,              "CS_006", "업로드할 파일이 비어 있습니다."),
+    SUPPORT_FILE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST,   "CS_007", "지원하지 않는 파일 형식입니다. (이미지: JPEG/PNG/WebP, 문서: PDF/DOCX/XLSX/PPTX/HWP)"),
+    SUPPORT_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,    "CS_008", "이미지 크기가 최대 허용 용량(5MB)을 초과합니다."),
+    SUPPORT_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,          "CS_009", "파일 크기가 최대 허용 용량(10MB)을 초과합니다."),
+    SUPPORT_FILE_OWNERSHIP_INVALID(HttpStatus.FORBIDDEN,    "CS_010", "해당 상담방에 업로드되지 않은 파일입니다."),
 
     // ===== COMPANION / COMPANION REVIEW (담당: 임하은, CR 프리픽스 공유) =====
     COMPANION_REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT,    "CR_001", "이미 작성한 동행 리뷰입니다."),
