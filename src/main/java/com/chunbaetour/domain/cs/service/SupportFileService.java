@@ -236,6 +236,8 @@ public class SupportFileService {
         }
         // Paths.get()은 OS 기본 구분자만 인식 — Linux에서 Windows 경로(`C:\...`) 업로드 시 `\` 미제거
         String normalized = originalFilename.replace('\\', '/');
-        return Paths.get(normalized).getFileName().toString();
+        // "/" 또는 trailing separator만 있으면 getFileName()이 null 반환 → NPE 방어
+        java.nio.file.Path fileName = Paths.get(normalized).getFileName();
+        return (fileName != null && !fileName.toString().isBlank()) ? fileName.toString() : "file";
     }
 }
