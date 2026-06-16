@@ -77,10 +77,10 @@ public class CompanionPostController {
 
     @Operation(summary = "동행 게시글 삭제")
     @DeleteMapping("/{postId}")
-    public ApiResponse<String> delete(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
             @AuthenticationPrincipal Long accountId,
             @Positive @PathVariable Long postId) {
         postService.delete(accountId, postId);
-        return ApiResponse.success("게시글이 삭제되었습니다.");
     }
 }
