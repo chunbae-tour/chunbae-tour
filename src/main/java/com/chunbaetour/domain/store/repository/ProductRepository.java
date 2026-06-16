@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.store.repository;
 
 import com.chunbaetour.domain.store.entity.Product;
+import com.chunbaetour.domain.store.type.ProductCategory;
 import com.chunbaetour.domain.store.type.ProductStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
@@ -30,7 +31,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             """)
     List<Product> findVisibleProducts(
             @Param("visibleStatuses") Set<ProductStatus> visibleStatuses,
-            @Param("category") String category,
+            @Param("category") ProductCategory category,
             @Param("cursorId") Long cursorId,
             Pageable pageable);
 }
