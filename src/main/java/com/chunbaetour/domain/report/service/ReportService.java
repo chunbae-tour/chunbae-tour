@@ -17,24 +17,38 @@ import com.chunbaetour.domain.community.companion.repository.CompanionPostReposi
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.place.PlaceReview;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.shop.service.ShopService;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.Period;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
+import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
 import com.chunbaetour.domain.report.dto.request.MerchantReportResolveRequest;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
+import com.chunbaetour.domain.report.dto.request.ReportStatusUpdateRequest;
 import com.chunbaetour.domain.report.dto.response.ReportDetailResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResolveResponse;
 import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.event.ReportContentActionEvent;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.repository.ReportQueryRepository;
+import com.chunbaetour.domain.report.repository.UserSanctionRepository;
+import com.chunbaetour.domain.report.dto.response.ReportedUserSanctionInfo;
+import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.event.ReportAcceptedEvent;
 import com.chunbaetour.domain.report.type.ReportAction;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -60,17 +74,30 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ReportService {
 
+    /** 제재 누적 카운트 집계 윈도우 — 최근 1년 RESOLVED 신고만 집계 (오래된 신고 자동 만료). */
+    private static final Period SANCTION_COUNT_WINDOW = Period.ofYears(1);
+
     /** n건 이상 신고 시 콘텐츠 자동 숨김 임계값 — application.yml report.auto-hide.threshold (KAN-93) */
     @Value("${report.auto-hide.threshold:3}")
     private int autoHideThreshold;
 
     private final ReportRepository reportRepository;
+    private final ReportQueryRepository reportQueryRepository;
+    private final UserSanctionRepository userSanctionRepository;
     private final AccountRepository accountRepository;
     private final CompanionPostRepository companionPostRepository;
     private final FreePostRepository freePostRepository;
     private final CommentRepository commentRepository;
+    private final PlaceReviewRepository placeReviewRepository;
     private final ShopService shopService;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
+
+    // ── PR6: 미처리 신고 건수 ────────────────────────────────────────────
+
+    public PendingCountResponse getPendingCount() {
+        return PendingCountResponse.of(reportRepository.countByStatus(ReportStatus.PENDING));
+    }
 
     // ── KAN-90: 신고 접수 ─────────────────────────────────────────────────
 
@@ -151,33 +178,36 @@ public class ReportService {
      * @param cursor      Base64 인코딩된 cursor (null = 첫 페이지)
      * @param size        페이지 크기
      */
-    public CursorPageResponse<ReportResponse> getReports(String statusParam, String cursor, int size) {
-        PageRequest pageable = PageRequest.of(0, size + 1);
+    public CursorPageResponse<ReportResponse> getReports(String statusParam, ReportTargetType targetType,
+            ReportReason reason, Long reportedUserId, String cursor, int size) {
         ReportStatus status = parseStatus(statusParam);
         Long cursorId = CursorUtils.decodeSafe(cursor);
-        List<Report> reports;
-
-        if (status == null) {
-            reports = (cursorId == null)
-                    ? reportRepository.findAllOrderByIdDesc(pageable)
-                    : reportRepository.findByIdLessThanOrderByIdDesc(cursorId, pageable);
-        } else {
-            reports = (cursorId == null)
-                    ? reportRepository.findByStatusOrderByIdDesc(status, pageable)
-                    : reportRepository.findByStatusAndIdLessThanOrderByIdDesc(status, cursorId, pageable);
-        }
+        List<Report> reports = reportQueryRepository.findByFilter(
+                status, targetType, reason, reportedUserId, cursorId, size);
 
         boolean hasNext = reports.size() > size;
         List<Report> content = hasNext ? reports.subList(0, size) : reports;
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
 
-        // N+1 방지: 신고자 ID 일괄 조회 후 Map 매핑
-        Set<Long> reporterIds = content.stream().map(Report::getReporterId).collect(Collectors.toSet());
-        Map<Long, String> nicknameMap = accountRepository.findAllById(reporterIds).stream()
-                .collect(Collectors.toMap(Account::getId, Account::getNickname));
+        // N+1 방지: 신고자 + 피신고 유저 계정 일괄 조회 (제재 상태 뱃지용)
+        Set<Long> accountIds = new HashSet<>();
+        content.forEach(r -> {
+            accountIds.add(r.getReporterId());
+            if (r.getReportedUserId() != null) {
+                accountIds.add(r.getReportedUserId());
+            }
+        });
+        Map<Long, Account> accountMap = accountRepository.findAllById(accountIds).stream()
+                .collect(Collectors.toMap(Account::getId, a -> a));
 
         List<ReportResponse> responses = content.stream()
-                .map(r -> ReportResponse.of(r, nicknameMap.getOrDefault(r.getReporterId(), "탈퇴한 사용자")))
+                .map(r -> {
+                    Account reporter = accountMap.get(r.getReporterId());
+                    String nickname = reporter != null ? reporter.getNickname() : "탈퇴한 사용자";
+                    Account reportedUser = r.getReportedUserId() != null
+                            ? accountMap.get(r.getReportedUserId()) : null;
+                    return ReportResponse.of(r, nickname, reportedUser);
+                })
                 .toList();
 
         return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
@@ -190,8 +220,22 @@ public class ReportService {
         Report report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
         TargetDetail detail = resolveTargetDetail(report.getTargetType(), report.getTargetId());
+        ReportedUserSanctionInfo sanctionInfo = resolveReportedUserSanction(report.getReportedUserId());
         return ReportDetailResponse.of(report, resolveNickname(report.getReporterId()),
-                detail.title(), detail.content(), detail.imageUrls());
+                detail.title(), detail.content(), detail.imageUrls(), sanctionInfo);
+    }
+
+    /** 피신고 유저의 현재 제재 상태 (계정 레벨 + 도메인별 활성 제재). 없으면 null. */
+    private ReportedUserSanctionInfo resolveReportedUserSanction(Long reportedUserId) {
+        if (reportedUserId == null) {
+            return null;
+        }
+        // 제재 활성 판정은 ended_at/released_at(UTC clock 기준)과 비교하므로 now(clock) 사용 (JVM tz 무관)
+        return accountRepository.findById(reportedUserId)
+                .map(account -> ReportedUserSanctionInfo.of(account,
+                        userSanctionRepository.findAllActiveSanctionsByUserId(
+                                reportedUserId, LocalDateTime.now(clock))))
+                .orElse(null);
     }
 
     // ── KAN-92: 관리자 신고 처리 ──────────────────────────────────────────
@@ -219,17 +263,25 @@ public class ReportService {
             // }
 
             ReportAction action = request.action();
-            if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT) {
+            // RESTORE는 정정 전용(updateReportStatus)에서만 발행. 최초 처리(/resolve)에서 허용하면
+            // 이 신고와 무관하게(다른 신고로 숨긴) 콘텐츠를 복원하는 부작용 → 부적합 action으로 차단.
+            if (action == ReportAction.HIDE_SHOP || action == ReportAction.REVOKE_MERCHANT
+                    || action == ReportAction.RESTORE) {
                 throw new BusinessException(ErrorCode.REPORT_WRONG_ENDPOINT);
             }
 
-            applyContentAction(action, report.getTargetType(), report.getTargetId());
+            // event 발행: WARNING·DISMISS 제외
+            if (action != ReportAction.WARNING && action != ReportAction.DISMISS) {
+                eventPublisher.publishEvent(new ReportContentActionEvent(
+                        reportId, report.getTargetType(), report.getTargetId(), action));
+            }
 
             String adminNickname = resolveNickname(adminId);
-            if (action == ReportAction.DISMISS) {
-                report.dismiss(request.adminNote(), adminNickname);
+            LocalDateTime now = LocalDateTime.now(clock);
+            if (action == ReportAction.DISMISS || action == ReportAction.RESTORE) {
+                report.dismiss(request.adminNote(), adminNickname, now);
             } else {
-                report.resolve(action, request.adminNote(), adminNickname);
+                report.resolve(action, request.adminNote(), adminNickname, now);
             }
             reportRepository.saveAndFlush(report);
             publishReportAcceptedEventIfNeeded(report, action);
@@ -267,10 +319,11 @@ public class ReportService {
             applyMerchantAction(action, report.getTargetId());
 
             String adminNickname = resolveNickname(adminId);
+            LocalDateTime now = LocalDateTime.now(clock);
             if (action == ReportAction.DISMISS) {
-                report.dismiss(request.adminNote(), adminNickname);
+                report.dismiss(request.adminNote(), adminNickname, now);
             } else {
-                report.resolve(action, request.adminNote(), adminNickname);
+                report.resolve(action, request.adminNote(), adminNickname, now);
             }
             reportRepository.saveAndFlush(report);
             publishReportAcceptedEventIfNeeded(report, action);
@@ -279,6 +332,38 @@ public class ReportService {
         } catch (OptimisticLockingFailureException e) {
             throw new BusinessException(ErrorCode.REPORT_ALREADY_RESOLVED);
         }
+    }
+
+    /**
+     * 신고 상태 정정 (관리자 오판 정정) — RESOLVED → DISMISSED 만 허용.
+     *
+     * <p>처리된 신고를 오판으로 판단해 기각 처리한다:
+     * <ul>
+     *   <li>콘텐츠 복원: {@code ReportContentActionEvent(RESTORE)} 발행 → 숨김 콘텐츠 ACTIVE 복구</li>
+     *   <li>누적 카운트: status가 DISMISSED가 되어 RESOLVED 집계에서 자동 제외 (유효 신고수 감소)</li>
+     *   <li>정지 해제는 자동 연동하지 않음 — 필요 시 관리자가 releaseSanction 별도 수행</li>
+     * </ul>
+     */
+    @Transactional
+    public ReportResolveResponse updateReportStatus(Long reportId, Long adminId,
+                                                    ReportStatusUpdateRequest request) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+
+        // 허용 전이: RESOLVED → DISMISSED 만
+        if (!report.isResolved() || request.status() != ReportStatus.DISMISSED) {
+            throw new BusinessException(ErrorCode.REPORT_INVALID_STATUS_TRANSITION);
+        }
+
+        String adminNickname = resolveNickname(adminId);
+        report.correctToDismissed(request.adminNote(), adminNickname, LocalDateTime.now(clock));
+        reportRepository.saveAndFlush(report);
+
+        // 콘텐츠 복원 — 기각이므로 숨김 콘텐츠 되살림
+        eventPublisher.publishEvent(new ReportContentActionEvent(
+                reportId, report.getTargetType(), report.getTargetId(), ReportAction.RESTORE));
+
+        return ReportResolveResponse.of(report);
     }
 
     // ── KAN-93: 자동 숨김 ─────────────────────────────────────────────────
@@ -302,26 +387,20 @@ public class ReportService {
                     .filter(p -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
                     .ifPresent(FreePost::hide);
             case COMMENT -> commentRepository.findByIdForUpdate(targetId)
-                    .filter(c -> c.getStatus() != CommentStatus.DELETED)
+                    .filter(c -> c.getStatus() == CommentStatus.ACTIVE)
                     .filter(c -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
-                    .ifPresent(Comment::delete);
+                    .ifPresent(Comment::hide);
             case USER, MERCHANT -> {
                 // 자동 조치 생략 — 관리자 수동 처리 필요
             }
-            // TODO(KAN-152): REVIEW enum 추가 후 case REVIEW -> { /* 자동 숨김 처리 */ } 추가
+            case REVIEW -> placeReviewRepository.findByIdForUpdate(targetId)
+                    .filter(r -> r.getStatus() == PlaceReviewStatus.ACTIVE)
+                    .filter(r -> reportRepository.countByTargetTypeAndTargetIdAndStatus(targetType, targetId, ReportStatus.PENDING) >= autoHideThreshold)
+                    .ifPresent(PlaceReview::hide);
         }
     }
 
     // ── 내부 유틸 ─────────────────────────────────────────────────────────
-
-    private void applyContentAction(ReportAction action, ReportTargetType targetType, Long targetId) {
-        switch (action) {
-            case DELETE -> deleteTargetContent(targetType, targetId);
-            case SUSPEND -> suspendTargetAuthor(targetType, targetId);
-            case WARNING, DISMISS -> { /* MVP: 상태 기록만 */ }
-            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-    }
 
     private void applyMerchantAction(ReportAction action, Long shopId) {
         switch (action) {
@@ -344,53 +423,20 @@ public class ReportService {
         }
     }
 
-    private void deleteTargetContent(ReportTargetType targetType, Long targetId) {
-        switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId).ifPresentOrElse(post -> {
-                if (post.getStatus() == CompanionPostStatus.DELETED) {
-                    log.warn("deleteTargetContent: POST_COMPANION already DELETED, targetId={}", targetId);
-                    return;
-                }
-                post.hide();
-            }, () -> log.warn("deleteTargetContent: POST_COMPANION not found, targetId={}", targetId));
-            case POST_FREE -> freePostRepository.findById(targetId).ifPresentOrElse(post -> {
-                if (post.getStatus() == FreePostStatus.DELETED) {
-                    log.warn("deleteTargetContent: POST_FREE already DELETED, targetId={}", targetId);
-                    return;
-                }
-                post.hide();
-            }, () -> log.warn("deleteTargetContent: POST_FREE not found, targetId={}", targetId));
-            case COMMENT -> commentRepository.findById(targetId).ifPresentOrElse(comment -> {
-                if (comment.getStatus() == CommentStatus.DELETED) {
-                    log.warn("deleteTargetContent: COMMENT already DELETED, targetId={}", targetId);
-                    return;
-                }
-                comment.delete();
-            }, () -> log.warn("deleteTargetContent: COMMENT not found, targetId={}", targetId));
-            case USER -> accountRepository.findById(targetId).ifPresentOrElse(acc -> {
-                if (acc.getStatus() == AccountStatus.DELETED) {
-                    log.warn("deleteTargetContent: USER already DELETED(탈퇴), targetId={}", targetId);
-                    return;
-                }
-                // R-5 일관: 이미 정지된 USER 재정지 차단 (suspendTargetAuthor와 동일 가드)
-                if (acc.getStatus() == AccountStatus.SUSPENDED) {
-                    throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
-                }
-                acc.suspend();
-            }, () -> log.warn("deleteTargetContent: USER not found, targetId={}", targetId));
-            default -> throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
-        }
-    }
-
     private void publishReportAcceptedEventIfNeeded(Report report, ReportAction action) {
-        if (action == ReportAction.DISMISS) return;
+        // DISMISS·RESTORE는 신고를 DISMISSED로 종결(무효 처리) → 제재 카운트에 미집계, 이벤트 미발행.
+        if (action == ReportAction.DISMISS || action == ReportAction.RESTORE) return;
         Long reportedUserId = report.getReportedUserId();
         if (reportedUserId == null) {
             reportedUserId = resolveReportedUserId(report.getTargetType(), report.getTargetId());
         }
         if (reportedUserId == null) return;
-        long acceptedCount = reportRepository.countByReportedUserIdAndTargetTypeAndStatus(
-                reportedUserId, report.getTargetType(), ReportStatus.RESOLVED);
+        // 1년 롤링 윈도우: 최근 1년 RESOLVED 신고만 제재 단계 판정에 집계 (오래된 신고 자동 만료)
+        // resolved_at(서비스가 now(clock) 주입, UTC)과 비교하므로 윈도우 시작도 동일 기준 사용
+        LocalDateTime windowStart = LocalDateTime.now(clock).minus(SANCTION_COUNT_WINDOW);
+        long acceptedCount = reportRepository
+                .countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+                        reportedUserId, report.getTargetType(), ReportStatus.RESOLVED, windowStart);
         eventPublisher.publishEvent(new ReportAcceptedEvent(
                 report.getId(), reportedUserId, report.getTargetType(), acceptedCount));
     }
@@ -405,36 +451,10 @@ public class ReportService {
                     .map(Comment::getAuthorId).orElse(null);
             case USER -> targetId;
             case MERCHANT -> shopService.findMerchantAccountId(targetId).orElse(null);
+            case REVIEW -> placeReviewRepository.findById(targetId)
+                    .map(r -> r.getAuthor().getId()).orElse(null);
             default -> null;
         };
-    }
-
-    private void suspendTargetAuthor(ReportTargetType targetType, Long targetId) {
-        Long authorId = switch (targetType) {
-            case POST_COMPANION -> companionPostRepository.findById(targetId)
-                    .map(CompanionPost::getAuthorId).orElse(null);
-            case POST_FREE -> freePostRepository.findById(targetId)
-                    .map(FreePost::getAuthorId).orElse(null);
-            case COMMENT -> commentRepository.findById(targetId)
-                    .map(Comment::getAuthorId).orElse(null);
-            case USER -> targetId;
-            default -> null;
-        };
-
-        if (authorId == null) {
-            log.warn("suspendTargetAuthor: authorId 조회 실패, targetType={}, targetId={}", targetType, targetId);
-            return;
-        }
-        accountRepository.findById(authorId).ifPresentOrElse(acc -> {
-            if (acc.getStatus() == AccountStatus.DELETED) {
-                log.warn("suspendTargetAuthor: 탈퇴 계정 정지 생략, authorId={}", authorId);
-                return;
-            }
-            if (acc.getStatus() == AccountStatus.SUSPENDED) {
-                throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
-            }
-            acc.suspend();
-        }, () -> log.warn("suspendTargetAuthor: 계정 없음, authorId={}", authorId));
     }
 
     /**
@@ -464,7 +484,9 @@ public class ReportService {
                     .flatMap(accountRepository::findById)
                     .map(a -> new TargetDetail(null, a.getNickname(), null))
                     .orElse(TargetDetail.deleted());
-            // TODO(KAN-152): REVIEW 도메인 구현 후 case 추가 — title·content·imageUrls 반환
+            case REVIEW -> placeReviewRepository.findById(targetId)
+                    .map(r -> new TargetDetail(null, r.getContent(), null))
+                    .orElse(TargetDetail.deleted());
         };
     }
 
@@ -536,7 +558,16 @@ public class ReportService {
                     throw new BusinessException(ErrorCode.REPORT_SELF);
                 }
             }
-            // REVIEW: 리뷰 도메인 구현(KAN-152) 완료 후 case 추가 필요
+            case REVIEW -> {
+                PlaceReview review = placeReviewRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND));
+                if (review.getStatus() != PlaceReviewStatus.ACTIVE) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_INACTIVE);
+                }
+                if (review.isOwnedBy(reporterId)) {
+                    throw new BusinessException(ErrorCode.REPORT_SELF);
+                }
+            }
             default -> throw new BusinessException(ErrorCode.REPORT_TARGET_NOT_FOUND);
         }
     }

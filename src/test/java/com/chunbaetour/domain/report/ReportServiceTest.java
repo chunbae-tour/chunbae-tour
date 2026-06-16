@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
@@ -28,6 +30,7 @@ import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
 import com.chunbaetour.domain.report.dto.MyReportResponse;
+import com.chunbaetour.domain.report.dto.response.ReportResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.chunbaetour.domain.report.dto.ReportCreateRequest;
 import com.chunbaetour.domain.report.dto.ReportCreateResponse;
@@ -36,7 +39,17 @@ import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportReason;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.event.ReportContentActionEvent;
+import com.chunbaetour.domain.report.dto.request.ReportStatusUpdateRequest;
+import com.chunbaetour.domain.report.dto.response.PendingCountResponse;
+import com.chunbaetour.domain.place.PlaceReview;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
 import com.chunbaetour.domain.report.repository.ReportRepository;
+import com.chunbaetour.domain.report.repository.ReportQueryRepository;
+import com.chunbaetour.domain.report.repository.UserSanctionRepository;
+import com.chunbaetour.domain.report.entity.SanctionType;
+import com.chunbaetour.domain.report.entity.UserSanction;
 import com.chunbaetour.domain.report.service.ReportService;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.report.dto.request.ReportResolveRequest;
@@ -44,6 +57,7 @@ import com.chunbaetour.domain.report.type.ReportAction;
 import com.chunbaetour.domain.shop.service.ShopService;
 import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +65,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.Spy;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
@@ -64,9 +79,13 @@ class ReportServiceTest {
     @Mock private CompanionPostRepository companionPostRepository;
     @Mock private FreePostRepository freePostRepository;
     @Mock private CommentRepository commentRepository;
+    @Mock private PlaceReviewRepository placeReviewRepository;
+    @Mock private ReportQueryRepository reportQueryRepository;
+    @Mock private UserSanctionRepository userSanctionRepository;
     @Mock private AccountRepository accountRepository;
     @Mock private ShopService shopService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Spy private java.time.Clock clock = java.time.Clock.systemUTC();
 
     @InjectMocks
     private ReportService reportService;
@@ -79,6 +98,7 @@ class ReportServiceTest {
     private static final Long COMMENT_ID      = 30L;
     private static final Long USER_TARGET_ID  = 40L;
     private static final Long MERCHANT_ID     = 50L;
+    private static final Long REVIEW_ID       = 60L;
     private static final Long ADMIN_ID       = 200L;
 
     private FreePost       activeFreePost;
@@ -306,7 +326,7 @@ class ReportServiceTest {
     }
 
     @Test
-    @DisplayName("COMMENT 신고 3건 도달 → 댓글 자동 삭제")
+    @DisplayName("COMMENT 신고 3건 도달 → 댓글 자동 숨김 (HIDDEN)")
     void create_autoHide_COMMENT_3건_도달() {
         Long commentId = 30L;
         Comment activeComment = Comment.create(FREE_POST_ID, PostType.FREE, 2L, "댓글 내용");
@@ -324,7 +344,7 @@ class ReportServiceTest {
         reportService.create(REPORTER_ID,
                 new ReportCreateRequest(ReportTargetType.COMMENT, commentId, ReportReason.SPAM, null));
 
-        assertThat(activeComment.getStatus()).isEqualTo(CommentStatus.DELETED);
+        assertThat(activeComment.getStatus()).isEqualTo(CommentStatus.HIDDEN);
     }
 
     // ── getMyReports ──────────────────────────────────────────────────────
@@ -560,106 +580,383 @@ class ReportServiceTest {
                 .extracting("errorCode").isEqualTo(ErrorCode.REPORT_NOT_FOUND);
     }
 
-    // ── resolveReport: 이미 삭제된 대상 500 회귀 ──────────────────────────────
+    // ── resolveReport: 콘텐츠 액션 이벤트 발행 (PR5 — 동기 처리→이벤트 기반 전환) ──────
+    // 실제 콘텐츠 숨김/삭제/정지 및 이미삭제 가드·멱등 처리는 각 도메인 Listener 책임.
+    // resolveReport 책임은 ReportContentActionEvent 발행까지 → 여기서 그것만 검증.
 
     @Test
-    @DisplayName("POST_FREE 이미 DELETED — DELETE resolve 시 500 없이 완료")
-    void resolveReport_POST_FREE_이미삭제됨_500없음() {
+    @DisplayName("POST_FREE DELETE resolve — ReportContentActionEvent(DELETE) 발행")
+    void resolveReport_POST_FREE_DELETE_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        FreePost deletedPost = mock(FreePost.class);
-        given(deletedPost.getStatus()).willReturn(FreePostStatus.DELETED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.of(deletedPost));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedPost).should(never()).hide();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.POST_FREE, FREE_POST_ID, ReportAction.DELETE));
     }
 
     @Test
-    @DisplayName("POST_COMPANION 이미 DELETED — DELETE resolve 시 500 없이 완료")
-    void resolveReport_POST_COMPANION_이미삭제됨_500없음() {
+    @DisplayName("POST_COMPANION DELETE resolve — ReportContentActionEvent(DELETE) 발행")
+    void resolveReport_POST_COMPANION_DELETE_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.POST_COMPANION, COMP_POST_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        CompanionPost deletedPost = mock(CompanionPost.class);
-        given(deletedPost.getStatus()).willReturn(CompanionPostStatus.DELETED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(companionPostRepository.findById(COMP_POST_ID)).willReturn(Optional.of(deletedPost));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedPost).should(never()).hide();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.POST_COMPANION, COMP_POST_ID, ReportAction.DELETE));
     }
 
     @Test
-    @DisplayName("COMMENT 이미 DELETED — DELETE resolve 시 멱등, 500 없이 완료")
-    void resolveReport_COMMENT_이미삭제됨_DELETE_멱등() {
+    @DisplayName("COMMENT DELETE resolve — ReportContentActionEvent(DELETE) 발행")
+    void resolveReport_COMMENT_DELETE_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.COMMENT, COMMENT_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        Comment deletedComment = mock(Comment.class);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(commentRepository.findById(COMMENT_ID)).willReturn(Optional.of(deletedComment));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedComment).should().delete();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.COMMENT, COMMENT_ID, ReportAction.DELETE));
     }
 
     @Test
-    @DisplayName("USER 탈퇴(DELETED) — SUSPEND resolve 시 skip, 500 없이 완료")
-    void resolveReport_USER_탈퇴계정_SUSPEND_500없음() {
+    @DisplayName("USER SUSPEND resolve — ReportContentActionEvent(SUSPEND) 발행")
+    void resolveReport_USER_SUSPEND_이벤트발행() {
         Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
                 ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        Account deletedUser = mock(Account.class);
-        given(deletedUser.getStatus()).willReturn(AccountStatus.DELETED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(deletedUser));
 
         ReportResolveRequest request = new ReportResolveRequest(ReportAction.SUSPEND, null);
         reportService.resolveReport(REPORT_ID, ADMIN_ID, request);
 
         assertThat(report.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        then(deletedUser).should(never()).suspend();
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.USER, USER_TARGET_ID, ReportAction.SUSPEND));
     }
 
     @Test
-    @DisplayName("USER 이미정지(SUSPENDED) — DELETE resolve 시 409 REPORT_TARGET_ALREADY_SUSPENDED — R-5 일관")
-    void resolveReport_USER_이미정지_DELETE_409() {
-        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
-                ReportReason.HARASSMENT, null, USER_TARGET_ID);
+    @DisplayName("RESTORE resolve — /resolve 부적합 action → REPORT_WRONG_ENDPOINT (정정 전용)")
+    void resolveReport_RESTORE_거부() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, null);
         ReflectionTestUtils.setField(report, "id", REPORT_ID);
-
-        Account suspendedUser = mock(Account.class);
-        given(suspendedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
-
         given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
-        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(suspendedUser));
 
-        ReportResolveRequest request = new ReportResolveRequest(ReportAction.DELETE, null);
+        ReportResolveRequest request = new ReportResolveRequest(ReportAction.RESTORE, null);
 
         assertThatThrownBy(() -> reportService.resolveReport(REPORT_ID, ADMIN_ID, request))
                 .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getErrorCode())
-                .isEqualTo(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
-        then(suspendedUser).should(never()).suspend();
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_WRONG_ENDPOINT);
+        then(eventPublisher).shouldHaveNoInteractions();
+    }
+
+    // ── REVIEW 신고 (KAN-152 통합) ────────────────────────────────────────
+
+    @Test
+    @DisplayName("REVIEW 정상 신고 생성 → PENDING 반환")
+    void create_REVIEW_정상() {
+        Account author = mock(Account.class);
+        given(author.getId()).willReturn(2L);
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getStatus()).willReturn(PlaceReviewStatus.ACTIVE);
+        given(review.isOwnedBy(REPORTER_ID)).willReturn(false);
+        given(review.getAuthor()).willReturn(author);
+        given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.of(review));
+        given(placeReviewRepository.findByIdForUpdate(REVIEW_ID)).willReturn(Optional.of(review));
+        given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
+                REPORTER_ID, ReportTargetType.REVIEW, REVIEW_ID)).willReturn(false);
+        Report reviewReport = Report.create(REPORTER_ID, ReportTargetType.REVIEW, REVIEW_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(reviewReport, "id", REPORT_ID);
+        given(reportRepository.saveAndFlush(any())).willReturn(reviewReport);
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(
+                ReportTargetType.REVIEW, REVIEW_ID, ReportStatus.PENDING)).willReturn(1L);
+
+        ReportCreateResponse response = reportService.create(REPORTER_ID,
+                new ReportCreateRequest(ReportTargetType.REVIEW, REVIEW_ID, ReportReason.SPAM, null));
+
+        assertThat(response.status()).isEqualTo(ReportStatus.PENDING);
+        assertThat(response.targetType()).isEqualTo(ReportTargetType.REVIEW);
+    }
+
+    @Test
+    @DisplayName("삭제된 리뷰 신고 → REPORT_TARGET_INACTIVE")
+    void create_REVIEW_비활성() {
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getStatus()).willReturn(PlaceReviewStatus.DELETED);
+        given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.of(review));
+
+        assertThatThrownBy(() ->
+                reportService.create(REPORTER_ID,
+                        new ReportCreateRequest(ReportTargetType.REVIEW, REVIEW_ID, ReportReason.SPAM, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_TARGET_INACTIVE);
+    }
+
+    @Test
+    @DisplayName("자기 리뷰 신고 → REPORT_SELF")
+    void create_REVIEW_자기신고() {
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getStatus()).willReturn(PlaceReviewStatus.ACTIVE);
+        given(review.isOwnedBy(REPORTER_ID)).willReturn(true);
+        given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.of(review));
+
+        assertThatThrownBy(() ->
+                reportService.create(REPORTER_ID,
+                        new ReportCreateRequest(ReportTargetType.REVIEW, REVIEW_ID, ReportReason.SPAM, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_SELF);
+    }
+
+    @Test
+    @DisplayName("REVIEW 신고 3건 도달 — 리뷰 자동 숨김 (HIDDEN)")
+    void create_REVIEW_autoHide() {
+        Account author = mock(Account.class);
+        given(author.getId()).willReturn(2L);
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getStatus()).willReturn(PlaceReviewStatus.ACTIVE);
+        given(review.isOwnedBy(REPORTER_ID)).willReturn(false);
+        given(review.getAuthor()).willReturn(author);
+        given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.of(review));
+        given(placeReviewRepository.findByIdForUpdate(REVIEW_ID)).willReturn(Optional.of(review));
+        given(reportRepository.existsByReporterIdAndTargetTypeAndTargetId(
+                REPORTER_ID, ReportTargetType.REVIEW, REVIEW_ID)).willReturn(false);
+        Report reviewReport = Report.create(REPORTER_ID, ReportTargetType.REVIEW, REVIEW_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(reviewReport, "id", REPORT_ID);
+        given(reportRepository.saveAndFlush(any())).willReturn(reviewReport);
+        given(reportRepository.countByTargetTypeAndTargetIdAndStatus(
+                ReportTargetType.REVIEW, REVIEW_ID, ReportStatus.PENDING)).willReturn(3L);
+
+        reportService.create(REPORTER_ID,
+                new ReportCreateRequest(ReportTargetType.REVIEW, REVIEW_ID, ReportReason.SPAM, null));
+
+        then(review).should().hide();
+    }
+
+    @Test
+    @DisplayName("REVIEW 신고 상세 — targetContent 반환")
+    void getReport_REVIEW_상세() {
+        Report reviewReport = Report.create(REPORTER_ID, ReportTargetType.REVIEW, REVIEW_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(reviewReport, "id", REPORT_ID);
+        PlaceReview review = mock(PlaceReview.class);
+        given(review.getContent()).willReturn("리뷰 본문");
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(reviewReport));
+        given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.of(review));
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+        given(accountRepository.findById(2L)).willReturn(Optional.empty());
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetTitle()).isNull();
+        assertThat(result.targetContent()).isEqualTo("리뷰 본문");
+    }
+
+    @Test
+    @DisplayName("REVIEW 신고 대상 삭제된 경우 — '(삭제됨)' 반환")
+    void getReport_REVIEW_삭제됨() {
+        Report reviewReport = Report.create(REPORTER_ID, ReportTargetType.REVIEW, REVIEW_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(reviewReport, "id", REPORT_ID);
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자닉네임");
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(reviewReport));
+        given(placeReviewRepository.findById(REVIEW_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+        given(accountRepository.findById(2L)).willReturn(Optional.empty());
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.targetContent()).isEqualTo("(삭제됨)");
+    }
+
+    // ── 관리자 목록 필터 + 제재 뱃지 ────────────────────────────────────────
+
+    @Test
+    @DisplayName("관리자 목록 — 필터 전달 + 피신고 유저 제재 뱃지(계정 레벨) 매핑")
+    void getReports_filter_and_sanction_badge() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportQueryRepository.findByFilter(
+                eq(ReportStatus.RESOLVED), eq(ReportTargetType.POST_FREE), eq(ReportReason.SPAM),
+                eq(USER_TARGET_ID), isNull(), eq(20)))
+                .willReturn(java.util.List.of(report));
+        Account reporter = mock(Account.class);
+        given(reporter.getId()).willReturn(REPORTER_ID);
+        given(reporter.getNickname()).willReturn("신고자");
+        Account reportedUser = mock(Account.class);
+        given(reportedUser.getId()).willReturn(USER_TARGET_ID);
+        given(reportedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
+        given(reportedUser.getSanctionType()).willReturn(SanctionType.SUSPEND_30D);
+        given(accountRepository.findAllById(any())).willReturn(java.util.List.of(reporter, reportedUser));
+
+        CursorPageResponse<ReportResponse> result = reportService.getReports(
+                "RESOLVED", ReportTargetType.POST_FREE, ReportReason.SPAM, USER_TARGET_ID, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        ReportResponse r = result.content().get(0);
+        assertThat(r.reporterNickname()).isEqualTo("신고자");
+        assertThat(r.reportedUserStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(r.reportedUserSanctionType()).isEqualTo(SanctionType.SUSPEND_30D);
+        assertThat(result.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("관리자 목록 — reportedUserId null이면 제재 뱃지 null")
+    void getReports_no_reportedUser_null_badge() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, null);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportQueryRepository.findByFilter(isNull(), isNull(), isNull(), isNull(), isNull(), eq(20)))
+                .willReturn(java.util.List.of(report));
+        Account reporter = mock(Account.class);
+        given(reporter.getId()).willReturn(REPORTER_ID);
+        given(reporter.getNickname()).willReturn("신고자");
+        given(accountRepository.findAllById(any())).willReturn(java.util.List.of(reporter));
+
+        CursorPageResponse<ReportResponse> result = reportService.getReports(
+                null, null, null, null, null, 20);
+
+        ReportResponse r = result.content().get(0);
+        assertThat(r.reportedUserStatus()).isNull();
+        assertThat(r.reportedUserSanctionType()).isNull();
+    }
+
+    // ── 미처리 신고 건수 (PR6) ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("신고 상세 — 피신고 유저 제재 상태(계정+도메인) 포함")
+    void getReport_includes_reportedUserSanction() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        Account reporter = mock(Account.class);
+        given(reporter.getNickname()).willReturn("신고자");
+        Account reportedUser = mock(Account.class);
+        given(reportedUser.getStatus()).willReturn(AccountStatus.SUSPENDED);
+        given(reportedUser.getSanctionType()).willReturn(SanctionType.SUSPEND_30D);
+        given(reportedUser.getSanctionEndAt()).willReturn(java.time.LocalDateTime.of(2026, 7, 1, 0, 0));
+        UserSanction domainSanction = UserSanction.create(USER_TARGET_ID, 1L,
+                ReportTargetType.POST_FREE, SanctionType.SUSPEND_7D, "도메인 제재",
+                java.time.LocalDateTime.of(2026, 6, 1, 0, 0), java.time.LocalDateTime.of(2026, 6, 8, 0, 0));
+
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(freePostRepository.findById(FREE_POST_ID)).willReturn(Optional.empty());
+        given(accountRepository.findById(REPORTER_ID)).willReturn(Optional.of(reporter));
+        given(accountRepository.findById(USER_TARGET_ID)).willReturn(Optional.of(reportedUser));
+        given(userSanctionRepository.findAllActiveSanctionsByUserId(eq(USER_TARGET_ID), any()))
+                .willReturn(java.util.List.of(domainSanction));
+
+        ReportDetailResponse result = reportService.getReport(REPORT_ID);
+
+        assertThat(result.reportedUserSanction()).isNotNull();
+        assertThat(result.reportedUserSanction().accountStatus()).isEqualTo(AccountStatus.SUSPENDED);
+        assertThat(result.reportedUserSanction().accountSanctionType()).isEqualTo(SanctionType.SUSPEND_30D);
+        assertThat(result.reportedUserSanction().activeDomainSanctions()).hasSize(1);
+        assertThat(result.reportedUserSanction().activeDomainSanctions().get(0).targetType())
+                .isEqualTo(ReportTargetType.POST_FREE);
+    }
+
+    @Test
+    @DisplayName("getPendingCount — PENDING 건수 반환")
+    void getPendingCount_returns_count() {
+        given(reportRepository.countByStatus(ReportStatus.PENDING)).willReturn(7L);
+
+        PendingCountResponse result = reportService.getPendingCount();
+
+        assertThat(result.count()).isEqualTo(7L);
+    }
+
+    // ── 제재 카운트 1년 윈도우 ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("제재 카운트 — 1년 윈도우 메서드로 집계 + ReportAcceptedEvent 발행")
+    void resolveReport_uses_windowed_count() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.USER, USER_TARGET_ID,
+                ReportReason.SPAM, null, USER_TARGET_ID);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(reportRepository.countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+                eq(USER_TARGET_ID), eq(ReportTargetType.USER), eq(ReportStatus.RESOLVED), any()))
+                .willReturn(5L);
+
+        reportService.resolveReport(REPORT_ID, ADMIN_ID,
+                new ReportResolveRequest(ReportAction.SUSPEND, null));
+
+        // 윈도우 카운트(5)로 ReportAcceptedEvent 발행 — 옛 비윈도우 메서드는 호출 안 됨
+        then(reportRepository).should().countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+                eq(USER_TARGET_ID), eq(ReportTargetType.USER), eq(ReportStatus.RESOLVED), any());
+    }
+
+    // ── 신고 상태 정정 (오판 정정) ──────────────────────────────────────────
+
+    @Test
+    @DisplayName("신고 상태 정정 — RESOLVED→DISMISSED + RESTORE 이벤트 발행")
+    void updateReportStatus_RESOLVED_to_DISMISSED() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        report.resolve(ReportAction.DELETE, "처리함", "admin01", LocalDateTime.now());
+        Account admin = mock(Account.class);
+        given(admin.getNickname()).willReturn("admin01");
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+        given(accountRepository.findById(ADMIN_ID)).willReturn(Optional.of(admin));
+
+        reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
+                new ReportStatusUpdateRequest(ReportStatus.DISMISSED, "오판 정정"));
+
+        assertThat(report.getStatus()).isEqualTo(ReportStatus.DISMISSED);
+        then(reportRepository).should().saveAndFlush(report);
+        then(eventPublisher).should().publishEvent(new ReportContentActionEvent(
+                REPORT_ID, ReportTargetType.POST_FREE, FREE_POST_ID, ReportAction.RESTORE));
+    }
+
+    @Test
+    @DisplayName("PENDING 신고 상태 정정 시도 → REPORT_INVALID_STATUS_TRANSITION")
+    void updateReportStatus_PENDING_rejected() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+
+        assertThatThrownBy(() -> reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
+                new ReportStatusUpdateRequest(ReportStatus.DISMISSED, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("DISMISSED 외 상태로 정정 시도 → REPORT_INVALID_STATUS_TRANSITION")
+    void updateReportStatus_nonDismissed_rejected() {
+        Report report = Report.create(REPORTER_ID, ReportTargetType.POST_FREE, FREE_POST_ID,
+                ReportReason.SPAM, null, 2L);
+        ReflectionTestUtils.setField(report, "id", REPORT_ID);
+        report.resolve(ReportAction.DELETE, "처리함", "admin01", LocalDateTime.now());
+        given(reportRepository.findById(REPORT_ID)).willReturn(Optional.of(report));
+
+        assertThatThrownBy(() -> reportService.updateReportStatus(REPORT_ID, ADMIN_ID,
+                new ReportStatusUpdateRequest(ReportStatus.PENDING, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.REPORT_INVALID_STATUS_TRANSITION);
     }
 }
