@@ -241,9 +241,10 @@ public class ShopService {
             return AdminShopPlaceResponse.unlinked(shopId);
         }
 
-        // 연결 요청 — DELETED 아닌 Place 조회(soft delete 장소 연결 차단) + 응답에 담을 장소명 확보
+        // 연결 요청 — 노출 상태(ACTIVE/HIDDEN) Place만 연결(삭제계열 DELETED/SOURCE_DELETED 차단) + 응답에 담을 장소명 확보
+        // KAN-306: != DELETED 단일 가드가 SOURCE_DELETED를 통과시키던 회귀 보정 — 화이트리스트로 통일
         Place place = placeRepository.findById(placeId)
-                .filter(p -> p.getStatus() != PlaceStatus.DELETED)
+                .filter(p -> PlaceStatus.visibleStatuses().contains(p.getStatus()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
 
         shop.linkPlace(placeId);

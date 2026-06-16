@@ -143,6 +143,19 @@ class ShopPlaceServiceTest {
         }
 
         @Test
+        @DisplayName("SOURCE_DELETED 상태 Place — PLACE_NOT_FOUND (원천삭제 장소 연결 차단, KAN-306 화이트리스트)")
+        void linkPlace_sourceDeletedPlace() {
+            Place sourceDeleted = placeMock(PlaceStatus.SOURCE_DELETED, null);
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createShop()));
+            given(placeRepository.findById(PLACE_ID)).willReturn(Optional.of(sourceDeleted));
+
+            assertThatThrownBy(() -> shopService.updateShopPlace(SHOP_ID, PLACE_ID))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PLACE_NOT_FOUND);
+        }
+
+        @Test
         @DisplayName("가게 없음 — SHOP_NOT_FOUND")
         void linkPlace_shopNotFound() {
             given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
