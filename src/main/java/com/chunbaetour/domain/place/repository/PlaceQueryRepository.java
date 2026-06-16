@@ -31,6 +31,8 @@ import com.querydsl.jpa.impl.JPAQuery;
 @RequiredArgsConstructor
 public class PlaceQueryRepository {
 
+    private static final int MAP_MARKER_FETCH_LIMIT = 31;
+
     private final JPAQueryFactory queryFactory;
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -346,14 +348,14 @@ public class PlaceQueryRepository {
      * <p>
      * 주어진 Bounding Box 영역(SW 좌표 ~ NE 좌표) 내에 포함된 활성 상태의 관광지 마커들을 조회합니다.
      * MySQL의 MBRContains 함수와 ST_GeomFromText를 활용하여 공간 인덱스(R-Tree)를 태웁니다.
-     * 프론트엔드 렌더링 성능과 서버 OOM을 방지하기 위해 최대 500개로 제한합니다.
+     * 프론트엔드 렌더링 성능과 서버 OOM을 방지하기 위해 최대 30개로 제한합니다.
      * </p>
      *
      * @param swLat 남서쪽 위도 (최소 Y)
      * @param swLng 남서쪽 경도 (최소 X)
      * @param neLat 북동쪽 위도 (최대 Y)
      * @param neLng 북동쪽 경도 (최대 X)
-     * @return 뷰포트 내의 지도 마커 리스트 (최대 500개)
+     * @return 뷰포트 내의 지도 마커 리스트 (최대 30개)
      */
     public List<MapMarkerResponse> findMarkersInBoundingBox(double swLat, double swLng, double neLat, double neLng) {
         // MySQL ST_GeomFromText Polygon 생성 (LocationUtils 헬퍼 사용)
@@ -374,7 +376,7 @@ public class PlaceQueryRepository {
                         place.status.eq(PlaceStatus.ACTIVE)
                 )
                 .orderBy(place.id.desc())
-                .limit(501) // 501개를 조회하여 더 있는지(truncated) 여부 판단
+                .limit(MAP_MARKER_FETCH_LIMIT) // 응답 한도보다 1개 더 조회해 truncated 여부 판단
                 .fetch();
     }
 }

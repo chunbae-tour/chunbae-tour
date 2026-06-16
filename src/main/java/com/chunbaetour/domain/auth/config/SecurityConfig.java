@@ -37,9 +37,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/admin/auth/**} — ADMIN 로그인 (permitAll)</li>
  *   <li>{@code POST /api/v1/auth/logout} — 인증 필요 (S4)</li>
  *   <li>{@code /api/v1/auth/**} — 공통 토큰 API (reissue 등, permitAll)</li>
- *   <li>{@code /actuator/health}, {@code /actuator/info} — permitAll (LB health check).
- *       {@code /actuator/prometheus}는 IP allowlist (loopback only) + 운영에서는 별도 management port(9090) + loopback 바인딩으로 이중 보호 (#149).
- *       그 외 {@code /actuator/**}는 denyAll로 차단 (env/beans/mappings 등 정보 노출 방지).</li>
+ *   <li>{@code /actuator/health}, {@code /actuator/health/**}(health group, 예: {@code /actuator/health/lb} — ALB 헬스체크), {@code /actuator/info} — permitAll (LB health check).
+ *       {@code /actuator/prometheus}는 IP allowlist (loopback only), 그 외 {@code /actuator/**}는 denyAll (#149).
+ *       ⚠️ 본 필터 체인은 main 포트(8080)에만 적용된다. 운영은 별도 management port(9090)라 이 규칙이 9090에 적용되지 않으므로
+ *       (별도 management 컨텍스트), 운영에서는 prometheus를 아예 노출하지 않고(application-prod.yml exposure=health,info) SG로 9090을
+ *       격리해 방어한다. 본 IP allowlist는 동일 포트 배포(로컬/테스트)에서만 실효 — ActuatorSecurityIntegrationTest가 그 경로를 검증.</li>
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
@@ -130,13 +132,15 @@ public class SecurityConfig {
                         // Actuator endpoint 권한 — KAN-104 + #149.
                         // exposure include = health, info, prometheus (application.yml). 그 외 endpoint는 yml exposure로도 차단되지만,
                         // 방어적으로 SecurityConfig에서도 명시 거부해 향후 exposure가 잘못 확장돼도 노출 방지 (이중 안전).
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                        // /actuator/prometheus 이중 방어 (#149):
-                        // - 운영(application-prod.yml): management.server.port=9090 + address=127.0.0.1 → main 포트 도달 자체 차단
-                        // - 본 SecurityConfig: 그래도 main 포트로 도달한 경우(misconfig)에도 loopback IP만 허용 → 차단 응답:
-                        //   * 익명 사용자(일반 시나리오): 401 AUTH_006 (RestAuthenticationEntryPoint가 인증 요구로 해석)
-                        //   * 인증된 사용자(role mismatch): 403 (RestAccessDeniedHandler)
-                        // 로컬/테스트(management port 분리 안 됨)에서는 localhost 호출이라 통과. ::1은 IPv6 loopback.
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // /actuator/prometheus IP allowlist (#149).
+                        // ⚠️ 적용 범위: 이 필터 체인은 main 포트(8080)에만 적용된다.
+                        // - 운영(application-prod.yml): management.server.port=9090(별도 컨텍스트)이라 이 규칙이 9090에 적용 안 됨.
+                        //   운영은 9090에 prometheus를 아예 노출하지 않고(exposure=health,info) SG(9090←alb-sg)로 막는다(E4, DGAZA-max 리뷰).
+                        //   → 이 규칙은 운영에서 prometheus를 못 막지만, 운영은 애초에 prometheus를 8080·9090 어디에도 노출하지 않으므로 안전.
+                        // - 로컬/테스트(management port 분리 안 됨): actuator가 8080에 있어 이 규칙이 실효 — loopback IP만 통과:
+                        //   * 익명 사용자: 401 AUTH_006 (RestAuthenticationEntryPoint), 인증 사용자(role mismatch): 403 (RestAccessDeniedHandler).
+                        //   ::1은 IPv6 loopback. ActuatorSecurityIntegrationTest가 이 경로를 검증.
                         //
                         // ⚠️ LB/Nginx 뒤 배포 시 주의: request.getRemoteAddr()이 프록시 IP를 반환하면 hasIpAddress 매칭이 깨질 수 있다.
                         // 운영은 management port 분리(옵션 A)가 1차 방어선이라 영향 작지만, X-Forwarded-For 처리(ForwardedHeaderFilter

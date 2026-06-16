@@ -17,6 +17,7 @@ import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.chat.type.ChatRoomStatus;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,7 +27,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CompanionPostService {
 
     private final CompanionPostRepository postRepository;
+    private final CompanionPostQueryRepository postQueryRepository;
     private final AccountRepository accountRepository;
     private final ChatRoomRepository chatRoomRepository;
 
@@ -67,8 +68,8 @@ public class CompanionPostService {
     public CursorPageResponse<CompanionPostGetListResponse> findAll(
             String region, LocalDate meetingDate, String cursor, int size) {
         Long cursorId = decodeCursor(cursor);
-        List<CompanionPost> posts = postRepository.findByFilters(
-                CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, PageRequest.of(0, size + 1));
+        List<CompanionPost> posts = postQueryRepository.findByFilters(
+                CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, size + 1);
 
         boolean hasNext = posts.size() > size;
         List<CompanionPost> content = hasNext ? posts.subList(0, size) : posts;
