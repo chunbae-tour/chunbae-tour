@@ -240,11 +240,23 @@ class CompanionServiceTest {
         verify(companionRepository, never()).save(any());
     }
 
+    // participantUserIds=[ownerId] → distinct 후 방장 중복 제거 → 총 1명 → CR_016
+    @Test
+    void createCompanion_onlyOwnerIdAsParticipant_throwsInsufficientParticipants() {
+        Long ownerId = 1L;
+        assertThatThrownBy(() -> companionService.createCompanion(ownerId, 10L,
+                new CompanionCreateRequest(List.of(ownerId), TRIP_START, TRIP_END)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                        .isEqualTo(ErrorCode.COMPANION_INSUFFICIENT_PARTICIPANTS));
+        verify(companionRepository, never()).save(any());
+    }
+
     // tripEndDate < tripStartDate → COMMON_004(INVALID_INPUT_VALUE)
     @Test
     void createCompanion_tripEndBeforeStart_throwsInvalidInputValue() {
         assertThatThrownBy(() -> companionService.createCompanion(1L, 10L,
-                new CompanionCreateRequest(List.of(), TRIP_END, TRIP_START)))
+                new CompanionCreateRequest(List.of(2L), TRIP_END, TRIP_START)))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                         .isEqualTo(ErrorCode.INVALID_INPUT_VALUE));
