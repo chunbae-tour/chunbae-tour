@@ -3,6 +3,7 @@ package com.chunbaetour.domain.auth;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.converter.AccountNumberEncryptConverter;
+import com.chunbaetour.domain.report.entity.SanctionType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -100,6 +101,15 @@ public class Account {
 
     @Column(name = "suspended_until")
     private LocalDateTime suspendedUntil;
+
+    /** 시스템 자동 제재 단계 — USER/MERCHANT 도메인 신고 또는 크로스도메인 트리거. null = 제재 없음. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sanction_type", length = 20)
+    private SanctionType sanctionType;
+
+    /** 시스템 제재 종료 예정 시각. PERMANENT이면 null. */
+    @Column(name = "sanction_end_at")
+    private LocalDateTime sanctionEndAt;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -267,6 +277,69 @@ public class Account {
         this.status = AccountStatus.ACTIVE;
         this.suspendedReason = null;
         this.suspendedUntil = null;
+        this.sanctionType = null;
+        this.sanctionEndAt = null;
+    }
+
+    /**
+     * 시스템 자동 제재 적용 — 도메인별 신고 누적 또는 크로스도메인 트리거.
+     * WARNING과 NONE은 계정 정지를 유발하지 않으므로 무시.
+     * 기존 제재가 신규보다 높거나 같으면 덮어쓰지 않음 (다운그레이드 방지).
+     */
+    public void applySystemSanction(SanctionType type, LocalDateTime sanctionEndAt) {
+        if (this.status == AccountStatus.DELETED) return;
+        if (type == SanctionType.WARNING || type == SanctionType.NONE) return;
+        if (type == SanctionType.PERMANENT && sanctionEndAt != null) {
+            throw new IllegalArgumentException("PERMANENT 제재는 sanctionEndAt이 null이어야 합니다.");
+        }
+        if (type != SanctionType.PERMANENT && sanctionEndAt == null) {
+            throw new IllegalArgumentException("PERMANENT 외 제재는 sanctionEndAt이 필수입니다.");
+        }
+        // 관리자 수동 정지(sanctionType=null+SUSPENDED)는 시스템 제재로 덮어쓰지 않음
+        if (this.status == AccountStatus.SUSPENDED && this.sanctionType == null) return;
+        if (this.sanctionType != null) {
+            if (type.severity() < this.sanctionType.severity()) return;
+            if (type == this.sanctionType) {
+                if (sanctionEndAt != null
+                        && (this.sanctionEndAt == null || sanctionEndAt.isAfter(this.sanctionEndAt))) {
+                    this.sanctionEndAt = sanctionEndAt;
+                }
+                return;
+            }
+        }
+        this.status = AccountStatus.SUSPENDED;
+        this.sanctionType = type;
+        this.sanctionEndAt = sanctionEndAt;
+    }
+
+    /**
+     * 시스템 제재 해제 — 스케줄러 자동 만료 또는 로그인 시점 만료 체크.
+     * PERMANENT는 자동 해제 불가 — 관리자 수동 처리 필요.
+     */
+    public void clearSystemSanction() {
+        if (this.status == AccountStatus.DELETED) return;
+        if (this.sanctionType == SanctionType.PERMANENT) {
+            throw new IllegalStateException("PERMANENT 제재는 자동 해제 불가. 관리자 수동 해제 필요. accountId=" + this.id);
+        }
+        this.status = AccountStatus.ACTIVE;
+        this.sanctionType = null;
+        this.sanctionEndAt = null;
+    }
+
+    /** 관리자 강제 시스템 제재 해제 — PERMANENT 포함 모든 단계 해제 가능. */
+    public void adminClearSystemSanction() {
+        if (this.status == AccountStatus.DELETED) return;
+        if (this.sanctionType == null) return;
+        this.status = AccountStatus.ACTIVE;
+        this.sanctionType = null;
+        this.sanctionEndAt = null;
+    }
+
+    /** 시스템 제재 기간 만료 여부 — sanctionEndAt 이 null(PERMANENT 또는 미제재)이면 false. */
+    public boolean isSystemSanctionExpired(LocalDateTime now) {
+        return this.sanctionType != null
+                && this.sanctionEndAt != null
+                && !this.sanctionEndAt.isAfter(now);
     }
 
     /**

@@ -22,8 +22,15 @@ public final class SearchRedisKeys {
     /** 
      * 전일 인기 검색어 스냅샷 ZSet 키 (자정 초기화 직전 백업) 
      * <br>사용: PopularSearchService (전날 순위 비교용)
+     * <br>Redis Cluster RENAME 호환을 위해 {@code search:ranking}과 같은 slot을 쓰는 hash tag를 적용한다.
      */
-    public static final String POPULAR_RANKING_PREV_KEY = "search:ranking:prev";
+    public static final String POPULAR_RANKING_PREV_KEY = "{search:ranking}:prev";
+
+    /**
+     * Redis Cluster hash tag 적용 전 사용하던 전일 인기 검색어 스냅샷 키.
+     * <br>배포 직후 기존 Redis 데이터가 남아 있는 환경에서는 새 키가 만들어지기 전까지 fallback 조회에만 사용한다.
+     */
+    public static final String POPULAR_RANKING_PREV_LEGACY_KEY = "search:ranking:prev";
     /** 
      * 오타 교정 — 관광지명 2-gram 역인덱스 키 prefix.
      * <br>Key 형식: {@code search:typo:places:gram:{gram}} → Value: Redis Set (해당 2-gram을 포함하는 장소명 목록)

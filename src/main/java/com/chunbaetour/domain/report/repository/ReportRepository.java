@@ -44,4 +44,8 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     // ── 관리자 사용자 상세 누적 신고 건수 (KAN-180 Admin S02) ────────────
     // 상태 무관 전체 누적 — 운영자가 대상의 신고 이력 규모를 한눈에 파악.
     long countByTargetTypeAndTargetId(ReportTargetType targetType, Long targetId);
+
+    // ── 도메인별 제재 누적 집계 (PR1+PR2 SanctionService) ──────────────────
+    long countByReportedUserIdAndTargetTypeAndStatus(
+            Long reportedUserId, ReportTargetType targetType, ReportStatus status);
 }
