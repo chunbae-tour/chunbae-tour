@@ -5,6 +5,7 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
  * S3와 동일한 키 형식({@code shops/{shopId}/{uuid}.{ext}})을 반환해 후속 조회/연동 코드가 환경 무관하게 동작한다.
  * 저장 위치는 {@code shop.image.local-dir}(미설정 시 {@code java.io.tmpdir}/chunbae-uploads).
  */
+@Slf4j
 @Component
 @Profile("!prod")
 public class LocalDiskShopImageStorage implements ShopImageStorage {
@@ -52,5 +54,15 @@ public class LocalDiskShopImageStorage implements ShopImageStorage {
     @Override
     public String presignedGetUrl(String key) {
         return key;
+    }
+
+    /** 로컬 디스크 파일 삭제(KAN-315). best-effort — 없거나 실패해도 throw 안 함(고아는 후속 cleanup 대상). */
+    @Override
+    public void delete(String key) {
+        try {
+            Files.deleteIfExists(baseDir.resolve(key));
+        } catch (IOException e) {
+            log.warn("로컬 가게 이미지 삭제 실패(잔존, 후속 cleanup 대상): key={}", key, e);
+        }
     }
 }
