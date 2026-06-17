@@ -21,7 +21,8 @@ public interface FreePostRepository extends JpaRepository<FreePost, Long> {
      * 동시 조회 시 lost-update도 발생하지 않는다.
      */
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE FreePost p SET p.viewCount = p.viewCount + 1 WHERE p.id = :id")
+    @Query("UPDATE FreePost p SET p.viewCount = p.viewCount + 1 "
+            + "WHERE p.id = :id AND p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.ACTIVE")
     void incrementViewCount(@Param("id") Long id);
 
     /** 자동 숨김 직렬화용 비관적 쓰기 락 — 동시 신고로 인한 임계값 경합 방지 (KAN-93). */
