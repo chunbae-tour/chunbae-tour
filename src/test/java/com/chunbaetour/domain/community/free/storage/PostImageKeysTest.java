@@ -35,12 +35,17 @@ class PostImageKeysTest {
     }
 
     @Test
-    @DisplayName("belongsToUser — 본인 prefix만 true, 타인/임의/null은 false")
+    @DisplayName("belongsToUser — 본인 prefix + 키 패턴(UUID·확장자) 모두 만족해야 true")
     void belongsToUser() {
-        assertThat(PostImageKeys.belongsToUser("posts/free/7/x.jpg", 7L)).isTrue();
-        assertThat(PostImageKeys.belongsToUser("posts/free/999/x.jpg", 7L)).isFalse(); // 타인
-        assertThat(PostImageKeys.belongsToUser("shops/7/x.jpg", 7L)).isFalse();        // 타 도메인 키
+        String valid = "posts/free/7/11111111-1111-1111-1111-111111111111.jpg";
+        assertThat(PostImageKeys.belongsToUser(valid, 7L)).isTrue();
+        assertThat(PostImageKeys.belongsToUser("posts/free/999/11111111-1111-1111-1111-111111111111.jpg", 7L))
+                .isFalse(); // 타인 prefix
+        assertThat(PostImageKeys.belongsToUser("posts/free/7/not-a-uuid.jpg", 7L)).isFalse(); // 패턴 위반(UUID 아님)
+        assertThat(PostImageKeys.belongsToUser("posts/free/7/11111111-1111-1111-1111-111111111111.gif", 7L))
+                .isFalse(); // 허용 안 되는 확장자
+        assertThat(PostImageKeys.belongsToUser("shops/7/x.jpg", 7L)).isFalse(); // 타 도메인
         assertThat(PostImageKeys.belongsToUser(null, 7L)).isFalse();
-        assertThat(PostImageKeys.belongsToUser("posts/free/7/x.jpg", null)).isFalse();
+        assertThat(PostImageKeys.belongsToUser(valid, null)).isFalse();
     }
 }

@@ -3,6 +3,7 @@ package com.chunbaetour.domain.community.free.storage;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * 자유게시판 이미지 S3 객체 키 생성 규칙 (KAN-317).
@@ -17,6 +18,10 @@ import java.util.UUID;
  * <p>shop({@code ShopImageKeys})·chat({@code ChatFileKeys}) 패턴을 참고했으나 커뮤니티 도메인이 소유한다(코드 의존 X).
  */
 public final class PostImageKeys {
+
+    /** 키 계약: posts/free/{userId}/{uuid}.{jpg|png|webp}. prefix뿐 아니라 UUID·확장자 규약까지 강제(임의 키 저장 차단). */
+    private static final Pattern KEY_PATTERN =
+            Pattern.compile("^posts/free/\\d+/[0-9a-fA-F\\-]{36}\\.(jpg|png|webp)$");
 
     private PostImageKeys() {
     }
@@ -37,7 +42,11 @@ public final class PostImageKeys {
      */
     public static boolean belongsToUser(String key, Long userId) {
         // userId null이면 prefix("posts/free/null/")로 오인 매칭될 수 있어 명시 차단(불변식 고정).
-        return key != null && userId != null && key.startsWith(prefix(userId));
+        if (key == null || userId == null) {
+            return false;
+        }
+        // 1) 소유자 prefix 일치 + 2) 키 패턴(UUID·확장자) 일치 — prefix만 통과하던 임의 키 저장을 막아 키 계약을 강제.
+        return key.startsWith(prefix(userId)) && KEY_PATTERN.matcher(key).matches();
     }
 
     private static String extensionFor(String contentType) {

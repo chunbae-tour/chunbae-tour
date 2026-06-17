@@ -99,12 +99,19 @@ class PostImageServiceTest {
         postImageService.validateOwnedKeys(USER_ID, List.of());
     }
 
+    // 키 패턴(UUID·확장자) 검증을 통과하는 유효 키
+    private static String key(long uid, String uuid, String ext) {
+        return "posts/free/" + uid + "/" + uuid + "." + ext;
+    }
+    private static final String U1 = "11111111-1111-1111-1111-111111111111";
+    private static final String U2 = "22222222-2222-2222-2222-222222222222";
+
     @Test
     @DisplayName("validateOwnedKeys — 5장 초과 → COMMUNITY_013")
     void validateOwnedKeys_tooMany_throws() {
         List<String> six = List.of(
-                "posts/free/7/a.jpg", "posts/free/7/b.jpg", "posts/free/7/c.jpg",
-                "posts/free/7/d.jpg", "posts/free/7/e.jpg", "posts/free/7/f.jpg");
+                key(7, U1, "jpg"), key(7, U2, "jpg"), key(7, U1, "png"),
+                key(7, U2, "png"), key(7, U1, "webp"), key(7, U2, "webp"));
         assertThatThrownBy(() -> postImageService.validateOwnedKeys(USER_ID, six))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
@@ -114,17 +121,38 @@ class PostImageServiceTest {
     @Test
     @DisplayName("validateOwnedKeys — 타인 prefix 키(IDOR) → INVALID_REQUEST")
     void validateOwnedKeys_foreignKey_throws() {
-        List<String> foreign = List.of("posts/free/999/other.jpg"); // userId 7이 아닌 키
-        assertThatThrownBy(() -> postImageService.validateOwnedKeys(USER_ID, foreign))
+        assertThatThrownBy(() -> postImageService.validateOwnedKeys(USER_ID, List.of(key(999, U1, "jpg"))))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test
-    @DisplayName("validateOwnedKeys — 본인 prefix 5장 이하 통과")
+    @DisplayName("validateOwnedKeys — 키 패턴 위반(UUID 아님)도 INVALID_REQUEST")
+    void validateOwnedKeys_badPattern_throws() {
+        assertThatThrownBy(() -> postImageService.validateOwnedKeys(USER_ID, List.of("posts/free/7/not-a-uuid.jpg")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("validateOwnedKeys — 본인 prefix + 유효 패턴 5장 이하 통과")
     void validateOwnedKeys_ownKeys_ok() {
-        postImageService.validateOwnedKeys(USER_ID, List.of("posts/free/7/a.jpg", "posts/free/7/b.jpg"));
+        postImageService.validateOwnedKeys(USER_ID, List.of(key(7, U1, "jpg"), key(7, U2, "png")));
+    }
+
+    @Test
+    @DisplayName("upload — preview presign 실패(EXTERNAL) → 키는 반환, previewUrl=null (부분 실패 강등)")
+    void upload_presignFails_returnsKeyNullPreview() {
+        given(imageStorage.upload(eq(USER_ID), any())).willReturn("posts/free/7/uuid.jpg");
+        given(imageStorage.presignedGetUrl("posts/free/7/uuid.jpg"))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
+
+        PostImageUploadResponse res = postImageService.upload(USER_ID, jpeg());
+
+        assertThat(res.objectKey()).isEqualTo("posts/free/7/uuid.jpg");
+        assertThat(res.previewUrl()).isNull();
     }
 
     // ── presign 변환 ────────────────────────────────────────────

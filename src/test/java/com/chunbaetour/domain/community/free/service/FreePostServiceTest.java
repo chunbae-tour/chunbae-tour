@@ -3,6 +3,8 @@ package com.chunbaetour.domain.community.free.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -75,11 +77,15 @@ class FreePostServiceTest {
             ReflectionTestUtils.setField(p, "id", POST_ID);
             return p;
         });
+        given(postImageService.presignAll(anyList())).willReturn(List.of());
 
         FreePostGetOneResponse response = postService.create(AUTHOR_ID,
                 new FreePostCreateRequest("제목", "내용", List.of()));
 
         assertThat(response.postId()).isEqualTo(POST_ID);
+        // IDOR 방어(키 검증)·presign 변환이 실제로 호출되는지 고정 — 제거 시 회귀 감지
+        then(postImageService).should().validateOwnedKeys(eq(AUTHOR_ID), eq(List.of()));
+        then(postImageService).should().presignAll(anyList());
         then(postRepository).should().save(any(FreePost.class));
     }
 
@@ -187,11 +193,15 @@ class FreePostServiceTest {
         Account author = mockAccount(AUTHOR_ID);
         given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(postImageService.presignAll(anyList())).willReturn(List.of());
 
         FreePostGetOneResponse response = postService.update(AUTHOR_ID, POST_ID,
                 new FreePostUpdateRequest("새제목", "새내용", null));
 
         assertThat(response.title()).isEqualTo("새제목");
+        // 키 검증·presign 변환 호출 고정(회귀 가드)
+        then(postImageService).should().validateOwnedKeys(eq(AUTHOR_ID), any());
+        then(postImageService).should().presignAll(anyList());
     }
 
     @Test

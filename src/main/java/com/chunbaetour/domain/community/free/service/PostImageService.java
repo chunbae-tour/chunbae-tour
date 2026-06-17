@@ -47,8 +47,19 @@ public class PostImageService {
     public PostImageUploadResponse upload(Long userId, MultipartFile file) {
         validateFile(file);
         String objectKey = imageStorage.upload(userId, file);
-        // 업로드 직후 미리보기용 presigned URL도 함께 — 작성 화면에서 글 저장 전 바로 렌더 가능(비공개 버킷이라 키만으론 못 봄)
-        return new PostImageUploadResponse(objectKey, imageStorage.presignedGetUrl(objectKey));
+        // 미리보기 presign은 부가 기능 — 실패해도 업로드(키)는 성공으로 본다(부분 실패 강등). 여기서 통째로 실패시키면
+        //   객체는 이미 올라갔는데 클라가 키를 못 받아 재업로드 → 고아 누적. preview만 null로 비우고 키는 반환한다.
+        String previewUrl = null;
+        try {
+            previewUrl = imageStorage.presignedGetUrl(objectKey);
+        } catch (BusinessException e) {
+            // 외부 의존(presign) 실패만 강등 — 그 외 내부 결함은 전파해 가시화
+            if (e.getErrorCode() != ErrorCode.EXTERNAL_SERVICE_ERROR) {
+                throw e;
+            }
+            log.warn("업로드는 성공했지만 preview presign 실패 — 키는 반환. objectKey={}", objectKey, e);
+        }
+        return new PostImageUploadResponse(objectKey, previewUrl);
     }
 
     /**

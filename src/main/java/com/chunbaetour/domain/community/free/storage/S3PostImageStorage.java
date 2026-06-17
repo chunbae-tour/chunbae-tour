@@ -53,7 +53,10 @@ public class S3PostImageStorage implements PostImageStorage {
                 .contentLength(file.getSize())
                 .build();
         try {
-            s3Client.putObject(request, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+            // RequestBody.fromInputStream은 스트림을 자동으로 닫지 않음(SDK v2) → try-with-resources로 직접 닫아 FD 누수 방지.
+            try (var in = file.getInputStream()) {
+                s3Client.putObject(request, RequestBody.fromInputStream(in, file.getSize()));
+            }
         } catch (IOException | SdkException e) {
             // 외부 서비스(S3) 오류·IO 실패만 503으로 매핑. RuntimeException 전체를 잡지 않아 내부 버그(NPE 등)는
             // 그대로 전파돼 500으로 드러난다(모니터링서 외부 장애와 구분). 키 미저장(고아 객체 없음).
