@@ -43,8 +43,18 @@ class UserMeHomeServiceTest {
     @Mock
     private WalletRepository walletRepository;
 
+    @Mock
+    private com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
+
     @InjectMocks
     private UserMeHomeService userMeHomeService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubProfileResolver() {
+        org.mockito.Mockito.lenient()
+                .when(profileImageService.toDisplayUrl(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
 
     @Test
     void getHome_with_account_and_wallet_returns_combined_response() {

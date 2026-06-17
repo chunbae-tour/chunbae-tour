@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.place.dto.response;
 
+import com.chunbaetour.domain.auth.profileimage.ProfileImageDisplaySupport;
 import com.chunbaetour.domain.place.PlaceReview;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,7 +33,7 @@ public record PlaceReviewResponse(
                 .reviewId(review.getId())
                 .authorId(review.getAuthor().getId())
                 .authorNickname(review.getAuthor().getNickname())
-                .authorProfileImageUrl(review.getAuthor().getProfileImageUrl())
+                .authorProfileImageUrl(ProfileImageDisplaySupport.toDisplayUrl(review.getAuthor().getProfileImageUrl()))
                 .rating(review.getRating())
                 .content(review.getContent())
                 .imageUrls(parsedImageUrls)

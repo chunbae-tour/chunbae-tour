@@ -43,8 +43,19 @@ class UserMeServiceTest {
     @Mock
     private AccountRepository accountRepository;
 
+    @Mock
+    private com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
+
     @InjectMocks
     private UserMeService userMeService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubProfileResolver() {
+        // 표시 변환은 passthrough로 — 기존 단위 테스트의 profileImageUrl 가정 유지(KAN-320)
+        org.mockito.Mockito.lenient()
+                .when(profileImageService.toDisplayUrl(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
 
     @Test
     void getMe_with_existing_user_returns_full_response() {

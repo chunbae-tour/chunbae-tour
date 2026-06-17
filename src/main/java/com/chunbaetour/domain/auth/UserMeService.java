@@ -49,6 +49,7 @@ public class UserMeService {
     private final LogoutTokenStore logoutTokenStore;
     private final UserLikeRepository userLikeRepository;
     private final SecurityAuditLogger auditLogger;
+    private final com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
     private final Clock clock;
 
     /**
@@ -65,7 +66,7 @@ public class UserMeService {
     public UserMeResponse getMe(Long userId) {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
-        return UserMeResponse.from(account);
+        return UserMeResponse.from(account, profileImageService.toDisplayUrl(account.getProfileImageUrl()));
     }
 
     /**
@@ -119,7 +120,7 @@ public class UserMeService {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
 
-        return UserMeResponse.from(account);
+        return UserMeResponse.from(account, profileImageService.toDisplayUrl(account.getProfileImageUrl()));
     }
 
     /**
