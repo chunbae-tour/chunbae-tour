@@ -110,8 +110,13 @@ public class CompanionService {
         }
     }
 
-    // 락 획득 전 사전 검증 — 채팅방 존재/방장 권한/CLOSED 여부, 기존 동행 존재(CR_004/CR_007), 참여자 ACTIVE 멤버십
+    // 락 획득 전 사전 검증 — 최소 참여자 수(CR_016), 채팅방 존재/방장 권한/CLOSED 여부, 기존 동행 존재(CR_004/CR_007), 참여자 ACTIVE 멤버십
     private void validateCreatePreconditions(Long ownerId, Long roomId, List<Long> allParticipantIds) {
+        // 방장 자동 포함 후에도 2명 미만이면 차단 — 1인 동행은 의미 없음
+        if (allParticipantIds.size() < 2) {
+            throw new BusinessException(ErrorCode.COMPANION_INSUFFICIENT_PARTICIPANTS);
+        }
+
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
