@@ -40,8 +40,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /actuator/health}, {@code /actuator/health/**}(health group, 예: {@code /actuator/health/lb} — ALB 헬스체크), {@code /actuator/info} — permitAll (LB health check).
  *       {@code /actuator/prometheus}는 IP allowlist (loopback only), 그 외 {@code /actuator/**}는 denyAll (#149).
  *       ⚠️ 본 필터 체인은 main 포트(8080)에만 적용된다. 운영은 별도 management port(9090)라 이 규칙이 9090에 적용되지 않으므로
- *       (별도 management 컨텍스트), 운영에서는 prometheus를 아예 노출하지 않고(application-prod.yml exposure=health,info) SG로 9090을
- *       격리해 방어한다. 본 IP allowlist는 동일 포트 배포(로컬/테스트)에서만 실효 — ActuatorSecurityIntegrationTest가 그 경로를 검증.</li>
+ *       (별도 management 컨텍스트), 운영의 prometheus(application-prod.yml exposure=health,info,prometheus, 모니터링 1단계)는
+ *       이 IP allowlist가 아니라 "9090이 ALB 리스너에 없어 외부 비노출 + SG(9090←alb-sg) 격리 + ADOT 사이드카 localhost scrape"로 방어한다.
+ *       본 IP allowlist는 동일 포트 배포(로컬/테스트)에서만 실효 — ActuatorSecurityIntegrationTest가 그 경로를 검증.</li>
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
@@ -136,8 +137,9 @@ public class SecurityConfig {
                         // /actuator/prometheus IP allowlist (#149).
                         // ⚠️ 적용 범위: 이 필터 체인은 main 포트(8080)에만 적용된다.
                         // - 운영(application-prod.yml): management.server.port=9090(별도 컨텍스트)이라 이 규칙이 9090에 적용 안 됨.
-                        //   운영은 9090에 prometheus를 아예 노출하지 않고(exposure=health,info) SG(9090←alb-sg)로 막는다(E4, DGAZA-max 리뷰).
-                        //   → 이 규칙은 운영에서 prometheus를 못 막지만, 운영은 애초에 prometheus를 8080·9090 어디에도 노출하지 않으므로 안전.
+                        //   운영은 9090에 prometheus를 노출하지만(exposure=health,info,prometheus, 모니터링 1단계), 9090이 ALB 리스너에
+                        //   없어 외부 비노출 + SG(9090←alb-sg) 격리 + ADOT 사이드카 localhost scrape로 방어한다(E4, 모니터링 1단계).
+                        //   → 이 IP allowlist 규칙은 운영 prometheus 방어와 무관(9090 별도 컨텍스트). 트래픽 포트(8080)에는 prometheus 미노출.
                         // - 로컬/테스트(management port 분리 안 됨): actuator가 8080에 있어 이 규칙이 실효 — loopback IP만 통과:
                         //   * 익명 사용자: 401 AUTH_006 (RestAuthenticationEntryPoint), 인증 사용자(role mismatch): 403 (RestAccessDeniedHandler).
                         //   ::1은 IPv6 loopback. ActuatorSecurityIntegrationTest가 이 경로를 검증.
