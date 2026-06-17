@@ -67,7 +67,8 @@ public class FreePostService {
                 .map(post -> FreePostGetListResponse.of(post, authors.get(post.getAuthorId())))
                 .toList();
 
-        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
+        // size 필드는 실제 반환 개수가 아니라 요청 페이지 크기를 echo한다(팀 표준 — CursorPageResponse javadoc)
+        return new CursorPageResponse<>(items, nextCursor, hasNext, size);
     }
 
     @Transactional
