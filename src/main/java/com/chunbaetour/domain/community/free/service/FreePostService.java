@@ -6,11 +6,12 @@ import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.common.util.CursorUtils;
+import com.chunbaetour.domain.community.comment.service.CommentCountService;
+import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.free.dto.FreePostCreateRequest;
 import com.chunbaetour.domain.community.free.dto.FreePostGetOneResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostGetListResponse;
 import com.chunbaetour.domain.community.free.dto.FreePostUpdateRequest;
-import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.common.event.PostDeletedEvent;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
@@ -34,18 +35,24 @@ public class FreePostService {
     private final FreePostRepository postRepository;
     private final AccountRepository accountRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final CommentCountService commentCountService;
 
     @Transactional
     public FreePostGetOneResponse create(Long authorId, FreePostCreateRequest request) {
         Account author = findAccount(authorId);
         FreePost post = FreePost.create(authorId, request.title(), request.content(), request.imageUrls());
-        return FreePostGetOneResponse.of(postRepository.save(post), author);
+        return FreePostGetOneResponse.of(postRepository.save(post), author, 0L, 0L);
     }
 
+    // 상세 조회마다 조회수 +1 — 벌크 UPDATE라 쓰기 트랜잭션 필요. 동기 증가 방식(트래픽 적은 커뮤니티 기준).
+    @Transactional
     public FreePostGetOneResponse findById(Long postId) {
         FreePost post = findActivePostWithImages(postId);
+        postRepository.incrementViewCount(postId);
         Account author = accountRepository.findById(post.getAuthorId()).orElse(null);
-        return FreePostGetOneResponse.of(post, author);
+        long commentCount = commentCountService.countByPost(postId, PostType.FREE);
+        // 엔티티는 벌크 UPDATE로 동기화되지 않으므로 이번 조회분(+1)을 응답에 반영
+        return FreePostGetOneResponse.of(post, author, post.getViewCount() + 1, commentCount);
     }
 
     public CursorPageResponse<FreePostGetListResponse> findAll(String cursor, int size) {
@@ -63,8 +70,12 @@ public class FreePostService {
         Map<Long, Account> authors = accountRepository.findAllById(authorIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
+        List<Long> postIds = content.stream().map(FreePost::getId).toList();
+        Map<Long, Long> commentCounts = commentCountService.countByPosts(postIds, PostType.FREE);
+
         List<FreePostGetListResponse> items = content.stream()
-                .map(post -> FreePostGetListResponse.of(post, authors.get(post.getAuthorId())))
+                .map(post -> FreePostGetListResponse.of(
+                        post, authors.get(post.getAuthorId()), commentCounts.getOrDefault(post.getId(), 0L)))
                 .toList();
 
         return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
@@ -77,7 +88,8 @@ public class FreePostService {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
         post.update(request.title(), request.content(), request.imageUrls());
-        return FreePostGetOneResponse.of(post, findAccount(accountId));
+        long commentCount = commentCountService.countByPost(postId, PostType.FREE);
+        return FreePostGetOneResponse.of(post, findAccount(accountId), post.getViewCount(), commentCount);
     }
 
     @Transactional

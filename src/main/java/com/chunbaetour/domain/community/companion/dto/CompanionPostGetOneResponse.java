@@ -22,11 +22,14 @@ public record CompanionPostGetOneResponse(
         int currentMembers,
         CompanionPostStatus status,
         WriterInfo writer,
+        long viewCount,
+        long commentCount,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
     public static CompanionPostGetOneResponse of(
-            CompanionPost post, Account author, Long chatRoomId, ChatRoomStatus chatRoomStatus) {
+            CompanionPost post, Account author, Long chatRoomId, ChatRoomStatus chatRoomStatus,
+            long viewCount, long commentCount) {
         return new CompanionPostGetOneResponse(
                 post.getId(),
                 chatRoomId,
@@ -41,6 +44,8 @@ public record CompanionPostGetOneResponse(
                 post.getCurrentMembers(),
                 post.getStatus(),
                 WriterInfo.from(author),
+                viewCount,
+                commentCount,
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );
