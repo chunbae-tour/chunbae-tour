@@ -49,4 +49,12 @@ public interface FreePostRepository extends JpaRepository<FreePost, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE FreePost p SET p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.HIDDEN, p.updatedAt = :now WHERE p.authorId = :authorId AND p.status = com.chunbaetour.domain.community.free.entity.FreePostStatus.ACTIVE")
     void hideAllActiveByAuthorId(@Param("authorId") Long authorId, @Param("now") LocalDateTime now);
+
+    /**
+     * 고아 판정용 — 객체 키가 어느 글에든 참조되는지(KAN-317 reconcile 스케줄러). 미참조면 고아 후보.
+     * free_post_images(@ElementCollection)를 JOIN해 image_url(=iu)로 조회 → idx_free_post_images_image_url 사용.
+     * (native EXISTS는 MySQL서 BIGINT를 반환해 boolean 매핑이 깨지므로 JPQL COUNT&gt;0으로 boolean을 직접 산출한다.)
+     */
+    @Query("SELECT COUNT(p) > 0 FROM FreePost p JOIN p.imageUrls iu WHERE iu = :key")
+    boolean existsByImageKey(@Param("key") String key);
 }

@@ -12,6 +12,8 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -90,6 +92,28 @@ public class PostImageService {
             }
         }
         return urls;
+    }
+
+    /**
+     * 주어진 키들의 S3 객체 삭제를 현재 트랜잭션 커밋 직후(afterCommit)로 지연한다(KAN-317).
+     * 글 수정(교체/제거된 옛 키)·삭제 시 호출 — 커밋 전 즉시 삭제하면 이후 롤백 시 객체만 사라져 정합성이 깨지므로
+     * 커밋이 확정된 뒤에만 best-effort 삭제한다. 동기화가 없으면(트랜잭션 밖) 즉시 삭제로 폴백. null/빈 목록은 no-op.
+     */
+    public void deleteAllAfterCommit(List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        List<String> snapshot = List.copyOf(keys);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            snapshot.forEach(imageStorage::delete);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                snapshot.forEach(imageStorage::delete);
+            }
+        });
     }
 
     private void validateFile(MultipartFile file) {

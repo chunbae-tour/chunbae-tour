@@ -5,6 +5,11 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -17,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
  * S3와 동일한 키 형식({@code posts/free/{userId}/{uuid}.{ext}})을 반환해 후속 조회/연동 코드가 환경 무관하게 동작한다.
  * 저장 위치는 {@code post.image.local-dir}(미설정 시 {@code java.io.tmpdir}/chunbae-uploads).
  */
+@Slf4j
 @Component
 @Profile("!prod")
 public class LocalDiskPostImageStorage implements PostImageStorage {
@@ -52,5 +58,43 @@ public class LocalDiskPostImageStorage implements PostImageStorage {
     @Override
     public String presignedGetUrl(String key) {
         return key;
+    }
+
+    /** 로컬 디스크 파일 삭제(KAN-317). best-effort — 없거나 실패해도 throw 안 함(고아는 스케줄러 회수 대상). */
+    @Override
+    public void delete(String key) {
+        try {
+            Files.deleteIfExists(baseDir.resolve(key));
+        } catch (IOException e) {
+            log.warn("로컬 자유게시판 이미지 삭제 실패(잔존, 스케줄러 회수 대상): key={}", key, e);
+        }
+    }
+
+    /**
+     * prefix 아래 로컬 파일을 walk로 나열한다(KAN-317). 키는 baseDir 기준 상대경로를 '/'로 정규화(S3 키 형식 일치),
+     * lastModified는 파일 mtime을 Instant로. baseDir/prefix 미존재 시 빈 목록.
+     */
+    @Override
+    public List<PostImageObjectInfo> listObjects(String prefix) {
+        Path root = baseDir.resolve(prefix);
+        if (!Files.exists(root)) {
+            return List.of();
+        }
+        List<PostImageObjectInfo> result = new ArrayList<>();
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.filter(Files::isRegularFile).forEach(p -> {
+                try {
+                    String key = baseDir.relativize(p).toString().replace('\\', '/');
+                    Instant lastModified = Files.getLastModifiedTime(p).toInstant();
+                    result.add(new PostImageObjectInfo(key, lastModified));
+                } catch (IOException e) {
+                    log.warn("로컬 객체 메타 읽기 실패, 건너뜀: path={}", p, e);
+                }
+            });
+        } catch (IOException e) {
+            log.warn("로컬 객체 나열 실패: prefix={}", prefix, e);
+            return List.of();
+        }
+        return result;
     }
 }

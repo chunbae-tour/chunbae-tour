@@ -84,4 +84,42 @@ class S3PostImageStorageTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
     }
+
+    @Test
+    @DisplayName("listObjects — ListObjectsV2 페이지네이션(isTruncated) 끝까지 순회 (KAN-317)")
+    void listObjects_paginates() {
+        java.time.Instant t1 = java.time.Instant.parse("2026-06-17T10:00:00Z");
+        java.time.Instant t2 = java.time.Instant.parse("2026-06-17T11:00:00Z");
+        software.amazon.awssdk.services.s3.model.ListObjectsV2Response page1 =
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Response.builder()
+                        .contents(software.amazon.awssdk.services.s3.model.S3Object.builder()
+                                .key("posts/free/7/a.jpg").lastModified(t1).build())
+                        .isTruncated(true).nextContinuationToken("TOKEN2").build();
+        software.amazon.awssdk.services.s3.model.ListObjectsV2Response page2 =
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Response.builder()
+                        .contents(software.amazon.awssdk.services.s3.model.S3Object.builder()
+                                .key("posts/free/8/b.jpg").lastModified(t2).build())
+                        .isTruncated(false).build();
+        given(s3Client.listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class)))
+                .willReturn(page1, page2);
+
+        var result = storage().listObjects("posts/free/");
+
+        assertThat(result).extracting(com.chunbaetour.domain.community.free.storage.PostImageObjectInfo::objectKey)
+                .containsExactly("posts/free/7/a.jpg", "posts/free/8/b.jpg");
+        verify(s3Client, org.mockito.Mockito.times(2))
+                .listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class));
+    }
+
+    @Test
+    @DisplayName("listObjects — S3 오류 → EXTERNAL_SERVICE_ERROR 매핑")
+    void listObjects_s3Error_maps() {
+        given(s3Client.listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class)))
+                .willThrow(S3Exception.builder().message("boom").build());
+
+        assertThatThrownBy(() -> storage().listObjects("posts/free/"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
+    }
 }

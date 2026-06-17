@@ -16,6 +16,7 @@ import com.chunbaetour.domain.community.common.event.PostDeletedEvent;
 import com.chunbaetour.domain.community.free.entity.FreePost;
 import com.chunbaetour.domain.community.free.entity.FreePostStatus;
 import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -96,6 +97,12 @@ public class FreePostService {
         }
         // 이미지 키 영속화 전 검증 — 개수(≤5) + 본인 소유 prefix(IDOR 차단)
         postImageService.validateOwnedKeys(accountId, request.imageUrls());
+        // 이미지가 교체되는 경우(request.imageUrls != null), 새 목록서 빠진 옛 키는 고아가 되므로 커밋 후 정리
+        if (request.imageUrls() != null) {
+            List<String> removed = new ArrayList<>(post.getImageUrls());
+            removed.removeAll(request.imageUrls());
+            postImageService.deleteAllAfterCommit(removed);
+        }
         post.update(request.title(), request.content(), request.imageUrls());
         long commentCount = commentCountService.countByPost(postId, PostType.FREE);
         return FreePostGetOneResponse.of(post, findAccount(accountId), post.getViewCount(), commentCount,
@@ -104,10 +111,13 @@ public class FreePostService {
 
     @Transactional
     public void delete(Long accountId, Long postId) {
-        FreePost post = findActivePost(postId);
+        // 이미지 키를 함께 로드 — 삭제 후 S3 객체 정리에 필요(soft-delete라 free_post_images 행은 남지만 객체는 회수)
+        FreePost post = findActivePostWithImages(postId);
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_DELETE_FORBIDDEN);
         }
+        // 글의 이미지 객체는 커밋 후 best-effort 삭제 — 삭제된 글은 다시 노출되지 않으므로 S3 객체를 회수한다(잔존분은 스케줄러 회수)
+        postImageService.deleteAllAfterCommit(new ArrayList<>(post.getImageUrls()));
         post.delete();
         eventPublisher.publishEvent(new PostDeletedEvent(post.getId(), PostType.FREE));
     }
