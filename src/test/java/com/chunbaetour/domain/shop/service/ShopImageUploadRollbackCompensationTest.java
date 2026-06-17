@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.chunbaetour.domain.shop.entity.Shop;
@@ -75,5 +76,26 @@ class ShopImageUploadRollbackCompensationTest extends AbstractIntegrationTest {
 
         // 롤백 동기화(afterCompletion ROLLED_BACK)가 방금 올린 객체를 회수해야 한다
         verify(imageStorage).delete(uploadedKey);
+    }
+
+    @Test
+    @DisplayName("업로드 커밋 성공 → 보상 훅이 객체를 삭제하지 않음(커밋 경로 회귀 가드)")
+    void uploadCommit_doesNotDeleteObject() {
+        Shop shop = shopRepository.save(Shop.builder()
+                .userId(USER_ID).applicationId(USER_ID)
+                .shopName("커밋성공").category("FOOD")
+                .address("서울시 강남구").build());
+
+        String uploadedKey = "shops/" + shop.getId() + "/keep.jpg";
+        given(imageStorage.upload(anyLong(), any())).willReturn(uploadedKey);
+        given(imageStorage.presignedGetUrl(uploadedKey)).willReturn(uploadedKey);
+        given(shopImageRepository.findByShopIdAndTypeForUpdate(shop.getId(), ShopImageType.GALLERY))
+                .willReturn(List.of());
+        // save 정상 → 트랜잭션 커밋. 보상 훅은 ROLLED_BACK에만 동작하므로 삭제가 일어나면 안 된다.
+        given(shopImageRepository.save(any(ShopImage.class))).willAnswer(inv -> inv.getArgument(0));
+
+        shopImageService.uploadImage(USER_ID, shop.getId(), ShopImageType.GALLERY, jpeg());
+
+        verify(imageStorage, never()).delete(uploadedKey);
     }
 }

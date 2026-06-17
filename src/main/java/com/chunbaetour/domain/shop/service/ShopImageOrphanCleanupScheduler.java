@@ -49,24 +49,39 @@ public class ShopImageOrphanCleanupScheduler {
     private final Clock clock;
 
     @Scheduled(fixedDelay = SCHEDULE_INTERVAL_MS)
+    // lockAtMostFor=PT30M: 크래시로 락이 안 풀릴 때의 안전 상한(interval 1h보다 작아 자동 회복 보장). 본문 비용의 대부분은
+    //   S3 LIST이며, existsByObjectKey는 uq_shop_images_object_key 인덱스로 O(log n)이라 30분이면 충분(KAN-319 리뷰).
     @SchedulerLock(name = "shop_image_orphan_cleanup", lockAtMostFor = "PT30M", lockAtLeastFor = "PT1M")
     public void cleanupOrphanObjects() {
         Instant cutoff = clock.instant().minus(Duration.ofHours(GRACE_HOURS));
 
-        List<ShopImageObjectInfo> objects = imageStorage.listObjects(SHOP_IMAGE_PREFIX);
+        List<ShopImageObjectInfo> objects;
+        try {
+            objects = imageStorage.listObjects(SHOP_IMAGE_PREFIX);
+        } catch (RuntimeException e) {
+            // S3 LIST 일시장애 — 이번 주기 건너뛰고 다음 주기 재시도(best-effort, 배치 전체 중단 방지).
+            log.warn("[가게 이미지 고아 정리] 객체 나열 실패, 이번 주기 건너뜀", e);
+            return;
+        }
+
         int deleted = 0;
         for (ShopImageObjectInfo obj : objects) {
             // grace 이내(갓 올라온) 객체는 커밋 전/롤백보상 전일 수 있어 보류 — 다음 주기에 재판정.
             if (!obj.lastModified().isBefore(cutoff)) {
                 continue;
             }
-            // DB 행이 참조하는 키면 정상 객체 — 건드리지 않는다. 미참조 = 고아 → 삭제(멱등, best-effort).
-            if (shopImageRepository.existsByObjectKey(obj.objectKey())) {
-                continue;
+            try {
+                // DB 행이 참조하는 키면 정상 객체 — 건드리지 않는다. 미참조 = 고아 → 삭제(멱등, best-effort).
+                if (shopImageRepository.existsByObjectKey(obj.objectKey())) {
+                    continue;
+                }
+                imageStorage.delete(obj.objectKey());
+                deleted++;
+                log.info("[가게 이미지 고아 정리] 삭제: key={}", obj.objectKey());
+            } catch (RuntimeException e) {
+                // 해당 객체만 건너뛰고 다음 객체 진행 — 한 건 실패로 주기 전체가 중단되지 않게(부분 진행).
+                log.warn("[가게 이미지 고아 정리] 처리 실패, 건너뜀: key={}", obj.objectKey(), e);
             }
-            imageStorage.delete(obj.objectKey());
-            deleted++;
-            log.info("[가게 이미지 고아 정리] 삭제: key={}", obj.objectKey());
         }
         if (deleted > 0) {
             log.info("[가게 이미지 고아 정리] {}건 삭제 (스캔 {}건, 기준 시각 {})", deleted, objects.size(), cutoff);

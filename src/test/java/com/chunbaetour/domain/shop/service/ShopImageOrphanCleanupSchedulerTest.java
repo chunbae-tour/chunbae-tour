@@ -63,4 +63,44 @@ class ShopImageOrphanCleanupSchedulerTest {
 
         verify(imageStorage, never()).delete(eq("shops/10/x.jpg"));
     }
+
+    @Test
+    @DisplayName("grace 정확 경계 — lastModified == cutoff(정확히 1h 전)는 삭제 안 함(boundary 보존)")
+    void exactGraceBoundary_preserved() {
+        Instant now = Instant.parse("2026-06-17T12:00:00Z");
+        // 정확히 grace(1h) 전 = cutoff. !isBefore(cutoff) → true라 보존(경계는 미삭제).
+        ShopImageObjectInfo atBoundary = new ShopImageObjectInfo("shops/10/edge.jpg", now.minusSeconds(3600));
+        given(imageStorage.listObjects("shops/")).willReturn(List.of(atBoundary));
+
+        scheduler().cleanupOrphanObjects();
+
+        verify(imageStorage, never()).delete("shops/10/edge.jpg");
+    }
+
+    @Test
+    @DisplayName("per-object 예외 격리 — 한 객체 처리 실패해도 다음 고아는 계속 삭제")
+    void perObjectException_isolated() {
+        Instant now = Instant.parse("2026-06-17T12:00:00Z");
+        ShopImageObjectInfo boom = new ShopImageObjectInfo("shops/10/boom.jpg", now.minusSeconds(7200));
+        ShopImageObjectInfo orphan = new ShopImageObjectInfo("shops/10/orphan.jpg", now.minusSeconds(7200));
+        given(imageStorage.listObjects("shops/")).willReturn(List.of(boom, orphan));
+        // 첫 객체는 existsByObjectKey에서 예외 → 건너뛰고, 둘째 고아는 정상 삭제돼야 한다
+        given(shopImageRepository.existsByObjectKey("shops/10/boom.jpg")).willThrow(new RuntimeException("DB 일시장애"));
+        given(shopImageRepository.existsByObjectKey("shops/10/orphan.jpg")).willReturn(false);
+
+        scheduler().cleanupOrphanObjects();
+
+        verify(imageStorage, never()).delete("shops/10/boom.jpg"); // 실패 건은 미삭제
+        verify(imageStorage).delete("shops/10/orphan.jpg");        // 다음 고아는 계속 처리
+    }
+
+    @Test
+    @DisplayName("listObjects 실패 — 이번 주기 건너뜀(예외 전파 없음)")
+    void listFails_skipsCycle() {
+        given(imageStorage.listObjects("shops/")).willThrow(new RuntimeException("S3 LIST 장애"));
+
+        scheduler().cleanupOrphanObjects(); // throw 없이 조용히 종료
+
+        verify(imageStorage, never()).delete(eq("shops/10/x.jpg"));
+    }
 }

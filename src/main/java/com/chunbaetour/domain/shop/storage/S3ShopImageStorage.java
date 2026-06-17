@@ -107,13 +107,20 @@ public class S3ShopImageStorage implements ShopImageStorage {
                 .prefix(prefix);
         ListObjectsV2Response response;
         String continuationToken = null;
-        do {
-            response = s3Client.listObjectsV2(requestBuilder.continuationToken(continuationToken).build());
-            for (S3Object obj : response.contents()) {
-                result.add(new ShopImageObjectInfo(obj.key(), obj.lastModified()));
-            }
-            continuationToken = response.nextContinuationToken();
-        } while (Boolean.TRUE.equals(response.isTruncated()));
+        try {
+            do {
+                response = s3Client.listObjectsV2(requestBuilder.continuationToken(continuationToken).build());
+                for (S3Object obj : response.contents()) {
+                    result.add(new ShopImageObjectInfo(obj.key(), obj.lastModified()));
+                }
+                continuationToken = response.nextContinuationToken();
+            } while (Boolean.TRUE.equals(response.isTruncated()));
+        } catch (SdkException e) {
+            // S3 일시장애·권한 문제 — bucket/prefix 문맥을 저장소 레이어에서 ERROR 로깅한 뒤 EXTERNAL_SERVICE_ERROR로
+            // 매핑(upload/presign과 동일 규약). 스케줄러는 이를 잡아 이번 주기를 건너뛴다. 운영서 "왜 cleanup 미실행"을 추적 가능.
+            log.error("S3 가게 이미지 객체 나열 실패: bucket={}, prefix={}", properties.getBucket(), prefix, e);
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
         return result;
     }
 }
