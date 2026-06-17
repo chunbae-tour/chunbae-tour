@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -33,6 +35,8 @@ import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import org.springframework.context.ApplicationEventPublisher;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -731,12 +735,13 @@ class JoinRequestServiceTest {
 
     @Test
     void getMyJoinRequests_success_returnsAllStatuses() {
-        // 본인 신청 목록 — PENDING/APPROVED/REJECTED 전체 반환, chatRoom 배치 조회 검증
+        // 본인 신청 목록 — PENDING/APPROVED/REJECTED 전체 반환, chatRoom 배치 조회 검증 (DuJjoneKoo 리뷰 — REJECTED 케이스 보강)
         Long roomId2 = 200L;
+        Long roomId3 = 300L;
         LocalDateTime now = LocalDateTime.now();
 
         JoinRequest req1 = mock(JoinRequest.class);
-        given(req1.getId()).willReturn(1L);
+        given(req1.getId()).willReturn(3L);
         given(req1.getChatRoomId()).willReturn(ROOM_ID);
         given(req1.getMessage()).willReturn("같이 가요!");
         given(req1.getStatus()).willReturn(JoinRequestStatus.PENDING);
@@ -749,8 +754,15 @@ class JoinRequestServiceTest {
         given(req2.getStatus()).willReturn(JoinRequestStatus.APPROVED);
         given(req2.getCreatedAt()).willReturn(now.minusDays(1));
 
-        given(joinRequestRepository.findByUserIdOrderByCreatedAtDesc(USER_ID))
-                .willReturn(List.of(req1, req2));
+        JoinRequest req3 = mock(JoinRequest.class);
+        given(req3.getId()).willReturn(1L);
+        given(req3.getChatRoomId()).willReturn(roomId3);
+        given(req3.getMessage()).willReturn("거절된 신청");
+        given(req3.getStatus()).willReturn(JoinRequestStatus.REJECTED);
+        given(req3.getCreatedAt()).willReturn(now.minusDays(2));
+
+        given(joinRequestRepository.findByUserIdWithCursor(eq(USER_ID), isNull(), any()))
+                .willReturn(List.of(req1, req2, req3));
 
         ChatRoom room1 = mock(ChatRoom.class);
         given(room1.getId()).willReturn(ROOM_ID);
@@ -760,29 +772,40 @@ class JoinRequestServiceTest {
         given(room2.getId()).willReturn(roomId2);
         given(room2.getTitle()).willReturn("부산 여행");
 
-        given(chatRoomRepository.findAllById(anyList())).willReturn(List.of(room1, room2));
+        ChatRoom room3 = mock(ChatRoom.class);
+        given(room3.getId()).willReturn(roomId3);
+        given(room3.getTitle()).willReturn("강릉 여행");
 
-        List<MyJoinRequestResponse> result = joinRequestService.getMyJoinRequests(USER_ID);
+        given(chatRoomRepository.findAllById(anyList())).willReturn(List.of(room1, room2, room3));
+
+        CursorPageResponse<MyJoinRequestResponse> response = joinRequestService.getMyJoinRequests(USER_ID, null, 20);
 
         // 정확한 chatRoomId 목록으로 배치 조회했는지 검증 — userId 등 잘못된 ID 혼입 방지
-        verify(chatRoomRepository).findAllById(List.of(ROOM_ID, roomId2));
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0).joinRequestId()).isEqualTo(1L);
+        verify(chatRoomRepository).findAllById(List.of(ROOM_ID, roomId2, roomId3));
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+        List<MyJoinRequestResponse> result = response.content();
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0).joinRequestId()).isEqualTo(3L);
         assertThat(result.get(0).chatRoomTitle()).isEqualTo("제주도 여행");
         assertThat(result.get(0).status()).isEqualTo(JoinRequestStatus.PENDING);
         assertThat(result.get(1).joinRequestId()).isEqualTo(2L);
         assertThat(result.get(1).chatRoomTitle()).isEqualTo("부산 여행");
         assertThat(result.get(1).status()).isEqualTo(JoinRequestStatus.APPROVED);
+        assertThat(result.get(2).joinRequestId()).isEqualTo(1L);
+        assertThat(result.get(2).chatRoomTitle()).isEqualTo("강릉 여행");
+        assertThat(result.get(2).status()).isEqualTo(JoinRequestStatus.REJECTED);
     }
 
     @Test
     void getMyJoinRequests_emptyList_returnsEmpty() {
         // 신청 이력 없음 — 빈 리스트 반환, chatRoomRepository 미호출
-        given(joinRequestRepository.findByUserIdOrderByCreatedAtDesc(USER_ID)).willReturn(List.of());
+        given(joinRequestRepository.findByUserIdWithCursor(eq(USER_ID), isNull(), any())).willReturn(List.of());
 
-        List<MyJoinRequestResponse> result = joinRequestService.getMyJoinRequests(USER_ID);
+        CursorPageResponse<MyJoinRequestResponse> response = joinRequestService.getMyJoinRequests(USER_ID, null, 20);
 
-        assertThat(result).isEmpty();
+        assertThat(response.content()).isEmpty();
+        assertThat(response.hasNext()).isFalse();
         verify(chatRoomRepository, never()).findAllById(anyList());
     }
 
@@ -798,15 +821,46 @@ class JoinRequestServiceTest {
         given(req.getStatus()).willReturn(JoinRequestStatus.PENDING);
         given(req.getCreatedAt()).willReturn(now);
 
-        given(joinRequestRepository.findByUserIdOrderByCreatedAtDesc(USER_ID)).willReturn(List.of(req));
+        given(joinRequestRepository.findByUserIdWithCursor(eq(USER_ID), isNull(), any())).willReturn(List.of(req));
         // 삭제된 방 — findAllById 결과에 없음 → chatRoomMap.get() = null
         given(chatRoomRepository.findAllById(anyList())).willReturn(List.of());
 
-        List<MyJoinRequestResponse> result = joinRequestService.getMyJoinRequests(USER_ID);
+        CursorPageResponse<MyJoinRequestResponse> response = joinRequestService.getMyJoinRequests(USER_ID, null, 20);
 
+        List<MyJoinRequestResponse> result = response.content();
         assertThat(result).hasSize(1);
         assertThat(result.get(0).chatRoomTitle()).isNull();
         assertThat(result.get(0).chatRoomId()).isEqualTo(ROOM_ID);
+    }
+
+    @Test
+    void getMyJoinRequests_moreThanSize_hasNextTrueAndTrimsToSize() {
+        // size+1 조회 결과로 hasNext 판별 — 페이징 미적용 시 회귀 방지 (DuJjoneKoo 리뷰 — 페이징 보강)
+        JoinRequest req1 = mock(JoinRequest.class);
+        given(req1.getId()).willReturn(2L);
+        given(req1.getChatRoomId()).willReturn(ROOM_ID);
+        given(req1.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req1.getCreatedAt()).willReturn(LocalDateTime.now());
+
+        // 2번째 항목은 size+1 초과분 — trim되어 mapper 미호출, chatRoomId만 배치조회용으로 쓰임
+        JoinRequest req2 = mock(JoinRequest.class);
+        given(req2.getChatRoomId()).willReturn(ROOM_ID);
+
+        // size=1 요청에 2건(size+1) 반환 → 다음 페이지 있음
+        given(joinRequestRepository.findByUserIdWithCursor(eq(USER_ID), isNull(), any()))
+                .willReturn(List.of(req1, req2));
+
+        ChatRoom room = mock(ChatRoom.class);
+        given(room.getId()).willReturn(ROOM_ID);
+        given(room.getTitle()).willReturn("제주도 여행");
+        given(chatRoomRepository.findAllById(anyList())).willReturn(List.of(room));
+
+        CursorPageResponse<MyJoinRequestResponse> response = joinRequestService.getMyJoinRequests(USER_ID, null, 1);
+
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).joinRequestId()).isEqualTo(2L);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.nextCursor()).isEqualTo(CursorUtils.encode(2L));
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {

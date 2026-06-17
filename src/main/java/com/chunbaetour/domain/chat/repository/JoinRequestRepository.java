@@ -5,6 +5,7 @@ import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -40,6 +41,15 @@ public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> 
     @Query("DELETE FROM JoinRequest j WHERE j.id = :id AND j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.PENDING")
     int deleteIfPending(@Param("id") Long id);
 
-    // 본인 신청 목록 — 상태 무관 전체, 최신순
-    List<JoinRequest> findByUserIdOrderByCreatedAtDesc(Long userId);
+    // 본인 신청 목록 cursor 페이징 — 상태 무관 전체, id DESC(최신순), cursorId null 시 첫 페이지
+    @Query("""
+            SELECT j FROM JoinRequest j
+            WHERE j.userId = :userId
+            AND (:cursorId IS NULL OR j.id < :cursorId)
+            ORDER BY j.id DESC
+            """)
+    List<JoinRequest> findByUserIdWithCursor(
+            @Param("userId") Long userId,
+            @Param("cursorId") Long cursorId,
+            Pageable pageable);
 }

@@ -8,9 +8,11 @@ import com.chunbaetour.domain.chat.dto.response.MyJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.service.JoinRequestService;
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,9 +41,11 @@ public class JoinRequestController {
     // /join-requests/me — literal이 /{chatRoomId}/join-requests 경로변수보다 우선매칭되어 충돌 없음
     @Operation(summary = "내 참여 신청 목록 조회")
     @GetMapping("/join-requests/me")
-    public ApiResponse<List<MyJoinRequestResponse>> getMyJoinRequests(
-            @AuthenticationPrincipal Long userId) {
-        return ApiResponse.success(joinRequestService.getMyJoinRequests(userId));
+    public ApiResponse<CursorPageResponse<MyJoinRequestResponse>> getMyJoinRequests(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ApiResponse.success(joinRequestService.getMyJoinRequests(userId, cursor, size));
     }
 
     @Operation(summary = "참여 신청 목록 조회")
