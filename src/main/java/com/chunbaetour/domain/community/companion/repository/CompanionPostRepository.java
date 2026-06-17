@@ -31,6 +31,7 @@ public interface CompanionPostRepository extends JpaRepository<CompanionPost, Lo
      * 동시 조회 시 lost-update도 발생하지 않는다.
      */
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE CompanionPost p SET p.viewCount = p.viewCount + 1 WHERE p.id = :id")
+    @Query("UPDATE CompanionPost p SET p.viewCount = p.viewCount + 1 "
+            + "WHERE p.id = :id AND p.status = com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.ACTIVE")
     void incrementViewCount(@Param("id") Long id);
 }
