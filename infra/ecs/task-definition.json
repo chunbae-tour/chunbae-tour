@@ -2,8 +2,8 @@
   "family": "chunbae-tour",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
+  "cpu": "1024",
+  "memory": "2048",
   "runtimePlatform": {
     "cpuArchitecture": "X86_64",
     "operatingSystemFamily": "LINUX"
@@ -62,6 +62,39 @@
           "awslogs-group": "/ecs/chunbae-tour",
           "awslogs-region": "ap-northeast-2",
           "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    },
+    {
+      "name": "adot-collector",
+      "image": "public.ecr.aws/aws-observability/aws-otel-collector:v0.48.0",
+      "essential": false,
+      "cpu": 128,
+      "memoryReservation": 128,
+      "memory": 256,
+      "dependsOn": [
+        { "containerName": "chunbae-tour", "condition": "HEALTHY" }
+      ],
+      "secrets": [
+        { "name": "AOT_CONFIG_CONTENT", "valueFrom": "arn:aws:ssm:ap-northeast-2:310133718863:parameter/chunbae-tour/prod/adot-config" }
+      ],
+      "environment": [
+        { "name": "AWS_REGION", "value": "ap-northeast-2" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -q -O - http://localhost:13133/ || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/chunbae-tour",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "adot",
           "awslogs-create-group": "true"
         }
       }
