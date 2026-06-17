@@ -291,7 +291,9 @@ public enum ErrorCode {
     // endParticipation은 Companion.status==ENDED(여행 종료, 날짜 기반 배치job)일 때만 호출 가능
     COMPANION_NOT_ENDED_FOR_PARTICIPATION(HttpStatus.CONFLICT, "CR_014", "여행이 종료되지 않아 참여를 종료할 수 없습니다."),
     // endParticipation 중복 호출 — 이미 endedAt 세팅됨
-    COMPANION_PARTICIPATION_ALREADY_ENDED(HttpStatus.CONFLICT, "CR_015", "이미 참여 종료 처리되었습니다.");
+    COMPANION_PARTICIPATION_ALREADY_ENDED(HttpStatus.CONFLICT, "CR_015", "이미 참여 종료 처리되었습니다."),
+    // 동행 생성 시 방장 포함 최소 2명 미충족
+    COMPANION_INSUFFICIENT_PARTICIPANTS(HttpStatus.BAD_REQUEST, "CR_016", "동행을 생성하려면 최소 2명이 필요합니다.");
 
     private final HttpStatus status;
     private final String code;
