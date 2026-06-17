@@ -199,6 +199,7 @@ public enum ErrorCode {
     SHOP_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND,             "SHOP_022", "존재하지 않는 가게 공지입니다."),
     SHOP_STATUS_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_023", "상인이 변경할 수 없는 상태입니다."),
     SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_024", "업로드할 파일이 비어 있습니다."),
+    SHOP_IMAGE_NOT_FOUND(HttpStatus.NOT_FOUND,              "SHOP_025", "존재하지 않는 가게 사진입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),

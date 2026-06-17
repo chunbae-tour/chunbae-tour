@@ -2,32 +2,46 @@ package com.chunbaetour.domain.shop.service;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
-import com.chunbaetour.domain.shop.dto.response.ShopImageResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopImageItemResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.entity.ShopImage;
+import com.chunbaetour.domain.shop.repository.ShopImageRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.storage.ShopImageKeys;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
+import com.chunbaetour.domain.shop.type.ShopImageType;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import java.util.Set;
 
 /**
- * 가게 사진 업로드 서비스 (KAN-188, E10).
- * 파일 유효성 검사 + ShopImageStorage 위임 구조 — 운영=S3ShopImageStorage(@Profile prod), 그 외=LocalDiskShopImageStorage.
- * 반환값은 접근 URL이 아니라 <b>객체 키</b>다(조회 시 presigned GET으로 변환 — PR3).
+ * 가게 사진 서비스 (KAN-188 E10 → KAN-315 ADR-003).
  *
- * [트랜잭션 경계]
- * uploadImage()는 DB 변경 없이 조회(소유권 확인) + 외부 저장소 업로드만 수행하므로 @Transactional 불필요.
- * 키 영속화는 별도 가게 수정 API(imageUrls)가 담당 — 업로드는 키만 반환한다(고아 객체 문제는 키 미저장으로 회피).
+ * <p>ADR-003으로 저장 모델을 {@code Shop.imageUrls} 단일 JSON blob → {@code shop_images} 테이블(행 단위
+ * 용도/순서/대표)로 전환하고, 업로드를 <b>1단계화</b>한다 — 업로드 즉시 행을 생성해 "업로드 후 자동반영" 갭을 해소한다
+ * (기존 2단계: 업로드로 키만 반환 + 별도 PATCH 저장 → 폐기).
  *
- * [보안 경계]
- * SECURITY(KAN-188): MultipartFile.getContentType()은 브라우저 선언값(user-supplied)이라 .exe를 image/jpeg로 위장 가능.
- * declared content-type 화이트리스트 + magic-byte 시그니처 검사(JPEG/PNG/WebP)를 함께 적용해 위장 업로드를 차단한다
- * (경량 시그니처 검사 — Apache Tika 미사용).
+ * <p>[용도 정책]
+ * <ul>
+ *   <li>PROFILE: 가게당 1장. 신규 업로드 시 기존 PROFILE 행을 교체(MySQL 부분 unique index 미지원 → 앱 레벨 보장).</li>
+ *   <li>GALLERY: 다중. {@code sort_order}를 max+1로 부여해 업로드 순서대로 정렬.</li>
+ * </ul>
+ *
+ * <p>[보안 경계] {@code MultipartFile.getContentType()}은 user-supplied라 .exe를 image/jpeg로 위장 가능 →
+ * declared content-type 화이트리스트 + magic-byte 시그니처(JPEG/PNG/WebP)를 함께 검증한다(경량, Tika 미사용).
+ *
+ * <p>[조회/삭제] 조회는 저장 키를 기존 presign 파이프라인({@code ShopImageStorage.presignedGetUrl})으로 변환하며,
+ * presign 실패는 해당 사진만 건너뛰어(graceful degrade) 한 장 때문에 목록 전체가 깨지지 않게 한다. 삭제는 행 제거 +
+ * S3 객체 best-effort 삭제(잔존 고아는 후속 cleanup 스케줄러가 회수 — KAN-298 패턴).
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -39,29 +53,110 @@ public class ShopImageService {
             "image/jpeg", "image/png", "image/webp");
 
     private final ShopRepository shopRepository;
+    private final ShopImageRepository shopImageRepository;
     private final ShopImageStorage imageStorage;
 
     /**
-     * 가게 사진 업로드.
-     * 소유권 확인 + 파일 유효성 검사(크기·content-type·magic-byte) 후 imageStorage에 위임하고 객체 키를 반환한다.
-     * 파일명은 originalFilename을 쓰지 않고 ShopImageKeys가 UUID로 재생성한다(path traversal 차단).
+     * 가게 사진 업로드(1단계). 소유권·ACTIVE 검증 + 파일 유효성 검사 후 S3 업로드 → {@code shop_images} 행 즉시 생성.
+     * PROFILE은 기존 행을 교체(행 삭제 + 옛 객체 best-effort 삭제)하고, GALLERY는 sort_order를 이어붙인다.
      */
-    public ShopImageResponse uploadImage(Long userId, Long shopId, MultipartFile file) {
-        // 소유권 확인 — 타인 가게 이미지 업로드 차단
-        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
+    @Transactional
+    public ShopImageItemResponse uploadImage(Long userId, Long shopId, ShopImageType type, MultipartFile file) {
+        // type 누락/오류는 컨트롤러 단(@RequestParam 변환)에서 400 처리 — 여기 도달 시 null만 방어
+        if (type == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+
+        // 소유권 + ACTIVE 확인 — 타인 가게 업로드 차단(IDOR), 비활성 가게 차단(고아 객체 예방)
+        Shop shop = getActiveShop(userId, shopId);
+
+        // 파일 유효성 검사(크기·content-type·magic-byte)
+        validateFile(file);
+
+        // 검증 통과 후 저장소 업로드 → 객체 키 확보
+        String objectKey = imageStorage.upload(shopId, file);
+
+        ShopImage saved = (type == ShopImageType.PROFILE)
+                ? replaceProfile(shop.getId(), objectKey)
+                : appendGallery(shop.getId(), objectKey);
+
+        // 업로드 응답에도 presign URL을 실어 프론트가 추가 조회 없이 바로 렌더 가능(자동반영 갭 해소)
+        return ShopImageItemResponse.of(saved, imageStorage.presignedGetUrl(objectKey));
+    }
+
+    /**
+     * 가게 사진 목록 조회. 조회는 가게 상태 무관 허용(SUSPENDED/CLOSED에서도 상인이 확인 가능 — 공지 정책과 동일).
+     * 저장 키를 presigned URL로 변환하며, presign 실패한 사진은 건너뛴다(graceful degrade).
+     */
+    public List<ShopImageItemResponse> getImages(Long userId, Long shopId) {
+        // 소유권 검증(상태 무관) — 타 가게 목록 조회 차단
+        shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
-        // 비활성(SUSPENDED/CLOSED) 가게 업로드 차단 — 가게 수정 API(imageUrls 저장)는 ACTIVE만 허용하므로,
-        // 업로드만 되고 키 저장이 막혀 S3 고아 객체가 확정 발생하는 것을 사전 차단(hyeonmin02 리뷰).
+        List<ShopImageItemResponse> result = new ArrayList<>();
+        for (ShopImage image : shopImageRepository.findByShopIdOrderByTypeDescSortOrderAscIdAsc(shopId)) {
+            // IDOR 2중 방어 — 정상 경로면 업로드가 shops/{shopId}/ prefix로 키를 생성하므로 항상 통과.
+            // 여기 걸리면 DB 직접수정/마이그레이션 신호 → presign 안 함(타 가게 객체 노출 차단).
+            if (!ShopImageKeys.belongsToShop(image.getObjectKey(), shopId)) {
+                log.warn("presign 건너뜀 — 소유권 불일치 키. shopId={}, imageId={}, key={}",
+                        shopId, image.getId(), image.getObjectKey());
+                continue;
+            }
+            try {
+                result.add(ShopImageItemResponse.of(image, imageStorage.presignedGetUrl(image.getObjectKey())));
+            } catch (BusinessException e) {
+                // 외부 의존(presign) 실패만 부분 실패로 격하 — 사진 한 장 때문에 목록 전체가 503이 되지 않게(자가검증 반영).
+                if (e.getErrorCode() != ErrorCode.EXTERNAL_SERVICE_ERROR) {
+                    throw e;
+                }
+                log.warn("presign 실패로 사진 건너뜀. shopId={}, imageId={}", shopId, image.getId(), e);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 가게 사진 삭제. ACTIVE 가게만 허용. imageId + shopId 조합으로 소유권 검증(타 가게 이미지는 SHOP_IMAGE_NOT_FOUND).
+     * 행 제거 후 S3 객체를 best-effort 삭제한다(실패해도 행 삭제는 유지 — 고아는 후속 cleanup 회수).
+     */
+    @Transactional
+    public void deleteImage(Long userId, Long shopId, Long imageId) {
+        Shop shop = getActiveShop(userId, shopId);
+
+        ShopImage image = shopImageRepository.findByIdAndShopId(imageId, shop.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_IMAGE_NOT_FOUND));
+
+        shopImageRepository.delete(image);
+        // 행이 진실 원천 — 객체 삭제는 best-effort(구현체가 실패를 삼키고 로깅)
+        imageStorage.delete(image.getObjectKey());
+    }
+
+    /** PROFILE 교체 — 기존 PROFILE 행 제거 + 옛 객체 best-effort 삭제 후 새 대표 행 저장(가게당 1장 보장). */
+    private ShopImage replaceProfile(Long shopId, String objectKey) {
+        for (ShopImage old : shopImageRepository.findByShopIdAndType(shopId, ShopImageType.PROFILE)) {
+            shopImageRepository.delete(old);
+            imageStorage.delete(old.getObjectKey());
+        }
+        return shopImageRepository.save(ShopImage.profile(shopId, objectKey));
+    }
+
+    /** GALLERY 추가 — 기존 갤러리 최대 sort_order + 1을 부여해 업로드 순서대로 정렬되게 한다. */
+    private ShopImage appendGallery(Long shopId, String objectKey) {
+        int nextOrder = shopImageRepository.findByShopIdAndType(shopId, ShopImageType.GALLERY).stream()
+                .mapToInt(ShopImage::getSortOrder)
+                .max()
+                .orElse(-1) + 1;
+        return shopImageRepository.save(ShopImage.gallery(shopId, objectKey, nextOrder));
+    }
+
+    /** shopId + userId 조합으로 ACTIVE 가게 조회. 없거나 소유자 불일치면 SHOP_001, 비활성이면 SHOP_005. */
+    private Shop getActiveShop(Long userId, Long shopId) {
+        Shop shop = shopRepository.findByIdAndUserId(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
         if (shop.getStatus() != ShopStatus.ACTIVE) {
             throw new BusinessException(ErrorCode.SHOP_INACTIVE);
         }
-
-        // 파일 유효성 검사
-        validateFile(file);
-
-        String objectKey = imageStorage.upload(shopId, file);
-        return new ShopImageResponse(objectKey);
+        return shop;
     }
 
     private void validateFile(MultipartFile file) {

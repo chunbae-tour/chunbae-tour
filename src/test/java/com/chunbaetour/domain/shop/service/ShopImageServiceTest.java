@@ -9,8 +9,10 @@ import static org.mockito.BDDMockito.given;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.repository.ShopImageRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
+import com.chunbaetour.domain.shop.type.ShopImageType;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +30,9 @@ class ShopImageServiceTest {
 
     @Mock
     private ShopImageStorage imageStorage;
+
+    @Mock
+    private ShopImageRepository shopImageRepository;
 
     @InjectMocks
     private ShopImageService shopImageService;
@@ -59,7 +64,7 @@ class ShopImageServiceTest {
     void uploadImage_notOwner_throws() {
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, validFile()))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,validFile()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
@@ -72,7 +77,7 @@ class ShopImageServiceTest {
         MockMultipartFile largeFile = new MockMultipartFile(
                 "file", "big.jpg", "image/jpeg", new byte[6 * 1024 * 1024]);
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, largeFile))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,largeFile))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_FILE_TOO_LARGE);
@@ -85,7 +90,7 @@ class ShopImageServiceTest {
         MockMultipartFile gifFile = new MockMultipartFile(
                 "file", "anim.gif", "image/gif", new byte[1024]);
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, gifFile))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,gifFile))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
@@ -98,7 +103,7 @@ class ShopImageServiceTest {
         MockMultipartFile emptyFile = new MockMultipartFile(
                 "file", "empty.jpg", "image/jpeg", new byte[0]);
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, emptyFile))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,emptyFile))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_FILE_EMPTY);
@@ -118,7 +123,7 @@ class ShopImageServiceTest {
         given(imageStorage.upload(eq(SHOP_ID), any()))
                 .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, validFile()))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,validFile()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
@@ -134,7 +139,7 @@ class ShopImageServiceTest {
         fake[1] = 'Z';
         MockMultipartFile disguised = new MockMultipartFile("file", "evil.jpg", "image/jpeg", fake);
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, disguised))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,disguised))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);
@@ -148,7 +153,7 @@ class ShopImageServiceTest {
                 suspended, "status", com.chunbaetour.domain.shop.type.ShopStatus.SUSPENDED);
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(suspended));
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, validFile()))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,validFile()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
@@ -161,7 +166,7 @@ class ShopImageServiceTest {
         // declared=image/png 이지만 실제 시그니처는 JPEG(FF D8 FF) → declared↔magic 매칭 검증서 거부(hyeonmin02 리뷰)
         MockMultipartFile mismatch = new MockMultipartFile("file", "x.png", "image/png", jpegBytes(1024));
 
-        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, mismatch))
+        assertThatThrownBy(() -> shopImageService.uploadImage(USER_ID, SHOP_ID, ShopImageType.GALLERY,mismatch))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_IMAGE_TYPE_UNSUPPORTED);

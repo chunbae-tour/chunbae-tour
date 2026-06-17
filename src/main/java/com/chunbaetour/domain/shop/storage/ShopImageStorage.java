@@ -29,4 +29,14 @@ public interface ShopImageStorage {
      * @return 만료 있는 presigned GET URL (구현체 정책: S3=실제 presign, 로컬=passthrough)
      */
     String presignedGetUrl(String key);
+
+    /**
+     * 저장된 객체를 삭제한다(KAN-315, ADR-003). 가게 사진 행 삭제·대표사진 교체 시 고아 객체를 즉시 제거한다.
+     *
+     * <p>best-effort 계약 — 삭제 실패(외부 장애·이미 없음)는 호출자 흐름을 막지 않도록 구현체가 삼키고 로깅한다.
+     * 행(DB)이 진실 원천이고, 잔존 고아 객체는 후속 cleanup 스케줄러(KAN-298 패턴)가 회수한다.
+     *
+     * @param key 객체 키(예: {@code shops/10/uuid.jpg})
+     */
+    void delete(String key);
 }
