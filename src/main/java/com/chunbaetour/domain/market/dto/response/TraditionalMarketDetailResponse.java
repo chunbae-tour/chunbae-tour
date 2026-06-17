@@ -49,7 +49,8 @@ public record TraditionalMarketDetailResponse(
 
     private static String region(String sido, String sigungu) {
         if (sido == null || sido.isBlank()) {
-            return sigungu;
+            // sido·sigungu 모두 비어도 null이 아닌 "" 반환 — 클라이언트 null 처리 부담 제거 (coderabbit #601).
+            return (sigungu == null || sigungu.isBlank()) ? "" : sigungu;
         }
         if (sigungu == null || sigungu.isBlank()) {
             return sido;

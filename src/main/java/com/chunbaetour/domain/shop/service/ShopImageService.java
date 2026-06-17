@@ -154,6 +154,10 @@ public class ShopImageService {
             shopImageRepository.delete(old);
             deleteObjectAfterCommit(old.getObjectKey());
         }
+        // DELETE를 INSERT보다 먼저 실제 실행하도록 강제 flush — Hibernate 기본 action 순서(insert→delete)로 인해
+        //   기존 PROFILE(sort_order=0) 삭제 전 새 PROFILE(sort_order=0)이 INSERT되면 UNIQUE(shop_id,type,sort_order)
+        //   위반이 날 수 있다. flush로 delete를 선행시켜 동일 트랜잭션 교체를 안전하게 한다 (coderabbit #601).
+        shopImageRepository.flush();
         return shopImageRepository.save(ShopImage.profile(shopId, objectKey));
     }
 
