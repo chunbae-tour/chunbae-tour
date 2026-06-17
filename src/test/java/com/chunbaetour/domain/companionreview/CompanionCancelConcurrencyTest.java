@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
+import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.repository.ChatRoomMemberRepository;
 import com.chunbaetour.domain.chat.repository.ChatRoomRepository;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -63,12 +64,15 @@ class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
     void concurrentCancelCompanion_sameCompanion_onlyOneSucceeds() throws Exception {
         Account owner = accountRepository.saveAndFlush(
                 Account.registerUser("cancel-owner@test.com", "hashedPw", "취소테스트유저"));
+        Account member = accountRepository.saveAndFlush(
+                Account.registerUser("cancel-member@test.com", "hashedPw", "취소테스트멤버"));
         long postId = ThreadLocalRandom.current().nextLong(4_000_000L, 4_500_000L);
         ChatRoom chatRoom = chatRoomRepository.saveAndFlush(
                 ChatRoom.createWithOwner(postId, owner.getId(), "취소 동시성 테스트 방", null, 5));
         Long roomId = chatRoom.getId();
+        chatRoomMemberRepository.saveAndFlush(ChatRoomMember.ofMember(chatRoom, member.getId()));
 
-        companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+        companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(member.getId()), TRIP_START, TRIP_END));
 
         int threadCount = 2;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
@@ -118,18 +122,21 @@ class CompanionCancelConcurrencyTest extends AbstractIntegrationTest {
     void cancelCompanion_thenCreateCompanion_dbConstraintReleased() {
         Account owner = accountRepository.saveAndFlush(
                 Account.registerUser("cancel-recreate-owner@test.com", "hashedPw", "재생성테스트유저"));
+        Account member = accountRepository.saveAndFlush(
+                Account.registerUser("cancel-recreate-member@test.com", "hashedPw", "재생성테스트멤버"));
         long postId = ThreadLocalRandom.current().nextLong(4_500_000L, 5_000_000L);
         ChatRoom chatRoom = chatRoomRepository.saveAndFlush(
                 ChatRoom.createWithOwner(postId, owner.getId(), "취소 재생성 테스트 방", null, 5));
         Long roomId = chatRoom.getId();
+        chatRoomMemberRepository.saveAndFlush(ChatRoomMember.ofMember(chatRoom, member.getId()));
 
-        var firstResponse = companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+        var firstResponse = companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(member.getId()), TRIP_START, TRIP_END));
         companionService.cancelCompanion(owner.getId(), roomId);
 
         assertThat(companionRepository.count()).isEqualTo(0);
         assertThat(companionParticipantRepository.count()).isEqualTo(0);
 
-        var secondResponse = companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+        var secondResponse = companionService.createCompanion(owner.getId(), roomId, new CompanionCreateRequest(List.of(member.getId()), TRIP_START, TRIP_END));
 
         assertThat(secondResponse.companionId()).isNotEqualTo(firstResponse.companionId());
         assertThat(secondResponse.status()).isEqualTo("ONGOING");

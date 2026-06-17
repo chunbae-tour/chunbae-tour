@@ -11,6 +11,7 @@ import com.chunbaetour.domain.companionreview.dto.request.CompanionAddParticipan
 import com.chunbaetour.domain.companionreview.dto.request.CompanionCreateRequest;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionAddParticipantsResponse;
 import com.chunbaetour.domain.companionreview.dto.response.CompanionCreateResponse;
+import com.chunbaetour.domain.companionreview.dto.response.CompanionDetailResponse;
 import com.chunbaetour.domain.companionreview.entity.Companion;
 import com.chunbaetour.domain.companionreview.entity.CompanionParticipant;
 import com.chunbaetour.domain.companionreview.repository.CompanionParticipantRepository;
@@ -109,8 +110,13 @@ public class CompanionService {
         }
     }
 
-    // 락 획득 전 사전 검증 — 채팅방 존재/방장 권한/CLOSED 여부, 기존 동행 존재(CR_004/CR_007), 참여자 ACTIVE 멤버십
+    // 락 획득 전 사전 검증 — 최소 참여자 수(CR_016), 채팅방 존재/방장 권한/CLOSED 여부, 기존 동행 존재(CR_004/CR_007), 참여자 ACTIVE 멤버십
     private void validateCreatePreconditions(Long ownerId, Long roomId, List<Long> allParticipantIds) {
+        // 방장 자동 포함 후에도 2명 미만이면 차단 — 1인 동행은 의미 없음
+        if (allParticipantIds.size() < 2) {
+            throw new BusinessException(ErrorCode.COMPANION_INSUFFICIENT_PARTICIPANTS);
+        }
+
         ChatRoom chatRoom = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 
@@ -321,6 +327,18 @@ public class CompanionService {
     @Transactional
     public int endExpiredCompanions() {
         return companionRepository.endExpiredCompanions(LocalDate.now(clock.withZone(BUSINESS_ZONE)));
+    }
+
+    // 채팅방 ID로 동행 상세 조회 — 호출자 ACTIVE 멤버십 검증(CHAT_005) 후 참여자 목록(endedAt 포함) 반환. 동행 없으면 CR_005
+    public CompanionDetailResponse getCompanion(Long userId, Long roomId) {
+        if (!chatRoomMemberRepository.existsByChatRoomIdAndUserIdAndMemberStateIn(
+                roomId, userId, ChatMemberState.activeStates())) {
+            throw new BusinessException(ErrorCode.CHAT_NOT_JOINED);
+        }
+        Companion companion = companionRepository.findByChatRoomId(roomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COMPANION_NOT_FOUND));
+        List<CompanionParticipant> participants = companionParticipantRepository.findByCompanionId(companion.getId());
+        return CompanionDetailResponse.of(companion, participants);
     }
 
     // 동행 취소 — 방장 검증, ONGOING 확인(CR_006), Companion + 참여자 하드 삭제 (이력 미보존 — 취소 후 동일 채팅방에서 신규 동행 생성 가능)
