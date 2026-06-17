@@ -19,6 +19,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.MyJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
@@ -724,6 +725,88 @@ class JoinRequestServiceTest {
         ChatRoomMember owner = mock(ChatRoomMember.class);
         given(owner.isOwner()).willReturn(true);
         return owner;
+    }
+
+    // ─── getMyJoinRequests ────────────────────────────────────────────────────
+
+    @Test
+    void getMyJoinRequests_success_returnsAllStatuses() {
+        // 본인 신청 목록 — PENDING/APPROVED/REJECTED 전체 반환, chatRoom 배치 조회 검증
+        Long roomId2 = 200L;
+        LocalDateTime now = LocalDateTime.now();
+
+        JoinRequest req1 = mock(JoinRequest.class);
+        given(req1.getId()).willReturn(1L);
+        given(req1.getChatRoomId()).willReturn(ROOM_ID);
+        given(req1.getMessage()).willReturn("같이 가요!");
+        given(req1.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req1.getCreatedAt()).willReturn(now);
+
+        JoinRequest req2 = mock(JoinRequest.class);
+        given(req2.getId()).willReturn(2L);
+        given(req2.getChatRoomId()).willReturn(roomId2);
+        given(req2.getMessage()).willReturn("잘 부탁드려요");
+        given(req2.getStatus()).willReturn(JoinRequestStatus.APPROVED);
+        given(req2.getCreatedAt()).willReturn(now.minusDays(1));
+
+        given(joinRequestRepository.findByUserIdOrderByCreatedAtDesc(USER_ID))
+                .willReturn(List.of(req1, req2));
+
+        ChatRoom room1 = mock(ChatRoom.class);
+        given(room1.getId()).willReturn(ROOM_ID);
+        given(room1.getTitle()).willReturn("제주도 여행");
+
+        ChatRoom room2 = mock(ChatRoom.class);
+        given(room2.getId()).willReturn(roomId2);
+        given(room2.getTitle()).willReturn("부산 여행");
+
+        given(chatRoomRepository.findAllById(anyList())).willReturn(List.of(room1, room2));
+
+        List<MyJoinRequestResponse> result = joinRequestService.getMyJoinRequests(USER_ID);
+
+        // 정확한 chatRoomId 목록으로 배치 조회했는지 검증 — userId 등 잘못된 ID 혼입 방지
+        verify(chatRoomRepository).findAllById(List.of(ROOM_ID, roomId2));
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).joinRequestId()).isEqualTo(1L);
+        assertThat(result.get(0).chatRoomTitle()).isEqualTo("제주도 여행");
+        assertThat(result.get(0).status()).isEqualTo(JoinRequestStatus.PENDING);
+        assertThat(result.get(1).joinRequestId()).isEqualTo(2L);
+        assertThat(result.get(1).chatRoomTitle()).isEqualTo("부산 여행");
+        assertThat(result.get(1).status()).isEqualTo(JoinRequestStatus.APPROVED);
+    }
+
+    @Test
+    void getMyJoinRequests_emptyList_returnsEmpty() {
+        // 신청 이력 없음 — 빈 리스트 반환, chatRoomRepository 미호출
+        given(joinRequestRepository.findByUserIdOrderByCreatedAtDesc(USER_ID)).willReturn(List.of());
+
+        List<MyJoinRequestResponse> result = joinRequestService.getMyJoinRequests(USER_ID);
+
+        assertThat(result).isEmpty();
+        verify(chatRoomRepository, never()).findAllById(anyList());
+    }
+
+    @Test
+    void getMyJoinRequests_deletedRoom_chatRoomTitleIsNull() {
+        // 채팅방 삭제된 경우 — chatRoomMap에 없으면 chatRoomTitle null
+        LocalDateTime now = LocalDateTime.now();
+
+        JoinRequest req = mock(JoinRequest.class);
+        given(req.getId()).willReturn(1L);
+        given(req.getChatRoomId()).willReturn(ROOM_ID);
+        given(req.getMessage()).willReturn("같이 가요!");
+        given(req.getStatus()).willReturn(JoinRequestStatus.PENDING);
+        given(req.getCreatedAt()).willReturn(now);
+
+        given(joinRequestRepository.findByUserIdOrderByCreatedAtDesc(USER_ID)).willReturn(List.of(req));
+        // 삭제된 방 — findAllById 결과에 없음 → chatRoomMap.get() = null
+        given(chatRoomRepository.findAllById(anyList())).willReturn(List.of());
+
+        List<MyJoinRequestResponse> result = joinRequestService.getMyJoinRequests(USER_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chatRoomTitle()).isNull();
+        assertThat(result.get(0).chatRoomId()).isEqualTo(ROOM_ID);
     }
 
     private ErrorCode extractErrorCode(Throwable ex) {

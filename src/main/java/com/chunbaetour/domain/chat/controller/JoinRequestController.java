@@ -4,6 +4,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.MyJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.service.JoinRequestService;
 import com.chunbaetour.domain.common.response.ApiResponse;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "채팅 참여 신청", description = "채팅방 참여 신청·목록·수락·거절·취소 (/api/v1/chat/rooms/{chatRoomId}/join-requests/**)")
+@Tag(name = "채팅 참여 신청", description = "채팅방 참여 신청·목록·수락·거절·취소. /join-requests/me(내 신청 목록), /{chatRoomId}/join-requests(방장 목록)")
 @RestController
 @RequestMapping("/api/v1/chat/rooms")
 @RequiredArgsConstructor
@@ -33,6 +34,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class JoinRequestController {
 
     private final JoinRequestService joinRequestService;
+
+    // /join-requests/me — literal이 /{chatRoomId}/join-requests 경로변수보다 우선매칭되어 충돌 없음
+    @Operation(summary = "내 참여 신청 목록 조회")
+    @GetMapping("/join-requests/me")
+    public ApiResponse<List<MyJoinRequestResponse>> getMyJoinRequests(
+            @AuthenticationPrincipal Long userId) {
+        return ApiResponse.success(joinRequestService.getMyJoinRequests(userId));
+    }
 
     @Operation(summary = "참여 신청 목록 조회")
     @GetMapping("/{chatRoomId}/join-requests")

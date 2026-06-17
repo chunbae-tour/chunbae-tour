@@ -39,4 +39,7 @@ public interface JoinRequestRepository extends JpaRepository<JoinRequest, Long> 
     @Modifying(clearAutomatically = true)
     @Query("DELETE FROM JoinRequest j WHERE j.id = :id AND j.status = com.chunbaetour.domain.chat.type.JoinRequestStatus.PENDING")
     int deleteIfPending(@Param("id") Long id);
+
+    // 본인 신청 목록 — 상태 무관 전체, 최신순
+    List<JoinRequest> findByUserIdOrderByCreatedAtDesc(Long userId);
 }

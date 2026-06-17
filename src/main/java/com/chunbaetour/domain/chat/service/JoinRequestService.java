@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.MyJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
@@ -206,6 +207,25 @@ public class JoinRequestService {
                 new JoinRequestRejectedEvent(chatRoomId, requestId, joinRequest.getUserId()));
 
         return RejectJoinRequestResponse.from(joinRequest);
+    }
+
+    // 본인 신청 이력 전체 조회 — 상태 무관(PENDING/APPROVED/REJECTED), N+1 방지: chatRoomIds 배치 조회
+    public List<MyJoinRequestResponse> getMyJoinRequests(Long userId) {
+        List<JoinRequest> requests = joinRequestRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        if (requests.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> chatRoomIds = requests.stream()
+                .map(JoinRequest::getChatRoomId)
+                .distinct()
+                .toList();
+        Map<Long, ChatRoom> chatRoomMap = chatRoomRepository.findAllById(chatRoomIds).stream()
+                .collect(Collectors.toMap(ChatRoom::getId, Function.identity()));
+
+        return requests.stream()
+                .map(r -> MyJoinRequestResponse.from(r, chatRoomMap.get(r.getChatRoomId())))
+                .toList();
     }
 
     // 락 해제 — isHeldByCurrentThread()/unlock() 자체가 Redis 장애로 던지는 RedisException이
