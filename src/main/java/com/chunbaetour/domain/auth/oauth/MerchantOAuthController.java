@@ -6,6 +6,8 @@ import com.chunbaetour.domain.auth.dto.OauthLoginRequest;
 import com.chunbaetour.domain.auth.dto.OauthLoginResponse;
 import com.chunbaetour.domain.auth.jwt.TokenPair;
 import com.chunbaetour.domain.auth.security.RefreshCookieFactory;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
@@ -62,6 +64,10 @@ public class MerchantOAuthController {
                 oauthProvider, request.code(), request.redirectUri(), Role.MERCHANT);
 
         // 상인 진입점은 needSignup 분기가 발생하지 않는다(비-USER 미가입은 서비스에서 거부) — 항상 토큰 발급.
+        // 방어가드: 향후 서비스 거동이 바뀌어 needSignup이 반환돼도 tokenPair() NPE 대신 명시적 거부.
+        if (result.needSignup()) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
         TokenPair pair = result.tokenPair();
         ResponseCookie refreshCookie = refreshCookieFactory.create(pair.refreshToken());
         return ResponseEntity.ok()
