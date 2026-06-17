@@ -72,7 +72,11 @@ public class Shop extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    // 이미지 URL 배열 — JSON 형식으로 저장
+    // [드롭 예정 — KAN-315/ADR-003] 가게 사진은 shop_images 테이블(ShopImage, 용도/순서/대표)로 이관됨.
+    // 본 JSON blob 컬럼은 읽기 측 점진 이관 동안만 병행 유지하며, 다음 슬라이스에서 드롭한다:
+    //   드롭 시 영향 = ShopResponse·ShopInfoResponse·AdminShopDetailResponse·ShopUpdateRequest + admin(승인영역).
+    // 신규 코드는 이 컬럼을 쓰지 말고 ShopImage(ShopImageService)를 사용할 것. @Deprecated 대신 주석으로 둔 이유:
+    //   병행 기간 동안 presign 파이프라인이 이 컬럼을 정상적으로 읽으므로(유효 사용), 어노테이션은 그 사용처를 오탐 경고함.
     @Column(name = "image_urls", columnDefinition = "JSON")
     private String imageUrls;
 

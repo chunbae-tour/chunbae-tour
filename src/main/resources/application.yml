@@ -124,6 +124,12 @@ ratelimit:
       path: /api/v1/users/auth/oauth/*
       limit: 10
       window: PT1M
+    # 상인 소셜 로그인 — USER oauth-login과 동일하게 외부 API quota + oauthId 계정 탐침 방어(미인증 진입점).
+    - id: merchant-oauth-login
+      method: POST
+      path: /api/v1/merchants/auth/oauth/*
+      limit: 10
+      window: PT1M
     - id: translation
       method: POST
       path: /api/v1/translations

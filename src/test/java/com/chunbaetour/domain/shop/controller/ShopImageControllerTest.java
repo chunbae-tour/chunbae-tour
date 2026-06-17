@@ -71,6 +71,7 @@ class ShopImageControllerTest extends AbstractIntegrationTest {
         String token = tokenIssuer.issueAccess(9001L, Role.MERCHANT, "merchant@test.com");
         mockMvc.perform(multipart(ENDPOINT)
                         .file(validFile())
+                        .param("type", "PROFILE")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isNotFound())
@@ -86,6 +87,7 @@ class ShopImageControllerTest extends AbstractIntegrationTest {
         MockMultipartFile gifFile = new MockMultipartFile("file", "anim.gif", "image/gif", new byte[512]);
         mockMvc.perform(multipart(ENDPOINT)
                         .file(gifFile)
+                        .param("type", "GALLERY")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isNotFound())

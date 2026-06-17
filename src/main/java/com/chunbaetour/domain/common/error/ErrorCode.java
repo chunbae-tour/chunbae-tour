@@ -199,6 +199,7 @@ public enum ErrorCode {
     SHOP_NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND,             "SHOP_022", "존재하지 않는 가게 공지입니다."),
     SHOP_STATUS_FORBIDDEN(HttpStatus.FORBIDDEN,             "SHOP_023", "상인이 변경할 수 없는 상태입니다."),
     SHOP_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,           "SHOP_024", "업로드할 파일이 비어 있습니다."),
+    SHOP_IMAGE_NOT_FOUND(HttpStatus.NOT_FOUND,              "SHOP_025", "존재하지 않는 가게 사진입니다."),
 
     // ===== CHAT (담당: 임하은) =====
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND,               "CHAT_001", "존재하지 않는 채팅방입니다."),
@@ -291,7 +292,9 @@ public enum ErrorCode {
     // endParticipation은 Companion.status==ENDED(여행 종료, 날짜 기반 배치job)일 때만 호출 가능
     COMPANION_NOT_ENDED_FOR_PARTICIPATION(HttpStatus.CONFLICT, "CR_014", "여행이 종료되지 않아 참여를 종료할 수 없습니다."),
     // endParticipation 중복 호출 — 이미 endedAt 세팅됨
-    COMPANION_PARTICIPATION_ALREADY_ENDED(HttpStatus.CONFLICT, "CR_015", "이미 참여 종료 처리되었습니다.");
+    COMPANION_PARTICIPATION_ALREADY_ENDED(HttpStatus.CONFLICT, "CR_015", "이미 참여 종료 처리되었습니다."),
+    // 동행 생성 시 방장 포함 최소 2명 미충족
+    COMPANION_INSUFFICIENT_PARTICIPANTS(HttpStatus.BAD_REQUEST, "CR_016", "동행을 생성하려면 최소 2명이 필요합니다.");
 
     private final HttpStatus status;
     private final String code;

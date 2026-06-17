@@ -11,6 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -75,6 +76,20 @@ public class S3ShopImageStorage implements ShopImageStorage {
         } catch (SdkException e) {
             log.error("S3 presigned GET URL 발급 실패: bucket={}, key={}", properties.getBucket(), key, e);
             throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
+    }
+
+    @Override
+    public void delete(String key) {
+        // best-effort — 삭제 실패해도 throw 안 함(고아 객체는 후속 cleanup이 회수). S3 DeleteObject는 객체 부재 시에도 성공.
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(properties.getBucket())
+                    .key(key)
+                    .build());
+        } catch (SdkException e) {
+            log.error("S3 가게 이미지 삭제 실패(고아 객체로 잔존, 후속 cleanup 대상): bucket="
+                    + properties.getBucket() + ", key=" + key, e);
         }
     }
 }
