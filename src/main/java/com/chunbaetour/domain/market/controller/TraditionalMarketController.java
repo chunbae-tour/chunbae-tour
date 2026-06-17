@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.market.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.market.dto.response.TraditionalMarketDetailResponse;
 import com.chunbaetour.domain.market.dto.response.TraditionalMarketNearbyPageResponse;
 import com.chunbaetour.domain.market.service.TraditionalMarketLikeService;
 import com.chunbaetour.domain.market.service.TraditionalMarketService;
@@ -53,6 +54,16 @@ public class TraditionalMarketController {
         TraditionalMarketNearbyPageResponse response =
                 traditionalMarketService.findNearby(lat, lng, radius, page, size);
         return ApiResponse.success(response);
+    }
+
+    @SecurityRequirements
+    @Operation(summary = "전통시장 상세 조회")
+    @GetMapping("/{marketId}")
+    public ApiResponse<TraditionalMarketDetailResponse> getDetail(
+            @Positive @PathVariable Long marketId,
+            @AuthenticationPrincipal Long userId
+    ) {
+        return ApiResponse.success(traditionalMarketService.getDetail(marketId, userId));
     }
 
     @Operation(summary = "전통시장 찜 추가")
