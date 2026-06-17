@@ -52,9 +52,9 @@ ratelimit:
 # - 포트 분리: 9090 ≠ main(8080). ALB 리스너는 8080만 노출 → actuator는 외부 트래픽 경로에 없음.
 # - 바인딩 0.0.0.0(아래 address 주석 — ALB TG health check가 태스크 ENI IP:9090/actuator/health 도달 필요).
 #   9090 외부 노출은 SG(app-sg 9090 ← alb-sg)가 차단.
-# - 노출 endpoint 최소화: 운영에서는 health,info만 노출(아래 exposure). 비민감 endpoint라 9090이 SG 한 겹이어도 안전.
-#   prometheus(민감 메트릭)는 운영에서 노출하지 않는다 — 모니터링(S8) 착수 시 ① 관리포트 전용 SecurityFilterChain 또는
-#   ② 전용 scrape 경로/SG로 보안을 갖춘 뒤 재노출할 것.
+# - 노출 endpoint: health,info,prometheus(아래 exposure). prometheus는 모니터링 1단계에서 재노출.
+#   prometheus(민감 메트릭)는 9090 전용이며 9090이 ALB 리스너에 없어 외부 비노출 + SG(app-sg 9090 ← alb-sg) 격리 +
+#   ADOT 사이드카가 localhost로 scrape → 외부 인증 경로 불필요. 트래픽 포트(8080)에는 노출되지 않는다.
 management:
   server:
     port: 9090
@@ -62,13 +62,15 @@ management:
     # loopback(127.0.0.1) 바인딩이면 LB가 도달 불가 → 0.0.0.0으로 바인딩한다.
     # 외부 노출 차단은 "바인딩 차단 → SG 차단"으로 이동: app-sg가 9090을 alb-sg에서만 허용(E0/E5).
     # ⚠️ SecurityConfig의 /actuator/** IP allowlist는 9090에 적용되지 않으므로(별도 컨텍스트),
-    #    9090 보안은 "비민감 endpoint만 노출(health,info) + SG"로 보장한다. prometheus는 위 주석대로 운영 미노출.
+    #    9090 보안은 "외부 비노출(ALB 리스너에 9090 없음) + SG + 트래픽포트(8080) 분리"로 보장한다.
+    #    prometheus도 9090 전용 — ADOT 사이드카가 localhost로 scrape하므로 외부 노출/인증 경로 없음.
     address: 0.0.0.0
-  # 운영 노출 endpoint: health,info만 (prometheus 제외 — 위 주석 사유). base application.yml 값을 운영에서 좁혀 재선언.
+  # 운영 노출 endpoint: health,info,prometheus (prometheus = 모니터링 1단계, 9090 외부 비노출이라 안전 — 위 주석 사유).
+  # base application.yml 값을 운영에서 좁혀 재선언.
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   # health 상세(show-details): CD health gate 실패 시 어느 indicator(db/redis 등)가 DOWN인지 즉시 식별하려고 always (#525).
   # 노출 안전성 근거: 9090은 SG(app-sg 9090 ← alb-sg)로 격리되고 ALB는 health 본문을 외부 클라이언트로 프록시하지 않는다.
   #   (ECS E4에서 바인딩이 0.0.0.0이 돼 "loopback이라 외부 도달 불가" 근거는 폐기 — SG 격리로 대체. 위 server.address 주석 참조.)
