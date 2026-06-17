@@ -73,6 +73,12 @@ public class ProfileImageService {
     /**
      * 저장값 → 표시용 URL. 우리 업로드 키면 presigned URL, 외부 http(s) URL이면 그대로, null/blank면 null.
      * presign 실패(외부 의존)는 null로 강등 — 프로필 한 장 때문에 응답 전체가 503이 되지 않게(graceful degrade).
+     *
+     * <p><b>불변식 의존(주의)</b>: {@code isOwnedKey(stored)}는 {@code users/*}/profile/{uuid} 형식이면 userId 무관하게
+     * presign 대상으로 본다. 이는 "저장된 바레키는 오직 업로드 엔드포인트가 인증 사용자 본인 prefix로 생성한 것뿐"이라는
+     * 불변식에 의존한다 — 사용자가 임의 키를 주입할 수 있으면 타 유저 객체를 presign하는 IDOR이 된다. 현재 PATCH의
+     * {@code profileImageUrl}은 {@code @Pattern ^https?://}로 바레키 입력을 차단해 이 불변식을 보장한다.
+     * <b>향후 PATCH가 키 입력을 허용하도록 바뀌면 여기서 소유권(userId prefix) 검증을 반드시 추가할 것.</b>
      */
     public String toDisplayUrl(String stored) {
         if (stored == null || stored.isBlank()) {
