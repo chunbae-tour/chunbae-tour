@@ -77,7 +77,7 @@ public class ShopImageService {
         String objectKey = imageStorage.upload(shopId, file);
 
         ShopImage saved = (type == ShopImageType.PROFILE)
-                ? replaceProfile(shop.getId(), objectKey)
+                ? replaceProfile(shop.getId(), userId, objectKey)
                 : appendGallery(shop.getId(), objectKey);
 
         // 업로드 응답에도 presign URL을 실어 프론트가 추가 조회 없이 바로 렌더 가능(자동반영 갭 해소)
@@ -129,19 +129,38 @@ public class ShopImageService {
         // 행 먼저 삭제(진실 원천) → 그 다음 객체 삭제. 순서 의도: DB-first라야 "행은 있는데 객체 없음"(GET 깨짐)을
         //   피한다. 역으로 객체 삭제가 타임아웃·일시장애로 실패하면 S3 고아가 남지만, best-effort로 흐름은 진행한다.
         //   고아 회수는 후속 cleanup 스케줄러가 담당(미구현, ADR-003 범위 밖 / 미구현API.md B24 추적, KAN-298 패턴 재사용).
+        shopImageRepository.delete(image);
         imageStorage.delete(image.getObjectKey());
     }
 
-    /** PROFILE 교체 — 기존 PROFILE 행 제거 + 옛 객체 best-effort 삭제 후 새 대표 행 저장(가게당 1장 보장). */
-    private ShopImage replaceProfile(Long shopId, String objectKey) {
-        for (ShopImage old : shopImageRepository.findByShopIdAndType(shopId, ShopImageType.PROFILE)) {
+    /**
+     * PROFILE 교체 — 기존 PROFILE 행 제거 + 옛 객체 best-effort 삭제 후 새 대표 행 저장(가게당 1장 보장).
+     *
+     * <p>[동시성] read(기존 PROFILE)-delete-insert는 무잠금이면 동시 PROFILE 업로드 2건이 같은 빈/집합을 읽어
+     * 각각 insert → PROFILE 2장 잔존(대표 비결정)이 된다. MySQL 부분 unique index 미지원 + GALLERY 다중이라
+     * (shop_id,type) 단순 UNIQUE도 못 건다. 따라서 Shop 행을 SELECT ... FOR UPDATE로 잠가 본 구간을 직렬화한다.
+     * 락은 (느린) S3 업로드 이후 여기서만 획득 → 보유 시간을 DB 작업 구간으로 최소화한다.
+     */
+    private ShopImage replaceProfile(Long shopId, Long userId, String objectKey) {
+        // 본인 가게 행 비관락 — 동시 PROFILE 업로드를 직렬화(read-delete-insert 원자성 보장). 소유권은 상위에서 검증됨.
+        shopRepository.findByIdAndUserIdWithLock(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+        // 잠금 읽기로 기존 PROFILE 조회 — 위 비관락 직후라도 일반 SELECT는 early-pinned 스냅샷 탓에 동시 트랜잭션이
+        //   커밋한 PROFILE을 놓칠 수 있어, FOR UPDATE로 최신 커밋본을 읽어 확실히 교체한다(stale snapshot 회피).
+        for (ShopImage old : shopImageRepository.findByShopIdAndTypeForUpdate(shopId, ShopImageType.PROFILE)) {
             shopImageRepository.delete(old);
             imageStorage.delete(old.getObjectKey());
         }
         return shopImageRepository.save(ShopImage.profile(shopId, objectKey));
     }
 
-    /** GALLERY 추가 — 기존 갤러리 최대 sort_order + 1을 부여해 업로드 순서대로 정렬되게 한다. */
+    /**
+     * GALLERY 추가 — 기존 갤러리 최대 sort_order + 1을 부여해 업로드 순서대로 정렬되게 한다.
+     *
+     * <p>[동시성] max+1 계산은 비원자라 동시 GALLERY 업로드 2건이 같은 max를 읽어 sort_order가 중복될 수 있다.
+     * 단 목록 정렬 2차 키가 id ASC라 결과 순서는 결정적이라 무해 — PROFILE과 달리 직렬화 락을 걸지 않는다.
+     * 엄밀한 순서 정합(드래그 재정렬 등)이 필요해지면 후속(미구현API.md B24 계열)에서 재검토.
+     */
     private ShopImage appendGallery(Long shopId, String objectKey) {
         int nextOrder = shopImageRepository.findByShopIdAndType(shopId, ShopImageType.GALLERY).stream()
                 .mapToInt(ShopImage::getSortOrder)
