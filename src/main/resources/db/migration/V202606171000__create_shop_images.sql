@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS shop_images (
     updated_at DATETIME(6)  NOT NULL,
     PRIMARY KEY (id),
     INDEX idx_shop_images_shop_id_id (shop_id, id),
+    -- (shop_id, type, sort_order) 정렬계약 DB 강제 — 동시 GALLERY 업로드의 sort_order 중복 차단.
+    -- 서비스 appendGallery가 Shop 행 FOR UPDATE로 max+1 계산을 직렬화하므로 정상 경로에선 충돌하지 않는다.
+    UNIQUE KEY uq_shop_images_shop_type_sort_order (shop_id, type, sort_order),
     CONSTRAINT fk_shop_images_shop FOREIGN KEY (shop_id) REFERENCES shops (id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4

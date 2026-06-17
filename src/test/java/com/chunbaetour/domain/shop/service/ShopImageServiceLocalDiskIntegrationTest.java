@@ -65,8 +65,10 @@ class ShopImageServiceLocalDiskIntegrationTest {
         ShopImageService service = new ShopImageService(
                 shopRepository, shopImageRepository, new LocalDiskShopImageStorage(tempDir.toString()));
         given(shopRepository.findByIdAndUserId(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
-        // GALLERY append — 기존 갤러리 없음(sort_order=0), save는 전달된 엔티티 그대로 반환
-        given(shopImageRepository.findByShopIdAndType(SHOP_ID, ShopImageType.GALLERY)).willReturn(List.of());
+        // GALLERY append — Shop 행 FOR UPDATE 잠금(직렬화) 후 기존 갤러리 max+1 계산
+        given(shopRepository.findByIdAndUserIdWithLock(SHOP_ID, USER_ID)).willReturn(Optional.of(createShop()));
+        // 기존 갤러리 없음(sort_order=0), save는 전달된 엔티티 그대로 반환
+        given(shopImageRepository.findByShopIdAndTypeForUpdate(SHOP_ID, ShopImageType.GALLERY)).willReturn(List.of());
         given(shopImageRepository.save(any(ShopImage.class))).willAnswer(inv -> inv.getArgument(0));
 
         // JPEG 매직바이트(FF D8 FF) + 식별용 패턴 바이트 — 잘림 시 앞부분이 사라져 비교 실패한다.

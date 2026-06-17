@@ -19,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -78,7 +80,7 @@ public class ShopImageService {
 
         ShopImage saved = (type == ShopImageType.PROFILE)
                 ? replaceProfile(shop.getId(), userId, objectKey)
-                : appendGallery(shop.getId(), objectKey);
+                : appendGallery(shop.getId(), userId, objectKey);
 
         // 업로드 응답에도 presign URL을 실어 프론트가 추가 조회 없이 바로 렌더 가능(자동반영 갭 해소)
         return ShopImageItemResponse.of(saved, imageStorage.presignedGetUrl(objectKey));
@@ -126,11 +128,12 @@ public class ShopImageService {
         ShopImage image = shopImageRepository.findByIdAndShopId(imageId, shop.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_IMAGE_NOT_FOUND));
 
-        // 행 먼저 삭제(진실 원천) → 그 다음 객체 삭제. 순서 의도: DB-first라야 "행은 있는데 객체 없음"(GET 깨짐)을
-        //   피한다. 역으로 객체 삭제가 타임아웃·일시장애로 실패하면 S3 고아가 남지만, best-effort로 흐름은 진행한다.
+        // 행 먼저 삭제(진실 원천) → 객체 삭제는 afterCommit으로 지연. 커밋 전에 객체를 지우면 이후 롤백/커밋 실패 시
+        //   DB 행은 복구되는데 객체는 이미 없어 "행은 있는데 객체 없음"(GET 깨짐)이 된다. 커밋 성공 후에만 객체를 지워 정합성 보장.
+        //   객체 삭제가 타임아웃·일시장애로 실패하면 S3 고아가 남지만 best-effort라 흐름은 진행한다.
         //   고아 회수는 후속 cleanup 스케줄러가 담당(미구현, ADR-003 범위 밖 / 미구현API.md B24 추적, KAN-298 패턴 재사용).
         shopImageRepository.delete(image);
-        imageStorage.delete(image.getObjectKey());
+        deleteObjectAfterCommit(image.getObjectKey());
     }
 
     /**
@@ -149,7 +152,7 @@ public class ShopImageService {
         //   커밋한 PROFILE을 놓칠 수 있어, FOR UPDATE로 최신 커밋본을 읽어 확실히 교체한다(stale snapshot 회피).
         for (ShopImage old : shopImageRepository.findByShopIdAndTypeForUpdate(shopId, ShopImageType.PROFILE)) {
             shopImageRepository.delete(old);
-            imageStorage.delete(old.getObjectKey());
+            deleteObjectAfterCommit(old.getObjectKey());
         }
         return shopImageRepository.save(ShopImage.profile(shopId, objectKey));
     }
@@ -157,16 +160,38 @@ public class ShopImageService {
     /**
      * GALLERY 추가 — 기존 갤러리 최대 sort_order + 1을 부여해 업로드 순서대로 정렬되게 한다.
      *
-     * <p>[동시성] max+1 계산은 비원자라 동시 GALLERY 업로드 2건이 같은 max를 읽어 sort_order가 중복될 수 있다.
-     * 단 목록 정렬 2차 키가 id ASC라 결과 순서는 결정적이라 무해 — PROFILE과 달리 직렬화 락을 걸지 않는다.
-     * 엄밀한 순서 정합(드래그 재정렬 등)이 필요해지면 후속(미구현API.md B24 계열)에서 재검토.
+     * <p>[동시성] max+1 계산은 비원자라 무잠금이면 동시 GALLERY 업로드 2건이 같은 max를 읽어 sort_order가 중복된다.
+     * DB UNIQUE(shop_id,type,sort_order)가 이를 거부(INSERT 실패)하므로, PROFILE과 동일하게 Shop 행을
+     * FOR UPDATE로 잠가 read(max)-insert 구간을 직렬화한다. 락은 (느린) S3 업로드 이후 여기서만 획득해 보유시간을 최소화한다.
      */
-    private ShopImage appendGallery(Long shopId, String objectKey) {
-        int nextOrder = shopImageRepository.findByShopIdAndType(shopId, ShopImageType.GALLERY).stream()
+    private ShopImage appendGallery(Long shopId, Long userId, String objectKey) {
+        // 본인 가게 행 비관락 — 동시 GALLERY 업로드를 직렬화(max+1 원자성 보장). 소유권은 상위에서 검증됨.
+        shopRepository.findByIdAndUserIdWithLock(shopId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+        // 락 직후라도 일반 SELECT는 early-pinned 스냅샷 탓에 동시 커밋분을 놓칠 수 있어 FOR UPDATE로 최신 max를 읽는다.
+        int nextOrder = shopImageRepository.findByShopIdAndTypeForUpdate(shopId, ShopImageType.GALLERY).stream()
                 .mapToInt(ShopImage::getSortOrder)
                 .max()
                 .orElse(-1) + 1;
         return shopImageRepository.save(ShopImage.gallery(shopId, objectKey, nextOrder));
+    }
+
+    /**
+     * S3 객체 삭제를 현재 트랜잭션 커밋 직후(afterCommit)로 지연한다. 커밋 전 즉시 삭제하면 이후 롤백 시
+     * DB 행은 살아남는데 객체만 사라져 GET이 깨진다 — 커밋이 확정된 뒤에만 best-effort 삭제를 수행해 정합성을 맞춘다.
+     * 동기화가 없는 경우(트랜잭션 밖 호출)는 안전하게 즉시 삭제로 폴백한다.
+     */
+    private void deleteObjectAfterCommit(String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            imageStorage.delete(objectKey);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                imageStorage.delete(objectKey);
+            }
+        });
     }
 
     /** shopId + userId 조합으로 ACTIVE 가게 조회. 없거나 소유자 불일치면 SHOP_001, 비활성이면 SHOP_005. */

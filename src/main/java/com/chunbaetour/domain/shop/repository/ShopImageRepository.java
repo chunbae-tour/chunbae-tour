@@ -18,7 +18,7 @@ public interface ShopImageRepository extends JpaRepository<ShopImage, Long> {
      */
     List<ShopImage> findByShopIdOrderByTypeDescSortOrderAscIdAsc(Long shopId);
 
-    /** 특정 용도 사진 목록 — GALLERY 정렬(sort_order max) 계산에 사용. */
+    /** 특정 용도 사진 목록(비잠금) — 테스트 검증·읽기 전용 조회에 사용. 정렬(max) 계산은 ForUpdate 버전을 쓴다. */
     List<ShopImage> findByShopIdAndType(Long shopId, ShopImageType type);
 
     /**

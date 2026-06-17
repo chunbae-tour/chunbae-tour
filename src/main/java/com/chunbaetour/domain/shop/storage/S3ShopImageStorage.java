@@ -88,8 +88,8 @@ public class S3ShopImageStorage implements ShopImageStorage {
                     .key(key)
                     .build());
         } catch (SdkException e) {
-            log.error("S3 가게 이미지 삭제 실패(고아 객체로 잔존, 후속 cleanup 대상): bucket={}, key={}",
-                    properties.getBucket(), key, e);
+            log.error("S3 가게 이미지 삭제 실패(고아 객체로 잔존, 후속 cleanup 대상): bucket="
+                    + properties.getBucket() + ", key=" + key, e);
         }
     }
 }
