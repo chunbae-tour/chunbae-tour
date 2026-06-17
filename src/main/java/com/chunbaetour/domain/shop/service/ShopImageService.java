@@ -126,8 +126,9 @@ public class ShopImageService {
         ShopImage image = shopImageRepository.findByIdAndShopId(imageId, shop.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_IMAGE_NOT_FOUND));
 
-        shopImageRepository.delete(image);
-        // 행이 진실 원천 — 객체 삭제는 best-effort(구현체가 실패를 삼키고 로깅)
+        // 행 먼저 삭제(진실 원천) → 그 다음 객체 삭제. 순서 의도: DB-first라야 "행은 있는데 객체 없음"(GET 깨짐)을
+        //   피한다. 역으로 객체 삭제가 타임아웃·일시장애로 실패하면 S3 고아가 남지만, best-effort로 흐름은 진행한다.
+        //   고아 회수는 후속 cleanup 스케줄러가 담당(미구현, ADR-003 범위 밖 / 미구현API.md B24 추적, KAN-298 패턴 재사용).
         imageStorage.delete(image.getObjectKey());
     }
 
