@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -61,7 +62,7 @@ public class ReportController {
     @GetMapping("/{reportId}")
     public ApiResponse<MyReportResponse> getMyReport(
             @AuthenticationPrincipal Long accountId,
-            @PathVariable Long reportId) {
+            @Positive @PathVariable Long reportId) {
         return ApiResponse.success(reportService.getMyReport(reportId, accountId));
     }
 }

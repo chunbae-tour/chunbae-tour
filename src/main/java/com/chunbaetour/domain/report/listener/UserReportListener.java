@@ -1,0 +1,43 @@
+package com.chunbaetour.domain.report.listener;
+
+import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.auth.AccountStatus;
+import com.chunbaetour.domain.common.error.BusinessException;
+import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.report.entity.ReportTargetType;
+import com.chunbaetour.domain.report.entity.SanctionType;
+import com.chunbaetour.domain.report.event.ReportContentActionEvent;
+import com.chunbaetour.domain.report.type.ReportAction;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class UserReportListener {
+
+    private final AccountRepository accountRepository;
+
+    @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
+    public void handle(ReportContentActionEvent event) {
+        if (event.targetType() != ReportTargetType.USER) return;
+
+        // RESTORE 의도적 미처리: USER 신고 정정(오판) 시 계정 정지는 자동 해제하지 않는다(정책).
+        // 정지 해제는 관리자가 releaseSanction으로 별도 수행 — 콘텐츠 복원 리스너들과 동작이 다른 이유.
+        if (event.action() == ReportAction.DELETE || event.action() == ReportAction.SUSPEND) {
+            accountRepository.findById(event.targetId()).ifPresentOrElse(acc -> {
+                if (acc.getStatus() == AccountStatus.DELETED) {
+                    log.warn("UserReportListener: 탈퇴 계정 정지 생략, targetId={}", event.targetId());
+                    return;
+                }
+                if (acc.getStatus() == AccountStatus.SUSPENDED) {
+                    throw new BusinessException(ErrorCode.REPORT_TARGET_ALREADY_SUSPENDED);
+                }
+                acc.applySystemSanction(SanctionType.PERMANENT, null);
+            }, () -> log.warn("UserReportListener: account not found, targetId={}", event.targetId()));
+        }
+    }
+}

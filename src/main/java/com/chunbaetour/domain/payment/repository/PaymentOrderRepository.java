@@ -47,6 +47,19 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Long
     Optional<PaymentOrder> findByIdWithLock(@Param("id") Long id);
 
     /**
+     * 고아 PENDING 충전 주문 조회 — 웹훅 미도달·서버 크래시 복구용 (B3 재조정 스케줄러).
+     *
+     * <p>생성 후 일정 시간(threshold)이 지나도 PENDING으로 잔류한 주문을 createdAt 오름차순(오래된 것 우선)으로
+     * 조회한다. 스케줄러가 건별로 PG 실제 상태를 확인해 COMPLETED/FAILED로 재조정한다. 락 미사용 —
+     * 상태 전이는 CallbackService의 DB-level CAS(completeIfNotCompleted/failIfPending)에 위임해 웹훅과 직렬화.
+     */
+    @Query("SELECT p FROM PaymentOrder p "
+            + "WHERE p.status = com.chunbaetour.domain.payment.type.PaymentOrderStatus.PENDING "
+            + "  AND p.createdAt < :threshold "
+            + "ORDER BY p.createdAt ASC")
+    List<PaymentOrder> findStalePendingOrders(@Param("threshold") LocalDateTime threshold, Pageable pageable);
+
+    /**
      * 일일 충전 한도 검증용 — 기간 내 사용자의 충전 시도 금액 합계 (KAN-293).
      *
      * <p>진행중(PENDING) + 완료 이력이 있는 주문(pgTransactionId != null)을 합산한다.

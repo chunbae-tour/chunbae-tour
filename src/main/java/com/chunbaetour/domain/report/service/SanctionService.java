@@ -2,9 +2,17 @@ package com.chunbaetour.domain.report.service;
 
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountRepository;
+import com.chunbaetour.domain.community.comment.repository.CommentRepository;
+import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
+import com.chunbaetour.domain.community.free.repository.FreePostRepository;
+import com.chunbaetour.domain.place.PlaceReviewStatus;
+import com.chunbaetour.domain.place.repository.PlaceReviewRepository;
+import com.chunbaetour.domain.report.entity.Report;
+import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
 import com.chunbaetour.domain.report.entity.SanctionType;
 import com.chunbaetour.domain.report.entity.UserSanction;
+import com.chunbaetour.domain.report.repository.ReportRepository;
 import com.chunbaetour.domain.report.repository.UserSanctionRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -25,10 +33,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class SanctionService {
 
     private final UserSanctionRepository userSanctionRepository;
     private final AccountRepository accountRepository;
+    private final ReportRepository reportRepository;
+    private final CompanionPostRepository companionPostRepository;
+    private final FreePostRepository freePostRepository;
+    private final CommentRepository commentRepository;
+    private final PlaceReviewRepository placeReviewRepository;
     private final Clock clock;
 
     /**
@@ -39,6 +53,11 @@ public class SanctionService {
     public void handleReportAccepted(Long reportId, Long userId, ReportTargetType targetType,
                                      long acceptedCount) {
         LocalDateTime now = LocalDateTime.now(clock);
+
+        // 0. 동시 처리 직렬화 — 같은 유저의 제재 평가가 동시에 일어나면(관리자 2명 동시 처리)
+        //    highest 계산이 서로의 미커밋 제재를 못 봐 중복 제재·크로스도메인 오집계 발생.
+        //    피신고 유저 Account 행에 PESSIMISTIC_WRITE 락을 잡아 유저 단위로 직렬화.
+        accountRepository.findByIdWithLock(userId);
 
         // 1. 이벤트에서 전달받은 누적 RESOLVED 건수로 제재 단계 계산
         SanctionType calculated = SanctionType.fromCount(acceptedCount);
@@ -71,7 +90,19 @@ public class SanctionService {
             applyAccountSuspension(userId, calculated, endedAt);
         }
 
-        // 5. 2+ 활성 도메인 → 계정 전체 정지
+        // 5. 콘텐츠 도메인 SUSPEND 이상 → 신고된 콘텐츠 숨김
+        if (calculated.severity() >= SanctionType.SUSPEND_7D.severity()
+                && targetType != ReportTargetType.USER
+                && targetType != ReportTargetType.MERCHANT) {
+            hideReportedContent(reportId, targetType);
+        }
+
+        // 6. PERMANENT → 해당 유저 전체 콘텐츠 숨김
+        if (calculated == SanctionType.PERMANENT) {
+            hideAllContentByUser(userId, now);
+        }
+
+        // 7. 2+ 활성 도메인 → 계정 전체 정지
         // WARNING은 endedAt = startedAt이므로 countActiveDistinctDomains에서 즉시 제외 → 실질적 no-op (의도된 정책)
         checkAndApplyCrossDomainSuspension(userId, now);
     }
@@ -87,6 +118,38 @@ public class SanctionService {
     }
 
     // ── 내부 ─────────────────────────────────────────────────────────────────
+
+    /** SUSPEND 이상 제재 도달 시 해당 신고의 target 콘텐츠 숨김. */
+    private void hideReportedContent(Long reportId, ReportTargetType targetType) {
+        Report report = reportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            log.warn("[제재 숨김] report 없음 reportId={}", reportId);
+            return;
+        }
+        Long targetId = report.getTargetId();
+        switch (targetType) {
+            case POST_COMPANION -> companionPostRepository.findById(targetId)
+                    .ifPresent(p -> { if (p.getStatus() != com.chunbaetour.domain.community.companion.entity.CompanionPostStatus.DELETED) p.hide(); });
+            case POST_FREE -> freePostRepository.findById(targetId)
+                    .ifPresent(p -> { if (p.getStatus() != com.chunbaetour.domain.community.free.entity.FreePostStatus.DELETED) p.hide(); });
+            case COMMENT -> commentRepository.findById(targetId)
+                    .ifPresent(c -> { if (c.getStatus() != com.chunbaetour.domain.community.comment.entity.CommentStatus.DELETED) c.hide(); });
+            case REVIEW -> placeReviewRepository.findById(targetId)
+                    .ifPresent(r -> { if (r.getStatus() != PlaceReviewStatus.DELETED) r.hide(); });
+            default -> log.warn("[제재 숨김] 미지원 targetType={}", targetType);
+        }
+        log.info("[제재 숨김] reportId={} targetType={} targetId={}", reportId, targetType, targetId);
+    }
+
+    /** PERMANENT 제재 시 해당 유저의 전체 콘텐츠 숨김. */
+    private void hideAllContentByUser(Long userId, LocalDateTime now) {
+        // 벌크 UPDATE는 JPA Auditing(@LastModifiedDate)을 우회하므로 updatedAt을 명시적으로 갱신.
+        companionPostRepository.hideAllActiveByAuthorId(userId, now);
+        freePostRepository.hideAllActiveByAuthorId(userId, now);
+        commentRepository.hideAllActiveByAuthorId(userId, now);
+        placeReviewRepository.hideAllActiveByAuthorId(userId, now);
+        log.info("[영구 정지 전체 숨김] userId={}", userId);
+    }
 
     private void applyAccountSuspension(Long userId, SanctionType type, LocalDateTime endedAt) {
         accountRepository.findById(userId).ifPresentOrElse(

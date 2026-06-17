@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.report.entity.SanctionType;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
@@ -156,5 +157,42 @@ class AccountTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.USER_ALREADY_DELETED);
+    }
+
+    // ===== isCurrentlySanctioned (PR4 — 인터셉터 계정 정지 판정) =====
+
+    @Test
+    void isCurrentlySanctioned_no_sanction_returns_false() {
+        Account account = Account.registerUser("nosanc@example.com", "hash", "무제재");
+        assertThat(account.isCurrentlySanctioned(NOW)).isFalse();
+    }
+
+    @Test
+    void isCurrentlySanctioned_PERMANENT_returns_true() {
+        Account account = Account.registerUser("perm@example.com", "hash", "영구");
+        account.applySystemSanction(SanctionType.PERMANENT, null);
+        assertThat(account.isCurrentlySanctioned(NOW)).isTrue();
+    }
+
+    @Test
+    void isCurrentlySanctioned_before_endAt_returns_true() {
+        Account account = Account.registerUser("temp@example.com", "hash", "기한제재");
+        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
+        assertThat(account.isCurrentlySanctioned(NOW)).isTrue();
+    }
+
+    @Test
+    void isCurrentlySanctioned_after_endAt_returns_false() {
+        Account account = Account.registerUser("expired@example.com", "hash", "만료제재");
+        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
+        assertThat(account.isCurrentlySanctioned(NOW.plusDays(8))).isFalse();
+    }
+
+    @Test
+    void isCurrentlySanctioned_exactly_at_endAt_returns_false() {
+        // endAt == now 순간은 만료로 처리 (isAfter false)
+        Account account = Account.registerUser("boundary@example.com", "hash", "경계제재");
+        account.applySystemSanction(SanctionType.SUSPEND_7D, NOW.plusDays(7));
+        assertThat(account.isCurrentlySanctioned(NOW.plusDays(7))).isFalse();
     }
 }
