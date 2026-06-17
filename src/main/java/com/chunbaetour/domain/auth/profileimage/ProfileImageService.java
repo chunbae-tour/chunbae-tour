@@ -48,6 +48,8 @@ public class ProfileImageService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
 
         String objectKey = imageStorage.upload(userId, file);
+        // 롤백 보상 — S3 PUT 성공 후 아래 영속화/커밋이 실패해 롤백되면 방금 올린 객체가 고아가 된다. 즉시 회수(KAN-319 ① 패턴).
+        deleteObjectAfterRollback(objectKey);
         String previous = account.changeProfileImage(objectKey);
 
         // 직전 값이 우리 업로드 키였다면 교체로 고아가 되므로 커밋 후 정리. 외부 OAuth URL이면 우리 소유 아니라 건드리지 않음.
@@ -99,6 +101,21 @@ public class ProfileImageService {
             @Override
             public void afterCommit() {
                 imageStorage.delete(objectKey);
+            }
+        });
+    }
+
+    /** 방금 올린 객체를 트랜잭션이 <b>롤백될 때만</b> 회수(KAN-319 ① 패턴). 커밋되면 no-op. 동기화 없으면 보상 대상 없음. */
+    private void deleteObjectAfterRollback(String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    imageStorage.delete(objectKey);
+                }
             }
         });
     }
