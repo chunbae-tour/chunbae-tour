@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.auth.oauth;
 
 import com.chunbaetour.domain.auth.OauthProvider;
+import com.chunbaetour.domain.auth.Role;
 import com.chunbaetour.domain.auth.dto.OauthLoginRequest;
 import com.chunbaetour.domain.auth.dto.OauthLoginResponse;
 import com.chunbaetour.domain.auth.dto.OauthSignupRequest;
@@ -58,7 +59,9 @@ public class OAuthController {
             @Valid @RequestBody OauthLoginRequest request
     ) {
         OauthProvider oauthProvider = OauthProvider.fromPath(provider);
-        OauthLoginResult result = oauthLoginService.login(oauthProvider, request.code(), request.redirectUri());
+        // USER 진입점 — 계정 role이 USER인 소셜 로그인만 허용. 상인은 MerchantOAuthController 사용.
+        OauthLoginResult result = oauthLoginService.login(
+                oauthProvider, request.code(), request.redirectUri(), Role.USER);
 
         if (result.needSignup()) {
             // 신규 — 토큰/쿠키 없이 가입 티켓 + prefill만 반환.
