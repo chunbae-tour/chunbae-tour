@@ -38,6 +38,7 @@ class FreePostServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock CommentCountService commentCountService;
+    @Mock PostImageService postImageService;
     @InjectMocks FreePostService postService;
 
     private static final Long AUTHOR_ID = 1L;
