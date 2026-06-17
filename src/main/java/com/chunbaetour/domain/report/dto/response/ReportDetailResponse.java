@@ -34,11 +34,13 @@ public record ReportDetailResponse(
         String adminNote,
         String resolvedBy,
         LocalDateTime resolvedAt,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        ReportedUserSanctionInfo reportedUserSanction
 ) {
     public static ReportDetailResponse of(Report report, String reporterNickname,
                                           String targetTitle, String targetContent,
-                                          List<String> targetImageUrls) {
+                                          List<String> targetImageUrls,
+                                          ReportedUserSanctionInfo reportedUserSanction) {
         return new ReportDetailResponse(
                 report.getId(),
                 report.getTargetType(),
@@ -55,7 +57,8 @@ public record ReportDetailResponse(
                 report.getAdminNote(),
                 report.getResolvedBy(),
                 report.getResolvedAt(),
-                report.getCreatedAt()
+                report.getCreatedAt(),
+                reportedUserSanction
         );
     }
 }

@@ -5,6 +5,6 @@ public enum ReportTargetType {
     POST_FREE,      // free_posts 테이블
     COMMENT,        // comments 테이블
     USER,           // users 테이블 (Role.USER)
-    MERCHANT        // users 테이블 (Role.MERCHANT) — 별도 테이블 없이 Account.role로 구분
-    // REVIEW — 리뷰 도메인 구현 후 추가 예정
+    MERCHANT,       // users 테이블 (Role.MERCHANT) — 별도 테이블 없이 Account.role로 구분
+    REVIEW          // place_reviews 테이블 (KAN-152 리뷰 도메인 연결)
 }

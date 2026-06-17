@@ -3,6 +3,7 @@ package com.chunbaetour.domain.report.repository;
 import com.chunbaetour.domain.report.entity.Report;
 import com.chunbaetour.domain.report.entity.ReportStatus;
 import com.chunbaetour.domain.report.entity.ReportTargetType;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -37,6 +38,9 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             @Param("cursorId") Long cursorId,
             Pageable pageable);
 
+    // ── 미처리 신고 건수 (PR6 pending-count badge) ────────────────────
+    long countByStatus(ReportStatus status);
+
     // ── 자동 숨김용 신고 건수 집계 (KAN-93) ─────────────────────────────
     long countByTargetTypeAndTargetIdAndStatus(
             ReportTargetType targetType, Long targetId, ReportStatus status);
@@ -48,4 +52,9 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     // ── 도메인별 제재 누적 집계 (PR1+PR2 SanctionService) ──────────────────
     long countByReportedUserIdAndTargetTypeAndStatus(
             Long reportedUserId, ReportTargetType targetType, ReportStatus status);
+
+    // ── 1년 롤링 윈도우 누적 집계 (제재 단계 판정) ──────────────────────────
+    // resolved_at >= since(=now-1년) 인 RESOLVED 신고만 집계. 오래된 신고 자동 만료.
+    long countByReportedUserIdAndTargetTypeAndStatusAndResolvedAtGreaterThanEqual(
+            Long reportedUserId, ReportTargetType targetType, ReportStatus status, LocalDateTime since);
 }

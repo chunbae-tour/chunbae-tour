@@ -171,21 +171,90 @@ class PlaceSyncBatchServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("showflag 삭제 항목(markDeleted)은 기존 관광지를 soft-delete(DELETED)한다")
+    @DisplayName("showflag 삭제 항목(markDeleted)은 기존 관광지를 원천 삭제(SOURCE_DELETED)로 전이한다 (KAN-306)")
     void markDeletedSoftDeletes() {
         batchService.upsertItem(item("500", "삭제예정관광지", "127.1", "36.8"));
 
         UpsertResult result = batchService.markDeleted("500");
 
         assertThat(result).isEqualTo(UpsertResult.DELETED);
+        // 운영자 삭제(DELETED)가 아니라 원천 삭제(SOURCE_DELETED) — 재노출 시 부활 가능
         assertThat(placeRepository.findByExternalId("500").orElseThrow().getStatus())
-                .isEqualTo(PlaceStatus.DELETED);
+                .isEqualTo(PlaceStatus.SOURCE_DELETED);
     }
 
     @Test
     @DisplayName("존재하지 않는 contentId의 삭제 요청은 SKIPPED")
     void markDeletedNotFound() {
         assertThat(batchService.markDeleted("999")).isEqualTo(UpsertResult.SKIPPED);
+    }
+
+    @Test
+    @DisplayName("원천 삭제(SOURCE_DELETED)된 관광지는 원천 재노출 시 upsertItem에서 ACTIVE로 부활하고 UPDATED된다 (KAN-306)")
+    void reviveSourceDeletedOnReappear() {
+        batchService.upsertItem(item("600", "원천삭제예정", "127.1", "36.8"));
+        batchService.markDeleted("600");
+        assertThat(placeRepository.findByExternalId("600").orElseThrow().getStatus())
+                .isEqualTo(PlaceStatus.SOURCE_DELETED);
+
+        UpsertResult result = batchService.upsertItem(item("600", "부활된이름", "127.2", "36.9"));
+
+        assertThat(result).isEqualTo(UpsertResult.UPDATED);
+        Place revived = placeRepository.findByExternalId("600").orElseThrow();
+        assertThat(revived.getStatus()).isEqualTo(PlaceStatus.ACTIVE);   // SOURCE_DELETED → ACTIVE 부활
+        assertThat(revived.getName()).isEqualTo("부활된이름");            // 부활 + 최신 데이터 갱신
+    }
+
+    @Test
+    @DisplayName("upsertChunk도 원천 삭제(SOURCE_DELETED) 관광지를 원천 재노출 시 ACTIVE로 부활시킨다 (KAN-306)")
+    void upsertChunkRevivesSourceDeleted() {
+        batchService.upsertItem(item("620", "청크부활예정", "127.1", "36.8"));
+        batchService.markDeleted("620");
+
+        batchService.upsertChunk(List.of(item("620", "청크부활됨", "127.2", "36.9")));
+
+        Place revived = placeRepository.findByExternalId("620").orElseThrow();
+        assertThat(revived.getStatus()).isEqualTo(PlaceStatus.ACTIVE);
+        assertThat(revived.getName()).isEqualTo("청크부활됨");
+    }
+
+    @Test
+    @DisplayName("운영자 삭제(DELETED)는 원천 재노출에도 부활하지 않는다 — SOURCE_DELETED와 구분 (KAN-306)")
+    void operatorDeletedNotRevivedBySource() {
+        Place toDelete = Place.createFromApi("630", "운영자삭제", "충청남도 천안시",
+                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null, "충청남도", "천안시");
+        toDelete.delete();   // 운영자 수동 삭제
+        placeRepository.saveAndFlush(toDelete);
+
+        UpsertResult result = batchService.upsertItem(item("630", "되살리기시도", "127.2", "36.9"));
+
+        assertThat(result).isEqualTo(UpsertResult.SKIPPED);
+        Place found = placeRepository.findByExternalId("630").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.DELETED);  // 부활 안 됨
+        assertThat(found.getName()).isEqualTo("운영자삭제");            // 갱신 안 됨
+    }
+
+    @Test
+    @DisplayName("이미 SOURCE_DELETED인 관광지에 대한 markDeleted는 SKIPPED (중복 처리 안 함, KAN-306)")
+    void markDeletedAlreadySourceDeleted() {
+        batchService.upsertItem(item("610", "원천삭제예정", "127.1", "36.8"));
+        batchService.markDeleted("610");
+
+        assertThat(batchService.markDeleted("610")).isEqualTo(UpsertResult.SKIPPED);
+        assertThat(placeRepository.findByExternalId("610").orElseThrow().getStatus())
+                .isEqualTo(PlaceStatus.SOURCE_DELETED);
+    }
+
+    @Test
+    @DisplayName("SOURCE_DELETED는 실 MySQL ENUM 컬럼에 저장·조회된다 (마이그 V202606160900 검증, KAN-306)")
+    void sourceDeletedPersistsInEnumColumn() {
+        Place p = Place.createFromApi("650", "원천삭제저장", "충청남도 천안시",
+                java.math.BigDecimal.valueOf(36.8), java.math.BigDecimal.valueOf(127.1), null, null, "충청남도", "천안시");
+        p.markSourceDeleted();
+        placeRepository.saveAndFlush(p);
+
+        Place found = placeRepository.findByExternalId("650").orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(PlaceStatus.SOURCE_DELETED);
     }
 
     @Test
