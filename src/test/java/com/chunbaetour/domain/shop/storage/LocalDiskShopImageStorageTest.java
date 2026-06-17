@@ -38,4 +38,34 @@ class LocalDiskShopImageStorageTest {
     void presignedGetUrl_passthrough() {
         assertThat(storage().presignedGetUrl("shops/10/x.jpg")).isEqualTo("shops/10/x.jpg");
     }
+
+    @Test
+    @DisplayName("listObjects — prefix 아래 파일을 키(forward-slash 정규화)로 나열, 미존재 prefix는 빈 목록")
+    void listObjects_walksPrefix() {
+        LocalDiskShopImageStorage storage = storage();
+        String k1 = storage.upload(10L, jpeg());
+        String k2 = storage.upload(20L, jpeg());
+
+        // shops/ 전체 — 업로드한 2개 키 포함, 키는 '/' 정규화
+        assertThat(storage.listObjects("shops/"))
+                .extracting(ShopImageObjectInfo::objectKey)
+                .containsExactlyInAnyOrder(k1, k2);
+        assertThat(storage.listObjects("shops/")).allSatisfy(o -> {
+            assertThat(o.objectKey()).doesNotContain("\\");
+            assertThat(o.lastModified()).isNotNull();
+        });
+
+        // 특정 가게 prefix로 좁히면 그 가게 객체만
+        assertThat(storage.listObjects("shops/10/"))
+                .extracting(ShopImageObjectInfo::objectKey)
+                .containsExactly(k1);
+
+        // 존재하지 않는 prefix → 빈 목록(throw 없음)
+        assertThat(storage.listObjects("shops/999/")).isEmpty();
+    }
+
+    private MockMultipartFile jpeg() {
+        return new MockMultipartFile("file", "x.jpg", "image/jpeg",
+                new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0});
+    }
 }

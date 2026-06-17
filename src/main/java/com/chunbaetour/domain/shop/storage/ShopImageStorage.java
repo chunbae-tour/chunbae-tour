@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.shop.storage;
 
+import java.util.List;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -39,4 +40,16 @@ public interface ShopImageStorage {
      * @param key 객체 키(예: {@code shops/10/uuid.jpg})
      */
     void delete(String key);
+
+    /**
+     * 주어진 prefix 아래의 모든 객체를 나열한다(KAN-319 고아 cleanup 스케줄러용).
+     *
+     * <p>고아 reconcile은 저장소 객체 ↔ DB 행을 대조해 DB에 없는 객체를 삭제하므로, 저장소 측 전체 목록이 필요하다.
+     * S3는 {@code ListObjectsV2} 페이지네이션, 로컬은 디렉터리 walk로 구현한다. 각 항목은 키 + 마지막 수정 시각을 담는다
+     * (수정 시각은 grace period 판정에 사용 — 갓 올라온 객체 오삭제 방지).
+     *
+     * @param prefix 객체 키 prefix(예: {@code shops/}) — 정리 대상을 가게 이미지로 한정
+     * @return prefix에 속한 객체 메타 목록(없으면 빈 목록)
+     */
+    List<ShopImageObjectInfo> listObjects(String prefix);
 }

@@ -4,6 +4,8 @@ import com.chunbaetour.domain.common.config.S3Properties;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -13,7 +15,10 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
@@ -91,5 +96,24 @@ public class S3ShopImageStorage implements ShopImageStorage {
             log.error("S3 가게 이미지 삭제 실패(고아 객체로 잔존, 후속 cleanup 대상): bucket="
                     + properties.getBucket() + ", key=" + key, e);
         }
+    }
+
+    @Override
+    public List<ShopImageObjectInfo> listObjects(String prefix) {
+        // ListObjectsV2 페이지네이션 — 1000개 초과 버킷도 토큰으로 끝까지 순회. LastModified는 UTC Instant.
+        List<ShopImageObjectInfo> result = new ArrayList<>();
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+                .bucket(properties.getBucket())
+                .prefix(prefix);
+        ListObjectsV2Response response;
+        String continuationToken = null;
+        do {
+            response = s3Client.listObjectsV2(requestBuilder.continuationToken(continuationToken).build());
+            for (S3Object obj : response.contents()) {
+                result.add(new ShopImageObjectInfo(obj.key(), obj.lastModified()));
+            }
+            continuationToken = response.nextContinuationToken();
+        } while (Boolean.TRUE.equals(response.isTruncated()));
+        return result;
     }
 }
