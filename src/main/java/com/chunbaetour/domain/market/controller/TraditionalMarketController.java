@@ -57,7 +57,7 @@ public class TraditionalMarketController {
     }
 
     @SecurityRequirements
-    @Operation(summary = "전통시장 상세 조회")
+    @Operation(summary = "전통시장 상세 조회", description = "비로그인 조회를 허용하며, 로그인 사용자는 찜 여부(isLiked)를 함께 반환합니다.")
     @GetMapping("/{marketId}")
     public ApiResponse<TraditionalMarketDetailResponse> getDetail(
             @Positive @PathVariable Long marketId,

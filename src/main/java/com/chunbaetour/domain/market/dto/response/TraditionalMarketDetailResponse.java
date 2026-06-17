@@ -1,5 +1,6 @@
 package com.chunbaetour.domain.market.dto.response;
 
+import com.chunbaetour.domain.like.type.LikeTargetType;
 import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import java.math.BigDecimal;
 
@@ -41,7 +42,7 @@ public record TraditionalMarketDetailResponse(
                 market.getSido(),
                 market.getSigungu(),
                 region(market.getSido(), market.getSigungu()),
-                "TRADITIONAL_MARKET",
+                LikeTargetType.MARKET.name(),
                 isLiked
         );
     }

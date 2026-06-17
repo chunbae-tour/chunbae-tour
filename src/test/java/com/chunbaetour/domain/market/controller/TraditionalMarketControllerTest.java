@@ -138,7 +138,7 @@ class TraditionalMarketControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.sido").value("서울특별시"))
                 .andExpect(jsonPath("$.data.sigungu").value("종로구"))
                 .andExpect(jsonPath("$.data.region").value("서울특별시 종로구"))
-                .andExpect(jsonPath("$.data.targetType").value("TRADITIONAL_MARKET"))
+                .andExpect(jsonPath("$.data.targetType").value("MARKET"))
                 .andExpect(jsonPath("$.data.isLiked").value(false));
     }
 
