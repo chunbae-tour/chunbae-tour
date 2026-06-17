@@ -73,6 +73,7 @@
       "cpu": 128,
       "memoryReservation": 128,
       "memory": 256,
+      "stopTimeout": 35,
       "dependsOn": [
         { "containerName": "chunbae-tour", "condition": "HEALTHY" }
       ],
