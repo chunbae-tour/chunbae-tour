@@ -252,6 +252,29 @@ class CompanionServiceTest {
         verify(companionRepository, never()).save(any());
     }
 
+    // participantUserIds=[비방장,비방장 중복] → distinct 후 실인원1+방장=총 2명 → CR_016 안 걸리고 통과
+    @Test
+    void createCompanion_duplicateNonOwnerParticipant_dedupSucceeds() {
+        Long ownerId = 1L;
+        Long roomId = 10L;
+        Long participantId = 2L;
+        ChatRoom chatRoom = ChatRoom.createWithOwner(100L, ownerId, "테스트방", null, 5);
+        CompanionCreateRequest request = new CompanionCreateRequest(List.of(participantId, participantId), TRIP_START, TRIP_END);
+        Companion companion = Companion.builder().chatRoomId(roomId).tripStartDate(TRIP_START).tripEndDate(TRIP_END).build();
+        ReflectionTestUtils.setField(companion, "id", 100L);
+
+        given(chatRoomRepository.findById(roomId)).willReturn(Optional.of(chatRoom));
+        given(companionRepository.findByChatRoomId(roomId)).willReturn(Optional.empty());
+        given(chatRoomMemberRepository.countByChatRoomIdAndUserIdInAndMemberStateIn(any(), any(), any()))
+                .willReturn(2L);
+        given(companionRepository.save(any())).willReturn(companion);
+        given(companionParticipantRepository.saveAll(any())).willReturn(List.of());
+
+        CompanionCreateResponse response = companionService.createCompanion(ownerId, roomId, request);
+
+        assertThat(response.participantUserIds()).containsExactlyInAnyOrder(ownerId, participantId);
+    }
+
     // tripEndDate < tripStartDate → COMMON_004(INVALID_INPUT_VALUE)
     @Test
     void createCompanion_tripEndBeforeStart_throwsInvalidInputValue() {
