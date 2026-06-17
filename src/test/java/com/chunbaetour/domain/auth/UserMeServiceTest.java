@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -72,6 +73,9 @@ class UserMeServiceTest {
         assertThat(response.language()).isEqualTo("ko");
         assertThat(response.companionScore()).isEqualTo(0f);
         assertThat(response.companionReviewCount()).isEqualTo(0);
+        // 표시 URL이 ProfileImageService.toDisplayUrl을 거쳐 매핑되는지(변환 우회 회귀 감지, KAN-320)
+        assertThat(response.profileImageUrl()).isEqualTo(account.getProfileImageUrl()); // 본 테스트는 identity stub
+        then(profileImageService).should().toDisplayUrl(account.getProfileImageUrl());
     }
 
     @Test
