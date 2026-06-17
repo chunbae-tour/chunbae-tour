@@ -72,17 +72,21 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
     void concurrentCreateCompanion_sameOwnerOverlappingPeriod_onlyOneSucceeds() throws Exception {
         Account owner = accountRepository.saveAndFlush(
                 Account.registerUser("trip-overlap-owner@test.com", "hashedPw", "오버랩테스트유저"));
+        Account member = accountRepository.saveAndFlush(
+                Account.registerUser("trip-overlap-member@test.com", "hashedPw", "오버랩테스트멤버"));
         Long ownerId = owner.getId();
 
         int threadCount = 5;
         List<Long> chatRoomIds = new ArrayList<>();
         for (int i = 0; i < threadCount; i++) {
             long postId = ThreadLocalRandom.current().nextLong(2_000_000L, 3_000_000L) + i;
-            ChatRoom chatRoom = ChatRoom.createWithOwner(postId, ownerId, "오버랩 테스트 방" + i, null, 5);
-            chatRoomIds.add(chatRoomRepository.saveAndFlush(chatRoom).getId());
+            ChatRoom chatRoom = chatRoomRepository.saveAndFlush(
+                    ChatRoom.createWithOwner(postId, ownerId, "오버랩 테스트 방" + i, null, 5));
+            chatRoomMemberRepository.saveAndFlush(ChatRoomMember.ofMember(chatRoom, member.getId()));
+            chatRoomIds.add(chatRoom.getId());
         }
 
-        CompanionCreateRequest request = new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END);
+        CompanionCreateRequest request = new CompanionCreateRequest(List.of(member.getId()), TRIP_START, TRIP_END);
 
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch ready = new CountDownLatch(threadCount);
@@ -233,9 +237,12 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
         long ownerPostId = ThreadLocalRandom.current().nextLong(4_500_000L, 5_000_000L);
         ChatRoom ownerRoom = chatRoomRepository.saveAndFlush(
                 ChatRoom.createWithOwner(ownerPostId, owner.getId(), "오버랩 테스트 방2", null, 5));
+        Account ownerMember = accountRepository.saveAndFlush(
+                Account.registerUser("trip-overlap-owner2-member@test.com", "hashedPw", "무관유저방멤버"));
+        chatRoomMemberRepository.saveAndFlush(ChatRoomMember.ofMember(ownerRoom, ownerMember.getId()));
 
         CompanionCreateResponse response = companionService.createCompanion(
-                owner.getId(), ownerRoom.getId(), new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+                owner.getId(), ownerRoom.getId(), new CompanionCreateRequest(List.of(ownerMember.getId()), TRIP_START, TRIP_END));
 
         assertThat(response).isNotNull();
         assertThat(companionRepository.count()).isEqualTo(2);
@@ -263,9 +270,12 @@ class CompanionTripOverlapConcurrencyTest extends AbstractIntegrationTest {
         long newPostId = ThreadLocalRandom.current().nextLong(5_500_000L, 6_000_000L);
         ChatRoom newRoom = chatRoomRepository.saveAndFlush(
                 ChatRoom.createWithOwner(newPostId, owner.getId(), "오버랩 테스트 방3", null, 5));
+        Account newMember = accountRepository.saveAndFlush(
+                Account.registerUser("trip-overlap-owner3-member@test.com", "hashedPw", "종료방멤버"));
+        chatRoomMemberRepository.saveAndFlush(ChatRoomMember.ofMember(newRoom, newMember.getId()));
 
         CompanionCreateResponse response = companionService.createCompanion(
-                owner.getId(), newRoom.getId(), new CompanionCreateRequest(List.of(), TRIP_START, TRIP_END));
+                owner.getId(), newRoom.getId(), new CompanionCreateRequest(List.of(newMember.getId()), TRIP_START, TRIP_END));
 
         assertThat(response).isNotNull();
         assertThat(companionRepository.count()).isEqualTo(2);

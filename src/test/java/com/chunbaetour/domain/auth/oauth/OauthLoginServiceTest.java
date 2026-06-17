@@ -82,7 +82,7 @@ class OauthLoginServiceTest {
         when(tokenIssuer.issueRefresh(1L)).thenReturn(new TokenWithId("tid-1", "refresh-token"));
         when(jwtProperties.refreshTokenTtl()).thenReturn(Duration.ofDays(7));
 
-        OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback");
+        OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.USER);
 
         assertThat(result.needSignup()).isFalse();
         assertThat(result.tokenPair().accessToken()).isEqualTo("access-token");
@@ -99,7 +99,7 @@ class OauthLoginServiceTest {
                 .thenReturn(Optional.empty());
         when(ticketIssuer.issue(OauthProvider.KAKAO, "oid-2", "new@example.com")).thenReturn("signup-ticket");
 
-        OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback");
+        OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.USER);
 
         assertThat(result.needSignup()).isTrue();
         assertThat(result.signupTicket()).isEqualTo("signup-ticket");
@@ -120,13 +120,13 @@ class OauthLoginServiceTest {
         when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-3"))
                 .thenReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback"))
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.USER))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_SUSPENDED);
     }
 
-    @DisplayName("USER 아닌 계정(MERCHANT/ADMIN) → ACCESS_DENIED (소셜 로그인은 USER 전용 진입점)")
+    @DisplayName("USER 진입점에 MERCHANT 계정 → ACCESS_DENIED (requiredRole=USER 불일치)")
     @Test
     void nonUserRoleRejected() {
         when(kakaoClient.fetch(any(), any()))
@@ -137,7 +137,7 @@ class OauthLoginServiceTest {
         when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-4"))
                 .thenReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback"))
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.USER))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
@@ -146,10 +146,73 @@ class OauthLoginServiceTest {
         verify(tokenIssuer, never()).issueAccess(anyLong(), any(), any());
     }
 
+    @DisplayName("상인 진입점(requiredRole=MERCHANT)에 MERCHANT 계정 → 토큰 발급(로그인)")
+    @Test
+    void merchantAccountLogsInOnMerchantEndpoint() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-5", "merchant@example.com", "상인"));
+
+        Account account = mock(Account.class);
+        when(account.getStatus()).thenReturn(AccountStatus.ACTIVE);
+        when(account.getId()).thenReturn(5L);
+        when(account.getRole()).thenReturn(Role.MERCHANT);
+        when(account.getEmail()).thenReturn("merchant@example.com");
+        when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-5"))
+                .thenReturn(Optional.of(account));
+
+        when(tokenIssuer.issueAccess(5L, Role.MERCHANT, "merchant@example.com")).thenReturn("merchant-access");
+        when(tokenIssuer.issueRefresh(5L)).thenReturn(new TokenWithId("tid-5", "merchant-refresh"));
+        when(jwtProperties.refreshTokenTtl()).thenReturn(Duration.ofDays(7));
+
+        OauthLoginResult result = service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.MERCHANT);
+
+        assertThat(result.needSignup()).isFalse();
+        assertThat(result.tokenPair().accessToken()).isEqualTo("merchant-access");
+        assertThat(result.tokenPair().role()).isEqualTo(Role.MERCHANT);
+        verify(refreshTokenStore).save(eq(5L), eq("tid-5"), any(Duration.class));
+    }
+
+    @DisplayName("상인 진입점에 USER 계정 → ACCESS_DENIED (requiredRole=MERCHANT 불일치)")
+    @Test
+    void userRoleRejectedOnMerchantEndpoint() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-6", "user@example.com", "유저"));
+        Account account = mock(Account.class);
+        when(account.getId()).thenReturn(6L);
+        when(account.getRole()).thenReturn(Role.USER);
+        when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-6"))
+                .thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.MERCHANT))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        verify(tokenIssuer, never()).issueAccess(anyLong(), any(), any());
+    }
+
+    @DisplayName("상인 진입점에 미가입 소셜 → ACCESS_DENIED (가입 티켓 미발급, 소셜 가입은 USER 전용)")
+    @Test
+    void newAccountRejectedOnMerchantEndpoint() {
+        when(kakaoClient.fetch(any(), any()))
+                .thenReturn(new OauthUserInfo(OauthProvider.KAKAO, "oid-7", "new@example.com", "신규"));
+        when(accountRepository.findByOauthProviderAndOauthId(OauthProvider.KAKAO, "oid-7"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "code", "https://app/callback", Role.MERCHANT))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ex -> ((BusinessException) ex).getErrorCode())
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        // 비-USER 진입점은 가입 티켓을 발급하지 않는다
+        verify(ticketIssuer, never()).issue(any(), any(), any());
+        verify(tokenIssuer, never()).issueRefresh(anyLong());
+    }
+
     @DisplayName("미지원 공급자 → OAUTH_PROVIDER_UNSUPPORTED (등록된 클라이언트 없음)")
     @Test
     void unsupportedProviderRejected() {
-        assertThatThrownBy(() -> service.login(OauthProvider.NAVER, "code", "https://app/callback"))
+        assertThatThrownBy(() -> service.login(OauthProvider.NAVER, "code", "https://app/callback", Role.USER))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.OAUTH_PROVIDER_UNSUPPORTED);
@@ -161,7 +224,7 @@ class OauthLoginServiceTest {
         when(kakaoClient.fetch(any(), any()))
                 .thenThrow(new BusinessException(ErrorCode.OAUTH_PROVIDER_ERROR));
 
-        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "bad-code", "https://app/callback"))
+        assertThatThrownBy(() -> service.login(OauthProvider.KAKAO, "bad-code", "https://app/callback", Role.USER))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.OAUTH_PROVIDER_ERROR);

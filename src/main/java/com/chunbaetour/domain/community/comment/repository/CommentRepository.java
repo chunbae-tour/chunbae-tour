@@ -79,4 +79,23 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
             @Param("postType") PostType postType,
             @Param("now") LocalDateTime now
     );
+
+    // 게시글 단건의 ACTIVE 댓글 수(루트+대댓글). 삭제 placeholder(DELETED)는 제외.
+    @Query("SELECT COUNT(c) FROM Comment c " +
+           "WHERE c.postId = :postId AND c.postType = :postType AND c.status = 'ACTIVE'")
+    long countActiveByPost(@Param("postId") Long postId, @Param("postType") PostType postType);
+
+    // 게시글 목록의 ACTIVE 댓글 수 일괄 집계 — N+1 방지
+    @Query("SELECT c.postId as postId, COUNT(c) as count FROM Comment c " +
+           "WHERE c.postId IN :postIds AND c.postType = :postType AND c.status = 'ACTIVE' " +
+           "GROUP BY c.postId")
+    List<PostCommentCount> countActiveByPostIds(
+            @Param("postIds") List<Long> postIds,
+            @Param("postType") PostType postType
+    );
+
+    interface PostCommentCount {
+        Long getPostId();
+        Long getCount();
+    }
 }

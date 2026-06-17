@@ -11,14 +11,18 @@ public record FreePostGetListResponse(
         String title,
         List<String> imageUrls,
         WriterInfo writer,
+        long viewCount,
+        long commentCount,
         LocalDateTime createdAt
 ) {
-    public static FreePostGetListResponse of(FreePost post, Account author) {
+    public static FreePostGetListResponse of(FreePost post, Account author, long commentCount) {
         return new FreePostGetListResponse(
                 post.getId(),
                 post.getTitle(),
                 post.getImageUrls(),
                 WriterInfo.from(author),
+                post.getViewCount(),
+                commentCount,
                 post.getCreatedAt()
         );
     }

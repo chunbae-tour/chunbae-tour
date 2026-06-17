@@ -6,6 +6,7 @@ import com.chunbaetour.domain.chat.dto.request.CreateJoinRequestRequest;
 import com.chunbaetour.domain.chat.dto.response.ApproveJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.CreateJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.JoinRequestResponse;
+import com.chunbaetour.domain.chat.dto.response.MyJoinRequestResponse;
 import com.chunbaetour.domain.chat.dto.response.RejectJoinRequestResponse;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
@@ -19,6 +20,8 @@ import com.chunbaetour.domain.chat.repository.JoinRequestRepository;
 import com.chunbaetour.domain.chat.type.JoinRequestStatus;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
+import com.chunbaetour.domain.common.util.CursorUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +34,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.RedisException;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -206,6 +210,27 @@ public class JoinRequestService {
                 new JoinRequestRejectedEvent(chatRoomId, requestId, joinRequest.getUserId()));
 
         return RejectJoinRequestResponse.from(joinRequest);
+    }
+
+    // 본인 신청 이력 cursor 페이징 조회 — 상태 무관(PENDING/APPROVED/REJECTED), id DESC
+    // N+1 방지: chatRoomIds 배치 조회, 다음 페이지 판별·매핑·커서 인코딩은 공통 팩토리로 위임 (KAN-295)
+    public CursorPageResponse<MyJoinRequestResponse> getMyJoinRequests(Long userId, String cursor, int size) {
+        Long cursorId = CursorUtils.decodeSafe(cursor);
+        List<JoinRequest> requests = joinRequestRepository.findByUserIdWithCursor(
+                userId, cursorId, PageRequest.of(0, size + 1));
+
+        Map<Long, ChatRoom> chatRoomMap = requests.isEmpty()
+                ? Map.of()
+                : chatRoomRepository.findAllById(requests.stream()
+                                .map(JoinRequest::getChatRoomId)
+                                .distinct()
+                                .toList()).stream()
+                        .collect(Collectors.toMap(ChatRoom::getId, Function.identity()));
+
+        return CursorPageResponse.of(
+                requests, size,
+                r -> MyJoinRequestResponse.from(r, chatRoomMap.get(r.getChatRoomId())),
+                JoinRequest::getId);
     }
 
     // 락 해제 — isHeldByCurrentThread()/unlock() 자체가 Redis 장애로 던지는 RedisException이

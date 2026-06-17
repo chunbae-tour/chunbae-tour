@@ -18,9 +18,12 @@ public record CompanionPostGetListResponse(
         int currentMembers,
         CompanionPostStatus status,
         WriterInfo writer,
+        long viewCount,
+        long commentCount,
         LocalDateTime createdAt
 ) {
-    public static CompanionPostGetListResponse of(CompanionPost post, Account author, Long chatRoomId) {
+    public static CompanionPostGetListResponse of(
+            CompanionPost post, Account author, Long chatRoomId, long commentCount) {
         return new CompanionPostGetListResponse(
                 post.getId(),
                 chatRoomId,
@@ -32,6 +35,8 @@ public record CompanionPostGetListResponse(
                 post.getCurrentMembers(),
                 post.getStatus(),
                 WriterInfo.from(author),
+                post.getViewCount(),
+                commentCount,
                 post.getCreatedAt()
         );
     }

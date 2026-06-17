@@ -68,6 +68,9 @@ public class CompanionPost extends BaseEntity {
     @Column(nullable = false, length = 10)
     private CompanionPostStatus status;
 
+    @Column(name = "view_count", nullable = false)
+    private long viewCount = 0;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 

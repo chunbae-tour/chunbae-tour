@@ -12,16 +12,20 @@ public record FreePostGetOneResponse(
         String content,
         List<String> imageUrls,
         WriterInfo writer,
+        long viewCount,
+        long commentCount,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static FreePostGetOneResponse of(FreePost post, Account author) {
+    public static FreePostGetOneResponse of(FreePost post, Account author, long viewCount, long commentCount) {
         return new FreePostGetOneResponse(
                 post.getId(),
                 post.getTitle(),
                 post.getContent(),
                 post.getImageUrls(),
                 WriterInfo.from(author),
+                viewCount,
+                commentCount,
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );
