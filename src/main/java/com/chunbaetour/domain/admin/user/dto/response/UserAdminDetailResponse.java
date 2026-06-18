@@ -3,6 +3,7 @@ package com.chunbaetour.domain.admin.user.dto.response;
 import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.auth.AccountStatus;
 import com.chunbaetour.domain.auth.Role;
+import com.chunbaetour.domain.auth.profileimage.ProfileImageDisplaySupport;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 
@@ -32,7 +33,7 @@ public record UserAdminDetailResponse(
                 account.getId(),
                 account.getEmail(),
                 account.getNickname(),
-                account.getProfileImageUrl(),
+                ProfileImageDisplaySupport.toDisplayUrl(account.getProfileImageUrl()),
                 account.getRole(),
                 account.getStatus(),
                 account.getSuspendedReason(),

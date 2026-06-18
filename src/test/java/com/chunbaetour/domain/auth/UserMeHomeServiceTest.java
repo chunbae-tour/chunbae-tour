@@ -3,6 +3,7 @@ package com.chunbaetour.domain.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 import com.chunbaetour.domain.auth.dto.UserMeHomeResponse;
 import com.chunbaetour.domain.common.error.BusinessException;
@@ -43,8 +44,18 @@ class UserMeHomeServiceTest {
     @Mock
     private WalletRepository walletRepository;
 
+    @Mock
+    private com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
+
     @InjectMocks
     private UserMeHomeService userMeHomeService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubProfileResolver() {
+        org.mockito.Mockito.lenient()
+                .when(profileImageService.toDisplayUrl(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
 
     @Test
     void getHome_with_account_and_wallet_returns_combined_response() {
@@ -59,6 +70,9 @@ class UserMeHomeServiceTest {
         assertThat(response.profile().userId()).isEqualTo(USER_ID);
         assertThat(response.profile().email()).isEqualTo(EMAIL);
         assertThat(response.profile().nickname()).isEqualTo(NICKNAME);
+        // 표시 URL이 ProfileImageService.toDisplayUrl을 거쳐 매핑되는지(변환 우회 회귀 감지, KAN-320)
+        assertThat(response.profile().profileImageUrl()).isEqualTo(account.getProfileImageUrl()); // identity stub
+        then(profileImageService).should().toDisplayUrl(account.getProfileImageUrl());
         // wallet
         assertThat(response.wallet().balance()).isEqualTo(10_000L);
     }

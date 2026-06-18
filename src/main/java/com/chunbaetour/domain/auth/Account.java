@@ -400,6 +400,19 @@ public class Account {
     }
 
     /**
+     * 프로필 이미지 교체 (KAN-320) — 업로드한 S3 객체 키로 즉시 세팅하고 직전 값을 반환한다.
+     * 반환된 직전 값이 "우리가 올린 키"면 호출자(서비스)가 옛 객체를 정리한다(외부 OAuth URL이면 미삭제).
+     *
+     * @param objectKey 새 프로필 이미지 S3 객체 키
+     * @return 교체 직전 {@code profileImageUrl} 값(없으면 null) — 옛 객체 정리 판단용
+     */
+    public String changeProfileImage(String objectKey) {
+        String previous = this.profileImageUrl;
+        this.profileImageUrl = objectKey;
+        return previous;
+    }
+
+    /**
      * 회원 탈퇴 — soft delete (Epic C S1, KAN-143).
      *
      * <p>{@code deletedAt}과 {@code status=DELETED}를 같은 트랜잭션에서 동시에 세팅한다.

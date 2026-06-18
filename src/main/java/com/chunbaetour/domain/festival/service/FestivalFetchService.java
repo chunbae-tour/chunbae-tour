@@ -41,6 +41,12 @@ public class FestivalFetchService {
     private static final Duration LOCK_AT_MOST_FOR  = Duration.ofMinutes(30);
     private static final Duration LOCK_AT_LEAST_FOR = Duration.ofMinutes(1);
 
+    // 좌표 유효 범위 — WGS84: 위도 ±90, 경도 ±180
+    private static final BigDecimal LAT_MIN = BigDecimal.valueOf(-90);
+    private static final BigDecimal LAT_MAX = BigDecimal.valueOf(90);
+    private static final BigDecimal LNG_MIN = BigDecimal.valueOf(-180);
+    private static final BigDecimal LNG_MAX = BigDecimal.valueOf(180);
+
     private final TourApiClient      tourApiClient;
     private final FestivalRepository festivalRepository;
     private final FestivalCacheEvictUtil cacheEvict;
@@ -136,15 +142,15 @@ public class FestivalFetchService {
             }
             festival.updateFromApi(
                     item.fstvlNm(),
-                    item.fstvlCo(),          // 축제내용(소개) → description
+                    blankToNull(item.fstvlCo()),     // 축제내용(소개) → description
                     resolveRegion(item),
                     resolveAddress(item),
                     LocalDate.parse(item.fstvlStartDate()),
                     LocalDate.parse(item.fstvlEndDate()),
-                    null,                    // imageUrl — 표준데이터 미제공
-                    item.homepageUrl(),      // 홈페이지 → relatedUrl
-                    parseCoordinate(item.latitude()),
-                    parseCoordinate(item.longitude())
+                    null,                            // imageUrl — 표준데이터 미제공
+                    blankToNull(item.homepageUrl()), // 홈페이지 → relatedUrl
+                    parseCoordinate(item.latitude(), LAT_MIN, LAT_MAX),
+                    parseCoordinate(item.longitude(), LNG_MIN, LNG_MAX)
             );
             return UpsertResult.UPDATED;
         } catch (DataIntegrityViolationException e) {
@@ -165,32 +171,43 @@ public class FestivalFetchService {
         return Festival.createFromApi(
                 externalId,
                 item.fstvlNm(),
-                item.fstvlCo(),          // 축제내용(소개) → description
+                blankToNull(item.fstvlCo()),     // 축제내용(소개) → description
                 resolveRegion(item),
                 resolveAddress(item),
                 LocalDate.parse(item.fstvlStartDate()),
                 LocalDate.parse(item.fstvlEndDate()),
-                null,                    // imageUrl — 표준데이터 미제공
-                item.homepageUrl(),      // 홈페이지 → relatedUrl
-                parseCoordinate(item.latitude()),
-                parseCoordinate(item.longitude())
+                null,                            // imageUrl — 표준데이터 미제공
+                blankToNull(item.homepageUrl()), // 홈페이지 → relatedUrl
+                parseCoordinate(item.latitude(), LAT_MIN, LAT_MAX),
+                parseCoordinate(item.longitude(), LNG_MIN, LNG_MAX)
         );
     }
 
     /**
-     * 표준데이터 좌표 문자열 → BigDecimal. null/공백/형식 오류는 좌표 없음(null)으로 강등한다 —
+     * 표준데이터 좌표 문자열 → BigDecimal. null/공백/형식 오류/범위이탈은 좌표 없음(null)으로 강등한다 —
      * 좌표 하나 깨졌다고 축제 수집 전체를 실패시키지 않는다(소개/홈페이지 등 나머지 필드는 살린다).
+     * 범위(lat ±90, lng ±180)를 벗어난 값은 지도 오표시를 유발하므로 null로 떨군다.
      */
-    private BigDecimal parseCoordinate(String value) {
+    private BigDecimal parseCoordinate(String value, BigDecimal min, BigDecimal max) {
         if (value == null || value.isBlank()) {
             return null;
         }
         try {
-            return new BigDecimal(value.trim());
+            BigDecimal coord = new BigDecimal(value.trim());
+            if (coord.compareTo(min) < 0 || coord.compareTo(max) > 0) {
+                log.warn("Festival 좌표 범위 이탈 — null 처리: value={}", value);
+                return null;
+            }
+            return coord;
         } catch (NumberFormatException e) {
             log.warn("Festival 좌표 파싱 실패 — null 처리: value={}", value);
             return null;
         }
+    }
+
+    /** 표준데이터 텍스트 필드의 빈 문자열을 null로 정규화 — updateFromApi의 null-guard와 맞물려 기존값 보존. */
+    private String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value;
     }
 
     private boolean isValid(TourApiFestivalItem item) {

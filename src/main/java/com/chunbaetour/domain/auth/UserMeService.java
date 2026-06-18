@@ -49,6 +49,7 @@ public class UserMeService {
     private final LogoutTokenStore logoutTokenStore;
     private final UserLikeRepository userLikeRepository;
     private final SecurityAuditLogger auditLogger;
+    private final com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
     private final Clock clock;
 
     /**
@@ -65,7 +66,7 @@ public class UserMeService {
     public UserMeResponse getMe(Long userId) {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
-        return UserMeResponse.from(account);
+        return UserMeResponse.from(account, profileImageService.toDisplayUrl(account.getProfileImageUrl()));
     }
 
     /**
@@ -107,6 +108,8 @@ public class UserMeService {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
 
+        // 교체 전 직전 이미지 값 보관 — 프로필 이미지가 새 값으로 바뀌면 옛 소유 키를 커밋 후 회수(고아 방지).
+        String previousImage = account.getProfileImageUrl();
         account.updateProfile(request.nickname(), request.language(), request.profileImageUrl());
 
         try {
@@ -119,7 +122,12 @@ public class UserMeService {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
 
-        return UserMeResponse.from(account);
+        // PATCH로 profileImageUrl이 새 값(외부 URL)으로 교체된 경우, 옛 값이 우리 업로드 키면 옛 S3 객체 회수(고아 방지).
+        if (request.profileImageUrl() != null) {
+            profileImageService.cleanupReplacedKey(previousImage, userId);
+        }
+
+        return UserMeResponse.from(account, profileImageService.toDisplayUrl(account.getProfileImageUrl()));
     }
 
     /**
