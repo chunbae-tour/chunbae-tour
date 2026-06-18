@@ -15,11 +15,15 @@ public record FreePostGetListResponse(
         long commentCount,
         LocalDateTime createdAt
 ) {
-    public static FreePostGetListResponse of(FreePost post, Account author, long commentCount) {
+    /**
+     * @param imageUrls 저장된 객체 키를 presigned GET URL로 변환한 목록(PostImageService.presignAll, KAN-317).
+     */
+    public static FreePostGetListResponse of(
+            FreePost post, Account author, long commentCount, List<String> imageUrls) {
         return new FreePostGetListResponse(
                 post.getId(),
                 post.getTitle(),
-                post.getImageUrls(),
+                imageUrls,
                 WriterInfo.from(author),
                 post.getViewCount(),
                 commentCount,

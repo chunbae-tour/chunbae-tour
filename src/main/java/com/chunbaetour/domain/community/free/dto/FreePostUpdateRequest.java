@@ -7,6 +7,6 @@ import java.util.List;
 public record FreePostUpdateRequest(
         @Size(min = 1, max = 200) String title,
         @Size(min = 1, max = 5000) String content,
-        @Size(max = 10) List<@NotBlank @Size(max = 500) String> imageUrls
+        @Size(max = 5) List<@NotBlank @Size(max = 500) String> imageUrls
 ) {
 }

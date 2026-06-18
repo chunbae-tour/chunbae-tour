@@ -17,12 +17,17 @@ public record FreePostGetOneResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static FreePostGetOneResponse of(FreePost post, Account author, long viewCount, long commentCount) {
+    /**
+     * @param imageUrls 저장된 객체 키를 presigned GET URL로 변환한 목록(PostImageService.presignAll). 비공개 버킷이라
+     *                  엔티티의 키(post.getImageUrls())를 그대로 노출하지 않고 변환값을 담는다(KAN-317).
+     */
+    public static FreePostGetOneResponse of(
+            FreePost post, Account author, long viewCount, long commentCount, List<String> imageUrls) {
         return new FreePostGetOneResponse(
                 post.getId(),
                 post.getTitle(),
                 post.getContent(),
-                post.getImageUrls(),
+                imageUrls,
                 WriterInfo.from(author),
                 viewCount,
                 commentCount,
