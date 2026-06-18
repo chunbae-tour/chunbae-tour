@@ -4,6 +4,7 @@ import com.chunbaetour.domain.auth.Account;
 import com.chunbaetour.domain.community.common.WriterInfo;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.community.companion.entity.CompanionTargetType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -11,8 +12,9 @@ public record CompanionPostCreateResponse(
         Long postId,
         String title,
         String content,
-        Long placeId,
-        String placeName,
+        CompanionTargetType targetType,
+        Long targetId,
+        String targetName,
         LocalDate meetingDate,
         int maxMembers,
         int currentMembers,
@@ -27,8 +29,9 @@ public record CompanionPostCreateResponse(
                 post.getId(),
                 post.getTitle(),
                 post.getContent(),
-                post.getPlaceId(),
-                post.getPlaceName(),
+                post.getTargetType(),
+                post.getTargetId(),
+                post.getTargetName(),
                 post.getMeetingDate(),
                 post.getMaxMembers(),
                 post.getCurrentMembers(),

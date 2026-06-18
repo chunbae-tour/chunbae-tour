@@ -45,16 +45,20 @@ public class CompanionPostService {
     private final ChatRoomRepository chatRoomRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CommentCountService commentCountService;
+    private final CompanionTargetValidator targetValidator;
 
     @Transactional
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
         Account author = findAccount(authorId);
+        // 대상(PLACE/MARKET/FESTIVAL)이 실제 존재하는지 검증 — 지도 좌표를 못 받는 깨진 동행글 방지
+        targetValidator.validateExists(request.targetType(), request.targetId());
         CompanionPost post = CompanionPost.create(
                 authorId,
                 request.title(),
                 request.content(),
-                request.placeId(),
-                request.placeName(),
+                request.targetType(),
+                request.targetId(),
+                request.targetName(),
                 request.region(),
                 request.meetingDate(),
                 request.maxMembers()
@@ -117,10 +121,14 @@ public class CompanionPostService {
         if (!post.isOwnedBy(accountId)) {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
-        // 입력 불변식(placeId·placeName 쌍, maxMembers >= currentMembers)은 엔티티 update에서 검증
+        // 대상 변경 시(셋 모두 입력) 실존 검증 — 부분 입력은 엔티티 update에서 INVALID_REQUEST로 거부
+        if (request.targetType() != null && request.targetId() != null) {
+            targetValidator.validateExists(request.targetType(), request.targetId());
+        }
+        // 입력 불변식(target 3종 셋, maxMembers >= currentMembers)은 엔티티 update에서 검증
         post.update(
                 request.title(), request.content(),
-                request.placeId(), request.placeName(),
+                request.targetType(), request.targetId(), request.targetName(),
                 request.region(), request.meetingDate(),
                 request.maxMembers()
         );

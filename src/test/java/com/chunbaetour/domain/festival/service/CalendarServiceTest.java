@@ -170,6 +170,6 @@ class CalendarServiceTest {
     }
 
     private FestivalCacheData buildCacheData(Long id, LocalDate start, LocalDate end) {
-        return new FestivalCacheData(id, "축제" + id, null, "서울", "서울시", start, end, null, null, FestivalStatus.ACTIVE);
+        return new FestivalCacheData(id, "축제" + id, null, "서울", "서울시", start, end, null, null, null, null, FestivalStatus.ACTIVE);
     }
 }

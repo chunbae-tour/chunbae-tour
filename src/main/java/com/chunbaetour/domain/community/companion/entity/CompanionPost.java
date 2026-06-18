@@ -46,11 +46,16 @@ public class CompanionPost extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(name = "place_id", nullable = false)
-    private Long placeId;
+    // 만남 대상 다형 참조 (KAN-322) — PLACE/MARKET/FESTIVAL. 프론트가 targetType별 상세 API로 좌표 조회.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_type", nullable = false, length = 20)
+    private CompanionTargetType targetType;
 
-    @Column(name = "place_name", nullable = false, length = 100)
-    private String placeName;
+    @Column(name = "target_id", nullable = false)
+    private Long targetId;
+
+    @Column(name = "target_name", nullable = false, length = 100)
+    private String targetName;
 
     @Column(length = 50)
     private String region;
@@ -76,7 +81,7 @@ public class CompanionPost extends BaseEntity {
 
     public static CompanionPost create(
             Long authorId, String title, String content,
-            Long placeId, String placeName, String region,
+            CompanionTargetType targetType, Long targetId, String targetName, String region,
             LocalDate meetingDate, int maxMembers) {
         if (maxMembers < 2) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
@@ -85,8 +90,9 @@ public class CompanionPost extends BaseEntity {
         post.authorId = authorId;
         post.title = title;
         post.content = content;
-        post.placeId = placeId;
-        post.placeName = placeName;
+        post.targetType = targetType;
+        post.targetId = targetId;
+        post.targetName = targetName;
         post.region = region;
         post.meetingDate = meetingDate;
         post.maxMembers = maxMembers;
@@ -95,10 +101,13 @@ public class CompanionPost extends BaseEntity {
         return post;
     }
 
-    public void update(String title, String content, Long placeId, String placeName,
+    public void update(String title, String content,
+                       CompanionTargetType targetType, Long targetId, String targetName,
                        String region, LocalDate meetingDate, Integer maxMembers) {
-        // placeId·placeName은 쌍으로만 수정 가능 — 한쪽만 보내면 장소 정보 불일치
-        if ((placeId == null) != (placeName == null)) {
+        // 대상(targetType·targetId·targetName)은 셋이 함께여야 수정 — 일부만 보내면 대상 정보 불일치
+        boolean anyTarget = targetType != null || targetId != null || targetName != null;
+        boolean allTarget = targetType != null && targetId != null && targetName != null;
+        if (anyTarget && !allTarget) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         // 하한 2명(create와 동일) + 현재 인원 미만 불가 — 정원 1명짜리 동행글 방지
@@ -107,8 +116,11 @@ public class CompanionPost extends BaseEntity {
         }
         if (title != null) this.title = title;
         if (content != null) this.content = content;
-        if (placeId != null) this.placeId = placeId;
-        if (placeName != null) this.placeName = placeName;
+        if (allTarget) {
+            this.targetType = targetType;
+            this.targetId = targetId;
+            this.targetName = targetName;
+        }
         if (region != null) this.region = region;
         if (meetingDate != null) this.meetingDate = meetingDate;
         if (maxMembers != null) {

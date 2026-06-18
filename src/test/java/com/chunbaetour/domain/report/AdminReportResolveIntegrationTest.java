@@ -174,7 +174,9 @@ class AdminReportResolveIntegrationTest extends AbstractIntegrationTest {
             Account author = seedFactory.seed("author@test.com", PASSWORD, "작성자", Role.USER, AccountStatus.ACTIVE);
             Account reporter = seedFactory.seed("reporter2@test.com", PASSWORD, "신고자2", Role.USER, AccountStatus.ACTIVE);
             CompanionPost post = companionPostRepository.save(
-                    CompanionPost.create(author.getId(), "제목", "내용", 1L, "장소", "서울",
+                    CompanionPost.create(author.getId(), "제목", "내용",
+                            com.chunbaetour.domain.community.companion.entity.CompanionTargetType.PLACE,
+                            1L, "장소", "서울",
                             LocalDate.now().plusDays(7), 4));
             Report report = reportRepository.save(Report.create(
                     reporter.getId(), ReportTargetType.POST_COMPANION, post.getId(),
