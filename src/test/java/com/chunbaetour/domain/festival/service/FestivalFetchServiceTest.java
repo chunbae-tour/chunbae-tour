@@ -14,6 +14,7 @@ import com.chunbaetour.domain.festival.client.TourApiFestivalItem;
 import com.chunbaetour.domain.festival.dto.response.FestivalFetchResult;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalRepository;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -234,6 +235,30 @@ class FestivalFetchServiceTest {
         assertThat(saved.getLat()).isNull();   // "N/A" → null 강등
         assertThat(saved.getLng()).isNull();   // "" → null 강등
         assertThat(saved.getDescription()).isEqualTo("개막식+메인프로그램"); // 나머지 필드는 정상 저장
+    }
+
+    @Test
+    void 기존항목_좌표_파싱실패시_기존좌표_null로_정정() {
+        TourApiFestivalItem badCoord = new TourApiFestivalItem("5390000", "의령 리치리치 페스티벌",
+                "서동생활공원", "2026-10-02", "2026-10-05", "개막식+메인프로그램",
+                "주관", "경상남도 의령군 의령읍 의병로8길 44",
+                "https://www.uiryeong.go.kr/festival", "055-570-2512",
+                "N/A", "999", "경상남도 의령군");
+        Festival existing = Festival.createFromApi(
+                externalId("5390000"), "Old Name", "old description", "경상남도",
+                "경상남도 의령군 의령읍", LocalDate.of(2025, 10, 2),
+                LocalDate.of(2025, 10, 5), null, "https://old.example",
+                new BigDecimal("35.31545351"), new BigDecimal("128.2558931"));
+        given(tourApiClient.fetchAll()).willReturn(List.of(badCoord));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.of(existing));
+
+        FestivalFetchResult result = fetchService.fetchNow();
+
+        assertThat(result.updated()).isEqualTo(1);
+        assertThat(existing.getLat()).isNull();
+        assertThat(existing.getLng()).isNull();
+        assertThat(existing.getDescription()).isEqualTo("개막식+메인프로그램");
+        assertThat(existing.getRelatedUrl()).isEqualTo("https://www.uiryeong.go.kr/festival");
     }
 
     @Test
