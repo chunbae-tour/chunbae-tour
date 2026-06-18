@@ -36,6 +36,18 @@ class PostImageServiceTest {
                 new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0});
     }
 
+    /** PNG 매직바이트(89 50 4E 47 0D 0A 1A 0A)로 시작하는 더미. */
+    private MockMultipartFile png() {
+        return new MockMultipartFile("file", "x.png", "image/png",
+                new byte[]{(byte) 0x89, 'P', 'N', 'G', (byte) 0x0D, (byte) 0x0A, (byte) 0x1A, (byte) 0x0A});
+    }
+
+    /** WebP 매직바이트('RIFF' [4바이트 크기] 'WEBP')로 시작하는 더미. */
+    private MockMultipartFile webp() {
+        return new MockMultipartFile("file", "x.webp", "image/webp",
+                new byte[]{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'});
+    }
+
     // ── 업로드 검증 ──────────────────────────────────────────────
 
     @Test
@@ -48,6 +60,30 @@ class PostImageServiceTest {
 
         assertThat(res.objectKey()).isEqualTo("posts/free/7/uuid.jpg");
         assertThat(res.previewUrl()).isEqualTo("https://signed/preview");
+    }
+
+    @Test
+    @DisplayName("업로드 — PNG 매직바이트 일치 → 키 반환(happy-path)")
+    void upload_png_ok() {
+        given(imageStorage.upload(eq(USER_ID), any())).willReturn("posts/free/7/uuid.png");
+        given(imageStorage.presignedGetUrl("posts/free/7/uuid.png")).willReturn("https://signed/png");
+
+        PostImageUploadResponse res = postImageService.upload(USER_ID, png());
+
+        assertThat(res.objectKey()).isEqualTo("posts/free/7/uuid.png");
+        assertThat(res.previewUrl()).isEqualTo("https://signed/png");
+    }
+
+    @Test
+    @DisplayName("업로드 — WebP 매직바이트 일치 → 키 반환(happy-path)")
+    void upload_webp_ok() {
+        given(imageStorage.upload(eq(USER_ID), any())).willReturn("posts/free/7/uuid.webp");
+        given(imageStorage.presignedGetUrl("posts/free/7/uuid.webp")).willReturn("https://signed/webp");
+
+        PostImageUploadResponse res = postImageService.upload(USER_ID, webp());
+
+        assertThat(res.objectKey()).isEqualTo("posts/free/7/uuid.webp");
+        assertThat(res.previewUrl()).isEqualTo("https://signed/webp");
     }
 
     @Test
@@ -153,6 +189,19 @@ class PostImageServiceTest {
 
         assertThat(res.objectKey()).isEqualTo("posts/free/7/uuid.jpg");
         assertThat(res.previewUrl()).isNull();
+    }
+
+    @Test
+    @DisplayName("upload — preview presign이 EXTERNAL 아닌 에러면 강등 없이 전파")
+    void upload_presignNonExternal_propagates() {
+        given(imageStorage.upload(eq(USER_ID), any())).willReturn("posts/free/7/uuid.jpg");
+        given(imageStorage.presignedGetUrl("posts/free/7/uuid.jpg"))
+                .willThrow(new BusinessException(ErrorCode.INVALID_REQUEST));
+
+        assertThatThrownBy(() -> postImageService.upload(USER_ID, jpeg()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     // ── presign 변환 ────────────────────────────────────────────

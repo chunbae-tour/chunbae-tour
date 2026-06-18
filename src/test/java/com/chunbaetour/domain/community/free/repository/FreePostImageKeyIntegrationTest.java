@@ -35,4 +35,21 @@ class FreePostImageKeyIntegrationTest extends AbstractIntegrationTest {
         assertThat(freePostRepository.existsByImageKey("posts/free/1/b.jpg")).isTrue();
         assertThat(freePostRepository.existsByImageKey("posts/free/1/orphan.jpg")).isFalse();
     }
+
+    @Test
+    @DisplayName("existsByImageKey — DELETED 글의 키는 false(회수 대상), HIDDEN 글의 키는 true(복원 대비 유지)")
+    void existsByImageKey_excludesDeletedButKeepsHidden() {
+        FreePost deleted = FreePost.create(1L, "삭제글", "내용", List.of("posts/free/1/del.jpg"));
+        deleted.delete();
+        freePostRepository.save(deleted);
+
+        FreePost hidden = FreePost.create(1L, "숨김글", "내용", List.of("posts/free/1/hid.jpg"));
+        hidden.hide();
+        freePostRepository.save(hidden);
+
+        // DELETED는 복원 불가 → 참조에서 제외(고아 회수 가능)
+        assertThat(freePostRepository.existsByImageKey("posts/free/1/del.jpg")).isFalse();
+        // HIDDEN은 복원 가능 → 참조 유지
+        assertThat(freePostRepository.existsByImageKey("posts/free/1/hid.jpg")).isTrue();
+    }
 }

@@ -132,6 +132,8 @@ public class PostImageService {
         if (file.isEmpty()) {
             throw new BusinessException(ErrorCode.POST_IMAGE_FILE_EMPTY);
         }
+        // 실 HTTP 경계에선 multipart max-file-size(10MB)가 먼저 차단 → MaxUploadSizeExceededException → FILE_TOO_LARGE.
+        // 따라서 이 분기(COMMUNITY_015)는 멀티파트 파싱을 우회하는 내부/테스트 호출용 방어선이다(defense-in-depth).
         if (file.getSize() > MAX_FILE_SIZE) {
             throw new BusinessException(ErrorCode.POST_IMAGE_FILE_TOO_LARGE);
         }
