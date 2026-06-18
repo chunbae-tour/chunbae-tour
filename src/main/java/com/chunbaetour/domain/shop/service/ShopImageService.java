@@ -99,6 +99,23 @@ public class ShopImageService {
         shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
+        return presignImages(shopId);
+    }
+
+    /**
+     * 공개 조회용 가게 사진 목록 (KAN-323). 소유자 인증 없이 shopId로 조회·presign한다 —
+     * 일반/비로그인 사용자가 가게 공개 정보({@link ShopService#getShopInfo})에서 대표·갤러리를 보기 위함.
+     * 가게 존재·상태(SUSPENDED 차단/CLOSED 허용) 가드는 호출측 getShopInfo가 이미 수행하므로 여기서는 키 presign만 담당한다.
+     */
+    public List<ShopImageItemResponse> getPublicImages(Long shopId) {
+        return presignImages(shopId);
+    }
+
+    /**
+     * shopId의 사진 행을 PROFILE 우선 + 갤러리 정렬순으로 조회해 presigned URL로 변환한다.
+     * 소유권/상태 가드는 호출측 책임 — 본 메서드는 presign 파이프라인(IDOR 2중 방어 + graceful degrade)만 담당한다.
+     */
+    private List<ShopImageItemResponse> presignImages(Long shopId) {
         List<ShopImageItemResponse> result = new ArrayList<>();
         for (ShopImage image : shopImageRepository.findByShopIdOrderByTypeDescSortOrderAscIdAsc(shopId)) {
             // IDOR 2중 방어 — 정상 경로면 업로드가 shops/{shopId}/ prefix로 키를 생성하므로 항상 통과.

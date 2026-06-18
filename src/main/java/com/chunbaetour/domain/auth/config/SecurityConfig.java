@@ -199,6 +199,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
                         // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
                         .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
+                        // 가게 공개 공지 조회 — 비로그인 접근 가능 (KAN-323). /shops/* 단일 세그먼트 매칭으로 안 걸려 별도 등록 필수
+                        .requestMatchers(HttpMethod.GET, "/api/v1/shops/*/notices").permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
                         // 스토어 구매·주문내역은 USER 전용. ADMIN/MERCHANT는 store 이용 시 USER로 가입해야 함.

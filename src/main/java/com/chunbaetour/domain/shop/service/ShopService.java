@@ -11,6 +11,7 @@ import com.chunbaetour.domain.shop.dto.request.ShopUpdateRequest;
 import com.chunbaetour.domain.shop.dto.response.AdminShopMarketResponse;
 import com.chunbaetour.domain.shop.dto.response.AdminShopPlaceResponse;
 import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopImageItemResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
@@ -24,6 +25,7 @@ import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
 import com.chunbaetour.domain.shop.type.BusinessStatus;
 import com.chunbaetour.domain.shop.storage.ShopImageKeys;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
+import com.chunbaetour.domain.shop.type.ShopImageType;
 import com.chunbaetour.domain.shop.type.ShopStatus;
 import java.util.ArrayList;
 import tools.jackson.core.JacksonException;
@@ -59,6 +61,7 @@ public class ShopService {
     private final PlaceRepository placeRepository;
     private final TraditionalMarketRepository traditionalMarketRepository;
     private final ShopImageStorage imageStorage;
+    private final ShopImageService shopImageService;
     private final Clock clock;
 
     /**
@@ -204,7 +207,19 @@ public class ShopService {
                 ? BusinessHours.statusAt(shop.getOperatingHours(), LocalDateTime.now(clock.withZone(SEOUL_ZONE)))
                 : BusinessStatus.CLOSED;
 
-        return ShopInfoResponse.from(shop, menus, businessStatus);
+        // 공개 뷰 대표·갤러리 사진(KAN-323) — 소유자 인증 없이 presign. SUSPENDED는 위에서 차단, CLOSED는 여기 도달해 노출.
+        // PROFILE 1장 → representativeImageUrl, GALLERY → images. 사진 없으면 각각 null / 빈 리스트.
+        List<ShopImageItemResponse> shopImages = shopImageService.getPublicImages(shopId);
+        String representativeImageUrl = shopImages.stream()
+                .filter(img -> img.type() == ShopImageType.PROFILE)
+                .map(ShopImageItemResponse::url)
+                .findFirst()
+                .orElse(null);
+        List<ShopImageItemResponse> gallery = shopImages.stream()
+                .filter(img -> img.type() == ShopImageType.GALLERY)
+                .toList();
+
+        return ShopInfoResponse.from(shop, menus, businessStatus, representativeImageUrl, gallery);
     }
 
     /**

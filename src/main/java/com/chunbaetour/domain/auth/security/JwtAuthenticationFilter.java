@@ -88,6 +88,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private static final List<String> PUBLIC_GET_PATH_PATTERNS = List.of(
             "/api/v1/shops/*",
+            // 가게 공개 공지 조회 — 비로그인 허용 (KAN-323). /shops/* 단일 세그먼트로 안 걸려 별도 등록 (SecurityConfig와 동기화)
+            "/api/v1/shops/*/notices",
             // 관광지 조회/추천 API — 비로그인 허용 (isLiked는 서비스 단에서 userId null 체크)
             "/api/v1/places/**",
             "/api/v1/recommend/**",
