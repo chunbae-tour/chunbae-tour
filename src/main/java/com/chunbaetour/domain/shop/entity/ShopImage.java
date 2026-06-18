@@ -30,7 +30,9 @@ import lombok.NoArgsConstructor;
         name = "shop_images",
         indexes = {
                 // 가게별 조회(목록 정렬·소유권 검증) 주 경로
-                @Index(name = "idx_shop_images_shop_id_id", columnList = "shop_id, id")
+                @Index(name = "idx_shop_images_shop_id_id", columnList = "shop_id, id"),
+                // 고아 reconcile(existsByObjectKey) 풀스캔 방지 + 키 중복 방지(UUID라 자연 유일) (KAN-319)
+                @Index(name = "uq_shop_images_object_key", columnList = "object_key", unique = true)
         }
 )
 @Getter

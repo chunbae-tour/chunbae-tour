@@ -49,7 +49,12 @@ public class FreePost extends BaseEntity {
     // 페이지 최대 크기 변경 시 함께 조정 필요
     @BatchSize(size = 100)
     @ElementCollection(fetch = FetchType.LAZY)
-    @CollectionTable(name = "free_post_images", joinColumns = @JoinColumn(name = "post_id"))
+    @CollectionTable(
+            name = "free_post_images",
+            joinColumns = @JoinColumn(name = "post_id"),
+            // 고아 reconcile(existsByImageKey)이 image_url을 직접 조회 → 풀스캔 방지 인덱스 (KAN-317)
+            indexes = @Index(name = "idx_free_post_images_image_url", columnList = "image_url")
+    )
     @OrderColumn(name = "sort_order")
     @Column(name = "image_url", length = 500)
     private List<String> imageUrls = new ArrayList<>();

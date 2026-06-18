@@ -34,6 +34,7 @@ public class UserMeHomeService {
 
     private final AccountRepository accountRepository;
     private final WalletRepository walletRepository;
+    private final com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
 
     /**
      * 마이페이지 홈 통합 응답.
@@ -53,6 +54,7 @@ public class UserMeHomeService {
         // wallet 없는 신규 가입자 fallback — UserMeHomeResponse.of가 빈 Optional을 balance=0으로 변환.
         Optional<Wallet> wallet = walletRepository.findByUserId(userId);
 
-        return UserMeHomeResponse.of(account, wallet);
+        return UserMeHomeResponse.of(account, wallet,
+                profileImageService.toDisplayUrl(account.getProfileImageUrl()));
     }
 }

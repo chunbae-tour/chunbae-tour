@@ -53,12 +53,16 @@ public record UserMeResponse(
      *
      * <p>엔티티 → DTO 변환은 본 메서드만 사용한다. 다른 곳에서 필드 누락 또는 민감 정보 노출 실수를 방지.
      */
-    public static UserMeResponse from(Account account) {
+    /**
+     * @param profileImageUrl 표시용 프로필 이미지 URL — 우리 업로드 키는 presigned URL, 외부 OAuth URL은 그대로
+     *                        (ProfileImageService.toDisplayUrl 변환값, KAN-320). 엔티티의 raw 키를 직접 넣지 않는다.
+     */
+    public static UserMeResponse from(Account account, String profileImageUrl) {
         return new UserMeResponse(
                 account.getId(),
                 account.getEmail(),
                 account.getNickname(),
-                account.getProfileImageUrl(),
+                profileImageUrl,
                 account.getLanguage(),
                 account.getCompanionScore(),
                 account.getCompanionReviewCount(),

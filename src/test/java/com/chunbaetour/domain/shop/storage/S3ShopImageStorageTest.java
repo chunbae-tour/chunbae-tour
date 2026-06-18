@@ -109,4 +109,46 @@ class S3ShopImageStorageTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
     }
+
+    @Test
+    @DisplayName("listObjects — ListObjectsV2 페이지네이션(isTruncated) 끝까지 순회해 전 객체 수집 (KAN-319)")
+    void listObjects_paginatesUntilNotTruncated() {
+        java.time.Instant t1 = java.time.Instant.parse("2026-06-17T10:00:00Z");
+        java.time.Instant t2 = java.time.Instant.parse("2026-06-17T11:00:00Z");
+        software.amazon.awssdk.services.s3.model.ListObjectsV2Response page1 =
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Response.builder()
+                        .contents(software.amazon.awssdk.services.s3.model.S3Object.builder()
+                                .key("shops/10/a.jpg").lastModified(t1).build())
+                        .isTruncated(true).nextContinuationToken("TOKEN2").build();
+        software.amazon.awssdk.services.s3.model.ListObjectsV2Response page2 =
+                software.amazon.awssdk.services.s3.model.ListObjectsV2Response.builder()
+                        .contents(software.amazon.awssdk.services.s3.model.S3Object.builder()
+                                .key("shops/20/b.jpg").lastModified(t2).build())
+                        .isTruncated(false).build();
+        // 첫 호출=page1(truncated) → 둘째 호출=page2(끝). 연속 반환으로 페이지네이션 루프 검증.
+        given(s3Client.listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class)))
+                .willReturn(page1, page2);
+
+        var result = storage().listObjects("shops/");
+
+        assertThat(result).extracting(ShopImageObjectInfo::objectKey)
+                .containsExactly("shops/10/a.jpg", "shops/20/b.jpg");
+        assertThat(result).extracting(ShopImageObjectInfo::lastModified)
+                .containsExactly(t1, t2);
+        // 정확히 2회 호출(truncated 1 + 종료 1)
+        verify(s3Client, org.mockito.Mockito.times(2))
+                .listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class));
+    }
+
+    @Test
+    @DisplayName("listObjects — S3 오류 → EXTERNAL_SERVICE_ERROR 매핑(bucket/prefix 문맥 로깅 후) (KAN-319)")
+    void listObjects_s3Error_mapsToExternalServiceError() {
+        given(s3Client.listObjectsV2(any(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.class)))
+                .willThrow(S3Exception.builder().message("boom").build());
+
+        assertThatThrownBy(() -> storage().listObjects("shops/"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXTERNAL_SERVICE_ERROR);
+    }
 }
