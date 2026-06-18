@@ -152,14 +152,15 @@ public class Festival extends BaseEntity {
             BigDecimal lat, BigDecimal lng) {
         validateInvariant(name, region, address, startDate, endDate, this.status);
         this.name = name;
-        this.description = description;
         this.region = region;
         this.address = address;
         this.startDate = startDate;
         this.endDate = endDate;
+        // 소개·홈페이지·이미지·좌표는 API 수집값으로 갱신하되, 이번 응답에 없으면(null) 기존값 보존
+        // — imageUrl·lat/lng와 동일 정책. 표준데이터가 소개/홈페이지를 비워 보낼 때 기존 보완값 유실 방지.
+        if (description != null) this.description = description;
         if (imageUrl != null) this.imageUrl = imageUrl;
-        this.relatedUrl = relatedUrl;
-        // 좌표는 API 수집값으로 갱신하되, 이번 응답에 좌표가 없으면(null) 기존값 보존 — 지오코딩 보완분 유실 방지
+        if (relatedUrl != null) this.relatedUrl = relatedUrl;
         if (lat != null) this.lat = lat;
         if (lng != null) this.lng = lng;
         // source, externalId, status, category 유지
