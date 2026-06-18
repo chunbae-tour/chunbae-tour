@@ -3,9 +3,14 @@ package com.chunbaetour.domain.community.companion.service;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import com.chunbaetour.domain.community.companion.entity.CompanionTargetType;
+import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.repository.FestivalRepository;
+import com.chunbaetour.domain.festival.type.FestivalStatus;
+import com.chunbaetour.domain.market.entity.TraditionalMarket;
 import com.chunbaetour.domain.market.repository.TraditionalMarketRepository;
+import com.chunbaetour.domain.place.Place;
 import com.chunbaetour.domain.place.repository.PlaceRepository;
+import com.chunbaetour.domain.place.type.PlaceStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -24,18 +29,23 @@ public class CompanionTargetValidator {
     private final TraditionalMarketRepository traditionalMarketRepository;
     private final FestivalRepository festivalRepository;
 
-    public void validateExists(CompanionTargetType targetType, Long targetId) {
-        boolean exists = switch (targetType) {
-            case PLACE -> placeRepository.existsById(targetId);
-            case MARKET -> traditionalMarketRepository.existsById(targetId);
-            case FESTIVAL -> festivalRepository.existsById(targetId);
+    public ValidatedCompanionTarget validate(CompanionTargetType targetType, Long targetId) {
+        return switch (targetType) {
+            case PLACE -> {
+                Place place = placeRepository.findByIdAndStatus(targetId, PlaceStatus.ACTIVE)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.PLACE_NOT_FOUND));
+                yield new ValidatedCompanionTarget(targetType, targetId, place.getName());
+            }
+            case MARKET -> {
+                TraditionalMarket market = traditionalMarketRepository.findById(targetId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.MARKET_NOT_FOUND));
+                yield new ValidatedCompanionTarget(targetType, targetId, market.getName());
+            }
+            case FESTIVAL -> {
+                Festival festival = festivalRepository.findByIdAndStatus(targetId, FestivalStatus.ACTIVE)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND));
+                yield new ValidatedCompanionTarget(targetType, targetId, festival.getName());
+            }
         };
-        if (!exists) {
-            throw new BusinessException(switch (targetType) {
-                case PLACE -> ErrorCode.PLACE_NOT_FOUND;
-                case MARKET -> ErrorCode.MARKET_NOT_FOUND;
-                case FESTIVAL -> ErrorCode.FESTIVAL_NOT_FOUND;
-            });
-        }
     }
 }

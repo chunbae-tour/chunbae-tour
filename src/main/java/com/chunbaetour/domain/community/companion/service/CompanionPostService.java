@@ -51,14 +51,14 @@ public class CompanionPostService {
     public CompanionPostCreateResponse create(Long authorId, CompanionPostCreateRequest request) {
         Account author = findAccount(authorId);
         // 대상(PLACE/MARKET/FESTIVAL)이 실제 존재하는지 검증 — 지도 좌표를 못 받는 깨진 동행글 방지
-        targetValidator.validateExists(request.targetType(), request.targetId());
+        ValidatedCompanionTarget target = targetValidator.validate(request.targetType(), request.targetId());
         CompanionPost post = CompanionPost.create(
                 authorId,
                 request.title(),
                 request.content(),
-                request.targetType(),
-                request.targetId(),
-                request.targetName(),
+                target.targetType(),
+                target.targetId(),
+                target.targetName(),
                 request.region(),
                 request.meetingDate(),
                 request.maxMembers()
@@ -122,13 +122,16 @@ public class CompanionPostService {
             throw new BusinessException(ErrorCode.POST_UPDATE_FORBIDDEN);
         }
         // 대상 변경 시(셋 모두 입력) 실존 검증 — 부분 입력은 엔티티 update에서 INVALID_REQUEST로 거부
-        if (request.targetType() != null && request.targetId() != null) {
-            targetValidator.validateExists(request.targetType(), request.targetId());
+        ValidatedCompanionTarget target = null;
+        if (request.targetType() != null && request.targetId() != null && request.targetName() != null) {
+            target = targetValidator.validate(request.targetType(), request.targetId());
         }
         // 입력 불변식(target 3종 셋, maxMembers >= currentMembers)은 엔티티 update에서 검증
         post.update(
                 request.title(), request.content(),
-                request.targetType(), request.targetId(), request.targetName(),
+                target != null ? target.targetType() : request.targetType(),
+                target != null ? target.targetId() : request.targetId(),
+                target != null ? target.targetName() : request.targetName(),
                 request.region(), request.meetingDate(),
                 request.maxMembers()
         );

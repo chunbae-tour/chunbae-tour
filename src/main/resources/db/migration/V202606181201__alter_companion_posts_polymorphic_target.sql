@@ -11,7 +11,8 @@ ALTER TABLE companion_posts
 UPDATE companion_posts
 SET target_type = 'PLACE',
     target_id   = place_id,
-    target_name = place_name;
+    target_name = place_name
+WHERE place_id IS NOT NULL;
 
 -- Step 3: NOT NULL 제약 적용
 ALTER TABLE companion_posts

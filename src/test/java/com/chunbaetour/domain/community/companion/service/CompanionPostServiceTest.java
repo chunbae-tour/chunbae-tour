@@ -81,15 +81,18 @@ class CompanionPostServiceTest {
             ReflectionTestUtils.setField(p, "id", POST_ID);
             return p;
         });
+        given(targetValidator.validate(CompanionTargetType.PLACE, 100L))
+                .willReturn(new ValidatedCompanionTarget(CompanionTargetType.PLACE, 100L, "서버장소명"));
         CompanionPostCreateRequest request = new CompanionPostCreateRequest(
-                "제목", "내용", CompanionTargetType.PLACE, 100L, "장소명", "서울", MEETING_DATE, 4);
+                "제목", "내용", CompanionTargetType.PLACE, 100L, "클라이언트장소명", "서울", MEETING_DATE, 4);
 
         CompanionPostCreateResponse response = postService.create(AUTHOR_ID, request);
 
         assertThat(response.postId()).isEqualTo(POST_ID);
         assertThat(response.targetType()).isEqualTo(CompanionTargetType.PLACE);
         assertThat(response.targetId()).isEqualTo(100L);
-        then(targetValidator).should().validateExists(CompanionTargetType.PLACE, 100L);
+        assertThat(response.targetName()).isEqualTo("서버장소명");
+        then(targetValidator).should().validate(CompanionTargetType.PLACE, 100L);
         then(postRepository).should().save(any(CompanionPost.class));
     }
 
@@ -99,7 +102,7 @@ class CompanionPostServiceTest {
         Account author = org.mockito.Mockito.mock(Account.class);
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
         org.mockito.BDDMockito.willThrow(new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND))
-                .given(targetValidator).validateExists(CompanionTargetType.FESTIVAL, 777L);
+                .given(targetValidator).validate(CompanionTargetType.FESTIVAL, 777L);
         CompanionPostCreateRequest request = new CompanionPostCreateRequest(
                 "제목", "내용", CompanionTargetType.FESTIVAL, 777L, "축제명", "서울", MEETING_DATE, 4);
 
@@ -322,14 +325,17 @@ class CompanionPostServiceTest {
         Account author = mockAccount(AUTHOR_ID);
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(targetValidator.validate(CompanionTargetType.MARKET, 55L))
+                .willReturn(new ValidatedCompanionTarget(CompanionTargetType.MARKET, 55L, "서버시장명"));
         CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
-                null, null, CompanionTargetType.MARKET, 55L, "새시장", null, null, null);
+                null, null, CompanionTargetType.MARKET, 55L, "클라이언트시장명", null, null, null);
 
         CompanionPostUpdateResponse response = postService.update(AUTHOR_ID, POST_ID, request);
 
-        then(targetValidator).should().validateExists(CompanionTargetType.MARKET, 55L);
+        then(targetValidator).should().validate(CompanionTargetType.MARKET, 55L);
         assertThat(response.targetType()).isEqualTo(CompanionTargetType.MARKET);
         assertThat(response.targetId()).isEqualTo(55L);
+        assertThat(response.targetName()).isEqualTo("서버시장명");
     }
 
     @Test
@@ -370,6 +376,21 @@ class CompanionPostServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
+        then(targetValidator).should(org.mockito.Mockito.never()).validate(any(), any());
+    }
+
+    @Test
+    void update_targetType_targetId만_보내면_검증기_호출없이_INVALID_REQUEST() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
+                null, null, CompanionTargetType.MARKET, 55L, null, null, null, null);
+
+        assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+        then(targetValidator).should(org.mockito.Mockito.never()).validate(any(), any());
     }
 
     @Test
