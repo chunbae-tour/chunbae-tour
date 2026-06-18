@@ -350,13 +350,114 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/companion-reviews 호출 시 403 AUTH_007")
-    void merchantToken_callingCompanionReviews_returns_403() throws Exception {
-        // companion-reviews는 USER 전용 — MERCHANT 차단 검증
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/companion-reviews → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingCompanionReviews_passesSecurity() throws Exception {
+        // KAN-324: 상인도 이용자 → 동행리뷰 등록 허용. 보안 통과 후 빈 바디라 검증 단계(400)로 떨어짐 = 인가는 지났다는 증거
         seedFactory.seedMerchant("merchant-cr@example.com", PASSWORD, "상인닉-리뷰");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-cr@example.com").accessToken();
 
-        mockMvc.perform(post("/api/v1/companion-reviews")
+        int statusCode = mockMvc.perform(post("/api/v1/companion-reviews")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andReturn().getResponse().getStatus();
+
+        // 403(AUTH_007)이 아니어야 한다 — 다운스트림 검증 결과(400 등)는 무관
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/chat/rooms → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingChat_passesSecurity() throws Exception {
+        seedFactory.seedMerchant("merchant-chat@example.com", PASSWORD, "상인닉-채팅");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-chat@example.com").accessToken();
+
+        int statusCode = mockMvc.perform(get("/api/v1/chat/rooms")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/community/posts/free → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingCommunityWrite_passesSecurity() throws Exception {
+        seedFactory.seedMerchant("merchant-comm@example.com", PASSWORD, "상인닉-커뮤니티");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-comm@example.com").accessToken();
+
+        int statusCode = mockMvc.perform(post("/api/v1/community/posts/free")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/places/{id}/like → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingPlaceLike_passesSecurity() throws Exception {
+        seedFactory.seedMerchant("merchant-like@example.com", PASSWORD, "상인닉-찜");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-like@example.com").accessToken();
+
+        int statusCode = mockMvc.perform(post("/api/v1/places/999999/like")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/search → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingSearch_passesSecurity() throws Exception {
+        seedFactory.seedMerchant("merchant-search@example.com", PASSWORD, "상인닉-검색");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-search@example.com").accessToken();
+
+        int statusCode = mockMvc.perform(post("/api/v1/search")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/festivals/{id}/like → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingFestivalLike_passesSecurity() throws Exception {
+        // places like와 별도 requestMatchers 라인 — 독립 검증 필요
+        seedFactory.seedMerchant("merchant-flike@example.com", PASSWORD, "상인닉-축제찜");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-flike@example.com").accessToken();
+
+        int statusCode = mockMvc.perform(post("/api/v1/festivals/999999/like")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/traditional-markets/{id}/like → 보안 통과(403 아님, KAN-324)")
+    void merchantToken_callingMarketLike_passesSecurity() throws Exception {
+        // places·festivals like와 별도 requestMatchers 라인 — 독립 검증 필요
+        seedFactory.seedMerchant("merchant-mlike@example.com", PASSWORD, "상인닉-시장찜");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-mlike@example.com").accessToken();
+
+        int statusCode = mockMvc.perform(post("/api/v1/traditional-markets/999999/like")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andReturn().getResponse().getStatus();
+
+        assertThat(statusCode).isNotEqualTo(403);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 /api/v1/payments/** 호출 시 403 AUTH_007 (누수 회귀 가드, KAN-324)")
+    void merchantToken_callingPayments_returns_403() throws Exception {
+        // KAN-324에서 열지 않은 USER 전용 경로로 권한이 새지 않았는지 가드 — 결제는 여전히 MERCHANT 차단
+        seedFactory.seedMerchant("merchant-pay@example.com", PASSWORD, "상인닉-결제");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-pay@example.com").accessToken();
+
+        mockMvc.perform(post("/api/v1/payments/qr")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
