@@ -3,6 +3,8 @@ package com.chunbaetour.domain.community.free.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -38,6 +40,7 @@ class FreePostServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock CommentCountService commentCountService;
+    @Mock PostImageService postImageService;
     @InjectMocks FreePostService postService;
 
     private static final Long AUTHOR_ID = 1L;
@@ -48,6 +51,12 @@ class FreePostServiceTest {
         ReflectionTestUtils.setField(post, "id", id);
         if (status == FreePostStatus.DELETED) post.delete();
         if (status == FreePostStatus.HIDDEN)  post.hide();
+        return post;
+    }
+
+    private FreePost buildPostWithImages(Long id, List<String> keys) {
+        FreePost post = FreePost.create(AUTHOR_ID, "제목", "내용", keys);
+        ReflectionTestUtils.setField(post, "id", id);
         return post;
     }
 
@@ -68,11 +77,15 @@ class FreePostServiceTest {
             ReflectionTestUtils.setField(p, "id", POST_ID);
             return p;
         });
+        given(postImageService.presignAll(anyList())).willReturn(List.of());
 
         FreePostGetOneResponse response = postService.create(AUTHOR_ID,
                 new FreePostCreateRequest("제목", "내용", List.of()));
 
         assertThat(response.postId()).isEqualTo(POST_ID);
+        // IDOR 방어(키 검증)·presign 변환이 실제로 호출되는지 고정 — 제거 시 회귀 감지
+        then(postImageService).should().validateOwnedKeys(eq(AUTHOR_ID), eq(List.of()));
+        then(postImageService).should().presignAll(anyList());
         then(postRepository).should().save(any(FreePost.class));
     }
 
@@ -180,11 +193,29 @@ class FreePostServiceTest {
         Account author = mockAccount(AUTHOR_ID);
         given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(postImageService.presignAll(anyList())).willReturn(List.of());
 
         FreePostGetOneResponse response = postService.update(AUTHOR_ID, POST_ID,
                 new FreePostUpdateRequest("새제목", "새내용", null));
 
         assertThat(response.title()).isEqualTo("새제목");
+        // 키 검증·presign 변환 호출 고정(회귀 가드)
+        then(postImageService).should().validateOwnedKeys(eq(AUTHOR_ID), any());
+        then(postImageService).should().presignAll(anyList());
+    }
+
+    @Test
+    void update_이미지교체_빠진_옛키_정리() {
+        // 기존 [a,b] → 새 [a]로 교체 → b는 고아 → deleteAllAfterCommit([b])
+        FreePost post = buildPostWithImages(POST_ID, List.of("posts/free/1/a.jpg", "posts/free/1/b.jpg"));
+        Account author = mockAccount(AUTHOR_ID);
+        given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+
+        postService.update(AUTHOR_ID, POST_ID,
+                new FreePostUpdateRequest(null, null, List.of("posts/free/1/a.jpg")));
+
+        then(postImageService).should().deleteAllAfterCommit(List.of("posts/free/1/b.jpg"));
     }
 
     @Test
@@ -203,13 +234,16 @@ class FreePostServiceTest {
     // ── delete ────────────────────────────────────────────────────────────
 
     @Test
-    void delete_성공() {
-        FreePost post = buildPost(POST_ID, FreePostStatus.ACTIVE);
-        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+    void delete_성공_이미지정리() {
+        FreePost post = buildPostWithImages(POST_ID, List.of("posts/free/1/a.jpg", "posts/free/1/b.jpg"));
+        given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
 
         postService.delete(AUTHOR_ID, POST_ID);
 
         assertThat(post.getStatus()).isEqualTo(FreePostStatus.DELETED);
+        // 삭제된 글의 이미지 객체는 커밋 후 정리
+        then(postImageService).should().deleteAllAfterCommit(
+                List.of("posts/free/1/a.jpg", "posts/free/1/b.jpg"));
         then(eventPublisher).should().publishEvent(
                 new com.chunbaetour.domain.community.common.event.PostDeletedEvent(
                         POST_ID, com.chunbaetour.domain.community.common.PostType.FREE));
@@ -219,7 +253,7 @@ class FreePostServiceTest {
     void delete_타인_POST_DELETE_FORBIDDEN() {
         Long otherId = 99L;
         FreePost post = buildPost(POST_ID, FreePostStatus.ACTIVE);
-        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        given(postRepository.findByIdWithImages(POST_ID)).willReturn(Optional.of(post));
 
         assertThatThrownBy(() -> postService.delete(otherId, POST_ID))
                 .isInstanceOf(BusinessException.class)

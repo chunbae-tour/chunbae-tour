@@ -15,8 +15,9 @@ public record TraditionalMarketDetailResponse(
         Long marketId,
         String name,
         String address,
-        BigDecimal lat,
-        BigDecimal lng,
+        // 지도 공통 매핑 위해 latitude/longitude로 통일 노출(엔티티 컬럼은 lat/lng) — KAN-322
+        BigDecimal latitude,
+        BigDecimal longitude,
         String marketType,
         String phoneNumber,
         String homepageUrl,
@@ -49,7 +50,8 @@ public record TraditionalMarketDetailResponse(
 
     private static String region(String sido, String sigungu) {
         if (sido == null || sido.isBlank()) {
-            return sigungu;
+            // sido·sigungu 모두 비어도 null이 아닌 "" 반환 — 클라이언트 null 처리 부담 제거 (coderabbit #601).
+            return (sigungu == null || sigungu.isBlank()) ? "" : sigungu;
         }
         if (sigungu == null || sigungu.isBlank()) {
             return sido;

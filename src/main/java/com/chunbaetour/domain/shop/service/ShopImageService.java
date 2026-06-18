@@ -77,6 +77,10 @@ public class ShopImageService {
 
         // 검증 통과 후 저장소 업로드 → 객체 키 확보
         String objectKey = imageStorage.upload(shopId, file);
+        // 롤백 보상 — S3 업로드 성공 후 아래 DB 영속화가 실패해 트랜잭션이 롤백되면, 방금 올린 객체만 S3에 남는
+        //   고아가 된다. afterCompletion(ROLLED_BACK) 훅으로 즉시 회수한다(흔한 케이스 즉시 정리, KAN-319 ①).
+        //   커밋 전 JVM 크래시 등 훅이 못 도는 잔여는 reconcile 스케줄러가 안전망으로 회수한다(KAN-319 ②).
+        deleteObjectAfterRollback(objectKey);
 
         ShopImage saved = (type == ShopImageType.PROFILE)
                 ? replaceProfile(shop.getId(), userId, objectKey)
@@ -154,6 +158,10 @@ public class ShopImageService {
             shopImageRepository.delete(old);
             deleteObjectAfterCommit(old.getObjectKey());
         }
+        // DELETE를 INSERT보다 먼저 실제 실행하도록 강제 flush — Hibernate 기본 action 순서(insert→delete)로 인해
+        //   기존 PROFILE(sort_order=0) 삭제 전 새 PROFILE(sort_order=0)이 INSERT되면 UNIQUE(shop_id,type,sort_order)
+        //   위반이 날 수 있다. flush로 delete를 선행시켜 동일 트랜잭션 교체를 안전하게 한다 (coderabbit #601).
+        shopImageRepository.flush();
         return shopImageRepository.save(ShopImage.profile(shopId, objectKey));
     }
 
@@ -190,6 +198,25 @@ public class ShopImageService {
             @Override
             public void afterCommit() {
                 imageStorage.delete(objectKey);
+            }
+        });
+    }
+
+    /**
+     * 방금 업로드한 S3 객체를 현재 트랜잭션이 <b>롤백될 때만</b> 삭제하도록 보상 훅을 등록한다(KAN-319 ①).
+     * 업로드(S3 성공) 직후 등록 → 이후 DB 영속화 실패로 롤백되면 객체를 즉시 회수, 커밋되면 아무것도 하지 않는다(행이 진실 원천).
+     * 동기화가 없는 경우(트랜잭션 밖 호출)는 보상 대상이 없으므로 no-op.
+     */
+    private void deleteObjectAfterRollback(String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    imageStorage.delete(objectKey);
+                }
             }
         });
     }

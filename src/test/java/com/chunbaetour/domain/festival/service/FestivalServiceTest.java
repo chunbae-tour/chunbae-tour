@@ -254,6 +254,6 @@ class FestivalServiceTest {
     }
 
     private FestivalCacheData buildCacheData(Long id, FestivalStatus status) {
-        return new FestivalCacheData(id, "축제" + id, null, "서울", "서울시", START, END, null, null, status);
+        return new FestivalCacheData(id, "축제" + id, null, "서울", "서울시", START, END, null, null, null, null, status);
     }
 }

@@ -31,7 +31,9 @@ class RedisJsonSerializerFactoryTest {
     private FestivalCacheData sample() {
         return new FestivalCacheData(9204L, "천안축제", "설명", "충청남도", "천안시 주소",
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 10),
-                null, null, FestivalStatus.ACTIVE);
+                null, null,
+                new java.math.BigDecimal("36.8151"), new java.math.BigDecimal("127.1139"),
+                FestivalStatus.ACTIVE);
     }
 
     @SuppressWarnings("unchecked")
@@ -49,6 +51,8 @@ class RedisJsonSerializerFactoryTest {
         FestivalCacheData result = (FestivalCacheData) restored;
         assertThat(result.id()).isEqualTo(9204L);
         assertThat(result.startDate()).isEqualTo(LocalDate.of(2026, 6, 1));
+        assertThat(result.latitude()).isEqualByComparingTo("36.8151");
+        assertThat(result.longitude()).isEqualByComparingTo("127.1139");
         assertThat(result.status()).isEqualTo(FestivalStatus.ACTIVE);
     }
 

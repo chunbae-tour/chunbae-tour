@@ -28,7 +28,9 @@ class CompanionPostQueryRepositoryIntegrationTest extends AbstractIntegrationTes
     }
 
     private CompanionPost save(String region, LocalDate date, CompanionPostStatus status) {
-        CompanionPost post = CompanionPost.create(1L, "제목", "내용", 100L, "장소", region, date, 4);
+        CompanionPost post = CompanionPost.create(1L, "제목", "내용",
+                com.chunbaetour.domain.community.companion.entity.CompanionTargetType.PLACE,
+                100L, "장소", region, date, 4);
         if (status == CompanionPostStatus.HIDDEN) post.hide();
         if (status == CompanionPostStatus.DELETED) post.delete();
         return postRepository.save(post);

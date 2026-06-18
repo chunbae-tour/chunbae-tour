@@ -25,6 +25,7 @@ import com.chunbaetour.domain.community.comment.service.CommentCountService;
 import com.chunbaetour.domain.community.common.PostType;
 import com.chunbaetour.domain.community.companion.entity.CompanionPost;
 import com.chunbaetour.domain.community.companion.entity.CompanionPostStatus;
+import com.chunbaetour.domain.community.companion.entity.CompanionTargetType;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostQueryRepository;
 import com.chunbaetour.domain.community.companion.repository.CompanionPostRepository;
 import java.time.LocalDate;
@@ -47,6 +48,7 @@ class CompanionPostServiceTest {
     @Mock ChatRoomRepository chatRoomRepository;
     @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock CommentCountService commentCountService;
+    @Mock CompanionTargetValidator targetValidator;
     @InjectMocks CompanionPostService postService;
 
     private static final Long AUTHOR_ID = 1L;
@@ -55,7 +57,7 @@ class CompanionPostServiceTest {
 
     private CompanionPost buildPost(Long id, CompanionPostStatus status) {
         CompanionPost post = CompanionPost.create(
-                AUTHOR_ID, "제목", "내용", 100L, "장소명", "서울", MEETING_DATE, 4);
+                AUTHOR_ID, "제목", "내용", CompanionTargetType.PLACE, 100L, "장소명", "서울", MEETING_DATE, 4);
         ReflectionTestUtils.setField(post, "id", id);
         if (status == CompanionPostStatus.DELETED) post.delete();
         if (status == CompanionPostStatus.HIDDEN)  post.hide();
@@ -79,13 +81,36 @@ class CompanionPostServiceTest {
             ReflectionTestUtils.setField(p, "id", POST_ID);
             return p;
         });
+        given(targetValidator.validate(CompanionTargetType.PLACE, 100L))
+                .willReturn(new ValidatedCompanionTarget(CompanionTargetType.PLACE, 100L, "서버장소명"));
         CompanionPostCreateRequest request = new CompanionPostCreateRequest(
-                "제목", "내용", 100L, "장소명", "서울", MEETING_DATE, 4);
+                "제목", "내용", CompanionTargetType.PLACE, 100L, "클라이언트장소명", "서울", MEETING_DATE, 4);
 
         CompanionPostCreateResponse response = postService.create(AUTHOR_ID, request);
 
         assertThat(response.postId()).isEqualTo(POST_ID);
+        assertThat(response.targetType()).isEqualTo(CompanionTargetType.PLACE);
+        assertThat(response.targetId()).isEqualTo(100L);
+        assertThat(response.targetName()).isEqualTo("서버장소명");
+        then(targetValidator).should().validate(CompanionTargetType.PLACE, 100L);
         then(postRepository).should().save(any(CompanionPost.class));
+    }
+
+    @Test
+    void create_존재하지않는_대상_검증실패_전파() {
+        // 검증 실패로 응답을 만들지 않으므로 getId 스텁 불필요 — 평범한 mock 사용
+        Account author = org.mockito.Mockito.mock(Account.class);
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        org.mockito.BDDMockito.willThrow(new BusinessException(ErrorCode.FESTIVAL_NOT_FOUND))
+                .given(targetValidator).validate(CompanionTargetType.FESTIVAL, 777L);
+        CompanionPostCreateRequest request = new CompanionPostCreateRequest(
+                "제목", "내용", CompanionTargetType.FESTIVAL, 777L, "축제명", "서울", MEETING_DATE, 4);
+
+        assertThatThrownBy(() -> postService.create(AUTHOR_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FESTIVAL_NOT_FOUND);
+        then(postRepository).should(org.mockito.Mockito.never()).save(any());
     }
 
     @Test
@@ -93,7 +118,7 @@ class CompanionPostServiceTest {
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> postService.create(AUTHOR_ID,
-                new CompanionPostCreateRequest("제목", "내용", 100L, "장소명", "서울", MEETING_DATE, 4)))
+                new CompanionPostCreateRequest("제목", "내용", CompanionTargetType.PLACE, 100L, "장소명", "서울", MEETING_DATE, 4)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_FOUND);
@@ -287,11 +312,30 @@ class CompanionPostServiceTest {
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
         given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
         CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
-                "새제목", "새내용", null, null, null, null, null);
+                "새제목", "새내용", null, null, null, null, null, null);
 
         CompanionPostUpdateResponse response = postService.update(AUTHOR_ID, POST_ID, request);
 
         assertThat(response.title()).isEqualTo("새제목");
+    }
+
+    @Test
+    void update_대상_3종_변경시_실존검증_호출() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        Account author = mockAccount(AUTHOR_ID);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        given(accountRepository.findById(AUTHOR_ID)).willReturn(Optional.of(author));
+        given(targetValidator.validate(CompanionTargetType.MARKET, 55L))
+                .willReturn(new ValidatedCompanionTarget(CompanionTargetType.MARKET, 55L, "서버시장명"));
+        CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
+                null, null, CompanionTargetType.MARKET, 55L, "클라이언트시장명", null, null, null);
+
+        CompanionPostUpdateResponse response = postService.update(AUTHOR_ID, POST_ID, request);
+
+        then(targetValidator).should().validate(CompanionTargetType.MARKET, 55L);
+        assertThat(response.targetType()).isEqualTo(CompanionTargetType.MARKET);
+        assertThat(response.targetId()).isEqualTo(55L);
+        assertThat(response.targetName()).isEqualTo("서버시장명");
     }
 
     @Test
@@ -300,7 +344,7 @@ class CompanionPostServiceTest {
         CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
         CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
-                "새제목", null, null, null, null, null, null);
+                "새제목", null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> postService.update(otherId, POST_ID, request))
                 .isInstanceOf(BusinessException.class)
@@ -309,29 +353,44 @@ class CompanionPostServiceTest {
     }
 
     @Test
-    void update_placeName만_있고_placeId_없으면_INVALID_REQUEST() {
+    void update_targetName만_있고_나머지_없으면_INVALID_REQUEST() {
         CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
 
         assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID,
-                new CompanionPostUpdateRequest(null, null, null, "새 장소명", null, null, null)))
+                new CompanionPostUpdateRequest(null, null, null, null, "새 장소명", null, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test
-    void update_placeId만_보내면_INVALID_REQUEST() {
+    void update_targetId만_보내면_INVALID_REQUEST() {
         CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
-        // placeId만 있고 placeName null
+        // targetId만 있고 targetType/targetName null → 부분 입력
         CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
-                null, null, 200L, null, null, null, null);
+                null, null, null, 200L, null, null, null, null);
 
         assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID, request))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
+        then(targetValidator).should(org.mockito.Mockito.never()).validate(any(), any());
+    }
+
+    @Test
+    void update_targetType_targetId만_보내면_검증기_호출없이_INVALID_REQUEST() {
+        CompanionPost post = buildPost(POST_ID, CompanionPostStatus.ACTIVE);
+        given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
+        CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
+                null, null, CompanionTargetType.MARKET, 55L, null, null, null, null);
+
+        assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+        then(targetValidator).should(org.mockito.Mockito.never()).validate(any(), any());
     }
 
     @Test
@@ -341,7 +400,7 @@ class CompanionPostServiceTest {
         given(postRepository.findById(POST_ID)).willReturn(Optional.of(post));
         // DTO 제약(@Min(2))은 통과하지만 현재 인원(3)보다 작음 — 서비스 규칙만 단독 검증
         CompanionPostUpdateRequest request = new CompanionPostUpdateRequest(
-                null, null, null, null, null, null, 2);
+                null, null, null, null, null, null, null, 2);
 
         assertThatThrownBy(() -> postService.update(AUTHOR_ID, POST_ID, request))
                 .isInstanceOf(BusinessException.class)

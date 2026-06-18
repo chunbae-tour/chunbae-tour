@@ -5,10 +5,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import java.util.List;
 import java.util.Optional;
+import com.chunbaetour.domain.festival.type.FestivalStatus;
 
 public interface FestivalRepository extends JpaRepository<Festival, Long> {
 
     Optional<Festival> findByExternalId(String externalId);
+
+    Optional<Festival> findByIdAndStatus(Long id, FestivalStatus status);
 
     /**
      * 오타 교정 사전 로드용 — 전체 축제 제목 조회 (KAN-276).
