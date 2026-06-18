@@ -51,6 +51,8 @@ class RedisJsonSerializerFactoryTest {
         FestivalCacheData result = (FestivalCacheData) restored;
         assertThat(result.id()).isEqualTo(9204L);
         assertThat(result.startDate()).isEqualTo(LocalDate.of(2026, 6, 1));
+        assertThat(result.latitude()).isEqualByComparingTo("36.8151");
+        assertThat(result.longitude()).isEqualByComparingTo("127.1139");
         assertThat(result.status()).isEqualTo(FestivalStatus.ACTIVE);
     }
 

@@ -86,4 +86,14 @@ class CompanionTargetValidatorTest {
         assertThat(target.targetName()).isEqualTo("서버시장명");
         then(traditionalMarketRepository).should().findById(55L);
     }
+
+    @Test
+    void market이_없으면_MARKET_NOT_FOUND() {
+        given(traditionalMarketRepository.findById(55L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> validator.validate(CompanionTargetType.MARKET, 55L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.MARKET_NOT_FOUND);
+    }
 }
