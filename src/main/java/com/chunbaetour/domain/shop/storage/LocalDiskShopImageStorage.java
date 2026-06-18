@@ -5,6 +5,10 @@ import com.chunbaetour.domain.common.error.ErrorCode;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -64,5 +68,34 @@ public class LocalDiskShopImageStorage implements ShopImageStorage {
         } catch (IOException e) {
             log.warn("로컬 가게 이미지 삭제 실패(잔존, 후속 cleanup 대상): key={}", key, e);
         }
+    }
+
+    /**
+     * prefix 아래 로컬 파일을 walk로 나열한다(KAN-319). 키는 baseDir 기준 상대경로를 S3와 동일한 forward-slash로 정규화,
+     * lastModified는 파일 mtime을 Instant로 변환. baseDir/prefix 미존재 시 빈 목록.
+     */
+    @Override
+    public List<ShopImageObjectInfo> listObjects(String prefix) {
+        Path root = baseDir.resolve(prefix);
+        if (!Files.exists(root)) {
+            return List.of();
+        }
+        List<ShopImageObjectInfo> result = new ArrayList<>();
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths.filter(Files::isRegularFile).forEach(p -> {
+                try {
+                    // 키는 baseDir 기준 상대경로 — OS 구분자를 '/'로 정규화해 S3 키 형식과 일치시킨다.
+                    String key = baseDir.relativize(p).toString().replace('\\', '/');
+                    Instant lastModified = Files.getLastModifiedTime(p).toInstant();
+                    result.add(new ShopImageObjectInfo(key, lastModified));
+                } catch (IOException e) {
+                    log.warn("로컬 객체 메타 읽기 실패, 건너뜀: path={}", p, e);
+                }
+            });
+        } catch (IOException e) {
+            log.warn("로컬 객체 나열 실패: prefix={}", prefix, e);
+            return List.of();
+        }
+        return result;
     }
 }
