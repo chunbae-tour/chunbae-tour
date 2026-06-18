@@ -47,7 +47,7 @@ class ProfileImageServiceTest {
 
         var res = profileImageService.upload(USER_ID, jpeg());
 
-        assertThat(res.objectKey()).isEqualTo(OWN_KEY);
+        // raw 키는 응답에 없다(E10) — previewUrl만 노출, 키 세팅은 changeProfileImage로 검증
         assertThat(res.previewUrl()).isEqualTo("https://signed/me");
         verify(account).changeProfileImage(OWN_KEY);
     }
@@ -95,6 +95,36 @@ class ProfileImageServiceTest {
         assertThatThrownBy(() -> profileImageService.upload(USER_ID,
                 new MockMultipartFile("file", "a.gif", "image/gif", new byte[]{'G', 'I', 'F'})))
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.PROFILE_IMAGE_TYPE_UNSUPPORTED);
+        // declared=image/jpeg지만 실제 바이트는 MZ(PE 실행파일) → magic-byte 불일치로 위장 차단
+        assertThatThrownBy(() -> profileImageService.upload(USER_ID,
+                new MockMultipartFile("file", "evil.jpg", "image/jpeg", new byte[]{'M', 'Z', 0, 0})))
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.PROFILE_IMAGE_TYPE_UNSUPPORTED);
+    }
+
+    @Test
+    @DisplayName("업로드 — preview presign이 EXTERNAL 아닌 에러면 강등 없이 전파")
+    void upload_presignNonExternal_propagates() {
+        Account account = org.mockito.Mockito.mock(Account.class);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(imageStorage.upload(eq(USER_ID), any())).willReturn(OWN_KEY);
+        given(account.changeProfileImage(OWN_KEY)).willReturn(null);
+        given(imageStorage.presignedGetUrl(OWN_KEY)).willThrow(new BusinessException(ErrorCode.INVALID_REQUEST));
+
+        assertThatThrownBy(() -> profileImageService.upload(USER_ID, jpeg()))
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("cleanupReplacedKey — 옛 값이 우리 키면 삭제, 외부/null이면 미삭제")
+    void cleanupReplacedKey_branches() {
+        // 우리 키 → 삭제(트랜잭션 동기화 없음 → 즉시 삭제 폴백)
+        profileImageService.cleanupReplacedKey(OWN_KEY, USER_ID);
+        verify(imageStorage).delete(OWN_KEY);
+
+        // 외부 URL / null → 미삭제
+        profileImageService.cleanupReplacedKey("https://k.kakaocdn.net/old.jpg", USER_ID);
+        profileImageService.cleanupReplacedKey(null, USER_ID);
+        verify(imageStorage, never()).delete("https://k.kakaocdn.net/old.jpg");
     }
 
     @Test

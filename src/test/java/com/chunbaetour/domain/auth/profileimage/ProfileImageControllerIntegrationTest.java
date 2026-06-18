@@ -72,7 +72,7 @@ class ProfileImageControllerIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("USER 업로드 → 201 + 객체 키(users/{id}/profile/) + 미리보기")
+    @DisplayName("USER 업로드 → 201 + 미리보기 URL(raw 키 미노출, E10)")
     void upload_created() throws Exception {
         String token = signupAndLogin("pi1@example.com");
 
@@ -82,9 +82,9 @@ class ProfileImageControllerIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
-                .andExpect(jsonPath("$.data.objectKey").value(org.hamcrest.Matchers.matchesPattern(
-                        "users/\\d+/profile/[0-9a-fA-F\\-]{36}\\.jpg")))
-                .andExpect(jsonPath("$.data.previewUrl").exists());
+                .andExpect(jsonPath("$.data.previewUrl").exists())
+                // raw 객체 키는 응답에 노출하지 않는다(E10 계약)
+                .andExpect(jsonPath("$.data.objectKey").doesNotExist());
     }
 
     @Test

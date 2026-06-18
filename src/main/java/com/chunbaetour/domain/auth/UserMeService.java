@@ -108,6 +108,8 @@ public class UserMeService {
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
         }
 
+        // 교체 전 직전 이미지 값 보관 — 프로필 이미지가 새 값으로 바뀌면 옛 소유 키를 커밋 후 회수(고아 방지).
+        String previousImage = account.getProfileImageUrl();
         account.updateProfile(request.nickname(), request.language(), request.profileImageUrl());
 
         try {
@@ -118,6 +120,11 @@ public class UserMeService {
             // GlobalExceptionHandler에 전용 매핑이 없어 fallback 500으로 떨어지는 것을 차단 (CR + LH #1).
             // 다른 unique 위반(예: email)은 catch하지 않아 fallback 알람으로 의도치 않은 케이스 발견 가능.
             throw new BusinessException(ErrorCode.DUPLICATE_NICKNAME);
+        }
+
+        // PATCH로 profileImageUrl이 새 값(외부 URL)으로 교체된 경우, 옛 값이 우리 업로드 키면 옛 S3 객체 회수(고아 방지).
+        if (request.profileImageUrl() != null) {
+            profileImageService.cleanupReplacedKey(previousImage, userId);
         }
 
         return UserMeResponse.from(account, profileImageService.toDisplayUrl(account.getProfileImageUrl()));

@@ -155,6 +155,32 @@ class UserMeServiceTest {
     }
 
     @Test
+    void updateMe_with_profileImageUrl_triggers_old_key_cleanup() {
+        // PATCH로 profileImageUrl 교체 시 옛 소유 키 회수가 연결되는지(고아 방지 회귀 가드, KAN-320)
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        String previousImage = account.getProfileImageUrl();
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+
+        userMeService.updateMe(USER_ID, new PatchUserMeRequest(null, null, "https://example.com/new.png"));
+
+        // 직전 값 + userId로 회수 위임 (소유 여부 판단은 cleanupReplacedKey 내부 책임)
+        then(profileImageService).should().cleanupReplacedKey(previousImage, USER_ID);
+    }
+
+    @Test
+    void updateMe_without_profileImageUrl_does_not_cleanup() {
+        // 이미지 미변경(nickname만) PATCH는 옛 키 회수를 호출하지 않아야 함
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(accountRepository.existsByNicknameAndIdNot("새닉네임", USER_ID)).willReturn(false);
+
+        userMeService.updateMe(USER_ID, new PatchUserMeRequest("새닉네임", null, null));
+
+        then(profileImageService).should(org.mockito.Mockito.never())
+                .cleanupReplacedKey(any(), any());
+    }
+
+    @Test
     void updateMe_with_duplicate_nickname_throws_AUTH_009() {
         Account account = activeUser(USER_ID, EMAIL, NICKNAME);
         given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));

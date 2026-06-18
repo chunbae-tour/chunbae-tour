@@ -67,7 +67,8 @@ public class ProfileImageService {
             }
             log.warn("프로필 업로드 성공했지만 preview presign 실패 — 키는 반영. objectKey={}", objectKey, e);
         }
-        return new ProfileImageUploadResponse(objectKey, previewUrl);
+        // raw 키는 응답에 싣지 않는다(E10) — 키는 이미 Account에 반영됨, 클라는 previewUrl만 사용.
+        return new ProfileImageUploadResponse(previewUrl);
     }
 
     /**
@@ -95,6 +96,17 @@ public class ProfileImageService {
             }
             log.warn("프로필 presign 실패 — null로 강등. key={}", stored, e);
             return null;
+        }
+    }
+
+    /**
+     * 프로필 교체로 밀려난 직전 값이 "우리 업로드 키"면 커밋 후 옛 S3 객체를 회수한다(고아 방지).
+     * PATCH /users/me로 소유 키 → 외부 URL(또는 다른 값) 교체 시 옛 객체가 회수 없이 남는 것을 막는다.
+     * 외부 OAuth URL이면 우리 소유 아니라 미삭제. null/비소유 값은 no-op.
+     */
+    public void cleanupReplacedKey(String previous, Long userId) {
+        if (ProfileImageKeys.isOwnedKey(previous, userId)) {
+            deleteObjectAfterCommit(previous);
         }
     }
 
