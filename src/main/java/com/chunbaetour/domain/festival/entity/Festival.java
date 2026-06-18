@@ -14,6 +14,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -57,6 +58,13 @@ public class Festival extends BaseEntity {
     @Column(name = "related_url", length = 512)
     private String relatedUrl;
 
+    // 지도 표시용 좌표 — 표준데이터 latitude/longitude 수집값(없으면 null, 지오코딩 보완 전제로 nullable).
+    @Column(precision = 10, scale = 7)
+    private BigDecimal lat;
+
+    @Column(precision = 11, scale = 7)
+    private BigDecimal lng;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private FestivalStatus status;
@@ -97,17 +105,22 @@ public class Festival extends BaseEntity {
         return f;
     }
 
-    public static Festival createFromApi(String externalId, String name, String region,
-            String address, LocalDate startDate, LocalDate endDate, String imageUrl) {
+    public static Festival createFromApi(String externalId, String name, String description,
+            String region, String address, LocalDate startDate, LocalDate endDate,
+            String imageUrl, String relatedUrl, BigDecimal lat, BigDecimal lng) {
         validateInvariant(name, region, address, startDate, endDate, FestivalStatus.ACTIVE);
         Festival f = new Festival();
         f.externalId = externalId;
         f.name = name;
+        f.description = description;
         f.region = region;
         f.address = address;
         f.startDate = startDate;
         f.endDate = endDate;
         f.imageUrl = imageUrl;
+        f.relatedUrl = relatedUrl;
+        f.lat = lat;
+        f.lng = lng;
         f.status = FestivalStatus.ACTIVE;
         f.source = FestivalSource.API_FETCH;
         f.category = FestivalCategory.FESTIVAL;
@@ -134,16 +147,23 @@ public class Festival extends BaseEntity {
         this.status = status;
     }
 
-    public void updateFromApi(String name, String region, String address,
-            LocalDate startDate, LocalDate endDate, String imageUrl) {
+    public void updateFromApi(String name, String description, String region, String address,
+            LocalDate startDate, LocalDate endDate, String imageUrl, String relatedUrl,
+            BigDecimal lat, BigDecimal lng) {
         validateInvariant(name, region, address, startDate, endDate, this.status);
         this.name = name;
         this.region = region;
         this.address = address;
         this.startDate = startDate;
         this.endDate = endDate;
+        // 소개·홈페이지·이미지는 API 응답에 없으면(null) 기존값 보존.
+        if (description != null) this.description = description;
         if (imageUrl != null) this.imageUrl = imageUrl;
-        // source, externalId, description, relatedUrl, status, category 유지
+        if (relatedUrl != null) this.relatedUrl = relatedUrl;
+        // 좌표는 API 정규화 결과를 그대로 반영(파싱 실패/미제공 포함).
+        this.lat = lat;
+        this.lng = lng;
+        // source, externalId, status, category 유지
     }
 
     private static void validateInvariant(String name, String region, String address,
