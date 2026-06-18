@@ -35,4 +35,7 @@ public interface ShopImageRepository extends JpaRepository<ShopImage, Long> {
 
     /** 소유권 검증용 — imageId + shopId 조합 조회. 타 가게 이미지면 빈 Optional(IDOR 차단). */
     Optional<ShopImage> findByIdAndShopId(Long id, Long shopId);
+
+    /** 고아 판정용 — 저장소 객체 키가 DB 행으로 참조되는지(KAN-319 reconcile 스케줄러). 미참조면 고아 후보. */
+    boolean existsByObjectKey(String objectKey);
 }

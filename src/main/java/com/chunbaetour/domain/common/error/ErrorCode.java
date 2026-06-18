@@ -86,6 +86,11 @@ public enum ErrorCode {
     COMMENT_ALREADY_DELETED(HttpStatus.BAD_REQUEST,      "COMMUNITY_007", "이미 삭제된 댓글입니다."),
     COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST,"COMMUNITY_008", "대댓글에는 답글을 달 수 없습니다."),
     POST_NOT_COMMENTABLE(HttpStatus.FORBIDDEN,          "COMMUNITY_009", "댓글을 작성할 수 없는 게시글입니다."),
+    // 자유게시판 이미지 업로드 (KAN-317)
+    POST_IMAGE_COUNT_EXCEEDED(HttpStatus.BAD_REQUEST,   "COMMUNITY_013", "이미지는 최대 5장까지 첨부할 수 있습니다."),
+    POST_IMAGE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "COMMUNITY_014", "지원하지 않는 이미지 형식입니다. (허용: JPEG, PNG, WebP)"),
+    POST_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,   "COMMUNITY_015", "이미지 크기가 최대 허용 용량(10MB)을 초과합니다."),
+    POST_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,       "COMMUNITY_016", "업로드할 파일이 비어 있습니다."),
 
     // ===== PLACE (담당: 김인목) =====
     PLACE_NOT_FOUND(HttpStatus.NOT_FOUND,                   "PLACE_001", "존재하지 않는 관광지입니다."),

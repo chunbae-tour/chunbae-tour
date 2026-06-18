@@ -175,6 +175,13 @@ ratelimit:
       path: /api/v1/admin/support/rooms/*/files
       limit: 20
       window: PT1H
+    # 자유게시판 이미지 업로드(KAN-317): shop-image-upload와 동일 — 업로드와 글 작성(키 저장)이 분리된 2-step이라
+    #   작성 없이도 S3 객체가 누적될 수 있음. IP 기반 제한.
+    - id: post-image-upload
+      method: POST
+      path: /api/v1/community/posts/free/images
+      limit: 10
+      window: PT1M
     # 프로필 이미지 업로드(KAN-320): 인증 사용자가 이미지를 무제한 업로드해 S3 비용·교체 고아 누적시키는 것 방지. IP 기반 제한.
     - id: profile-image-upload
       method: POST

@@ -1,4 +1,4 @@
-package com.chunbaetour.domain.shop.storage;
+package com.chunbaetour.domain.community.free.storage;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
@@ -16,20 +16,20 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 로컬/테스트용 이미지 저장소 (E10, {@code @Profile("!prod")}).
+ * 로컬/테스트용 자유게시판 이미지 저장소 (KAN-317, {@code @Profile("!prod")}).
  *
  * <p>운영(S3) 외 환경에서 업로드 흐름을 실제로 확인할 수 있도록 <b>로컬 디스크에 저장</b>한다(throw 안 함).
- * S3와 동일한 키 형식({@code shops/{shopId}/{uuid}.{ext}})을 반환해 후속 조회/연동 코드가 환경 무관하게 동작한다.
- * 저장 위치는 {@code shop.image.local-dir}(미설정 시 {@code java.io.tmpdir}/chunbae-uploads).
+ * S3와 동일한 키 형식({@code posts/free/{userId}/{uuid}.{ext}})을 반환해 후속 조회/연동 코드가 환경 무관하게 동작한다.
+ * 저장 위치는 {@code post.image.local-dir}(미설정 시 {@code java.io.tmpdir}/chunbae-uploads).
  */
 @Slf4j
 @Component
 @Profile("!prod")
-public class LocalDiskShopImageStorage implements ShopImageStorage {
+public class LocalDiskPostImageStorage implements PostImageStorage {
 
     private final Path baseDir;
 
-    public LocalDiskShopImageStorage(@Value("${shop.image.local-dir:}") String configuredDir) {
+    public LocalDiskPostImageStorage(@Value("${post.image.local-dir:}") String configuredDir) {
         String dir = (configuredDir == null || configuredDir.isBlank())
                 ? System.getProperty("java.io.tmpdir") + "/chunbae-uploads"
                 : configuredDir;
@@ -37,8 +37,8 @@ public class LocalDiskShopImageStorage implements ShopImageStorage {
     }
 
     @Override
-    public String upload(Long shopId, MultipartFile file) {
-        String key = ShopImageKeys.objectKey(shopId, file.getContentType());
+    public String upload(Long userId, MultipartFile file) {
+        String key = PostImageKeys.objectKey(userId, file.getContentType());
         Path target = baseDir.resolve(key);
         try {
             Files.createDirectories(target.getParent());
@@ -60,34 +60,33 @@ public class LocalDiskShopImageStorage implements ShopImageStorage {
         return key;
     }
 
-    /** 로컬 디스크 파일 삭제(KAN-315). best-effort — 없거나 실패해도 throw 안 함(고아는 후속 cleanup 대상). */
+    /** 로컬 디스크 파일 삭제(KAN-317). best-effort — 없거나 실패해도 throw 안 함(고아는 스케줄러 회수 대상). */
     @Override
     public void delete(String key) {
         try {
             Files.deleteIfExists(baseDir.resolve(key));
         } catch (IOException e) {
-            log.warn("로컬 가게 이미지 삭제 실패(잔존, 후속 cleanup 대상): key={}", key, e);
+            log.warn("로컬 자유게시판 이미지 삭제 실패(잔존, 스케줄러 회수 대상): key={}", key, e);
         }
     }
 
     /**
-     * prefix 아래 로컬 파일을 walk로 나열한다(KAN-319). 키는 baseDir 기준 상대경로를 S3와 동일한 forward-slash로 정규화,
-     * lastModified는 파일 mtime을 Instant로 변환. baseDir/prefix 미존재 시 빈 목록.
+     * prefix 아래 로컬 파일을 walk로 나열한다(KAN-317). 키는 baseDir 기준 상대경로를 '/'로 정규화(S3 키 형식 일치),
+     * lastModified는 파일 mtime을 Instant로. baseDir/prefix 미존재 시 빈 목록.
      */
     @Override
-    public List<ShopImageObjectInfo> listObjects(String prefix) {
+    public List<PostImageObjectInfo> listObjects(String prefix) {
         Path root = baseDir.resolve(prefix);
         if (!Files.exists(root)) {
             return List.of();
         }
-        List<ShopImageObjectInfo> result = new ArrayList<>();
+        List<PostImageObjectInfo> result = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
             paths.filter(Files::isRegularFile).forEach(p -> {
                 try {
-                    // 키는 baseDir 기준 상대경로 — OS 구분자를 '/'로 정규화해 S3 키 형식과 일치시킨다.
                     String key = baseDir.relativize(p).toString().replace('\\', '/');
                     Instant lastModified = Files.getLastModifiedTime(p).toInstant();
-                    result.add(new ShopImageObjectInfo(key, lastModified));
+                    result.add(new PostImageObjectInfo(key, lastModified));
                 } catch (IOException e) {
                     log.warn("로컬 객체 메타 읽기 실패, 건너뜀: path={}", p, e);
                 }
