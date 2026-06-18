@@ -71,6 +71,10 @@ public enum ErrorCode {
     // redirect_uri 불일치, 앱키/시크릿 오류 등 서버 설정 문제는 OAUTH_PROVIDER_ERROR(502)로 분리 —
     // 판별 기준은 OauthErrorClassifier(카카오 error_code=KOE320 / 네이버 error=invalid_grant만 400).
     OAUTH_INVALID_AUTHORIZATION(HttpStatus.BAD_REQUEST, "AUTH_023", "소셜 인가 정보가 유효하지 않습니다. 다시 시도해 주세요."),
+    // 프로필 이미지 업로드 (KAN-320) — AUTH_024(DOMAIN_SANCTIONED) 다음 번호
+    PROFILE_IMAGE_TYPE_UNSUPPORTED(HttpStatus.BAD_REQUEST, "AUTH_025", "지원하지 않는 이미지 형식입니다. (허용: JPEG, PNG, WebP)"),
+    PROFILE_IMAGE_FILE_TOO_LARGE(HttpStatus.BAD_REQUEST,   "AUTH_026", "이미지 크기가 최대 허용 용량(5MB)을 초과합니다."),
+    PROFILE_IMAGE_FILE_EMPTY(HttpStatus.BAD_REQUEST,       "AUTH_027", "업로드할 파일이 비어 있습니다."),
 
     // ===== COMMUNITY (담당: 박경화) =====
     POST_NOT_FOUND(HttpStatus.NOT_FOUND,                "COMMUNITY_001", "존재하지 않는 게시글입니다."),

@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.chat.dto.response;
 
 import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.auth.profileimage.ProfileImageDisplaySupport;
 import com.chunbaetour.domain.chat.entity.Message;
 import com.chunbaetour.domain.chat.type.MessageType;
 import java.time.LocalDateTime;
@@ -31,7 +32,8 @@ public record ChatMessageResponse(
     public static ChatMessageResponse from(Message message, Account sender, String resolvedFileUrl) {
         String nickname = sender != null ? sender.getNickname()
                 : (message.getSenderId() != null ? "탈퇴한 사용자" : null);
-        String profileImageUrl = sender != null ? sender.getProfileImageUrl() : null;
+        String profileImageUrl = sender != null
+                ? ProfileImageDisplaySupport.toDisplayUrl(sender.getProfileImageUrl()) : null;
         return new ChatMessageResponse(
                 message.getId(),
                 message.getChatRoomId(),

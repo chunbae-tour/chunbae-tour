@@ -182,6 +182,12 @@ ratelimit:
       path: /api/v1/community/posts/free/images
       limit: 10
       window: PT1M
+    # 프로필 이미지 업로드(KAN-320): 인증 사용자가 이미지를 무제한 업로드해 S3 비용·교체 고아 누적시키는 것 방지. IP 기반 제한.
+    - id: profile-image-upload
+      method: POST
+      path: /api/v1/users/me/profile-image
+      limit: 10
+      window: PT1M
     # 토큰 재발급: permitAll + 자동 전송 refresh 쿠키만으로 호출 가능한 경로라 무제한 노출되면
     #   (1) 프론트 인터셉터의 401→reissue 재시도 루프 오작동, (2) 탈취 refresh 쿠키 brute 시도를 막지 못한다.
     #   IP당 분당 20회 — 정상 SPA의 access TTL 만료 주기(분 단위 1회)에 비해 충분히 여유 있으면서 폭주는 차단.

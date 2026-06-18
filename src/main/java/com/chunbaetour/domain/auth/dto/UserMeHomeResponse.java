@@ -52,8 +52,8 @@ public record UserMeHomeResponse(
      *
      * <p>{@code Optional} 시그니처 채택: null 허용 메서드보다 빈/존재 상태가 호출자 코드에 명시적으로 드러남.
      */
-    public static UserMeHomeResponse of(Account account, Optional<Wallet> wallet) {
+    public static UserMeHomeResponse of(Account account, Optional<Wallet> wallet, String profileImageUrl) {
         WalletInfo walletInfo = wallet.map(WalletInfo::from).orElseGet(WalletInfo::empty);
-        return new UserMeHomeResponse(UserMeResponse.from(account), walletInfo);
+        return new UserMeHomeResponse(UserMeResponse.from(account, profileImageUrl), walletInfo);
     }
 }

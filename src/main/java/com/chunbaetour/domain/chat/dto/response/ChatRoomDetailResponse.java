@@ -1,6 +1,7 @@
 package com.chunbaetour.domain.chat.dto.response;
 
 import com.chunbaetour.domain.auth.Account;
+import com.chunbaetour.domain.auth.profileimage.ProfileImageDisplaySupport;
 import com.chunbaetour.domain.chat.entity.ChatRoom;
 import com.chunbaetour.domain.chat.entity.ChatRoomMember;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
@@ -38,7 +39,7 @@ public record ChatRoomDetailResponse(
             return new MemberInfo(
                     member.getUserId(),
                     account.getNickname(),
-                    account.getProfileImageUrl(),
+                    ProfileImageDisplaySupport.toDisplayUrl(account.getProfileImageUrl()),
                     member.getMemberState(),
                     member.getJoinedAt()
             );

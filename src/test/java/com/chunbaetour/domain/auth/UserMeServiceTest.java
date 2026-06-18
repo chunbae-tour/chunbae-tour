@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -43,8 +44,19 @@ class UserMeServiceTest {
     @Mock
     private AccountRepository accountRepository;
 
+    @Mock
+    private com.chunbaetour.domain.auth.profileimage.ProfileImageService profileImageService;
+
     @InjectMocks
     private UserMeService userMeService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubProfileResolver() {
+        // 표시 변환은 passthrough로 — 기존 단위 테스트의 profileImageUrl 가정 유지(KAN-320)
+        org.mockito.Mockito.lenient()
+                .when(profileImageService.toDisplayUrl(org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
 
     @Test
     void getMe_with_existing_user_returns_full_response() {
@@ -61,6 +73,9 @@ class UserMeServiceTest {
         assertThat(response.language()).isEqualTo("ko");
         assertThat(response.companionScore()).isEqualTo(0f);
         assertThat(response.companionReviewCount()).isEqualTo(0);
+        // 표시 URL이 ProfileImageService.toDisplayUrl을 거쳐 매핑되는지(변환 우회 회귀 감지, KAN-320)
+        assertThat(response.profileImageUrl()).isEqualTo(account.getProfileImageUrl()); // 본 테스트는 identity stub
+        then(profileImageService).should().toDisplayUrl(account.getProfileImageUrl());
     }
 
     @Test
@@ -137,6 +152,32 @@ class UserMeServiceTest {
         assertThat(response.nickname()).isEqualTo("새닉네임");
         assertThat(response.language()).isEqualTo("en");
         assertThat(response.profileImageUrl()).isEqualTo("https://example.com/avatar.png");
+    }
+
+    @Test
+    void updateMe_with_profileImageUrl_triggers_old_key_cleanup() {
+        // PATCH로 profileImageUrl 교체 시 옛 소유 키 회수가 연결되는지(고아 방지 회귀 가드, KAN-320)
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        String previousImage = account.getProfileImageUrl();
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+
+        userMeService.updateMe(USER_ID, new PatchUserMeRequest(null, null, "https://example.com/new.png"));
+
+        // 직전 값 + userId로 회수 위임 (소유 여부 판단은 cleanupReplacedKey 내부 책임)
+        then(profileImageService).should().cleanupReplacedKey(previousImage, USER_ID);
+    }
+
+    @Test
+    void updateMe_without_profileImageUrl_does_not_cleanup() {
+        // 이미지 미변경(nickname만) PATCH는 옛 키 회수를 호출하지 않아야 함
+        Account account = activeUser(USER_ID, EMAIL, NICKNAME);
+        given(accountRepository.findById(USER_ID)).willReturn(Optional.of(account));
+        given(accountRepository.existsByNicknameAndIdNot("새닉네임", USER_ID)).willReturn(false);
+
+        userMeService.updateMe(USER_ID, new PatchUserMeRequest("새닉네임", null, null));
+
+        then(profileImageService).should(org.mockito.Mockito.never())
+                .cleanupReplacedKey(any(), any());
     }
 
     @Test
