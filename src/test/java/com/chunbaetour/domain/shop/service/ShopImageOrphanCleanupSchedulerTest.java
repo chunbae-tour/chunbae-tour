@@ -1,6 +1,6 @@
 package com.chunbaetour.domain.shop.service;
 
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -61,7 +61,8 @@ class ShopImageOrphanCleanupSchedulerTest {
 
         scheduler().cleanupOrphanObjects();
 
-        verify(imageStorage, never()).delete(eq("shops/10/x.jpg"));
+        // 특정 키가 아니라 어떤 키로도 삭제가 호출되지 않아야 함(키 고정 시 다른 키 삭제를 놓침)
+        verify(imageStorage, never()).delete(anyString());
     }
 
     @Test
@@ -101,6 +102,7 @@ class ShopImageOrphanCleanupSchedulerTest {
 
         scheduler().cleanupOrphanObjects(); // throw 없이 조용히 종료
 
-        verify(imageStorage, never()).delete(eq("shops/10/x.jpg"));
+        // 특정 키가 아니라 어떤 키로도 삭제가 호출되지 않아야 함(키 고정 시 다른 키 삭제를 놓침)
+        verify(imageStorage, never()).delete(anyString());
     }
 }
