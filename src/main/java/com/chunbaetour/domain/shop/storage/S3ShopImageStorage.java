@@ -4,6 +4,8 @@ import com.chunbaetour.domain.common.config.S3Properties;
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -13,7 +15,10 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
@@ -91,5 +96,31 @@ public class S3ShopImageStorage implements ShopImageStorage {
             log.error("S3 가게 이미지 삭제 실패(고아 객체로 잔존, 후속 cleanup 대상): bucket="
                     + properties.getBucket() + ", key=" + key, e);
         }
+    }
+
+    @Override
+    public List<ShopImageObjectInfo> listObjects(String prefix) {
+        // ListObjectsV2 페이지네이션 — 1000개 초과 버킷도 토큰으로 끝까지 순회. LastModified는 UTC Instant.
+        List<ShopImageObjectInfo> result = new ArrayList<>();
+        ListObjectsV2Request.Builder requestBuilder = ListObjectsV2Request.builder()
+                .bucket(properties.getBucket())
+                .prefix(prefix);
+        ListObjectsV2Response response;
+        String continuationToken = null;
+        try {
+            do {
+                response = s3Client.listObjectsV2(requestBuilder.continuationToken(continuationToken).build());
+                for (S3Object obj : response.contents()) {
+                    result.add(new ShopImageObjectInfo(obj.key(), obj.lastModified()));
+                }
+                continuationToken = response.nextContinuationToken();
+            } while (Boolean.TRUE.equals(response.isTruncated()));
+        } catch (SdkException e) {
+            // S3 일시장애·권한 문제 — bucket/prefix 문맥을 저장소 레이어에서 ERROR 로깅한 뒤 EXTERNAL_SERVICE_ERROR로
+            // 매핑(upload/presign과 동일 규약). 스케줄러는 이를 잡아 이번 주기를 건너뛴다. 운영서 "왜 cleanup 미실행"을 추적 가능.
+            log.error("S3 가게 이미지 객체 나열 실패: bucket={}, prefix={}", properties.getBucket(), prefix, e);
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
+        return result;
     }
 }
