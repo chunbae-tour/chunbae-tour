@@ -73,7 +73,8 @@ class FestivalFetchServiceTest {
     void 신규항목_저장_created_1() {
         given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
         given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.empty());
-        given(festivalRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        given(festivalRepository.save(captor.capture())).willAnswer(inv -> inv.getArgument(0));
 
         FestivalFetchResult result = fetchService.fetchNow();
 
@@ -81,14 +82,19 @@ class FestivalFetchServiceTest {
         assertThat(result.created()).isEqualTo(1);
         assertThat(result.updated()).isEqualTo(0);
         assertThat(result.skipped()).isEqualTo(0);
-        verify(festivalRepository).save(any(Festival.class));
+        // 매핑 누락 버그 회귀 가드 — 신규 저장 시 소개/홈페이지/좌표가 채워져야 함(KAN-321)
+        Festival saved = captor.getValue();
+        assertThat(saved.getDescription()).isEqualTo("개막식+메인프로그램");
+        assertThat(saved.getRelatedUrl()).isEqualTo("https://www.uiryeong.go.kr/festival");
+        assertThat(saved.getLat()).isEqualByComparingTo("35.31545351");
+        assertThat(saved.getLng()).isEqualByComparingTo("128.2558931");
     }
 
     @Test
     void 기존항목_ACTIVE_updateFromApi_호출() {
         Festival existing = Festival.createFromApi(
-                externalId("5390000"), "Old Name", "경상남도", "경상남도 의령군 의령읍",
-                LocalDate.of(2025, 10, 2), LocalDate.of(2025, 10, 5), null);
+                externalId("5390000"), "Old Name", null, "경상남도", "경상남도 의령군 의령읍",
+                LocalDate.of(2025, 10, 2), LocalDate.of(2025, 10, 5), null, null, null, null);
         given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
         given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.of(existing));
 
@@ -98,6 +104,11 @@ class FestivalFetchServiceTest {
         assertThat(result.updated()).isEqualTo(1);
         assertThat(result.skipped()).isEqualTo(0);
         assertThat(existing.getName()).isEqualTo("의령 리치리치 페스티벌");
+        // 매핑 누락 버그 회귀 가드 — 소개/홈페이지/좌표가 API 값으로 갱신돼야 함(KAN-321)
+        assertThat(existing.getDescription()).isEqualTo("개막식+메인프로그램");
+        assertThat(existing.getRelatedUrl()).isEqualTo("https://www.uiryeong.go.kr/festival");
+        assertThat(existing.getLat()).isEqualByComparingTo("35.31545351");
+        assertThat(existing.getLng()).isEqualByComparingTo("128.2558931");
         verify(festivalRepository, never()).save(any());
         verify(cacheEvict).evictAll();
     }
@@ -105,8 +116,8 @@ class FestivalFetchServiceTest {
     @Test
     void 기존항목_DELETED_updateFromApi_미호출() {
         Festival deleted = Festival.createFromApi(
-                externalId("5390000"), "Old Name", "경상남도", "경상남도 의령군 의령읍",
-                LocalDate.of(2025, 10, 2), LocalDate.of(2025, 10, 5), null);
+                externalId("5390000"), "Old Name", null, "경상남도", "경상남도 의령군 의령읍",
+                LocalDate.of(2025, 10, 2), LocalDate.of(2025, 10, 5), null, null, null, null);
         deleted.delete();
         given(tourApiClient.fetchAll()).willReturn(List.of(item("5390000")));
         given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.of(deleted));
@@ -201,6 +212,28 @@ class FestivalFetchServiceTest {
         fetchService.fetchNow();
 
         assertThat(captor.getValue().getExternalId()).isEqualTo(externalId("5390000"));
+    }
+
+    @Test
+    void 좌표_파싱실패_null처리_나머지필드는_저장() {
+        // 좌표가 깨진 형식이어도 좌표만 null로 강등하고 소개/홈페이지 등 나머지는 살린다(KAN-321)
+        TourApiFestivalItem badCoord = new TourApiFestivalItem("5390000", "의령 리치리치 페스티벌",
+                "서동생활공원", "2026-10-02", "2026-10-05", "개막식+메인프로그램",
+                "주관", "경상남도 의령군 의령읍 의병로8길 44",
+                "https://www.uiryeong.go.kr/festival", "055-570-2512",
+                "N/A", "", "경상남도 의령군");
+        given(tourApiClient.fetchAll()).willReturn(List.of(badCoord));
+        given(festivalRepository.findByExternalId(externalId("5390000"))).willReturn(Optional.empty());
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        given(festivalRepository.save(captor.capture())).willAnswer(inv -> inv.getArgument(0));
+
+        FestivalFetchResult result = fetchService.fetchNow();
+
+        assertThat(result.created()).isEqualTo(1);
+        Festival saved = captor.getValue();
+        assertThat(saved.getLat()).isNull();   // "N/A" → null 강등
+        assertThat(saved.getLng()).isNull();   // "" → null 강등
+        assertThat(saved.getDescription()).isEqualTo("개막식+메인프로그램"); // 나머지 필드는 정상 저장
     }
 
     @Test

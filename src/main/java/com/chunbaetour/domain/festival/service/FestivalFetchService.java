@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -135,11 +136,15 @@ public class FestivalFetchService {
             }
             festival.updateFromApi(
                     item.fstvlNm(),
+                    item.fstvlCo(),          // 축제내용(소개) → description
                     resolveRegion(item),
                     resolveAddress(item),
                     LocalDate.parse(item.fstvlStartDate()),
                     LocalDate.parse(item.fstvlEndDate()),
-                    null
+                    null,                    // imageUrl — 표준데이터 미제공
+                    item.homepageUrl(),      // 홈페이지 → relatedUrl
+                    parseCoordinate(item.latitude()),
+                    parseCoordinate(item.longitude())
             );
             return UpsertResult.UPDATED;
         } catch (DataIntegrityViolationException e) {
@@ -160,12 +165,32 @@ public class FestivalFetchService {
         return Festival.createFromApi(
                 externalId,
                 item.fstvlNm(),
+                item.fstvlCo(),          // 축제내용(소개) → description
                 resolveRegion(item),
                 resolveAddress(item),
                 LocalDate.parse(item.fstvlStartDate()),
                 LocalDate.parse(item.fstvlEndDate()),
-                null
+                null,                    // imageUrl — 표준데이터 미제공
+                item.homepageUrl(),      // 홈페이지 → relatedUrl
+                parseCoordinate(item.latitude()),
+                parseCoordinate(item.longitude())
         );
+    }
+
+    /**
+     * 표준데이터 좌표 문자열 → BigDecimal. null/공백/형식 오류는 좌표 없음(null)으로 강등한다 —
+     * 좌표 하나 깨졌다고 축제 수집 전체를 실패시키지 않는다(소개/홈페이지 등 나머지 필드는 살린다).
+     */
+    private BigDecimal parseCoordinate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.trim());
+        } catch (NumberFormatException e) {
+            log.warn("Festival 좌표 파싱 실패 — null 처리: value={}", value);
+            return null;
+        }
     }
 
     private boolean isValid(TourApiFestivalItem item) {
