@@ -114,7 +114,9 @@ class ReportServiceTest {
         ReflectionTestUtils.setField(activeFreePost, "id", FREE_POST_ID);
 
         activeCompanionPost = CompanionPost.create(
-                2L, "동행 구함", "같이 가요", 1L, "제주도", "제주",
+                2L, "동행 구함", "같이 가요",
+                com.chunbaetour.domain.community.companion.entity.CompanionTargetType.PLACE,
+                1L, "제주도", "제주",
                 LocalDate.of(2026, 8, 1), 4);
         ReflectionTestUtils.setField(activeCompanionPost, "id", COMP_POST_ID);
 

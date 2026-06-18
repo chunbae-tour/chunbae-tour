@@ -3,6 +3,7 @@ package com.chunbaetour.domain.festival.dto.response;
 import com.chunbaetour.domain.festival.entity.Festival;
 import com.chunbaetour.domain.festival.type.FestivalProgressStatus;
 import com.chunbaetour.domain.festival.type.FestivalStatus;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -20,6 +21,8 @@ public record FestivalCacheData(
         LocalDate endDate,
         String imageUrl,
         String relatedUrl,
+        BigDecimal latitude,
+        BigDecimal longitude,
         FestivalStatus status
 ) {
     public static FestivalCacheData from(Festival f) {
@@ -28,13 +31,14 @@ public record FestivalCacheData(
                 f.getRegion(), f.getAddress(),
                 f.getStartDate(), f.getEndDate(),
                 f.getImageUrl(), f.getRelatedUrl(),
+                f.getLat(), f.getLng(),
                 f.getStatus());
     }
 
     public FestivalResponse toResponse(LocalDate today) {
         return new FestivalResponse(
                 id, name, description, region, address, startDate, endDate,
-                imageUrl, relatedUrl, status,
+                imageUrl, relatedUrl, latitude, longitude, status,
                 FestivalProgressStatus.of(startDate, endDate, today));
     }
 

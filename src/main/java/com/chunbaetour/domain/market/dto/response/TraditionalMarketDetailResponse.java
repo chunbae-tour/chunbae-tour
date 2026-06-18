@@ -15,8 +15,9 @@ public record TraditionalMarketDetailResponse(
         Long marketId,
         String name,
         String address,
-        BigDecimal lat,
-        BigDecimal lng,
+        // 지도 공통 매핑 위해 latitude/longitude로 통일 노출(엔티티 컬럼은 lat/lng) — KAN-322
+        BigDecimal latitude,
+        BigDecimal longitude,
         String marketType,
         String phoneNumber,
         String homepageUrl,
