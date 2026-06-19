@@ -78,6 +78,37 @@ class ShopPublicControllerIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.images.length()").value(0));
     }
 
+    @Test
+    @DisplayName("가게 공개 정보 조회 — SUSPENDED 가게 404 SHOP_001 (공개 차단, notice와 동일 정책)")
+    void getShopInfo_suspendedShop_returns404() throws Exception {
+        // notice 쪽엔 SUSPENDED 404 가드가 있으나 info 엔드포인트엔 없었음 — 동일 차단 정책 회귀 가드 보강(리뷰 반영)
+        Shop shop = seedShop(ShopStatus.SUSPENDED);
+        shopImageRepository.save(ShopImage.profile(shop.getId(), ShopImageKeys.prefix(shop.getId()) + "p.jpg"));
+
+        mockMvc.perform(get("/api/v1/shops/" + shop.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("SHOP_001"));
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — 대표는 representativeImageUrl, 갤러리는 sort_order 오름차순 정렬")
+    void getShopInfo_multipleGallery_orderedBySortOrder() throws Exception {
+        // PROFILE→representativeImageUrl 분리 + GALLERY는 sort_order asc로 내려오는지 단언(정렬 회귀 가드 보강)
+        Shop shop = seedShop(ShopStatus.ACTIVE);
+        shopImageRepository.save(ShopImage.profile(shop.getId(), ShopImageKeys.prefix(shop.getId()) + "p.jpg"));
+        // 일부러 역순(1 먼저, 0 나중) 저장 — 응답이 sort_order로 재정렬되는지 확인
+        shopImageRepository.save(ShopImage.gallery(shop.getId(), ShopImageKeys.prefix(shop.getId()) + "g1.jpg", 1));
+        shopImageRepository.save(ShopImage.gallery(shop.getId(), ShopImageKeys.prefix(shop.getId()) + "g0.jpg", 0));
+
+        mockMvc.perform(get("/api/v1/shops/" + shop.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.representativeImageUrl").isNotEmpty())
+                .andExpect(jsonPath("$.data.images.length()").value(2))
+                .andExpect(jsonPath("$.data.images[0].type").value("GALLERY"))
+                .andExpect(jsonPath("$.data.images[0].sortOrder").value(0))
+                .andExpect(jsonPath("$.data.images[1].sortOrder").value(1));
+    }
+
     // ── GET /api/v1/shops/{id}/notices — 공개 공지 ──────────────────────────
 
     @Test
