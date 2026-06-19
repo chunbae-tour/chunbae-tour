@@ -18,6 +18,7 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -93,12 +94,47 @@ public class ShopImageService {
     /**
      * 가게 사진 목록 조회. 조회는 가게 상태 무관 허용(SUSPENDED/CLOSED에서도 상인이 확인 가능 — 공지 정책과 동일).
      * 저장 키를 presigned URL로 변환하며, presign 실패한 사진은 건너뛴다(graceful degrade).
+     *
+     * <p>[트랜잭션 경계] 클래스 기본 readOnly 트랜잭션 안에서 (느린) S3 presign 루프가 돌면 DB 커넥션을 외부 I/O
+     * 시간만큼 점유해 풀 압박·가용성 저하를 부른다. 본 메서드는 단건 소유권 조회 + presign뿐이라 트랜잭션이 불필요하므로
+     * {@code NOT_SUPPORTED}로 트랜잭션 없이 실행해 각 DB 조회만 짧게 커넥션을 쓰고 즉시 반납한다(hyeonmin02 리뷰).
+     *
+     * <p><b>[NOT_SUPPORTED suspend 주의]</b> 이 전파는 호출 시점에 활성 트랜잭션이 있으면 그 트랜잭션을 <b>보류(suspend)</b>시킨다.
+     * 현재 유일한 호출자는 {@code ShopImageController}(트랜잭션 없음)라 보류 대상이 없어 안전하다. 다만 향후 어떤
+     * 트랜잭션 메서드가 본 메서드를 호출하면 그 경계가 끊긴다 — 본 메서드 내부는 영속성 컨텍스트·Lazy 로딩에 의존하는
+     * 로직을 두면 안 된다(트랜잭션 밖이라 {@code LazyInitializationException}·정합성 버그 위험). presign+단건 SELECT만 유지할 것.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<ShopImageItemResponse> getImages(Long userId, Long shopId) {
         // 소유권 검증(상태 무관) — 타 가게 목록 조회 차단
         shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
+        return presignImages(shopId);
+    }
+
+    /**
+     * 공개 조회용 가게 사진 목록 (KAN-323). 소유자 인증 없이 shopId로 조회·presign한다 —
+     * 일반/비로그인 사용자가 가게 공개 정보({@link ShopService#getShopInfo})에서 대표·갤러리를 보기 위함.
+     * 가게 존재·상태(SUSPENDED 차단/CLOSED 허용) 가드는 호출측 getShopInfo가 이미 수행하므로 여기서는 키 presign만 담당한다.
+     *
+     * <p>[트랜잭션 경계] 공개 트래픽이 몰리는 경로 — readOnly 트랜잭션 안에서 S3 presign 루프를 돌리면 커넥션을 외부 I/O
+     * 시간만큼 붙잡아 풀 고갈로 이어질 수 있다. 본 메서드 자체는 소유권 검증 없이 presign만 하므로 {@code NOT_SUPPORTED}가 적합하다.
+     *
+     * <p><b>[호출측 트랜잭션 경계]</b> 유일한 호출자 {@code ShopService#getShopInfo}도 {@code NOT_SUPPORTED}로
+     * 트랜잭션 없이 실행된다(해당 메서드 주석 참조). 따라서 본 presign 진입 시점에 보류·잔존할 트랜잭션이 없어, presign 동안
+     * DB 커넥션을 실제로 점유하지 않는다 — 애너테이션 두 곳이 함께 맞물려야 "외부 S3 의존과 DB 커넥션 격리"가 성립한다.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public List<ShopImageItemResponse> getPublicImages(Long shopId) {
+        return presignImages(shopId);
+    }
+
+    /**
+     * shopId의 사진 행을 PROFILE 우선 + 갤러리 정렬순으로 조회해 presigned URL로 변환한다.
+     * 소유권/상태 가드는 호출측 책임 — 본 메서드는 presign 파이프라인(IDOR 2중 방어 + graceful degrade)만 담당한다.
+     */
+    private List<ShopImageItemResponse> presignImages(Long shopId) {
         List<ShopImageItemResponse> result = new ArrayList<>();
         for (ShopImage image : shopImageRepository.findByShopIdOrderByTypeDescSortOrderAscIdAsc(shopId)) {
             // IDOR 2중 방어 — 정상 경로면 업로드가 shops/{shopId}/ prefix로 키를 생성하므로 항상 통과.

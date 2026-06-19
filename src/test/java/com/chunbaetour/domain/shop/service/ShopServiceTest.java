@@ -16,8 +16,10 @@ import com.chunbaetour.domain.shop.dto.response.QrCodeResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopWalletResponse;
 import com.chunbaetour.domain.shop.entity.ShopWallet;
 import com.chunbaetour.domain.shop.repository.ShopWalletRepository;
+import com.chunbaetour.domain.shop.dto.response.ShopImageItemResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopResponse;
+import com.chunbaetour.domain.shop.type.ShopImageType;
 import com.chunbaetour.domain.shop.entity.Menu;
 import com.chunbaetour.domain.shop.entity.Shop;
 import com.chunbaetour.domain.shop.repository.MenuRepository;
@@ -56,6 +58,9 @@ class ShopServiceTest {
 
     @Mock
     private com.chunbaetour.domain.shop.storage.ShopImageStorage imageStorage;
+
+    @Mock
+    private ShopImageService shopImageService;
 
     // @Mock Clock 금지(withZone→null NPE) — @Spy 고정 Clock 사용. 2026-06-15T05:00:00Z = KST 14:00
     @Spy
@@ -361,6 +366,80 @@ class ShopServiceTest {
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
         verify(menuRepository, never()).findByShopIdOrderByIdAsc(any());
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — 대표·갤러리 이미지 임베드 (KAN-323)")
+    void getShopInfo_embedsImages() {
+        // given — PROFILE 1장 + GALLERY 2장이 presign 변환되어 내려온다
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+        given(shopImageService.getPublicImages(SHOP_ID)).willReturn(List.of(
+                new ShopImageItemResponse(1L, ShopImageType.PROFILE, "https://s3/profile?sig", 0, true),
+                new ShopImageItemResponse(2L, ShopImageType.GALLERY, "https://s3/g1?sig", 0, false),
+                new ShopImageItemResponse(3L, ShopImageType.GALLERY, "https://s3/g2?sig", 1, false)
+        ));
+
+        // when
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        // then — 대표는 PROFILE url, 갤러리는 GALLERY만(대표 제외)
+        assertThat(response.representativeImageUrl()).isEqualTo("https://s3/profile?sig");
+        assertThat(response.images()).hasSize(2);
+        assertThat(response.images()).allMatch(img -> img.type() == ShopImageType.GALLERY);
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — CLOSED 가게도 이미지 임베드 (휴무/폐업 안내, KAN-323)")
+    void getShopInfo_closedShop_embedsImages() {
+        // CLOSED는 SUSPENDED와 달리 공개 조회 허용 — 이미지 임베드 경로까지 도달해야 함
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+        given(shopImageService.getPublicImages(SHOP_ID)).willReturn(List.of(
+                new ShopImageItemResponse(1L, ShopImageType.PROFILE, "https://s3/p?sig", 0, true)));
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        assertThat(response.status()).isEqualTo(ShopStatus.CLOSED);
+        assertThat(response.representativeImageUrl()).isEqualTo("https://s3/p?sig");
+        // CLOSED는 영업시간 무관 businessStatus=CLOSED 강제
+        assertThat(response.businessStatus()).isEqualTo(BusinessStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — 대표 없이 갤러리만 있으면 대표 null·갤러리 노출 (KAN-323)")
+    void getShopInfo_galleryOnly_repNull() {
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+        given(shopImageService.getPublicImages(SHOP_ID)).willReturn(List.of(
+                new ShopImageItemResponse(2L, ShopImageType.GALLERY, "https://s3/g?sig", 0, false)));
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        assertThat(response.representativeImageUrl()).isNull();
+        assertThat(response.images()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("가게 공개 정보 조회 — 이미지 없으면 대표 null·갤러리 빈 목록 (KAN-323)")
+    void getShopInfo_noImages() {
+        // given — getPublicImages 미스텁: Mockito 기본값으로 빈 리스트 반환
+        Shop shop = createShop();
+        ReflectionTestUtils.setField(shop, "id", SHOP_ID);
+        given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(shop));
+        given(menuRepository.findByShopIdOrderByIdAsc(SHOP_ID)).willReturn(List.of());
+
+        ShopInfoResponse response = shopService.getShopInfo(SHOP_ID);
+
+        assertThat(response.representativeImageUrl()).isNull();
+        assertThat(response.images()).isEmpty();
     }
 
     // ── updateShopStatus ──────────────────────────────────────────────────

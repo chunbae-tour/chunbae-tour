@@ -46,11 +46,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
- *   <li>{@code POST/PATCH/DELETE /api/v1/community/**} — USER·ADMIN 권한 필요 (ADMIN은 중재 역할)</li>
+ *   <li>{@code POST/PATCH/DELETE /api/v1/community/**} — USER·MERCHANT·ADMIN 권한 필요 (MERCHANT도 이용자로서 작성 — KAN-324, ADMIN은 중재 역할)</li>
  *   <li>{@code GET /api/v1/community/**} — 비인증 허용</li>
  *   <li>{@code /api/v1/payments/**} — USER 전용 (webhook POST는 permitAll 선 매칭)</li>
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
- *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
+ *   <li>{@code /api/v1/chat/**} — USER·MERCHANT 허용 (PRD 개정 KAN-324: 상인도 이용자로서 채팅 가능. ADMIN 토큰은 AUTH_007 차단 유지)</li>
  *   <li>{@code /api/v1/notifications/**} — USER·MERCHANT 공용 (MERCHANT도 고객센터 알림 수신 대상)</li>
  *   <li>{@code /api/v1/reports/**} — USER 전용 (신고 생성·내 신고 조회; admin 신고 API는 /admin/** 커버)</li>
  *   <li>{@code /api/v1/faqs/**} — USER 전용 (버튼형 FAQ 조회; admin 관리 API는 /admin/faqs/** 커버)</li>
@@ -155,10 +155,11 @@ public class SecurityConfig {
                         .requestMatchers("/ws-stomp/**").permitAll()
                         // 신고 접수·내 신고 조회: USER 전용 (ADMIN은 신고 처리자이지 신고자가 아님)
                         .requestMatchers("/api/v1/reports/**").hasRole("USER")
-                        // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·ADMIN 모두 허용 (ADMIN은 신고 처리 등 중재 역할)
-                        .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/community/**").hasAnyRole("USER", "ADMIN")
+                        // 커뮤니티 쓰기(POST·PATCH·DELETE): USER·MERCHANT·ADMIN 허용
+                        // (MERCHANT도 이용자로서 작성 — KAN-324, ADMIN은 신고 처리 등 중재 역할)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/community/**").hasAnyRole("USER", "MERCHANT", "ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/community/**").hasAnyRole("USER", "MERCHANT", "ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/community/**").hasAnyRole("USER", "MERCHANT", "ADMIN")
                         // 커뮤니티 GET 비인증 허용: 목록·단건·댓글 목록 포함 (/companions/**, /free/** 하위 전체)
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/companions/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/community/posts/free/**").permitAll()
@@ -176,20 +177,20 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/merchants/apply").hasAnyRole("USER", "MERCHANT")
                         .requestMatchers("/api/v1/merchants/**").hasRole("MERCHANT")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        // 검색 관련 보호 API: 최근 검색어 저장/조회는 인증된 USER 전용 (조회 공개 API보다 먼저 선언)
-                        .requestMatchers(HttpMethod.POST, "/api/v1/search").hasRole("USER")
-                        .requestMatchers("/api/v1/search/recent").hasRole("USER")
+                        // 검색 관련 보호 API: 최근 검색어 저장/조회는 USER·MERCHANT 허용 (상인도 이용자, KAN-324). 조회 공개 API보다 먼저 선언
+                        .requestMatchers(HttpMethod.POST, "/api/v1/search").hasAnyRole("USER", "MERCHANT")
+                        .requestMatchers("/api/v1/search/recent").hasAnyRole("USER", "MERCHANT")
                         // 검색 조회 API는 와일드카드 대신 화이트리스트 방식으로 명시하여 권한 누수 방지
                         // 2-1 인기 검색어, 2-2 관광지 검색, 2-3 축제 검색, 2-4 자동완성
                         .requestMatchers(HttpMethod.GET, "/api/v1/search", "/api/v1/search/popular", "/api/v1/search/places", "/api/v1/search/festivals", "/api/v1/search/suggest").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v2/search/festivals").permitAll()
-                        // 관광지 찜하기/취소는 USER 인증 필요 — GET permitAll보다 먼저 선언해 의도 명확화
-                        .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasRole("USER")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasRole("USER")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/festivals/*/like").hasRole("USER")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/festivals/*/like").hasRole("USER")
-                        .requestMatchers(HttpMethod.POST, "/api/v1/traditional-markets/*/like").hasRole("USER")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/traditional-markets/*/like").hasRole("USER")
+                        // 관광지·축제·전통시장 찜하기/취소는 USER·MERCHANT 허용 (상인도 여행 소비자, KAN-324). GET permitAll보다 먼저 선언
+                        .requestMatchers(HttpMethod.POST, "/api/v1/places/*/like").hasAnyRole("USER", "MERCHANT")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/places/*/like").hasAnyRole("USER", "MERCHANT")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/festivals/*/like").hasAnyRole("USER", "MERCHANT")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/festivals/*/like").hasAnyRole("USER", "MERCHANT")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/traditional-markets/*/like").hasAnyRole("USER", "MERCHANT")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/traditional-markets/*/like").hasAnyRole("USER", "MERCHANT")
                         // 관광지 리뷰 작성은 USER 인증 필요 — GET permitAll보다 먼저 선언
                         .requestMatchers(HttpMethod.POST, "/api/v1/places/*/reviews").hasRole("USER")
                         // 지오코딩 및 리버스 지오코딩 등 카카오 API 연동 엔드포인트는 외부 API 할당량 보호를 위해 인증 필수
@@ -197,8 +198,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
                         // 추천 API (4-1: 인기/위치/카테고리, 4-2: 관광지 기반) 는 비로그인 허용 — KAN-157
                         .requestMatchers(HttpMethod.GET, "/api/v1/recommend/**").permitAll()
-                        // 가게 공개 조회 — 비로그인 접근 가능 (STORY-12)
-                        .requestMatchers(HttpMethod.GET, "/api/v1/shops/*").permitAll()
+                        // 가게 공개 조회·공개 공지 — 비로그인 접근 가능 (STORY-12 / KAN-323).
+                        // 경로 패턴은 JwtAuthenticationFilter.SHOP_PUBLIC_GET_PATTERNS로 단일화 —
+                        // optional-auth 필터 목록과 손으로 맞추던 드리프트 제거(한쪽만 빠지는 회귀 차단).
+                        .requestMatchers(HttpMethod.GET, JwtAuthenticationFilter.SHOP_PUBLIC_GET_PATTERNS).permitAll()
                         // 스토어 상품 목록·상세 조회 — 비인증 공개 API (STORY-16)
                         .requestMatchers(HttpMethod.GET, "/api/v1/store/products/**").permitAll()
                         // 스토어 구매·주문내역은 USER 전용. ADMIN/MERCHANT는 store 이용 시 USER로 가입해야 함.
@@ -211,8 +214,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()
                         // 엽전은 USER·MERCHANT 공용 — 상인도 소비자로 엽전 사용 가능
                         .requestMatchers("/api/v1/yeopjeon/**").hasAnyRole("USER", "MERCHANT")
-                        // 채팅은 USER 전용 — MERCHANT/ADMIN 토큰으로 접근 시 AUTH_007 응답
-                        .requestMatchers("/api/v1/chat/**").hasRole("USER")
+                        // 채팅은 USER·MERCHANT 허용 (상인도 이용자, KAN-324) — ADMIN 토큰은 AUTH_007 응답
+                        .requestMatchers("/api/v1/chat/**").hasAnyRole("USER", "MERCHANT")
                         // 알림은 USER·MERCHANT 공용 — MERCHANT도 고객센터 알림 수신 대상
                         .requestMatchers("/api/v1/notifications/**").hasAnyRole("USER", "MERCHANT")
                         // 번역은 USER 전용 — 채팅 메시지 번역 기능
@@ -221,8 +224,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/faqs/**").hasRole("USER")
                         // 고객센터 상담은 USER·MERCHANT 공용 — ADMIN 접근 시 AUTH_007 응답
                         .requestMatchers("/api/v1/support/**").hasAnyRole("USER", "MERCHANT")
-                        // 동행 리뷰 등록은 USER 전용
-                        .requestMatchers(HttpMethod.POST, "/api/v1/companion-reviews").hasRole("USER")
+                        // 동행 리뷰 등록은 USER·MERCHANT 허용 (상인도 이용자, KAN-324)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/companion-reviews").hasAnyRole("USER", "MERCHANT")
                         // 전통시장 조회 — 비인증 공개 API (KAN-220)
                         .requestMatchers(HttpMethod.GET, "/api/v1/traditional-markets/**").permitAll()
                         .anyRequest().authenticated()
