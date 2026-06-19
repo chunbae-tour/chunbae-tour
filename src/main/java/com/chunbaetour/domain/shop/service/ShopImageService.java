@@ -18,6 +18,7 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -93,7 +94,12 @@ public class ShopImageService {
     /**
      * 가게 사진 목록 조회. 조회는 가게 상태 무관 허용(SUSPENDED/CLOSED에서도 상인이 확인 가능 — 공지 정책과 동일).
      * 저장 키를 presigned URL로 변환하며, presign 실패한 사진은 건너뛴다(graceful degrade).
+     *
+     * <p>[트랜잭션 경계] 클래스 기본 readOnly 트랜잭션 안에서 (느린) S3 presign 루프가 돌면 DB 커넥션을 외부 I/O
+     * 시간만큼 점유해 풀 압박·가용성 저하를 부른다. 본 메서드는 단건 소유권 조회 + presign뿐이라 트랜잭션이 불필요하므로
+     * {@code NOT_SUPPORTED}로 트랜잭션 없이 실행해 각 DB 조회만 짧게 커넥션을 쓰고 즉시 반납한다(hyeonmin02 리뷰).
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<ShopImageItemResponse> getImages(Long userId, Long shopId) {
         // 소유권 검증(상태 무관) — 타 가게 목록 조회 차단
         shopRepository.findByIdAndUserId(shopId, userId)
@@ -106,7 +112,11 @@ public class ShopImageService {
      * 공개 조회용 가게 사진 목록 (KAN-323). 소유자 인증 없이 shopId로 조회·presign한다 —
      * 일반/비로그인 사용자가 가게 공개 정보({@link ShopService#getShopInfo})에서 대표·갤러리를 보기 위함.
      * 가게 존재·상태(SUSPENDED 차단/CLOSED 허용) 가드는 호출측 getShopInfo가 이미 수행하므로 여기서는 키 presign만 담당한다.
+     *
+     * <p>[트랜잭션 경계] 공개 트래픽이 몰리는 경로 — readOnly 트랜잭션 안에서 S3 presign 루프를 돌리면 커넥션을 외부 I/O
+     * 시간만큼 붙잡아 풀 고갈로 이어질 수 있다. {@code NOT_SUPPORTED}로 트랜잭션 없이 실행해 presign 동안 커넥션을 점유하지 않는다(hyeonmin02 리뷰).
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public List<ShopImageItemResponse> getPublicImages(Long shopId) {
         return presignImages(shopId);
     }
