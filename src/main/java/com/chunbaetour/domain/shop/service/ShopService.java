@@ -38,6 +38,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -185,7 +186,17 @@ public class ShopService {
      * CLOSED 가게는 조회 허용 — 영업 종료 가게 정보도 열람 가능해야 함.
      * SUSPENDED 가게는 차단 — 관리자 신고 정지, 존재 여부 노출 방지로 SHOP_NOT_FOUND 통일.
      * 삭제된 메뉴는 @SQLRestriction으로 자동 제외, isAvailable=false 메뉴는 포함 — 프론트에서 비활성 표시.
+     *
+     * <p>[트랜잭션 경계 — NOT_SUPPORTED] 공개 트래픽이 몰리는 경로이고, 중간에 (느린) S3 presign 루프
+     * ({@link ShopImageService#getPublicImages})가 끼어 있다. 클래스 기본 readOnly 트랜잭션을 그대로 두면 presign 동안에도
+     * 트랜잭션이 잡은 DB 커넥션이 반납되지 않아(S3 왕복 시간 = 커넥션 점유) 부하 시 풀 고갈·전 도메인 가용성 저하로 번진다.
+     * 따라서 본 메서드는 {@code NOT_SUPPORTED}로 트랜잭션 없이 실행한다 — 가게/메뉴 SELECT는 각각 autocommit으로
+     * 커넥션을 짧게 쓰고 즉시 반납하고, presign 구간엔 커넥션을 전혀 점유하지 않는다(외부 의존 S3와 DB 자원 격리).
+     * <p>안전성: {@code Shop}·{@code Menu}는 Lazy 연관이 없는 순수 스칼라 엔티티이고 {@link ShopInfoResponse#from}도
+     * 로딩된 컬럼만 읽으므로, 트랜잭션 밖 detached 상태에서도 {@code LazyInitializationException} 위험이 없다.
+     * 두 SELECT 사이 스냅샷 일관성은 공개 읽기 뷰라 불필요(hyeonmin02 리뷰 — getPublicImages 반쪽 수정 보완).
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ShopInfoResponse getShopInfo(Long shopId) {
         // shopId로 가게 조회 — 없으면 SHOP_001
         Shop shop = shopRepository.findById(shopId)
