@@ -40,6 +40,7 @@ class ShopImagePresignServiceTest {
     @Mock private com.chunbaetour.domain.place.repository.PlaceRepository placeRepository;
     @Mock private com.chunbaetour.domain.market.repository.TraditionalMarketRepository traditionalMarketRepository;
     @Mock private ShopImageStorage imageStorage;
+    @Mock private ShopImageService shopImageService;
 
     private ShopService shopService;
 
@@ -52,7 +53,8 @@ class ShopImagePresignServiceTest {
         // 영업시간 무관 테스트 — 고정 Clock 주입(생성자 시그니처 충족용)
         Clock clock = Clock.fixed(Instant.parse("2026-06-15T05:00:00Z"), ZoneOffset.UTC);
         shopService = new ShopService(shopRepository, menuRepository, shopWalletRepository,
-                new ObjectMapper(), placeRepository, traditionalMarketRepository, imageStorage, clock);
+                new ObjectMapper(), placeRepository, traditionalMarketRepository, imageStorage,
+                shopImageService, clock);
     }
 
     private Shop activeShop() {

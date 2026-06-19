@@ -15,8 +15,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -76,6 +78,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     );
 
     /**
+     * 가게 공개 GET 경로 (KAN-323) — SecurityConfig GET permitAll과 본 필터 optional-auth가 공유하는 단일 출처.
+     * 두 곳에 손으로 중복 등록하던 것을 상수화해 한쪽만 빠지는 드리프트("조회는 되는데 개인화 안 됨")를 차단한다.
+     * {@code /shops/*}는 단일 세그먼트 매칭이라 공지 경로(.../notices)는 별도 패턴으로 따로 등록한다.
+     */
+    public static final String[] SHOP_PUBLIC_GET_PATTERNS = {
+            "/api/v1/shops/*",
+            "/api/v1/shops/*/notices"
+    };
+
+    /**
      * GET 메서드 한정 공개 경로 패턴.
      *
      * <p>{@link com.chunbaetour.domain.auth.config.SecurityConfig}에서 GET만 permitAll인 경로.
@@ -85,9 +97,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      *
      * <p><b>⚠️ SecurityConfig의 GET permitAll 목록과 반드시 동기화할 것.</b> 공개 GET API를 추가할 때
      * SecurityConfig만 고치고 이 목록을 빠뜨리면 "조회는 되는데 개인화는 안 됨"(principal 미설정) 회귀가 생긴다.
+     * 가게 공개 경로는 {@link #SHOP_PUBLIC_GET_PATTERNS}로 단일화해 SecurityConfig와 손으로 맞추던 드리프트를 제거했다.
      */
-    private static final List<String> PUBLIC_GET_PATH_PATTERNS = List.of(
-            "/api/v1/shops/*",
+    private static final List<String> PUBLIC_GET_PATH_PATTERNS = Stream.concat(
+            // 가게 공개 GET — SecurityConfig permitAll과 공유 (단일 출처, 아래 상수)
+            Arrays.stream(SHOP_PUBLIC_GET_PATTERNS),
+            Stream.of(
             // 관광지 조회/추천 API — 비로그인 허용 (isLiked는 서비스 단에서 userId null 체크)
             "/api/v1/places/**",
             "/api/v1/recommend/**",
@@ -108,7 +123,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/v1/calendar/**",
             // 전통시장 조회 — 비인증 공개 API (KAN-220)
             "/api/v1/traditional-markets/**"
-    );
+    )).toList();
 
     /**
      * POST 메서드 한정 공개 경로 패턴.

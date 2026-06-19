@@ -61,6 +61,36 @@ public class ShopNoticeService {
         shopRepository.findByIdAndUserId(shopId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
 
+        return queryNotices(shopId, cursor, size);
+    }
+
+    /**
+     * 공개 공지 목록 조회 (KAN-323, 커서 페이징·최신순) — 비인증.
+     * 소유자 검증 없이 shopId로 조회한다(일반/비로그인 사용자가 가게 공개 정보에서 공지 열람).
+     * SUSPENDED 가게는 차단(SHOP_NOT_FOUND로 통일, 존재 여부 노출 방지), CLOSED는 허용 —
+     * 폐업/임시 휴무 공지도 손님이 볼 수 있어야 함({@link ShopService#getShopInfo} 공개 정책과 동일).
+     */
+    public CursorPageResponse<ShopNoticeResponse> getPublicNotices(Long shopId, String cursor, int size) {
+        // size 방어 — 컨트롤러 @Min(1)/@Max(100) 우회 및 서비스 직접 호출 대비
+        if (size <= 0 || size > 100) throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE);
+
+        // 소유자 검증 없이 shopId로 가게 조회 — 없으면 SHOP_001
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.SHOP_NOT_FOUND));
+
+        // SUSPENDED는 공개 차단(존재 노출 방지). CLOSED는 허용 — getShopInfo와 동일 정책
+        if (shop.getStatus() == ShopStatus.SUSPENDED) {
+            throw new BusinessException(ErrorCode.SHOP_NOT_FOUND);
+        }
+
+        return queryNotices(shopId, cursor, size);
+    }
+
+    /**
+     * 공지 커서 페이징 공통 조회 — 소유권/상태 가드는 호출측 책임. cursor 디코딩 + size+1 조회로 다음 페이지 판별,
+     * 매핑·커서 인코딩은 공통 팩토리로 위임(KAN-295). 상인용/공개용이 동일 쿼리를 재사용한다.
+     */
+    private CursorPageResponse<ShopNoticeResponse> queryNotices(Long shopId, String cursor, int size) {
         // cursor 디코딩 (null = 첫 페이지)
         Long cursorId = CursorUtils.decodeSafe(cursor);
 
@@ -76,7 +106,6 @@ public class ShopNoticeService {
             notices = shopNoticeRepository.findByShopIdAndIdLessThanOrderByIdDesc(shopId, cursorId, pageable);
         }
 
-        // 다음 페이지 판별·매핑·커서 인코딩을 공통 팩토리로 위임 (KAN-295)
         return CursorPageResponse.of(notices, size, ShopNoticeResponse::from, ShopNotice::getId);
     }
 

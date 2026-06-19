@@ -5,14 +5,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.chunbaetour.domain.common.error.BusinessException;
 import com.chunbaetour.domain.common.error.ErrorCode;
+import com.chunbaetour.domain.shop.dto.response.ShopImageItemResponse;
 import com.chunbaetour.domain.shop.entity.Shop;
+import com.chunbaetour.domain.shop.entity.ShopImage;
 import com.chunbaetour.domain.shop.repository.ShopImageRepository;
 import com.chunbaetour.domain.shop.repository.ShopRepository;
+import com.chunbaetour.domain.shop.storage.ShopImageKeys;
 import com.chunbaetour.domain.shop.storage.ShopImageStorage;
 import com.chunbaetour.domain.shop.type.ShopImageType;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -157,6 +163,60 @@ class ShopImageServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SHOP_INACTIVE);
+    }
+
+    // ── getPublicImages (공개 조회, KAN-323) ───────────────────────────────
+
+    @Test
+    @DisplayName("공개 이미지 조회 — 소유자 검증 없이 PROFILE·GALLERY presign 반환 (shop 소유권 조회 안 함)")
+    void getPublicImages_presignsWithoutOwnerCheck() {
+        // PROFILE 우선 + GALLERY 정렬순으로 반환되는 행 — 키는 가게 소유 prefix(shops/{id}/)
+        ShopImage profile = ShopImage.profile(SHOP_ID, ShopImageKeys.prefix(SHOP_ID) + "p.jpg");
+        ShopImage gallery = ShopImage.gallery(SHOP_ID, ShopImageKeys.prefix(SHOP_ID) + "g.jpg", 0);
+        given(shopImageRepository.findByShopIdOrderByTypeDescSortOrderAscIdAsc(SHOP_ID))
+                .willReturn(List.of(profile, gallery));
+        given(imageStorage.presignedGetUrl(any())).willAnswer(inv -> "url:" + inv.getArgument(0));
+
+        List<ShopImageItemResponse> result = shopImageService.getPublicImages(SHOP_ID);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(ShopImageItemResponse::type)
+                .containsExactly(ShopImageType.PROFILE, ShopImageType.GALLERY);
+        assertThat(result.get(0).url()).isEqualTo("url:" + ShopImageKeys.prefix(SHOP_ID) + "p.jpg");
+        // 공개 조회는 소유권 검증이 없어야 한다 — shopRepository 미조회
+        then(shopRepository).should(never()).findByIdAndUserId(any(), any());
+    }
+
+    @Test
+    @DisplayName("공개 이미지 조회 — 소유권 불일치 키는 presign 건너뜀 (IDOR 2중 방어)")
+    void getPublicImages_skipsForeignKey() {
+        // 타 가게 prefix(shops/999/) 키 — 정상 경로면 없어야 하나, DB 직접수정/마이그레이션 신호 → presign 안 함
+        ShopImage foreign = ShopImage.gallery(SHOP_ID, ShopImageKeys.prefix(999L) + "x.jpg", 0);
+        given(shopImageRepository.findByShopIdOrderByTypeDescSortOrderAscIdAsc(SHOP_ID))
+                .willReturn(List.of(foreign));
+
+        List<ShopImageItemResponse> result = shopImageService.getPublicImages(SHOP_ID);
+
+        assertThat(result).isEmpty();
+        // 소유권 불일치라 presign 자체를 호출하지 않음
+        then(imageStorage).should(never()).presignedGetUrl(any());
+    }
+
+    @Test
+    @DisplayName("공개 이미지 조회 — presign 실패(EXTERNAL_SERVICE_ERROR) 사진만 제외 (graceful degrade)")
+    void getPublicImages_presignFailure_skipsThatImage() {
+        ShopImage ok = ShopImage.gallery(SHOP_ID, ShopImageKeys.prefix(SHOP_ID) + "ok.jpg", 0);
+        ShopImage bad = ShopImage.gallery(SHOP_ID, ShopImageKeys.prefix(SHOP_ID) + "bad.jpg", 1);
+        given(shopImageRepository.findByShopIdOrderByTypeDescSortOrderAscIdAsc(SHOP_ID))
+                .willReturn(List.of(ok, bad));
+        given(imageStorage.presignedGetUrl(ShopImageKeys.prefix(SHOP_ID) + "ok.jpg")).willReturn("url:ok");
+        given(imageStorage.presignedGetUrl(ShopImageKeys.prefix(SHOP_ID) + "bad.jpg"))
+                .willThrow(new BusinessException(ErrorCode.EXTERNAL_SERVICE_ERROR));
+
+        List<ShopImageItemResponse> result = shopImageService.getPublicImages(SHOP_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).url()).isEqualTo("url:ok");
     }
 
     @Test
