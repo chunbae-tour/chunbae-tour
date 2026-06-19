@@ -69,6 +69,8 @@ Spring Boot Backend
 
 ## 패키지 구조
 
+현재 `src/main/java/com/chunbaetour/domain` 아래에는 21개 도메인 패키지가 있습니다. 새 도메인을 추가하면 이 목록도 함께 갱신합니다.
+
 ```text
 src/main/java/com/chunbaetour/domain
 ├── admin              # 관리자, 감사 로그, 대시보드, 심사/제재
@@ -176,10 +178,11 @@ src/main/java/com/chunbaetour/domain
 ### Error Handling
 
 - `BusinessException`
-- `ErrorCode`
+- `ErrorCode` (`com.chunbaetour.domain.common.error.ErrorCode`)
 - `GlobalExceptionHandler`
 
 도메인 예외는 공통 예외 핸들러에서 HTTP status와 에러 코드로 변환됩니다.
+대표 공통 에러 코드는 `INVALID_REQUEST(COMMON_002)`, `CONCURRENT_UPDATE(COMMON_009)`, `FILE_TOO_LARGE(COMMON_012)`입니다.
 
 ### Authentication Principal
 
@@ -199,17 +202,18 @@ src/main/java/com/chunbaetour/domain
 | 분산 락 | Redisson Lock | 캐시 스탬피드와 중복 처리 방어 |
 
 Redis Cluster 환경에서는 multi-key 명령의 CROSSSLOT 문제를 피하기 위해 hash tag와 개별 GET/파이프라인 전략을 구분해 사용합니다.
+예를 들어 인기 검색어 일간 스냅샷은 현재 랭킹 `search:ranking`과 같은 slot을 사용하도록 이전 랭킹 키를 `{search:ranking}:prev`로 둡니다.
 
 ## 스케줄러 / 배치성 작업
 
-| 작업 | 목적 |
-| --- | --- |
-| 인기 검색어 일간 스냅샷 | 오늘 랭킹과 전일 랭킹 비교 |
-| 관광지 통계 동기화 | Redis 조회수/좋아요 값을 DB로 반영 |
-| 관광지 데이터 동기화 | 한국관광공사 API 데이터 수집 |
-| 축제 데이터 동기화 | 공공데이터 축제 정보 수집 |
-| 전통시장 동기화 | 공공데이터 전통시장 정보 수집 |
-| 환불 재시도 | 실패한 환불 처리 재시도 |
+| 작업 | 주기 | 목적 |
+| --- | --- | --- |
+| 인기 검색어 일간 스냅샷 | 매일 00:00 (`search.ranking.reset-cron`) | 오늘 랭킹과 전일 랭킹 비교 |
+| 관광지 통계 동기화 | 1분 fixedDelay | Redis 조회수/좋아요 값을 DB로 반영 |
+| 관광지 데이터 동기화 | 매일 04:00 (`tour-api.kor-service.place-sync-cron`) | 한국관광공사 API 데이터 수집 |
+| 축제 데이터 동기화 | 매일 02:00 (`tour-api.sync-cron`) | 공공데이터 축제 정보 수집 |
+| 전통시장 동기화 | 매월 1일 02:00 | 공공데이터 전통시장 정보 수집 |
+| 환불 재시도 | 60초 fixedDelay | 실패한 환불 처리 재시도 |
 
 다중 인스턴스 환경에서 중복 실행되면 안 되는 작업은 ShedLock을 사용합니다.
 
@@ -241,7 +245,13 @@ Copy-Item .env.example .env
 docker compose up -d
 ```
 
-`.env.example` 기준 포트입니다.
+MySQL과 Redis는 컨테이너 시작 직후 초기화 시간이 필요합니다. 다음 명령으로 `healthy` 상태를 확인한 뒤 서버를 실행합니다.
+
+```powershell
+docker compose ps
+```
+
+`.env.example`을 `.env`로 복사한 경우의 포트입니다. `.env` 없이 `docker compose up -d`만 실행하면 `docker-compose.yml`의 fallback 값에 따라 MySQL은 `3308`을 사용합니다.
 
 | 서비스 | 주소 |
 | --- | --- |
@@ -285,19 +295,19 @@ Windows PowerShell:
 
 - 대상: PR to `develop`, PR to `main`, push to `develop`
 - JDK 21 설정
-- Gradle build
-- 테스트 소스 컴파일
-- Testcontainers 통합 테스트
+- `./gradlew build -x test`
+- `./gradlew compileTestJava`
+- `./gradlew test`로 Testcontainers 통합 테스트 실행
 
 ### CD
 
 - 대상: push to `main`
-- Gradle test gate
+- `./gradlew test` gate 실패 시 배포 중단
 - Docker image build
 - ECR push
 - ECS task definition 렌더링
 - ECS Fargate rolling 배포
-- 서비스 안정화 대기
+- ECS 서비스 안정화 대기와 ALB health check 통과 확인
 
 `main` 브랜치로 머지되면 운영 ECS 서비스로 자동 배포됩니다.
 
@@ -308,6 +318,9 @@ Windows PowerShell:
 - Redis Cluster에서는 multi-key 명령의 slot 제약을 고려합니다.
 - 운영 Secret은 AWS Secrets Manager에서 주입합니다.
 - Actuator는 운영에서 관리 포트 `9090`으로 분리됩니다.
+- `/actuator/health/lb`는 ALB health check 기준으로 사용합니다.
+- `/actuator/prometheus` 메트릭은 ADOT/Prometheus 수집 대상으로 사용하며, 응답 시간, 에러율, DB/Redis 상태를 우선 확인합니다.
+- 애플리케이션 로그는 CloudWatch Logs에서 확인합니다.
 - 운영 Swagger는 비활성화되어 있으므로 API 문서는 Netlify 명세를 기준으로 합니다.
 
 ## License
