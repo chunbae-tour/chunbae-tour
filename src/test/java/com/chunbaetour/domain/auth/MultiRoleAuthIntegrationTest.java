@@ -466,6 +466,33 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/users/me 호출 시 403 AUTH_007 (누수 회귀 가드, KAN-324)")
+    void merchantToken_callingUsersMe_returns_403() throws Exception {
+        // KAN-324에서 열지 않은 USER 전용 경로 — /api/v1/users/**는 hasRole("USER")라 MERCHANT 차단 유지.
+        // 권한 체인 순서 변경·users/**에 MERCHANT 실수 추가 시 누수를 잡는 회귀 가드(리뷰 반영).
+        seedFactory.seedMerchant("merchant-usersme@example.com", PASSWORD, "상인닉-유저me");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-usersme@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/reports/me 호출 시 403 AUTH_007 (누수 회귀 가드, KAN-324)")
+    void merchantToken_callingReports_returns_403() throws Exception {
+        // 신고(/api/v1/reports/**)는 USER 전용 유지 — KAN-324 개방 대상 아님. MERCHANT 차단 회귀 가드(리뷰 반영).
+        seedFactory.seedMerchant("merchant-report@example.com", PASSWORD, "상인닉-신고");
+        String accessToken = login("/api/v1/merchants/auth/login", "merchant-report@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/reports/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
+    }
+
+    @Test
     @org.junit.jupiter.api.DisplayName("ADMIN 토큰으로 POST /api/v1/companion-reviews 호출 시 403 AUTH_007")
     void adminToken_callingCompanionReviews_returns_403() throws Exception {
         // companion-reviews는 USER 전용 — ADMIN 차단 검증
