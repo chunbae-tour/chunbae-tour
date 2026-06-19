@@ -46,11 +46,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  *   <li>{@code /api/v1/users/**} — USER 권한 필요</li>
  *   <li>{@code /api/v1/merchants/**} — MERCHANT 권한 필요</li>
  *   <li>{@code /api/v1/admin/**} — ADMIN 권한 필요</li>
- *   <li>{@code POST/PATCH/DELETE /api/v1/community/**} — USER·ADMIN 권한 필요 (ADMIN은 중재 역할)</li>
+ *   <li>{@code POST/PATCH/DELETE /api/v1/community/**} — USER·MERCHANT·ADMIN 권한 필요 (MERCHANT도 이용자로서 작성 — KAN-324, ADMIN은 중재 역할)</li>
  *   <li>{@code GET /api/v1/community/**} — 비인증 허용</li>
  *   <li>{@code /api/v1/payments/**} — USER 전용 (webhook POST는 permitAll 선 매칭)</li>
  *   <li>{@code /api/v1/yeopjeon/**} — USER·MERCHANT 공용 (상인도 소비자로 엽전 사용 가능)</li>
- *   <li>{@code /api/v1/chat/**} — USER 전용 (PRD: 채팅은 일반 사용자만 이용 가능, MERCHANT/ADMIN 접근 불가)</li>
+ *   <li>{@code /api/v1/chat/**} — USER·MERCHANT 허용 (PRD 개정 KAN-324: 상인도 이용자로서 채팅 가능. ADMIN 토큰은 AUTH_007 차단 유지)</li>
  *   <li>{@code /api/v1/notifications/**} — USER·MERCHANT 공용 (MERCHANT도 고객센터 알림 수신 대상)</li>
  *   <li>{@code /api/v1/reports/**} — USER 전용 (신고 생성·내 신고 조회; admin 신고 API는 /admin/** 커버)</li>
  *   <li>{@code /api/v1/faqs/**} — USER 전용 (버튼형 FAQ 조회; admin 관리 API는 /admin/faqs/** 커버)</li>

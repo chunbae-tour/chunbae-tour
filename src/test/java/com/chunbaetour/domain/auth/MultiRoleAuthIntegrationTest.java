@@ -356,59 +356,57 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
         seedFactory.seedMerchant("merchant-cr@example.com", PASSWORD, "상인닉-리뷰");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-cr@example.com").accessToken();
 
-        int statusCode = mockMvc.perform(post("/api/v1/companion-reviews")
+        // 인가 통과 정밀 단언 — 빈 바디라 @Valid 검증 단계(400 COMMON_002)로 떨어짐 = 보안(401/403)을 지났다는 증거.
+        // 느슨한 isNotEqualTo(403) 대신 기대 다운스트림 상태를 못 박아 401·405 등이 통과로 위장되는 것 차단(리뷰 반영).
+        mockMvc.perform(post("/api/v1/companion-reviews")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andReturn().getResponse().getStatus();
-
-        // 403(AUTH_007)이 아니어야 한다 — 다운스트림 검증 결과(400 등)는 무관
-        assertThat(statusCode).isNotEqualTo(403);
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/chat/rooms → 보안 통과(403 아님, KAN-324)")
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 GET /api/v1/chat/rooms → 200 (인가 통과 + 빈 목록, KAN-324)")
     void merchantToken_callingChat_passesSecurity() throws Exception {
         seedFactory.seedMerchant("merchant-chat@example.com", PASSWORD, "상인닉-채팅");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-chat@example.com").accessToken();
 
-        int statusCode = mockMvc.perform(get("/api/v1/chat/rooms")
+        // size 기본값(10)이라 파라미터 없이도 정상 — 가입 직후 빈 채팅방 목록 200. 정밀 단언으로 인가 성공 확정.
+        mockMvc.perform(get("/api/v1/chat/rooms")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andReturn().getResponse().getStatus();
-
-        assertThat(statusCode).isNotEqualTo(403);
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS"));
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/community/posts/free → 보안 통과(403 아님, KAN-324)")
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/community/posts/free → 400 (인가 통과 후 검증, KAN-324)")
     void merchantToken_callingCommunityWrite_passesSecurity() throws Exception {
         seedFactory.seedMerchant("merchant-comm@example.com", PASSWORD, "상인닉-커뮤니티");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-comm@example.com").accessToken();
 
-        int statusCode = mockMvc.perform(post("/api/v1/community/posts/free")
+        mockMvc.perform(post("/api/v1/community/posts/free")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andReturn().getResponse().getStatus();
-
-        assertThat(statusCode).isNotEqualTo(403);
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("COMMON_002"));
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/places/{id}/like → 보안 통과(403 아님, KAN-324)")
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/places/{id}/like → 404 (인가 통과 후 장소 미존재, KAN-324)")
     void merchantToken_callingPlaceLike_passesSecurity() throws Exception {
         seedFactory.seedMerchant("merchant-like@example.com", PASSWORD, "상인닉-찜");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-like@example.com").accessToken();
 
-        int statusCode = mockMvc.perform(post("/api/v1/places/999999/like")
+        // 존재하지 않는 placeId라 인가 통과 후 PLACE_NOT_FOUND(404) = 보안을 지나 비즈니스 로직에 도달했다는 증거.
+        mockMvc.perform(post("/api/v1/places/999999/like")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andReturn().getResponse().getStatus();
-
-        assertThat(statusCode).isNotEqualTo(403);
+                .andExpect(status().isNotFound());
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/search → 보안 통과(403 아님, KAN-324)")
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/search → 보안 통과(인증·인가 거부 아님, KAN-324)")
     void merchantToken_callingSearch_passesSecurity() throws Exception {
         seedFactory.seedMerchant("merchant-search@example.com", PASSWORD, "상인닉-검색");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-search@example.com").accessToken();
@@ -419,35 +417,46 @@ class MultiRoleAuthIntegrationTest extends AbstractIntegrationTest {
                         .content("{}"))
                 .andReturn().getResponse().getStatus();
 
-        assertThat(statusCode).isNotEqualTo(403);
+        // 최근검색어 저장 경로 — 다운스트림 상태가 구현별로 갈릴 수 있어 정확 상태 대신 "보안 거부(401·403)가 아님"으로 단언.
+        // 느슨한 != 403만 쓰면 401(미인증)도 통과로 잡히므로 401까지 제외해 인가 성공을 정밀하게 못 박음(리뷰 반영).
+        assertThat(statusCode).isNotIn(401, 403);
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/festivals/{id}/like → 보안 통과(403 아님, KAN-324)")
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/festivals/{id}/like → 404 (인가 통과 후 축제 미존재, KAN-324)")
     void merchantToken_callingFestivalLike_passesSecurity() throws Exception {
         // places like와 별도 requestMatchers 라인 — 독립 검증 필요
         seedFactory.seedMerchant("merchant-flike@example.com", PASSWORD, "상인닉-축제찜");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-flike@example.com").accessToken();
 
-        int statusCode = mockMvc.perform(post("/api/v1/festivals/999999/like")
+        mockMvc.perform(post("/api/v1/festivals/999999/like")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andReturn().getResponse().getStatus();
-
-        assertThat(statusCode).isNotEqualTo(403);
+                .andExpect(status().isNotFound());
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/traditional-markets/{id}/like → 보안 통과(403 아님, KAN-324)")
+    @org.junit.jupiter.api.DisplayName("MERCHANT 토큰으로 POST /api/v1/traditional-markets/{id}/like → 404 (인가 통과 후 시장 미존재, KAN-324)")
     void merchantToken_callingMarketLike_passesSecurity() throws Exception {
         // places·festivals like와 별도 requestMatchers 라인 — 독립 검증 필요
         seedFactory.seedMerchant("merchant-mlike@example.com", PASSWORD, "상인닉-시장찜");
         String accessToken = login("/api/v1/merchants/auth/login", "merchant-mlike@example.com").accessToken();
 
-        int statusCode = mockMvc.perform(post("/api/v1/traditional-markets/999999/like")
+        mockMvc.perform(post("/api/v1/traditional-markets/999999/like")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
-                .andReturn().getResponse().getStatus();
+                .andExpect(status().isNotFound());
+    }
 
-        assertThat(statusCode).isNotEqualTo(403);
+    @Test
+    @org.junit.jupiter.api.DisplayName("ADMIN 토큰으로 GET /api/v1/chat/rooms 호출 시 403 AUTH_007 (chat ADMIN 차단 회귀 가드, KAN-324)")
+    void adminToken_callingChat_returns_403() throws Exception {
+        // chat은 USER·MERCHANT만 허용 — ADMIN은 PRD 개정 후에도 차단 유지. 의도 고정 가드(리뷰 반영).
+        seedFactory.seedAdmin("admin-chat@example.com", PASSWORD, "관리자닉-채팅");
+        String accessToken = login("/api/v1/admin/auth/login", "admin-chat@example.com").accessToken();
+
+        mockMvc.perform(get("/api/v1/chat/rooms")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_007"));
     }
 
     @Test
