@@ -192,6 +192,102 @@ class ShopNoticeServiceTest {
         }
     }
 
+    // ── GET /api/v1/shops/{shopId}/notices (공개, KAN-323) ──────────────────
+
+    @Nested
+    @DisplayName("공개 공지 목록 조회 (KAN-323)")
+    class GetPublicNotices {
+
+        private Shop createClosedShop() {
+            Shop shop = createActiveShop();
+            ReflectionTestUtils.setField(shop, "status", ShopStatus.CLOSED);
+            return shop;
+        }
+
+        @Test
+        @DisplayName("비인증 첫 페이지 조회 성공 (ACTIVE, 소유자 검증 없음)")
+        void getPublicNotices_firstPage() {
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createActiveShop()));
+            given(shopNoticeRepository.findByShopIdOrderByIdDesc(any(), any()))
+                    .willReturn(List.of(createNotice()));
+
+            CursorPageResponse<ShopNoticeResponse> response =
+                    shopNoticeService.getPublicNotices(SHOP_ID, null, 20);
+
+            assertThat(response.content()).hasSize(1);
+            assertThat(response.hasNext()).isFalse();
+        }
+
+        @Test
+        @DisplayName("CLOSED 가게도 공지 조회 허용 (휴무 공지)")
+        void getPublicNotices_closedShop_allowed() {
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createClosedShop()));
+            given(shopNoticeRepository.findByShopIdOrderByIdDesc(any(), any()))
+                    .willReturn(List.of(createNotice()));
+
+            CursorPageResponse<ShopNoticeResponse> response =
+                    shopNoticeService.getPublicNotices(SHOP_ID, null, 20);
+
+            assertThat(response.content()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("다음 페이지 존재 — hasNext=true, 절단, nextCursor는 노출 마지막 항목 id")
+        void getPublicNotices_hasNext_truncatesAndSetsCursor() {
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createActiveShop()));
+            // size=2 요청, size+1=3개 반환 → hasNext=true
+            given(shopNoticeRepository.findByShopIdOrderByIdDesc(any(), any()))
+                    .willReturn(List.of(noticeWithId(30L), noticeWithId(20L), noticeWithId(10L)));
+
+            CursorPageResponse<ShopNoticeResponse> response =
+                    shopNoticeService.getPublicNotices(SHOP_ID, null, 2);
+
+            assertThat(response.content()).hasSize(2);
+            assertThat(response.hasNext()).isTrue();
+            assertThat(CursorUtils.decode(response.nextCursor())).isEqualTo(20L);
+        }
+
+        @Test
+        @DisplayName("SUSPENDED 가게 — SHOP_NOT_FOUND (공개 차단, 존재 노출 방지)")
+        void getPublicNotices_suspendedShop_blocked() {
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.of(createSuspendedShop()));
+
+            assertThatThrownBy(() -> shopNoticeService.getPublicNotices(SHOP_ID, null, 20))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("가게 없음 — SHOP_NOT_FOUND")
+        void getPublicNotices_shopNotFound() {
+            given(shopRepository.findById(SHOP_ID)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> shopNoticeService.getPublicNotices(SHOP_ID, null, 20))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.SHOP_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("size = 0 — INVALID_INPUT_VALUE (가게 조회 전 방어)")
+        void getPublicNotices_sizeZero_throws() {
+            assertThatThrownBy(() -> shopNoticeService.getPublicNotices(SHOP_ID, null, 0))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        @Test
+        @DisplayName("size > 100 — INVALID_INPUT_VALUE")
+        void getPublicNotices_sizeOverLimit_throws() {
+            assertThatThrownBy(() -> shopNoticeService.getPublicNotices(SHOP_ID, null, 101))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
     // ── DELETE /merchants/me/shops/{shopId}/notices/{noticeId} ─────────────
 
     @Nested
