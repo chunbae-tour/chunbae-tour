@@ -144,8 +144,8 @@
 
 | 구분 | 기술 |
 | --- | --- |
-| RDB | MySQL 8.4 |
-| 캐시/랭킹/락 | Redis, Redisson |
+| RDB | MySQL (local: 8.4, prod: RDS MySQL) |
+| 캐시/랭킹/락 | Redis (local: 7, prod: ElastiCache), Redisson |
 | 스케줄러 락 | ShedLock |
 | 파일 저장 | AWS S3 |
 | 배포 | Docker, AWS ECR, ECS Fargate, ALB |
@@ -251,6 +251,14 @@ src/main/java/com/chunbaetour/domain
 
 ### 환경 변수 준비
 
+macOS/Linux:
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell:
+
 ```powershell
 Copy-Item .env.example .env
 ```
@@ -271,11 +279,28 @@ docker compose up -d
 
 ### 서버 실행
 
+macOS/Linux:
+
+```bash
+./gradlew bootRun
+```
+
+Windows PowerShell:
+
 ```powershell
 .\gradlew bootRun
 ```
 
 ### 테스트
+
+macOS/Linux:
+
+```bash
+./gradlew test
+./gradlew compileTestJava
+```
+
+Windows PowerShell:
 
 ```powershell
 .\gradlew test
