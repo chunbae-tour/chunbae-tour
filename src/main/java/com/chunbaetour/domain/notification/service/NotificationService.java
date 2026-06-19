@@ -28,17 +28,8 @@ public class NotificationService {
         List<Notification> notifications = notificationRepository.findWithCursor(
                 userId, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = notifications.size() > size;
-        List<Notification> page = hasNext ? notifications.subList(0, size) : notifications;
-
-        String nextCursor = hasNext ? CursorUtils.encode(page.get(page.size() - 1).getId()) : null;
-
-        return new CursorPageResponse<>(
-                page.stream().map(NotificationResponse::from).toList(),
-                nextCursor,
-                hasNext,
-                size
-        );
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325)
+        return CursorPageResponse.of(notifications, size, NotificationResponse::from, Notification::getId);
     }
 
     // 단건 읽음 처리 — 본인 알림 아닌 경우 NOTIFICATION_NOT_FOUND (정보 비노출)

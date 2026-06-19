@@ -339,6 +339,24 @@ class SupportRoomServiceTest {
                 supportRoomService.getAllRooms(null, 20, null);
 
         assertThat(result.content().get(0).lastMessage()).isNull();
+        // KAN-325: 부분 페이지(1건)여도 size는 요청값(20) echo — 조립형 ofAssembled가 content.size() 아닌 요청 size를 싣는지 고정
+        assertThat(result.size()).isEqualTo(20);
+    }
+
+    // KAN-325 회귀: 빈 결과여도 size 필드는 요청값(20)을 echo — 이전 빈 가드는 size=0을 하드코딩했음(split-brain).
+    // 조립형 ofAssembled로 단일화하며 빈 페이지도 요청 size를 echo하도록 바뀐 계약을 고정.
+    @Test
+    void getAllRooms_empty_sizeEchoesRequestNotZero() {
+        given(supportRoomRepository.findAllRoomsWithCursor(any(), any(), any(PageRequest.class)))
+                .willReturn(List.of());
+
+        CursorPageResponse<com.chunbaetour.domain.cs.dto.response.AdminSupportRoomResponse> result =
+                supportRoomService.getAllRooms(null, 20, null);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.size()).isEqualTo(20);
     }
 
     // ===== getMyRooms =====
@@ -353,6 +371,18 @@ class SupportRoomServiceTest {
 
         assertThat(result.hasNext()).isTrue();
         assertThat(result.content()).hasSize(2);
+    }
+
+    // KAN-325 회귀: 부분 페이지(1건, size=5 요청) → size 필드는 실제 개수(1)가 아니라 요청 size(5)를 echo (계산형 of() 수렴)
+    @Test
+    void getMyRooms_partialPage_sizeEchoesRequest() {
+        given(supportRoomRepository.findMyRoomsWithCursor(eq(1L), any(), any(), any(PageRequest.class)))
+                .willReturn(List.of(buildRoom(1L)));
+
+        CursorPageResponse<SupportRoomResponse> result = supportRoomService.getMyRooms(1L, null, 5, null);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.size()).isEqualTo(5);
     }
 
     private SupportRoom buildRoomWithUserId(Long id, Long userId) {

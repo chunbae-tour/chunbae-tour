@@ -159,7 +159,8 @@ public class ChatMessageService {
         Map<Long, Account> accountMap = accountRepository.findAllById(senderIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
-        return new CursorPageResponse<>(
+        // 페이지별 보강(발신자 계정·파일 URL)이라 조립형 팩토리로 단일화 (KAN-325)
+        return CursorPageResponse.ofAssembled(
                 page.stream()
                         .map(m -> ChatMessageResponse.from(m, accountMap.get(m.getSenderId()), resolveFileUrl(m)))
                         .toList(),

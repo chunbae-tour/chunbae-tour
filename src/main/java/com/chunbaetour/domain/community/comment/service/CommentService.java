@@ -87,7 +87,8 @@ public class CommentService {
                         replyCountMap.getOrDefault(c.getId(), 0L)))
                 .toList();
 
-        return new CursorPageResponse<>(items, nextCursor, hasNext, items.size());
+        // 페이지별 보강(작성자·대댓글수)이라 조립형 팩토리 — size echo 통일(items.size() 아님, KAN-325)
+        return CursorPageResponse.ofAssembled(items, nextCursor, hasNext, size);
     }
 
     // 특정 루트 댓글의 대댓글 전체 조회 (더보기)

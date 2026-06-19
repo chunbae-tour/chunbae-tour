@@ -62,17 +62,8 @@ public class AdminUserService {
         List<Account> accounts =
                 accountRepository.searchForAdmin(normalizedKeyword, status, role, cursorId, pageable);
 
-        boolean hasNext = accounts.size() > size;
-        List<Account> content = hasNext ? accounts.subList(0, size) : accounts;
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
-                : null;
-
-        List<UserAdminListResponse> responses = content.stream()
-                .map(UserAdminListResponse::from)
-                .toList();
-
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 슬라이스·매핑·nextCursor·size echo를 공통 진입점으로 단일화 (KAN-325)
+        return CursorPageResponse.of(accounts, size, UserAdminListResponse::from, Account::getId);
     }
 
     /** 사용자 단건 상세 — 가입정보 + 정지상태 + 누적 신고 건수. */
