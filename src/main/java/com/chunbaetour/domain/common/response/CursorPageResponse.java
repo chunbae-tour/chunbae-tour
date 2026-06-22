@@ -54,4 +54,28 @@ public record CursorPageResponse<T>(
         // size 필드는 실제 반환 개수가 아니라 요청 size를 그대로 echo한다(팀 표준).
         return new CursorPageResponse<>(content, nextCursor, hasNext, size);
     }
+
+    /**
+     * 이미 잘라내고 매핑까지 끝난 페이지로 표준 응답을 만든다 (KAN-325).
+     *
+     * <p>계산형 {@link #of(List, int, Function, ToLongFunction)}와 달리, <b>페이지별 배치 보강</b>(작성자 일괄 조회·
+     * 댓글 수 집계 등 슬라이스 이후에야 가능한 후처리)이나 <b>문자열·복합 커서</b>(오타교정·평점+id·geo 등 id 단일
+     * 인코딩으로 안 떨어지는 경우)처럼 계산형에 안 맞는 호출부를 위한 조립형 진입점이다. 직접 {@code new} 대신 본
+     * 팩토리를 거치게 해 size 시맨틱을 단일화한다(KAN-325 소프트 봉인).
+     *
+     * @param content  이미 size개까지 잘라 매핑한 노출 목록
+     * @param nextCursor 다음 페이지 커서(없으면 null). 호출부가 직접 인코딩한 값을 그대로 받는다.
+     * @param hasNext  다음 페이지 존재 여부(호출부가 size+1 sentinel 등으로 판정)
+     * @param size     <b>요청 페이지 크기</b>(1 이상). {@code content.size()}(실제 개수)가 아니라 요청값을 echo한다(팀 표준).
+     * @param <R>      응답 DTO 타입
+     * @throws BusinessException size가 1 미만인 경우 (COMMON_002 INVALID_REQUEST) — 계산형 of()와 동일 가드
+     */
+    public static <R> CursorPageResponse<R> ofAssembled(
+            List<R> content, String nextCursor, boolean hasNext, int size) {
+        // 계산형 of()와 동일하게 size<1 fail-fast — 직접 생성처가 0/실제개수를 넘기던 split-brain을 진입점에서 차단
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        return new CursorPageResponse<>(content, nextCursor, hasNext, size);
+    }
 }

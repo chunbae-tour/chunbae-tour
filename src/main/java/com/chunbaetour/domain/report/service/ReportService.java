@@ -150,13 +150,8 @@ public class ReportService {
                 ? reportRepository.findByReporterIdOrderByIdDesc(reporterId, pageable)
                 : reportRepository.findByReporterIdAndIdLessThanOrderByIdDesc(reporterId, cursorId, pageable);
 
-        boolean hasNext = reports.size() > size;
-        List<Report> content = hasNext ? reports.subList(0, size) : reports;
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).getId()) : null;
-
-        return new CursorPageResponse<>(
-                content.stream().map(MyReportResponse::of).toList(),
-                nextCursor, hasNext, content.size());
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325)
+        return CursorPageResponse.of(reports, size, MyReportResponse::of, Report::getId);
     }
 
     /**
@@ -210,7 +205,8 @@ public class ReportService {
                 })
                 .toList();
 
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 페이지별 보강(신고자·피신고 계정 일괄)이라 조립형 팩토리 — size echo 통일(responses.size() 아님, KAN-325)
+        return CursorPageResponse.ofAssembled(responses, nextCursor, hasNext, size);
     }
 
     /**

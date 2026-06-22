@@ -175,7 +175,7 @@ public class SearchService {
                         // 교정어 재검색 결과가 없으면 오타 제안을 하지 않고 원본 빈 결과를 반환한다.
                         if (correctedResult.isEmpty()) {
                             return TypoCorrectedSearchResponse.of(
-                                    new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size())
+                                    CursorPageResponse.ofAssembled(finalResultItems, finalNextCursorStr, finalHasNext, size)
                             );
                         }
 
@@ -185,18 +185,18 @@ public class SearchService {
                         }
 
                         return TypoCorrectedSearchResponse.corrected(
-                                new CursorPageResponse<>(correctedResult,
+                                CursorPageResponse.ofAssembled(correctedResult,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
-                                        correctedHasNext, correctedResult.size()),
+                                        correctedHasNext, size),
                                 correction
                         );
                     })
                     .orElseGet(() -> TypoCorrectedSearchResponse.of(
-                            new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size())));
+                            CursorPageResponse.ofAssembled(finalResultItems, finalNextCursorStr, finalHasNext, size)));
         }
 
         return TypoCorrectedSearchResponse.of(
-                new CursorPageResponse<>(finalResultItems, finalNextCursorStr, finalHasNext, finalResultItems.size()));
+                CursorPageResponse.ofAssembled(finalResultItems, finalNextCursorStr, finalHasNext, size));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ public class SearchService {
         // 람다 캐스를 위해 effectively final 변수로 고정
         final String finalNormalized = normalized;
         CursorPageResponse<SearchFestivalResponse> basePage =
-                new CursorPageResponse<>(updatedItems, nextCursorStr, hasNext, updatedItems.size());
+                CursorPageResponse.ofAssembled(updatedItems, nextCursorStr, hasNext, size);
         if (updatedItems.isEmpty() && cursorId == null && StringUtils.hasText(finalNormalized)) {
             return typoCorrectionService.findClosestForFestivals(finalNormalized)
                     .map(correction -> {
@@ -295,9 +295,9 @@ public class SearchService {
                         }
 
                         return TypoCorrectedSearchResponse.corrected(
-                                new CursorPageResponse<>(correctedItems,
+                                CursorPageResponse.ofAssembled(correctedItems,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
-                                        correctedHasNext, correctedItems.size()),
+                                        correctedHasNext, size),
                                 correction
                         );
                     })
@@ -352,7 +352,7 @@ public class SearchService {
         // 람다 캐스를 위해 effectively final 변수로 고정
         final String finalNormalizedV1 = normalized;
         CursorPageResponse<SearchFestivalV1Response> basePage =
-                new CursorPageResponse<>(v1Items, nextCursorStr, hasNext, v1Items.size());
+                CursorPageResponse.ofAssembled(v1Items, nextCursorStr, hasNext, size);
         if (v1Items.isEmpty() && cursorId == null && StringUtils.hasText(finalNormalizedV1)) {
             return typoCorrectionService.findClosestForFestivals(finalNormalizedV1)
                     .map(correction -> {
@@ -380,9 +380,9 @@ public class SearchService {
                         }
 
                         return TypoCorrectedSearchResponse.corrected(
-                                new CursorPageResponse<>(correctedItems,
+                                CursorPageResponse.ofAssembled(correctedItems,
                                         correctedNextCursor != null ? String.valueOf(correctedNextCursor) : null,
-                                        correctedHasNext, correctedItems.size()),
+                                        correctedHasNext, size),
                                 correction
                         );
                     })

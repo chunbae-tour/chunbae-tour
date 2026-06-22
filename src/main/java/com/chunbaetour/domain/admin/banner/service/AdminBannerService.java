@@ -64,6 +64,7 @@ public class AdminBannerService {
 
         boolean hasNext = banners.size() > size;
         List<Banner> content = hasNext ? banners.subList(0, size) : banners;
+        // 복합 커서(priority+id)라 계산형 of(id추출자)에 안 맞음 → nextCursor는 직접 인코딩하고 조립형 팩토리로 단일화 (KAN-325)
         String nextCursor = hasNext
                 ? encodeCursor(content.get(content.size() - 1))
                 : null;
@@ -72,7 +73,8 @@ public class AdminBannerService {
                 .map(AdminBannerListResponse::from)
                 .toList();
 
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // size echo 통일 — 실제 개수(responses.size()) 아닌 요청 size (KAN-325)
+        return CursorPageResponse.ofAssembled(responses, nextCursor, hasNext, size);
     }
 
     /** 배너 등록 — Banner 신규 생성(ACTIVE). 등록된 상세를 반환한다. */

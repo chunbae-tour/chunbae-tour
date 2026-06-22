@@ -33,15 +33,8 @@ public class FaqService {
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Faq> page = faqRepository.findWithCursor(cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = page.size() > size;
-        List<FaqResponse> content = page.stream()
-                .limit(size)
-                .map(FaqResponse::from)
-                .toList();
-        // content 기준으로 nextCursor 인코딩 — mapping/필터링 변경 시에도 안전
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).faqId()) : null;
-
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325). 필터링 없는 단순 매핑이라 raw 엔티티 id로 커서 동일
+        return CursorPageResponse.of(page, size, FaqResponse::from, Faq::getId);
     }
 
     // USER: 활성 FAQ 커서 페이징 — isActive=true만 반환, category 필터 선택
@@ -51,12 +44,8 @@ public class FaqService {
                 ? faqRepository.findByCategoryAndIsActiveTrueWithCursor(category, cursorId, PageRequest.of(0, size + 1))
                 : faqRepository.findByIsActiveTrueWithCursor(cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = page.size() > size;
-        List<FaqResponse> content = page.stream().limit(size).map(FaqResponse::from).toList();
-        // content 기준으로 nextCursor 인코딩 — mapping/필터링 변경 시에도 안전
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).faqId()) : null;
-
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325)
+        return CursorPageResponse.of(page, size, FaqResponse::from, Faq::getId);
     }
 
     // USER: 활성 FAQ 단건 번역 — entity-ID 기반, question/answer를 targetLanguage로 번역 (FAQ 캐시 경유)

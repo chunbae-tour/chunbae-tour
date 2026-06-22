@@ -148,7 +148,8 @@ public class CompanionReviewService {
         Map<Long, Account> accountMap = accountRepository.findAllById(reviewerIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
-        return new CursorPageResponse<>(
+        // 페이지별 보강(리뷰어 계정 일괄)이라 조립형 팩토리로 단일화 (KAN-325)
+        return CursorPageResponse.ofAssembled(
                 page.stream()
                         .map(r -> CompanionReviewResponse.of(r, accountMap.get(r.getReviewerId())))
                         .toList(),

@@ -97,4 +97,42 @@ class CursorPageResponseTest {
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
+
+    // ── ofAssembled (KAN-325) — 조립형: 이미 잘라낸 content + 직접 인코딩 커서 ──────────────
+
+    @Test
+    @DisplayName("ofAssembled — 전달한 content·nextCursor·hasNext를 그대로 싣고, size는 요청값을 echo한다")
+    void ofAssembled_passesThroughAndEchoesSize() {
+        List<String> content = List.of("a", "b");
+
+        CursorPageResponse<String> result =
+                CursorPageResponse.ofAssembled(content, "cursor-xyz", true, 10);
+
+        assertThat(result.content()).containsExactly("a", "b");
+        assertThat(result.nextCursor()).isEqualTo("cursor-xyz");
+        assertThat(result.hasNext()).isTrue();
+        // 실제 개수(2)가 아니라 요청 size(10)를 echo — 직접 생성 시 content.size()를 넘기던 split-brain 제거
+        assertThat(result.size()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("ofAssembled — 빈 마지막 페이지여도 size는 요청값을 echo (이전 0 하드코딩 대체)")
+    void ofAssembled_emptyPage_echoesRequestedSize() {
+        CursorPageResponse<String> result =
+                CursorPageResponse.ofAssembled(List.of(), null, false, 20);
+
+        assertThat(result.content()).isEmpty();
+        assertThat(result.hasNext()).isFalse();
+        assertThat(result.nextCursor()).isNull();
+        assertThat(result.size()).isEqualTo(20);
+    }
+
+    @Test
+    @DisplayName("ofAssembled — size<1이면 계산형 of()와 동일하게 BusinessException(INVALID_REQUEST)")
+    void ofAssembled_sizeBelowOne_throws() {
+        assertThatThrownBy(() -> CursorPageResponse.ofAssembled(List.of("a"), null, false, 0))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
 }

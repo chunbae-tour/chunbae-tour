@@ -88,11 +88,8 @@ public class SupportRoomService {
         List<SupportRoom> page = supportRoomRepository.findMyRoomsWithCursor(
                 userId, status, cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = page.size() > size;
-        List<SupportRoomResponse> content = page.stream().limit(size).map(SupportRoomResponse::fromForUser).toList();
-        String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).supportRoomId()) : null;
-
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325)
+        return CursorPageResponse.of(page, size, SupportRoomResponse::fromForUser, SupportRoom::getId);
     }
 
     // USER 상담방 메시지 cursor 페이징 — 본인 방만 접근 가능, id DESC (최신 먼저)
@@ -166,7 +163,8 @@ public class SupportRoomService {
         List<SupportRoom> rooms = page.stream().limit(size).toList();
 
         if (rooms.isEmpty()) {
-            return new CursorPageResponse<>(List.of(), null, false, 0);
+            // 빈 페이지도 size는 요청값 echo로 통일 (이전 0 → split-brain 제거, KAN-325)
+            return CursorPageResponse.ofAssembled(List.of(), null, false, size);
         }
 
         List<Long> userIds = rooms.stream().map(SupportRoom::getUserId).toList();
@@ -189,7 +187,8 @@ public class SupportRoomService {
         }).toList();
 
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).supportRoomId()) : null;
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 페이지별 보강(닉네임·마지막 메시지 배치)이라 조립형 팩토리 — size echo 통일 (KAN-325)
+        return CursorPageResponse.ofAssembled(content, nextCursor, hasNext, size);
     }
 
     // exhaustive switch — 새 SupportMessageType 추가 시 컴파일 오류로 누락 방지
@@ -212,7 +211,8 @@ public class SupportRoomService {
                 .toList();
         String nextCursor = hasNext ? CursorUtils.encode(content.get(content.size() - 1).messageId()) : null;
 
-        return new CursorPageResponse<>(content, nextCursor, hasNext, content.size());
+        // 페이지별 보강(파일 presign)이라 조립형 팩토리 — size echo 통일 (KAN-325)
+        return CursorPageResponse.ofAssembled(content, nextCursor, hasNext, size);
     }
 
     // SupportMessage.fileUrl(S3 객체 키) → presigned GET URL 변환. TEXT는 fileUrl이 없어 그대로 null 반환.

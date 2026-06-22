@@ -176,6 +176,8 @@ class SearchServiceTest {
         // then
         assertThat(response.content()).isEmpty();
         assertThat(response.didYouMean()).isNull();
+        // KAN-325: 빈 결과여도 size는 요청값(10) echo — 복합/문자열 커서 경로를 ofAssembled로 단일화하며 content.size() 아닌 요청 size 유지
+        assertThat(response.size()).isEqualTo(size);
     }
 
     @Test
@@ -323,6 +325,8 @@ class SearchServiceTest {
 
         // then
         assertThat(response.content()).hasSize(1);
+        // KAN-325: 부분 페이지(1건, size=10)여도 size는 요청값(10) echo (축제 검색 복합커서 경로)
+        assertThat(response.size()).isEqualTo(size);
         verify(popularSearchService, never()).incrementSearchCount(any(), anyString());
     }
 

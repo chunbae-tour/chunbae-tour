@@ -64,17 +64,8 @@ public class AdminShopCertificationService {
         PageRequest pageable = PageRequest.of(0, size + 1);
         List<ShopCertification> certs = certificationRepository.searchForAdmin(status, cursorId, pageable);
 
-        boolean hasNext = certs.size() > size;
-        List<ShopCertification> content = hasNext ? certs.subList(0, size) : certs;
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
-                : null;
-
-        List<ShopCertificationListResponse> responses = content.stream()
-                .map(ShopCertificationListResponse::from)
-                .toList();
-
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 슬라이스·매핑·nextCursor·size echo를 공통 진입점으로 단일화 (KAN-325)
+        return CursorPageResponse.of(certs, size, ShopCertificationListResponse::from, ShopCertification::getId);
     }
 
     /** 인증 신청 단건 상세 — 단순 조회(락 미적용). 가게 현재 인증여부(isCertified) 동봉. */
