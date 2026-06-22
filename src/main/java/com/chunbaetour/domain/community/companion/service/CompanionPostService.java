@@ -83,6 +83,9 @@ public class CompanionPostService {
 
     public CursorPageResponse<CompanionPostGetListResponse> findAll(
             String region, LocalDate meetingDate, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         Long cursorId = decodeCursor(cursor);
         List<CompanionPost> posts = postQueryRepository.findByFilters(
                 CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, size + 1);

@@ -63,6 +63,9 @@ public class FreePostService {
     }
 
     public CursorPageResponse<FreePostGetListResponse> findAll(String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
