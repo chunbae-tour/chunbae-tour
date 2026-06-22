@@ -80,19 +80,8 @@ public class ChatRoomService {
         List<ChatRoomMember> members = chatRoomMemberRepository.findMyRoomsWithCursor(
                 userId, ChatMemberState.activeStates(), cursorId, PageRequest.of(0, size + 1));
 
-        boolean hasNext = members.size() > size;
-        List<ChatRoomMember> page = hasNext ? members.subList(0, size) : members;
-
-        String nextCursor = hasNext
-                ? CursorUtils.encode(page.get(page.size() - 1).getChatRoom().getId())
-                : null;
-
-        return new CursorPageResponse<>(
-                page.stream().map(MyChatRoomResponse::from).toList(),
-                nextCursor,
-                hasNext,
-                size
-        );
+        // 슬라이스·매핑·size echo 공통 진입점 단일화 — 커서는 멤버가 아닌 소속 채팅방 id로 인코딩 (KAN-325)
+        return CursorPageResponse.of(members, size, MyChatRoomResponse::from, m -> m.getChatRoom().getId());
     }
 
     // 채팅방 종료 — 방장만 가능, room.status만 CLOSED로 전이, 멤버 상태 유지

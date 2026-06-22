@@ -182,7 +182,8 @@ public class IntegratedSearchService {
         if (track && searchSource.isTrackable() && cursor == null && !items.isEmpty()) {
             popularSearchService.incrementSearchCount(keyword, clientIp);
         }
-        return new CursorPageResponse<>(items, nextCursor, hasNext, items.size());
+        // 복합 커서(score+priority+type+id)라 조립형 팩토리 — size echo 통일(items.size() 아님, KAN-325)
+        return CursorPageResponse.ofAssembled(items, nextCursor, hasNext, size);
     }
 
     private double calculateScore(String text, String keyword) {

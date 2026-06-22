@@ -55,6 +55,9 @@ public class CommentService {
 
     // 루트 댓글 cursor 페이징 — 삭제된 루트 댓글은 대댓글이 있는 경우만 placeholder로 포함
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         postQueryService.validateExists(postId, postType);
         Long cursorId = decodeCursor(cursor);
 
@@ -87,7 +90,8 @@ public class CommentService {
                         replyCountMap.getOrDefault(c.getId(), 0L)))
                 .toList();
 
-        return new CursorPageResponse<>(items, nextCursor, hasNext, items.size());
+        // 페이지별 보강(작성자·대댓글수)이라 조립형 팩토리 — size echo 통일(items.size() 아님, KAN-325)
+        return CursorPageResponse.ofAssembled(items, nextCursor, hasNext, size);
     }
 
     // 특정 루트 댓글의 대댓글 전체 조회 (더보기)

@@ -65,16 +65,9 @@ public class FestivalService {
         Long cursorId = CursorUtils.decodeSafe(StringUtils.hasText(cursor) ? cursor : null);
         List<FestivalCacheData> rows = self.findCachedFestivalList(date, normalizedRegion, cursorId, size).festivals();
 
-        boolean hasNext = rows.size() > size;
-        List<FestivalCacheData> content = hasNext ? rows.subList(0, size) : rows;
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).id())
-                : null;
-
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325)
         LocalDate today = LocalDate.now();
-        return new CursorPageResponse<>(
-                content.stream().map(d -> d.toResponse(today)).toList(),
-                nextCursor, hasNext, content.size());
+        return CursorPageResponse.of(rows, size, d -> d.toResponse(today), FestivalCacheData::id);
     }
 
     // ── KAN-98: 사용자 축제 상세 조회 ──────────────────────────────────────
@@ -94,16 +87,9 @@ public class FestivalService {
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Festival> rows = festivalQueryRepository.findNotDeletedByCursor(cursorId, size + 1);
 
-        boolean hasNext = rows.size() > size;
-        List<Festival> content = hasNext ? rows.subList(0, size) : rows;
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
-                : null;
-
+        // 슬라이스·매핑·nextCursor·size echo 공통 진입점 단일화 (KAN-325)
         LocalDate today = LocalDate.now();
-        return new CursorPageResponse<>(
-                content.stream().map(f -> FestivalResponse.of(f, today)).toList(),
-                nextCursor, hasNext, content.size());
+        return CursorPageResponse.of(rows, size, f -> FestivalResponse.of(f, today), Festival::getId);
     }
 
     // ── KAN-95: 관리자 축제 등록 ───────────────────────────────────────────

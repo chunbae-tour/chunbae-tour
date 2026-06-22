@@ -83,6 +83,9 @@ public class CompanionPostService {
 
     public CursorPageResponse<CompanionPostGetListResponse> findAll(
             String region, LocalDate meetingDate, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         Long cursorId = decodeCursor(cursor);
         List<CompanionPost> posts = postQueryRepository.findByFilters(
                 CompanionPostStatus.ACTIVE, region, meetingDate, cursorId, size + 1);
@@ -112,7 +115,8 @@ public class CompanionPostService {
                         commentCounts.getOrDefault(post.getId(), 0L)))
                 .toList();
 
-        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
+        // 페이지별 보강(작성자·채팅방·댓글수)이라 조립형 팩토리 — size echo 통일(content.size() 아님, KAN-325)
+        return CursorPageResponse.ofAssembled(items, nextCursor, hasNext, size);
     }
 
     @Transactional

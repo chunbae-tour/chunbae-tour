@@ -127,6 +127,9 @@ public class CompanionReviewService {
 
     // 동행 리뷰 목록 조회 — id DESC 커서 페이징, N+1 방지: reviewerId 일괄 조회 후 Account Map
     public CursorPageResponse<CompanionReviewResponse> getReviews(Long targetUserId, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         if (!accountRepository.existsById(targetUserId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }
@@ -148,7 +151,8 @@ public class CompanionReviewService {
         Map<Long, Account> accountMap = accountRepository.findAllById(reviewerIds).stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
 
-        return new CursorPageResponse<>(
+        // 페이지별 보강(리뷰어 계정 일괄)이라 조립형 팩토리로 단일화 (KAN-325)
+        return CursorPageResponse.ofAssembled(
                 page.stream()
                         .map(r -> CompanionReviewResponse.of(r, accountMap.get(r.getReviewerId())))
                         .toList(),

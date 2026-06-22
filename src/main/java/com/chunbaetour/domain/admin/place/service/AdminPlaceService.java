@@ -66,17 +66,8 @@ public class AdminPlaceService {
         PageRequest pageable = PageRequest.of(0, size + 1);
         List<Place> places = placeRepository.searchForAdmin(normalizedKeyword, category, cursorId, pageable);
 
-        boolean hasNext = places.size() > size;
-        List<Place> content = hasNext ? places.subList(0, size) : places;
-        String nextCursor = hasNext
-                ? CursorUtils.encode(content.get(content.size() - 1).getId())
-                : null;
-
-        List<AdminPlaceListResponse> responses = content.stream()
-                .map(AdminPlaceListResponse::from)
-                .toList();
-
-        return new CursorPageResponse<>(responses, nextCursor, hasNext, responses.size());
+        // 슬라이스·매핑·nextCursor·size echo를 공통 진입점으로 단일화 (KAN-325)
+        return CursorPageResponse.of(places, size, AdminPlaceListResponse::from, Place::getId);
     }
 
     /** 관광지 등록 — Place 신규 생성(ACTIVE). 등록된 상세를 반환한다. */

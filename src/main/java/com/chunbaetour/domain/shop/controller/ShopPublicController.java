@@ -1,17 +1,23 @@
 package com.chunbaetour.domain.shop.controller;
 
 import com.chunbaetour.domain.common.response.ApiResponse;
+import com.chunbaetour.domain.common.response.CursorPageResponse;
 import com.chunbaetour.domain.shop.dto.response.ShopInfoResponse;
+import com.chunbaetour.domain.shop.dto.response.ShopNoticeResponse;
+import com.chunbaetour.domain.shop.service.ShopNoticeService;
 import com.chunbaetour.domain.shop.service.ShopService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -28,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ShopPublicController {
 
     private final ShopService shopService;
+    private final ShopNoticeService shopNoticeService;
 
     /**
      * 가게 공개 정보 + 메뉴 목록 조회 — 비로그인 접근 가능.
@@ -42,5 +49,22 @@ public class ShopPublicController {
     @GetMapping("/{shopId}")
     public ApiResponse<ShopInfoResponse> getShopInfo(@PathVariable @Positive Long shopId) {
         return ApiResponse.success(shopService.getShopInfo(shopId));
+    }
+
+    /**
+     * 가게 공개 공지 목록 조회 — 비로그인 접근 가능 (KAN-323).
+     *
+     * <p>상인 전용 {@code /merchants/me/shops/{id}/notices}는 소유자 인증이 필요해 일반/비로그인 사용자가
+     * 호출할 수 없으므로 별도 공개 경로를 둔다. SUSPENDED 가게는 차단(SHOP_001), CLOSED는 휴무 공지를 위해 허용.
+     * SecurityConfig·JwtAuthenticationFilter의 {@code /api/v1/shops/{id}/notices} 공개 패턴과 동기화 필수.
+     */
+    @SecurityRequirements
+    @Operation(summary = "가게 공개 공지 목록 조회 (커서 페이징, 최신순)")
+    @GetMapping("/{shopId}/notices")
+    public ApiResponse<CursorPageResponse<ShopNoticeResponse>> getShopNotices(
+            @PathVariable @Positive Long shopId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return ApiResponse.success(shopNoticeService.getPublicNotices(shopId, cursor, size));
     }
 }

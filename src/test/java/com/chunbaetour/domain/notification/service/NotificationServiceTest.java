@@ -61,6 +61,20 @@ class NotificationServiceTest {
         assertThat(result.nextCursor()).isNull();
     }
 
+    // KAN-325 회귀: 부분 페이지(1건)인데 size=20 요청 → size 필드는 실제 개수(1)가 아니라 요청 size(20)를 echo.
+    // 계산형 of() 수렴이 직접 생성 시절의 size 시맨틱을 바꾸지 않았는지 콜사이트 레벨에서 고정.
+    @Test
+    void getNotifications_partialPage_sizeEchoesRequest() {
+        given(notificationRepository.findWithCursor(eq(USER_ID), isNull(), any(PageRequest.class)))
+                .willReturn(List.of(buildNotification(5L)));
+
+        CursorPageResponse<NotificationResponse> result =
+                notificationService.getNotifications(USER_ID, null, 20);
+
+        assertThat(result.content()).hasSize(1);
+        assertThat(result.size()).isEqualTo(20);
+    }
+
     // 알림 목록 hasNext — size+1 반환 시 nextCursor 설정
     @Test
     void getNotifications_hasNext_nextCursorSet() {

@@ -63,6 +63,9 @@ public class FreePostService {
     }
 
     public CursorPageResponse<FreePostGetListResponse> findAll(String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<FreePost> posts = postRepository.findByCursor(FreePostStatus.ACTIVE, cursorId, PageRequest.of(0, size + 1));
 
@@ -86,7 +89,8 @@ public class FreePostService {
                         postImageService.presignAll(post.getImageUrls())))
                 .toList();
 
-        return new CursorPageResponse<>(items, nextCursor, hasNext, content.size());
+        // 페이지별 보강(작성자·댓글수·이미지 presign)이라 조립형 팩토리 — size echo 통일(content.size() 아님, KAN-325)
+        return CursorPageResponse.ofAssembled(items, nextCursor, hasNext, size);
     }
 
     @Transactional
