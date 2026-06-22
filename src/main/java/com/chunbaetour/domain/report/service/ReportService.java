@@ -175,6 +175,9 @@ public class ReportService {
      */
     public CursorPageResponse<ReportResponse> getReports(String statusParam, ReportTargetType targetType,
             ReportReason reason, Long reportedUserId, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         ReportStatus status = parseStatus(statusParam);
         Long cursorId = CursorUtils.decodeSafe(cursor);
         List<Report> reports = reportQueryRepository.findByFilter(

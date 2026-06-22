@@ -50,6 +50,9 @@ public class AdminBannerService {
      */
     public CursorPageResponse<AdminBannerListResponse> getBanners(
             BannerStatus status, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         // DELETED는 운영자 목록에서 항상 제외(soft delete) — status=DELETED 필터는 "빈 목록"이 아니라
         // 미지원 입력으로 보고 400으로 거부한다(조용한 빈 결과로 오해 유발 방지).
         if (status == BannerStatus.DELETED) {

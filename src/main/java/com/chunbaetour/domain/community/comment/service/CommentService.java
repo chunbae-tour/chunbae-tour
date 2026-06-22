@@ -55,6 +55,9 @@ public class CommentService {
 
     // 루트 댓글 cursor 페이징 — 삭제된 루트 댓글은 대댓글이 있는 경우만 placeholder로 포함
     public CursorPageResponse<CommentGetListResponse> findAll(Long postId, PostType postType, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         postQueryService.validateExists(postId, postType);
         Long cursorId = decodeCursor(cursor);
 
