@@ -38,7 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>Redis 미존재 (이미 회전됨/로그아웃됨) → AUTH_005</li>
  *   <li>탈퇴된 사용자 (DB에 없음) → AUTH_005 (탈퇴 노출 차단)</li>
  *   <li>정지 계정 → {@link ErrorCode#ACCOUNT_SUSPENDED} (AUTH_012) — 명시적 안내</li>
- *   <li>동시 reissue로 인한 CAS 실패 → AUTH_005 (한쪽만 성공해야 탈취 방어)</li>
+ *   <li>동시 reissue로 인한 CAS 실패 → AUTH_005 + Refresh 계열 무효화 (탈취 의심: 정상/공격자 모두 재로그인 강제)</li>
  * </ul>
  *
  * <p>설계 결정: Refresh claim에 role/email 포함하지 않은 이유는 권한 변경(USER → MERCHANT 승격)
@@ -113,6 +113,13 @@ public class ReissueService {
             auditLogger.emitFailure(SecurityAuditEventType.REFRESH_REJECTED, userId,
                     ErrorCode.REFRESH_TOKEN_INVALID.getCode(),
                     Map.of("reasonDetail", "cas_failure"));
+            // 토큰 계열 무효화 — race에서 이긴 쪽(이미 회전을 마친 측)의 Refresh 키까지 삭제해 "둘 다 차단".
+            //   삭제 후엔 현재 Redis에 남아 있던 tokenId(이긴 쪽이 받은 새 Refresh)로도 CAS가 nil과 비교돼 실패 →
+            //   정상 사용자·공격자 모두 다음 reissue 불가 → 재로그인 강제(탈취 Refresh 수명을 체인에서 즉시 차단).
+            //   throw만 하던 기존 동작은 race에서 진 쪽만 막혀 이긴 쪽(탈취 의심) Refresh가 생존하는 갭이 있었음.
+            //   Access 토큰은 jti 단건 blacklist만 있고 이 경로엔 access jti가 없어 즉시 무효화 불가 →
+            //   잔여 TTL(최대 PT30M) 자연 만료로 닫힌다(피해 시간 bounded). Redis 실패는 LogoutService와 동일하게 전파.
+            refreshTokenStore.delete(account.getId());
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 

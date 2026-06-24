@@ -106,6 +106,32 @@ class ReissueIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void cas_failure_invalidates_whole_refresh_series_both_blocked() throws Exception {
+        signup(EMAIL, PASSWORD, NICKNAME);
+        Cookie firstRefresh = login(EMAIL, PASSWORD); // R1, Redis = R1
+
+        // race에서 이긴 쪽(탈취 의심 측)이 먼저 reissue 성공 → R2 획득, Redis = R2
+        MvcResult won = mockMvc.perform(post("/api/v1/auth/reissue").cookie(firstRefresh))
+                .andExpect(status().isOk())
+                .andReturn();
+        Cookie wonRefresh = won.getResponse().getCookie(COOKIE_NAME); // R2
+        assertThat(wonRefresh).as("이긴 쪽은 새 Refresh(R2)를 받아야 함").isNotNull();
+
+        // 진 쪽(정상 사용자)이 stale R1로 reissue → CAS 실패 → AUTH_005 + 계열 무효화 트리거
+        mockMvc.perform(post("/api/v1/auth/reissue").cookie(firstRefresh))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_005"));
+
+        // 계열 무효화 결과: 이긴 쪽이 보유한 R2도 더 이상 reissue 불가 → "둘 다 차단"
+        mockMvc.perform(post("/api/v1/auth/reissue").cookie(wonRefresh))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_005"));
+
+        // Redis refresh 키가 실제로 삭제됐는지 확인 (계열 무효화 사실 검증)
+        assertThat(redis.keys("auth:refresh:*")).isEmpty();
+    }
+
+    @Test
     void reissue_without_cookie_returns_AUTH_005() throws Exception {
         // Cookie 없이 reissue 직접 호출 (정상 흐름이 아닌 비정상 경로)
         mockMvc.perform(post("/api/v1/auth/reissue"))
