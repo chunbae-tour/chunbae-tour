@@ -101,6 +101,8 @@ class ReissueServiceTest {
 
         // 정확한 인자로 rotate가 호출되어야 함 (CAS 원자성 보장의 진입점)
         verify(refreshTokenStore).rotate(USER_ID, OLD_TID, "new-tid", REFRESH_TTL);
+        // 정상 경로에서는 계열 무효화(delete)가 일어나면 안 됨 (회귀 가드)
+        verify(refreshTokenStore, never()).delete(anyLong());
     }
 
     @Test
@@ -174,6 +176,9 @@ class ReissueServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getErrorCode())
                 .isEqualTo(ErrorCode.REFRESH_TOKEN_INVALID);
+
+        // CAS 실패 = 탈취 의심 → Refresh 계열 무효화로 "둘 다 차단" (이긴 쪽 Refresh 키까지 삭제)
+        verify(refreshTokenStore).delete(USER_ID);
     }
 
     private void verifyRefreshWasNotRotated() {
