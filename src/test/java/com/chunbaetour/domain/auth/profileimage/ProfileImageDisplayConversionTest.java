@@ -91,7 +91,7 @@ class ProfileImageDisplayConversionTest {
     }
 
     @Test
-    @DisplayName("companionreview CompanionReviewResponse — 우리 키 → 변환값")
+    @DisplayName("companion.review CompanionReviewResponse — 우리 키 → 변환값")
     void companionReview() {
         CompanionReview review = mock(CompanionReview.class);
         lenient().when(review.getScore()).thenReturn(5);
