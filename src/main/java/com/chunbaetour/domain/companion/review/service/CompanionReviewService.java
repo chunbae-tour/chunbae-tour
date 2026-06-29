@@ -117,7 +117,7 @@ public class CompanionReviewService {
     }
 
     // 동행 점수 조회 — averageScore, reviewCount, scoreDistribution (TTL 10분 캐싱)
-    @Cacheable(value = "companionScore", key = "#userId")
+    @Cacheable(value = "companionScore:v2", key = "#userId")
     public CompanionScoreResponse getCompanionScore(Long userId) {
         Account account = accountRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -127,6 +127,9 @@ public class CompanionReviewService {
 
     // 동행 리뷰 목록 조회 — id DESC 커서 페이징, N+1 방지: reviewerId 일괄 조회 후 Account Map
     public CursorPageResponse<CompanionReviewResponse> getReviews(Long targetUserId, String cursor, int size) {
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
         if (!accountRepository.existsById(targetUserId)) {
             throw new BusinessException(ErrorCode.USER_NOT_FOUND);
         }

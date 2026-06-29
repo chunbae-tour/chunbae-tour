@@ -19,10 +19,10 @@ public class CompanionReviewEventHandler {
     // @Async 도입 시 @CacheEvict AOP 체인이 프록시 컨텍스트를 잃어 silently 실패하는 문제 방지
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleScoreCacheEvict(CompanionScoreCacheEvictEvent event) {
-        Cache cache = cacheManager.getCache("companionScore");
+        Cache cache = cacheManager.getCache("companionScore:v2");
         if (cache != null) {
             cache.evict(event.targetUserId());
         }
-        log.debug("companionScore 캐시 evict. targetUserId={}", event.targetUserId());
+        log.debug("companionScore:v2 캐시 evict. targetUserId={}", event.targetUserId());
     }
 }
