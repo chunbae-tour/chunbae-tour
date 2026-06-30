@@ -79,7 +79,7 @@ src/main/java/com/chunbaetour/domain
 ├── chat               # WebSocket 채팅, 참여 신청, 파일 업로드
 ├── common             # 공통 응답, 예외, 설정, Redis, S3, Rate Limit
 ├── community          # 자유/동행 게시글, 댓글, 이미지
-├── companionreview    # 동행 생성/참여/종료/리뷰
+├── companion          # 동행 생성/참여/종료 (review/ 하위에 리뷰 중첩)
 ├── cs                 # FAQ, 1:1 상담
 ├── festival           # 축제, 달력, 축제 동기화, 축제 찜
 ├── like               # 공통 찜

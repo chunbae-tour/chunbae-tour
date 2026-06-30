@@ -2,6 +2,8 @@ package com.chunbaetour.domain.common.config;
 
 import java.time.Duration;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -17,7 +19,13 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
  */
 @Configuration
 @EnableCaching
-public class CacheConfig {
+public class CacheConfig implements CachingConfigurer {
+
+    // GET 실패(역직렬화 오류 등)를 캐시미스로 처리 — 500 전파 방지
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new LoggingCacheErrorHandler();
+    }
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
@@ -43,7 +51,7 @@ public class CacheConfig {
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
-                .withCacheConfiguration("companionScore", companionScoreConfig)
+                .withCacheConfiguration("companionScore:v2", companionScoreConfig)
                 .withCacheConfiguration("translation", translationConfig)
                 // 캐시 통계 활성화 — @Cacheable 캐시의 hit/miss를 RedisCache가 집계하고 Micrometer가 cache.* 메트릭으로 노출
                 // (모니터링 1단계). 미설정 시 RedisCache 기본 통계 OFF라 hit율이 수집되지 않는다.

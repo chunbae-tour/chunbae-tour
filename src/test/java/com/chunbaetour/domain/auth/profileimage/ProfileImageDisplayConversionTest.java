@@ -17,8 +17,8 @@ import com.chunbaetour.domain.chat.entity.Message;
 import com.chunbaetour.domain.chat.type.ChatMemberState;
 import com.chunbaetour.domain.chat.type.MessageType;
 import com.chunbaetour.domain.community.common.WriterInfo;
-import com.chunbaetour.domain.companionreview.dto.response.CompanionReviewResponse;
-import com.chunbaetour.domain.companionreview.entity.CompanionReview;
+import com.chunbaetour.domain.companion.review.dto.response.CompanionReviewResponse;
+import com.chunbaetour.domain.companion.review.entity.CompanionReview;
 import com.chunbaetour.domain.place.PlaceReview;
 import com.chunbaetour.domain.place.dto.response.PlaceReviewResponse;
 import java.util.List;
@@ -91,7 +91,7 @@ class ProfileImageDisplayConversionTest {
     }
 
     @Test
-    @DisplayName("companionreview CompanionReviewResponse — 우리 키 → 변환값")
+    @DisplayName("companion.review CompanionReviewResponse — 우리 키 → 변환값")
     void companionReview() {
         CompanionReview review = mock(CompanionReview.class);
         lenient().when(review.getScore()).thenReturn(5);
